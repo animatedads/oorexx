@@ -1,0 +1,23 @@
+numeric digits 9
+say trunc('1.23456789')
+say trunc('1.23456789', 2)
+say trunc('-1.23456789', 4)
+say trunc('9.999999999')
+say trunc('9.999999999',3)
+say trunc('123456789.123')
+say trunc('123456789.123',2)
+say trunc('0.00000999999',3)
+say trunc('-.000099999',5)
+say trunc('1e+20', 2)
+say trunc('1E-20', 4)
+say trunc('-0', 3)
+say trunc('  - 12.345  ', 2)
+numeric digits 2
+say trunc('1.9999', 4)
+say trunc('123456789.999', 2)
+say trunc('0.0099995', 4)
+numeric digits 34
+say trunc('1.23456789012345678901234567890123456789',15)
+say trunc('-9999999999999999999999999.99999999999',12)
+say trunc('1e-16',20)
+say trunc('9.99999999999999999999999999999999995',3)

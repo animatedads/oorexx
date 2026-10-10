@@ -1,5 +1,6 @@
 #include "rxbif_breadth.hpp"
 #include "rxbif_symbol.hpp"
+#include "rxbif_trunc.hpp"
 #include <algorithm>
 #include <cctype>
 #include <limits>
@@ -56,7 +57,7 @@ const std::vector<Spec>& catalog() {
         {"C2X",1,1,"NATIVE_SUBSET"},
         {"X2C",1,1,"NATIVE_SUBSET"},
         {"C2D",1,2,"ISOLATED_REXX"},
-        {"TRUNC",1,2,"ISOLATED_REXX"},
+        {"TRUNC",1,2,"NATIVE_SUBSET"},
         {"X2D",1,2,"ISOLATED_REXX"},
         {"D2X",1,2,"ISOLATED_REXX"},
         {"D2C",1,2,"ISOLATED_REXX"},
@@ -119,6 +120,37 @@ rx::Value invoke(const std::string& requested, const std::vector<Slot>& a, Conte
     if (name=="SIGN" && a.size()==1 && !a[0])
         throw std::runtime_error("BIF SIGN: required argument omitted");
     if (ctx.preferChainback) return delegate(name,a,ctx);
+    if (name == "TRUNC" && !ctx.preferChainback) {
+        if (!a[0]) throw std::runtime_error("BIF TRUNC: required argument omitted");
+        if (!a[0]->isObject() && (a.size()==1 || !a[1] || !a[1]->isObject())) {
+            std::size_t decimals=0;
+            bool qualified=true;
+            if(a.size()==2 && a[1]) {
+                const auto places=rxbif_trunc::parsePlaces(a[1]->bytes);
+                if(places.kind==rxbif_trunc::PlacesKind::Invalid)
+                    throw std::runtime_error("BIF TRUNC: invalid decimal places");
+                if(places.kind==rxbif_trunc::PlacesKind::Canonical)
+                    decimals=places.count;
+                else qualified=false;
+            }
+            // A typed unsupported subset may delegate, but only with valid
+            // live caller numeric state; invalid numeric forms never delegate.
+            if(qualified) {
+                const auto settings=ctx.currentNumeric
+                  ? std::optional<NumericContext>{ctx.currentNumeric()}:ctx.numeric;
+                if(!settings)throw std::runtime_error("BIF TRUNC: caller NUMERIC context missing");
+                validateNumericContext(*settings);
+                auto value=rxbif_trunc::run(a[0]->bytes,settings->digits,decimals);
+                if(value.status==rxbif_trunc::Status::Valid)
+                    return rx::Value::string(value.bytes);
+                if(value.status==rxbif_trunc::Status::Invalid)
+                    throw std::runtime_error("BIF TRUNC: invalid numeric argument");
+            }
+        }
+        // Any unqualified scalar format needs the real caller's NUMERIC
+        // context through the host, not a guessed local approximation.
+        return delegate(name,a,ctx);
+    }
     // Exact, precision-independent subset. All other DATATYPE options retain
     // their original route; never accidentally treat them as supported native.
     if (!ctx.preferChainback && name == "DATATYPE" && a.size() == 2 &&
