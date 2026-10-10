@@ -17,7 +17,7 @@
         when directive == 'METHOD' then nop
         when directive == 'ATTRIBUTE' then nop
         when directive == 'CONSTANT' then nop
-        when directive == 'OPTIONS' then self~reject(token~line, 'package numeric context (::OPTIONS) not implemented')
+        when directive == 'OPTIONS' then nop /* validated by RxNativePackageOptions */
         when directive == 'ROUTINE' then self~reject(token~line, 'package routines not implemented')
         when directive == 'REQUIRES' then self~reject(token~line, 'package dependencies not implemented')
         otherwise self~reject(token~line, 'unsupported native directive ' || directive)

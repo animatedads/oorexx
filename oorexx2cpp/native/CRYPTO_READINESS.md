@@ -11,10 +11,12 @@ CurvePoint / descendants), class methods, abstract methods, custom operator
 methods, 42 free routines, `::OPTIONS DIGITS 2000`, array/string/object
 values, and more Rexx execution instructions than our compiler accepts.
 
-All these must retain ooRexx object semantics and numeric behaviour. The
-`::OPTIONS DIGITS 2000` directive remains an explicit preflight rejection;
-compiling cryptographic source under 64-bit primitive arithmetic would be
-incorrect. `native/test.sh` confirms this source creates no shared library.
+All these must retain ooRexx object semantics and numeric behaviour. As of v0.30.4, native methods can use package `::OPTIONS DIGITS 2000`
+(in the supported pre-class directive position) through multiprecision
+activation arithmetic. The **original source still rejects at its first
+`::ROUTINE` on line 1120**; no crypto library has been compiled or published.
+The standalone-program compiler and native class compiler remain different
+front ends with distinct coverage.
 
 Suggested next implementation order:
 1. Unify multi-class package graph with explicit single/multiple inheritance

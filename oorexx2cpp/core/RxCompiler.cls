@@ -14,9 +14,12 @@
 ::attribute compareExpr get
 ::attribute logicalExpr get
 ::method init
-  expose libraries stream atomExpr builtinExpr messageExpr unaryExpr mulExpr addExpr compareExpr logicalExpr registry emitter serial sourceName rexxVersion loopScopes inRoutine routines lastMainInstruction
+  expose libraries stream atomExpr builtinExpr messageExpr unaryExpr mulExpr addExpr compareExpr logicalExpr registry emitter serial sourceName rexxVersion loopScopes inRoutine routines lastMainInstruction programClasses methodExposes
   use arg source, inputName
   sourceName = inputName
+  programClasses = .RxProgramClasses~new(source)
+  source = programClasses~programSource
+  methodExposes = .array~new
   parse version rexxVersion
   stream = .RxStream~new(.RxLexer~new(source)~scan)
   atomExpr = .RxExprAtom~new
@@ -61,6 +64,36 @@
     end
   end
   self~stream~fail(kind || ' has no matching active DO loop' || name)
+::attribute methodExposes get
+::method hasProgramClass
+  expose programClasses
+  use arg name
+  return programClasses~hasClass(name)
+::method classLine
+  expose emitter
+  use arg generated
+  emitter~classLine(generated)
+/* Compile one native class method using the standalone statement rules.
+   EXPOSE is consumed from the method preamble and creates live field aliases. */
+::method compileMethod
+  expose emitter inRoutine methodExposes
+  use arg methodName
+  self~beginRoutine(methodName)
+  s = self~stream
+  s~skipSeparators
+  if s~accept('EXPOSE') then do
+    if s~peek~kind \= 'IDENT' then s~fail('EXPOSE requires one or more field names')
+    do while s~peek~kind == 'IDENT'
+      methodExposes~append(s~next~text)
+    end
+    s~separator
+  end
+  self~block(3, .false)
+  if s~peek~kind \= 'EOF' then s~fail('unexpected tokens after native method')
+  return emitter~body
+::method emitProgramClasses
+  expose programClasses
+  programClasses~emit(self)
 ::attribute inRoutine get
 ::method libraries
   expose libraries
@@ -143,6 +176,7 @@
   end
   .RxLibraryRules~consume(self~stream)
   if self~stream~peek~kind \= 'EOF' then self~stream~fail('unexpected tokens after program')
+  self~emitProgramClasses
   emitter~footer
   return emitter~finish
 ::requires 'rules/RxRoutineRules.cls'
@@ -160,3 +194,5 @@
 ::requires 'rules/ExprLogical.cls'
 ::requires 'core/RxRuleRegistry.cls'
 ::requires 'core/RxCppEmitter.cls'
+
+::requires 'rules/RxProgramClasses.cls'

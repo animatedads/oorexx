@@ -223,6 +223,7 @@ inline Value numericDiv(const Value &a, const Value &b, const ActivationNumeric 
     cpp_int q, r;
     if (shift >= 0) { numer *= decimalPow10(shift); q = numer / denom; r = numer % denom; }
     else { denom *= decimalPow10(-shift); q = numer / denom; r = numer % denom; }
+    const bool exactQuotient = (r == 0); // Do not force exponential form for exact small quotients.
     // q has up to d+1 decimal digits; its final digit is the rounding guard.
     cpp_int rounded = q / 10;
     if ((q % 10) >= 5) ++rounded;
@@ -233,7 +234,7 @@ inline Value numericDiv(const Value &a, const Value &b, const ActivationNumeric 
     if (negative) rounded = -rounded;
     RexxDecimal output{rounded, exp};
     roundRexx(output, ctx);
-    return Value::number(formatRexxDecimal(output, ctx, true));
+    return Value::number(formatRexxDecimal(output, ctx, !exactQuotient));
 }
 inline int numericRelation(const Value &a, const Value &b, const ActivationNumeric &ctx) {
     RexxDecimal x = parseRexxDecimal(a), y = parseRexxDecimal(b);

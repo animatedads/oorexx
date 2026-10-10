@@ -4,8 +4,11 @@
    We use the Rexx lexer to find declarations so quoted text and block
    comments cannot accidentally be treated as class boundaries. */
 ::class RxNativePackageParser public
+::attribute options get
 ::method parse
+  expose options
   use arg source
+  options = .RxNativePackageOptions~new~parse(source)
   tokens = .RxLexer~new(source)~scan
   positions = .array~new
   previous = 'SEP'
@@ -16,7 +19,7 @@
       if i + 1 > tokens~items then self~reject(tok~line, 'incomplete directive')
       directive = tokens[i+1]~text
       if directive == 'CLASS' then positions~append(tok~line)
-      else if directive \= 'METHOD' & directive \= 'ATTRIBUTE' & directive \= 'CONSTANT' then self~reject(tok~line, 'unsupported directive ' || directive)
+      else if directive \= 'METHOD' & directive \= 'ATTRIBUTE' & directive \= 'CONSTANT' & directive \= 'OPTIONS' then self~reject(tok~line, 'unsupported directive ' || directive)
     end
     if tok~kind == 'SEP' then previous = 'SEP'
     else previous = 'OTHER'
@@ -31,8 +34,23 @@
   end
   if prefix \== '' then do
     pre = .RxLexer~new(prefix)~scan
-    do token over pre
-      if token~kind \= 'SEP' & token~kind \= 'EOF' then self~reject(token~line, 'top-level executable code is unsupported')
+    j = 1
+    do while j <= pre~items
+      token = pre[j]
+      if token~kind == 'EOF' then leave
+      if token~kind == 'SEP' then do
+        j += 1
+        iterate
+      end
+      if token~text == '::' & j + 1 <= pre~items & pre[j+1]~text == 'OPTIONS' then do
+        if \options~present then self~reject(token~line, 'unvalidated ::OPTIONS')
+        j += 2
+        do while j <= pre~items & pre[j]~kind \= 'SEP' & pre[j]~kind \= 'EOF'
+          j += 1
+        end
+        iterate
+      end
+      self~reject(token~line, 'top-level executable code is unsupported')
     end
   end
   units = .array~new
@@ -78,3 +96,5 @@
 ::requires 'core/RxLexer.cls'
 ::requires 'hybrid/compiler/RxHybridCompiler.cls'
 ::requires 'native/NativeInheritanceRules.cls'
+
+::requires 'native/NativePackageOptions.cls'

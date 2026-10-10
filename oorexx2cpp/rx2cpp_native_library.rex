@@ -10,10 +10,12 @@ signal on error name compilerError
 signal on failure name compilerError
 source = readSource(input)
 gateOK = .RxNativeSourceGate~new~validate(source)
-units = .RxNativePackageParser~new~parse(source)
+parser = .RxNativePackageParser~new
+units = parser~parse(source)
+options = parser~options
 template = readSource('native/native_package_template.cpp.in')
 emitter = .RxNativeLibraryEmitter~new
-nativeSource = emitter~emitPackage(units, packageName, template)
+nativeSource = emitter~emitPackage(units, packageName, template, options)
 cpp = ''
 header = '#ifndef RX2CPP_GENERATED_HPP' || '0a'x || ,
          '#define RX2CPP_GENERATED_HPP' || '0a'x || ,
@@ -22,7 +24,7 @@ header = '#ifndef RX2CPP_GENERATED_HPP' || '0a'x || ,
          'namespace rx2cpp {' || '0a'x
 names = ''
 do unit over units
-  cpp = cpp || .RxHybridCppEmitter~new~emit(unit, .false)
+  cpp = cpp || .RxHybridCppEmitter~new~emit(unit, .false, options)
   header = header || 'std::shared_ptr<CompiledObject> makeGeneratedObject_' || unit~className || '();' || '0a'x
   names = names || unit~className || ' '
 end

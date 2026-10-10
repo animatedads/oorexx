@@ -4,13 +4,25 @@
    can implement the same line()/finish() interface without changing the lexer. */
 ::class RxCppEmitter public
 ::method init
-  expose lines routineLines
+  expose lines routineLines classLines
   lines = .array~new
   routineLines = .array~new
+  classLines = .array~new
 ::method line
   expose lines routineLines
   use arg depth, statement
   lines~append(copies(' ', depth * 4) || statement)
+::method classLine
+  expose classLines
+  use arg statement
+  classLines~append('        ' || statement)
+::method body
+  expose routineLines
+  output = ''
+  do entry over routineLines
+    output = output || entry || '0a'x
+  end
+  return output
 ::method routineLine
   expose routineLines
   use arg depth, statement
@@ -30,6 +42,7 @@
   self~line(2, 'rx::RoutineRegistry _rxRoutines;')
   if .RxBuiltinRules~externalEnabled then self~line(2, 'rx::BifRuntime _rxBifRuntime;')
   self~line(2, '// __RX2CPP_ROUTINE_DEFINITIONS__')
+  self~line(2, '// __RX2CPP_CLASS_DECLARATIONS__')
 ::method footer
   self~line(2, 'return 0;')
   self~line(1, '} catch (const rx::ProgramExit &_rxExit) {')
@@ -40,12 +53,17 @@
   self~line(1, '}')
   self~line(0, '}')
 ::method finish
-  expose lines routineLines
+  expose lines routineLines classLines
   output = ''
   do value over lines
     if pos('__RX2CPP_ROUTINE_DEFINITIONS__', value) > 0 then do
       do routineLine over routineLines
         output = output || routineLine || '0a'x
+      end
+    end
+    else if pos('__RX2CPP_CLASS_DECLARATIONS__', value) > 0 then do
+      do classLine over classLines
+        output = output || classLine || '0a'x
       end
     end
     else output = output || value || '0a'x

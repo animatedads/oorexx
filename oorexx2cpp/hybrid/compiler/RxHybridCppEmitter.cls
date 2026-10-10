@@ -3,7 +3,7 @@
    C++ dispatch arms; unsupported value/object ABI must be rejected. */
 ::class RxHybridCppEmitter public
 ::method emit
-  use arg unit, legacyFactory
+  use arg unit, legacyFactory, options
   if arg(2, 'O') then legacyFactory = .true
   suffix = unit~className
   lines = .array~new
@@ -17,17 +17,17 @@
   lines~append('  rx::Variables fields_;')
   lines~append('public:')
   lines~append('  std::string invoke0(const std::string &selector) override {')
-  self~dispatch(lines, unit, 0)
+  self~dispatch(lines, unit, 0, options)
   lines~append('    throw std::runtime_error("unsupported or wrong-arity native selector: " + selector);')
   lines~append('  }')
   lines~append('  std::string invoke(const std::string &selector, const std::string &argument) override {')
   lines~append('    (void)argument;')
-  self~dispatch(lines, unit, 1)
+  self~dispatch(lines, unit, 1, options)
   lines~append('    throw std::runtime_error("unsupported or wrong-arity native selector: " + selector);')
   lines~append('  }')
   lines~append('  std::string invoke2(const std::string &selector, const std::string &first, const std::string &second) override {')
   lines~append('    (void)first; (void)second;')
-  self~dispatch(lines, unit, 2)
+  self~dispatch(lines, unit, 2, options)
   lines~append('    throw std::runtime_error("unsupported or wrong-arity native selector: " + selector);')
   lines~append('  }')
   lines~append('};')
@@ -46,7 +46,7 @@
   end
   return out
 ::method dispatch private
-  use arg lines, unit, arity
+  use arg lines, unit, arity, options
   do method over unit~methods
     count = 0
     if method~parameter \== '' then count += 1
@@ -54,6 +54,14 @@
     if count \= arity then iterate
     lines~append('    if (selector == ' || .RxQuote~cpp(method~selector) || ') {')
     lines~append('      rx::Variables vars;')
+    hasOptions = .false
+    if arg(4, 'E') then hasOptions = options~present
+    if hasOptions then do
+      lines~append('      vars.numeric.digits = ' || options~digits || ';')
+      lines~append('      vars.numeric.fuzz = ' || options~fuzz || ';')
+      if options~form == 'ENGINEERING' then
+        lines~append('      vars.numeric.engineering = true;')
+    end
     do field over method~exposed
       lines~append('      rx::set(vars, ' || .RxQuote~cpp(field) || ', rx::get(fields_, ' || .RxQuote~cpp(field) || '));')
     end

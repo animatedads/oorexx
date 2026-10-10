@@ -1,3 +1,20 @@
+# RX2CPP v0.30.6 — Gemini Developer Registry native compilation
+
+See `README_V0306.md` and `QUALIFICATION_V0306.md`. The original fixture runs natively with byte-exact ooRexx 5.3 output under GCC and Clang. This is a narrowly qualified standalone class subset, not complete object-language support.
+
+---
+
+## v0.30.4 focused native package increment (reference §3.6)
+
+See `QUALIFICATION_V0304.md`. The native class backend now accepts package
+numeric `::OPTIONS DIGITS`, `FORM`, `FUZZ` before the first class and applies
+these defaults to each compiled method activation, as well as emitting a real
+`::OPTIONS` directive in the interpreter-side package source. Repeated
+declarations accumulate and last value wins. Other options and later placement
+are rejected rather than silently approximated. The original `crypto.cls`
+now fails at its first `::ROUTINE` rather than `::OPTIONS`; Crypto has **not**
+compiled. The BIF and threading implementation lanes are unchanged.
+
 # rx2cpp v0.30.3 — Claude language patch merged with native indexed-object backend
 
 Combined full-tree replacement based on **v0.30.2**. Claude's `claude_lang_on_v0301.patch`

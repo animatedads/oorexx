@@ -114,6 +114,23 @@ struct ArrayObject final : ObjectDispatch {
             elements.insert_or_assign(++last, args[0]);
             return Value::string(std::to_string(last));
         }
+        if (selector == "MAKESTRING" && args.size() <= 2) {
+            const std::string format = args.empty() ? "L" : args[0].bytes;
+            const std::string separator = args.size() == 2 ? args[1].bytes : " ";
+            if (format != "L")
+                throw std::runtime_error("only .Array~makeString('L') is implemented");
+            std::string result;
+            for (std::size_t i = 1; i <= last; ++i) {
+                const auto item = elements.find(i);
+                if (item == elements.end())
+                    throw std::runtime_error("sparse Array~makeString unsupported");
+                if (item->second.isObject())
+                    throw std::runtime_error("object Array~makeString conversion unsupported");
+                if (i > 1) result += separator;
+                result += item->second.bytes;
+            }
+            return Value::string(result);
+        }
         return ObjectDispatch::sendMessage(selector, args);
     }
 };
@@ -122,9 +139,28 @@ struct ArrayClass final : ObjectDispatch {
                               const std::vector<Value> &args) override {
         if (selector == "NEW" && args.empty())
             return Value::fromObject(std::make_shared<ArrayObject>());
-        throw std::runtime_error("only .ARRAY~NEW with no arguments is implemented");
+        if (selector == "OF") {
+            auto array = std::make_shared<ArrayObject>();
+            for (const auto &arg : args) array->sendMessage("APPEND", {arg});
+            return Value::fromObject(array);
+        }
+        throw std::runtime_error("unsupported .ARRAY class constructor");
     }
 };
+// LOOP value OVER .Array iterates in index order; sparse/other collections
+// fail closed until their own ITERATOR semantics are implemented.
+inline std::vector<Value> arrayItems(const Value &collection) {
+    if (!collection.isObject()) throw std::runtime_error("LOOP OVER requires a collection object");
+    auto array = std::dynamic_pointer_cast<ArrayObject>(collection.object);
+    if (!array) throw std::runtime_error("LOOP OVER non-Array iterable unsupported");
+    std::vector<Value> items;
+    for (std::size_t i = 1; i <= array->last; ++i) {
+        const auto it = array->elements.find(i);
+        if (it == array->elements.end()) throw std::runtime_error("LOOP OVER sparse Array unsupported");
+        items.push_back(it->second);
+    }
+    return items;
+}
 // An activation owns one variable pool; PROCEDURE creates a fresh pool with
 // explicit live aliases to the caller's pool. The alias owner is resolved at
 // every access (including recursive calls), never copied back on RETURN.
@@ -153,6 +189,55 @@ struct Variables : std::unordered_map<std::string, Value> {
         return false;
     }
 };
+// Standalone native class subset. Each object owns a variable scope, while
+// each compiled method gets a fresh activation that aliases EXPOSEd fields.
+// Methods remain first-class message selectors; no interpreter is embedded.
+struct NativeClass;
+struct NativeInstance final : ObjectDispatch {
+    std::shared_ptr<NativeClass> definingClass;
+    Variables fields;
+    explicit NativeInstance(std::shared_ptr<NativeClass> cls) : definingClass(std::move(cls)) {}
+    MessageResult sendMessage(const std::string &selector,
+                              const std::vector<Value> &args) override;
+};
+struct NativeClass final : ObjectDispatch, std::enable_shared_from_this<NativeClass> {
+    using Method = std::function<MessageResult(NativeInstance &, const std::vector<Value> &)>;
+    std::unordered_map<std::string, Method> methods;
+    std::unordered_set<std::string> attributes;
+    MessageResult sendMessage(const std::string &selector,
+                              const std::vector<Value> &args) override {
+        if (selector == "NEW") {
+            auto instance = std::make_shared<NativeInstance>(shared_from_this());
+            auto found = methods.find("INIT");
+            if (found != methods.end()) found->second(*instance, args);
+            else if (!args.empty()) throw std::runtime_error("class without INIT rejects NEW arguments");
+            return Value::fromObject(instance);
+        }
+        return ObjectDispatch::sendMessage(selector, args);
+    }
+};
+inline MessageResult NativeInstance::sendMessage(const std::string &selector,
+                                                  const std::vector<Value> &args) {
+    // This strict native subset declares only unquoted ooRexx method names.
+    // Their selectors are case-insensitive, including quoted send spellings.
+    std::string canonical = selector;
+    std::transform(canonical.begin(), canonical.end(), canonical.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+    const auto method = definingClass->methods.find(canonical);
+    if (method != definingClass->methods.end()) return method->second(*this, args);
+    if (definingClass->attributes.count(canonical) && args.empty()) {
+        const auto found = fields.find(canonical);
+        return found == fields.end() ? Value::string(canonical) : found->second;
+    }
+    if (canonical.size() > 1 && canonical.back() == '=' && args.size() == 1) {
+        const std::string field = canonical.substr(0, canonical.size() - 1);
+        if (definingClass->attributes.count(field)) {
+            fields.insert_or_assign(field, args.front());
+            return std::nullopt;
+        }
+    }
+    return ObjectDispatch::sendMessage(selector, args);
+}
 // Internal routine invocations always receive the CURRENT caller scope.
 // Nested calls without PROCEDURE share it; PROCEDURE creates an isolated
 // variable pool, potentially exposing bindings back to the caller.
@@ -427,6 +512,16 @@ inline MessageResult sendMessage(const Value &receiver, const std::string &selec
          selector == "<>" || selector == "><" || selector == "<" || selector == ">" ||
          selector == "<=" || selector == ">="))
         return sendBinary(receiver, selector, args.front());
+    if (selector == "COPIES" && args.size() == 1) {
+        const auto repetitions = integer(args[0]);
+        if (repetitions < 0 || repetitions > 1000000 ||
+            (!s.empty() && static_cast<std::size_t>(repetitions) > (1 << 24) / s.size()))
+            throw std::runtime_error("COPIES count exceeds native limit");
+        std::string out;
+        out.reserve(s.size() * static_cast<std::size_t>(repetitions));
+        for (std::int64_t i = 0; i < repetitions; ++i) out += s;
+        return Value::string(out);
+    }
     if (selector == "LENGTH" && args.empty()) return fromInteger(static_cast<std::int64_t>(s.size()));
     if (selector == "REVERSE" && args.empty())
         return Value::string(std::string(s.rbegin(), s.rend()));

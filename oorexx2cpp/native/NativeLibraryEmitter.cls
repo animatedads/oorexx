@@ -7,11 +7,14 @@
   use arg unit, packageName, template
   return self~emitPackage(.array~of(unit), packageName, template)
 ::method emitPackage
-  use arg units, packageName, template
+  use arg units, packageName, template, options
   self~identifier(packageName, 'package')
   cpp = ''
   entries = ''
   source = ''
+  if arg(4, 'E') then do
+    if options~present then source = options~directive || '0a'x
+  end
   factories = ''
   classes = ''
   countClasses = 0

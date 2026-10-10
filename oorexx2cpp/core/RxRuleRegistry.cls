@@ -8,6 +8,7 @@
   rules = .array~new
   rules~append(.RxStmtNumeric~new)
   rules~append(.RxStmtSay~new)
+  rules~append(.RxStmtLoopOver~new)
   rules~append(.RxStmtDoUntil~new)
   rules~append(.RxStmtDoWhile~new)
   rules~append(.RxStmtDoForever~new)
@@ -57,3 +58,5 @@
 ::requires 'rules/StmtMessage.cls'
 ::requires 'rules/StmtIndexedAssign.cls'
 ::requires 'rules/StmtAssign.cls'
+
+::requires 'rules/StmtLoopOver.cls'

@@ -15,6 +15,7 @@
     end
     when t~kind == 'DOTIDENT' then do
       s~next
+      if ctx~hasProgramClass(t~text) then return 'rx::Value::fromObject(_rxClasses.at(' || .RxQuote~cpp(t~text) || '))'
       if t~text == 'ARRAY' then return 'rx::Value::fromObject(std::make_shared<rx::ArrayClass>())'
       /* .TRUE/.FALSE are the strings 1 and 0 */
       if t~text == 'TRUE' then return 'rx::Value::string("1")'
