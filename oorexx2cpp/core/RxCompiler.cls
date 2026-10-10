@@ -14,7 +14,7 @@
 ::attribute compareExpr get
 ::attribute logicalExpr get
 ::method init
-  expose libraries stream atomExpr builtinExpr messageExpr unaryExpr mulExpr addExpr compareExpr logicalExpr registry emitter serial sourceName rexxVersion loopScopes inRoutine routineKind routines lastMainInstruction programClasses methodExposes
+  expose libraries stream atomExpr builtinExpr messageExpr unaryExpr mulExpr addExpr compareExpr logicalExpr registry emitter serial sourceName rexxVersion loopScopes inRoutine routineKind packageOptions routines lastMainInstruction programClasses methodExposes
   use arg source, inputName
   sourceName = inputName
   programClasses = .RxProgramClasses~new(source)
@@ -36,6 +36,9 @@
   lastMainInstruction = ''
   routines = .RxRoutineRules~discover(stream)
   libraries = .RxLibraryRules~discover(stream)
+  packageOptions = .RxOptionsRules~discover(stream)
+  if packageOptions~at('USED') & programClasses~definitions~items > 0 then -
+    stream~fail('::OPTIONS together with local ::CLASS definitions is not implemented')
   registry = .RxRuleRegistry~new
   emitter = .RxCppEmitter~new
   serial = 0
@@ -156,9 +159,17 @@
     s~separator
   end
   else if s~peek~kind \= 'EOF' & \s~atLabel & \s~atDirective then s~fail('unexpected END at top level')
+/* Package ::OPTIONS become the initial NUMERIC settings of the main program and of every ::ROUTINE. */
+::method emitNumericDefaults
+  expose packageOptions
+  use arg depth
+  if packageOptions~at('DIGITS') \= 9 then self~line(depth, 'vars.numeric.digits = ' || packageOptions~at('DIGITS') || ';')
+  if packageOptions~at('FUZZ') \= 0 then self~line(depth, 'vars.numeric.fuzz = ' || packageOptions~at('FUZZ') || ';')
+  if packageOptions~at('FORM') == 'ENGINEERING' then self~line(depth, 'vars.numeric.engineering = true;')
 ::method compile
   expose emitter
   emitter~header(self~hasLibraries)
+  self~emitNumericDefaults(2)
   do lib over self~libraries
     self~line(2, 'rx::ext::require(' || .RxQuote~cpp(lib) || ');')
   end
@@ -189,6 +200,7 @@
   return emitter~finish
 ::requires 'rules/RxRoutineRules.cls'
 ::requires 'rules/RxLibraryRules.cls'
+::requires 'rules/RxOptionsRules.cls'
 ::requires 'core/RxStream.cls'
 ::requires 'core/RxLexer.cls'
 ::requires 'rules/ExprAtom.cls'

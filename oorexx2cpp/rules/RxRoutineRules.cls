@@ -64,6 +64,7 @@
     ctx~line(3, '(void)_rxCallerVars;')
     ctx~line(3, 'rx::Variables _rxRoutineVars;')
     ctx~line(3, 'rx::Variables& vars = _rxRoutineVars;')
+    ctx~emitNumericDefaults(3)
   end
   else .RxProcedureRules~emitBinding(ctx, 3)
   ctx~line(3, '(void)vars;')
@@ -101,6 +102,13 @@
     word = s~next~text
     if word == 'REQUIRES' then do
       s~next; s~next
+      s~skipSeparators
+      iterate
+    end
+    if word == 'OPTIONS' then do   /* validated and applied by RxOptionsRules~discover */
+      do while s~peek~kind \= 'SEP' & s~peek~kind \= 'EOF'
+        s~next
+      end
       s~skipSeparators
       iterate
     end

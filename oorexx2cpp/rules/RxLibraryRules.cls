@@ -14,13 +14,13 @@
       iterate
     end
     if i + 3 > tokens~items then stream~fail('incomplete directive')
-    if tokens[i + 1]~text == 'ROUTINE' & tokens[i + 1]~kind == 'IDENT' then do   /* compiled by RxRoutineRules */
+    if (tokens[i + 1]~text == 'ROUTINE' | tokens[i + 1]~text == 'OPTIONS') & tokens[i + 1]~kind == 'IDENT' then do   /* compiled by RxRoutineRules / RxOptionsRules */
       i = i + 2
       iterate
     end
     if tokens[i + 1]~text \= 'REQUIRES' then do
       stream~position(i + 1)
-      stream~fail('unsupported directive (only ::REQUIRES "name" LIBRARY and ::ROUTINE are implemented)')
+      stream~fail('unsupported directive (only ::REQUIRES "name" LIBRARY ::ROUTINE and ::OPTIONS are implemented)')
     end
     kind = tokens[i + 2]~kind
     if kind \= 'STRING' & kind \= 'IDENT' then do

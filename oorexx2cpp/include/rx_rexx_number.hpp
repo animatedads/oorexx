@@ -94,8 +94,9 @@ inline std::string formatRexxDecimal(const RexxDecimal &value, const ActivationN
     std::string digits = (negative ? -value.coefficient : value.coefficient).convert_to<std::string>();
     const int adjusted = static_cast<int>(digits.size()) - 1 + value.exponent;
     const int fixedLower = -2 * static_cast<int>(ctx.digits);
-    // upstream NumberString::stringValue: exponential when adjusted >= DIGITS or |exponent| > 2*DIGITS
-    bool exponential = upstreamRule ? (adjusted >= static_cast<int>(ctx.digits) ||
+    // upstream NumberString::stringValue: exponential when adjusted >= DIGITS or |exponent| > 2*DIGITS.
+    // Division keeps its own historical rule; every other result (+ - * ** //) follows upstream.
+    bool exponential = (upstreamRule || !division) ? (adjusted >= static_cast<int>(ctx.digits) ||
                                        std::abs(value.exponent) > 2 * static_cast<int>(ctx.digits))
                                     : (adjusted >= static_cast<int>(ctx.digits) ||
                        adjusted < (division ? -static_cast<int>(ctx.digits) - 1 : fixedLower));
