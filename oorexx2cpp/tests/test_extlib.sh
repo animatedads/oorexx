@@ -23,8 +23,13 @@ set +e; "$WORK/err.native" >"$WORK/err.out" 2>"$WORK/err.err"; rc=$?; set -e
 echo "PASS library argument error propagates (88.901)"
 printf 'say 1\n::requires "nosuchlib_zz" LIBRARY\n' > "$WORK/nolib.rex"; build "$WORK/nolib"
 set +e; "$WORK/nolib.native" >/dev/null 2>"$WORK/nolib.err"; rc=$?; set -e
-[ $rc -ne 0 ] && grep -q "98.926" "$WORK/nolib.err" || { echo "FAIL missing library not reported"; exit 1; }
-echo "PASS missing library fails at start (98.926)"
+[ $rc -eq 158 ] && grep -q "98.903" "$WORK/nolib.err" || { echo "FAIL missing library not reported with interpreter status 158 / 98.903 (rc=$rc)"; exit 1; }
+echo "PASS missing library fails at start (98.903, status 158 like the interpreter)"
+# a bare symbol is upper-cased and library names are case-sensitive on Unix: ::requires rxsock library must NOT load rxsock
+printf 'say 1\n::requires rxsock library\n' > "$WORK/symlib.rex"; build "$WORK/symlib"
+set +e; "$WORK/symlib.native" >"$WORK/symlib.out" 2>/dev/null; rc=$?; set -e
+[ $rc -eq 158 ] && [ ! -s "$WORK/symlib.out" ] || { echo "FAIL symbol-form library name must be upper-cased and fail (rc=$rc)"; exit 1; }
+echo "PASS symbol-form library name is upper-cased and fails like the interpreter"
 # fail-closed source forms
 n=0
 reject() { n=$((n+1)); printf '%b\n' "$1" > "$WORK/rej$n.rex"; rm -f "$WORK/rej$n.cpp"
@@ -33,7 +38,7 @@ reject() { n=$((n+1)); printf '%b\n' "$1" > "$WORK/rej$n.rex"; rm -f "$WORK/rej$
 reject 'say Foo(1)'                                              # external name without any LIBRARY declared
 reject 'say 1\n::requires "other.rex"'                           # Rexx program requires: not implemented
 reject 'say 1\n::requires "rxsock" LIBRARY EXTENSIVE'            # unknown option
-reject 'say 1\n::class Foo'                                      # other directives fail closed
+reject 'say 1\n::constant pi 3'                                   # other directives fail closed
 reject 'say 1\n::requires "../x" LIBRARY'                        # no path in the library name
 reject 'say 1\n::requires "rxsock" LIBRARY\nsay 2'               # code after directives
 echo "PASS $n fail-closed forms rejected with no output"

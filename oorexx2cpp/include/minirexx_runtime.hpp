@@ -352,7 +352,16 @@ struct SyntaxCondition : std::runtime_error {
     SyntaxCondition(std::string c, const std::string &text, bool skip)
         : std::runtime_error("Error " + c + ": " + text), code(std::move(c)), skipInternalTraps(skip) {}
 };
-struct ProgramExit { int code; };           // EXIT executed inside an internal routine
+struct ProgramExit { int code; };
+// The interpreter's process status for an uncaught SYNTAX error is 256 minus the error number
+// (98 -> 158, 42 -> 214, 93 -> 163).  Runtime errors that carry no "Error N" prefix keep status 2.
+inline int uncaughtStatus(const std::string &what) {
+    if (what.compare(0, 6, "Error ") == 0) {
+        const int n = std::atoi(what.c_str() + 6);
+        if (n > 0 && n < 100) return (256 - n) & 255;
+    }
+    return 2;
+}           // EXIT executed inside an internal routine
 [[noreturn]] inline void raiseSyntax(const std::string &code, const std::vector<Value> &args, bool localTrap) {
     std::string text;
     for (std::size_t i = 0; i < args.size(); ++i) { if (i) text += ' '; text += args[i].bytes; }

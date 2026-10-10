@@ -127,7 +127,7 @@ public:
         tries.push_back("lib" + name + ".so");
         tries.push_back(name);
         for (auto &t : tries) if ((h = dlopen(t.c_str(), RTLD_NOW | RTLD_LOCAL))) break;
-        if (!h) throw Error("98.926", "unable to load library '" + name + "'");
+        if (!h) throw Error("98.903", "Unable to load library \"" + name + "\"");
         auto get = reinterpret_cast<RexxPackageEntry *(*)()>(dlsym(h, "RexxGetPackage"));
         if (!get) throw Error("98.926", "library '" + name + "' exports no RexxGetPackage");
         RexxPackageEntry *pkg = get();

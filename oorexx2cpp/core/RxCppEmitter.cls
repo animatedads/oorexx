@@ -49,7 +49,7 @@
   self~line(2, 'return _rxExit.code;')
   self~line(1, '} catch (const std::exception &e) {')
   self~line(2, 'std::cerr << "rx2cpp runtime error: " << e.what() << ''\n'';')
-  self~line(2, 'return 2;')
+  self~line(2, 'return rx::uncaughtStatus(e.what());')
   self~line(1, '}')
   self~line(0, '}')
 ::method finish
