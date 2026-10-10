@@ -1,0 +1,149 @@
+line	directive	owner	declaration
+51	::OPTIONS	-	::options digits 2000
+59	::CLASS	CRYPTOHASH	::class CryptoHash public
+62	::METHOD	CRYPTOHASH	::method init
+67	::METHOD	CRYPTOHASH	::method update abstract
+70	::METHOD	CRYPTOHASH	::method digest abstract
+73	::METHOD	CRYPTOHASH	::method hashString class
+89	::CLASS	MD5	::class MD5 subclass CryptoHash public
+91	::METHOD	MD5	::method init
+114	::METHOD	MD5	::method update
+156	::METHOD	MD5	::method digest
+177	::CLASS	SHA512	::class SHA512 subclass CryptoHash public
+179	::METHOD	SHA512	::method init
+219	::METHOD	SHA512	::method update
+261	::METHOD	SHA512	::method digest
+279	::CLASS	INT32	::class int32 public
+281	::METHOD	INT32	::method init class; self~arch = "little-endian"
+283	::METHOD	INT32	::method init
+293	::METHOD	INT32	::method xor;     expose char4; use strict arg o; return .int32~new(char4~bitxor(o~char),"C")
+294	::METHOD	INT32	::method and;     expose char4; use strict arg o; return .int32~new(char4~bitand(o~char),"C")
+295	::METHOD	INT32	::method or;      expose char4; use strict arg o; return .int32~new(char4~bitor(o~char),"C")
+296	::METHOD	INT32	::method bitnot;  expose char4; return .int32~new(char4~bitxor('ffffffff'x)~c2d,"C")
+298	::METHOD	INT32	::method bitleft
+303	::METHOD	INT32	::method '<<'; forward to (self) message("bitleft")
+305	::METHOD	INT32	::method bitright
+311	::METHOD	INT32	::method '>>'; forward to (self) message("bitright")
+313	::METHOD	INT32	::method bitrotate
+320	::METHOD	INT32	::method int;    expose int32; return int32
+321	::METHOD	INT32	::method char;   expose char4; return char4
+322	::METHOD	INT32	::method '+';    expose int32; use strict arg o; return .int32~new(int32+o~int)
+323	::METHOD	INT32	::method string; expose char4; return char4~reverse~c2x~lower
+331	::CLASS	INT64	::class int64 public
+333	::METHOD	INT64	::method init class; self~arch = "big-endian"
+335	::METHOD	INT64	::method init
+355	::METHOD	INT64	::method xor;    expose char8; use strict arg o; return .int64~new(char8~bitxor(o~char),"C")
+356	::METHOD	INT64	::method and;    expose char8; use strict arg o; return .int64~new(char8~bitand(o~char),"C")
+357	::METHOD	INT64	::method or;     expose char8; use strict arg o; return .int64~new(char8~bitor(o~char),"C")
+358	::METHOD	INT64	::method bitnot; expose char8; return .int64~new(char8~bitxor('ffffffffffffffff'x),"C")
+360	::METHOD	INT64	::method shr
+365	::METHOD	INT64	::method bitleft
+370	::METHOD	INT64	::method bitright
+376	::METHOD	INT64	::method rotr
+380	::METHOD	INT64	::method '+'
+388	::METHOD	INT64	::method int;    expose int64; return int64
+389	::METHOD	INT64	::method char;   expose char8; return char8
+390	::METHOD	INT64	::method string; expose char8; return char8~c2x~lower
+398	::CLASS	CURVEPOINT	::class CurvePoint public
+399	::METHOD	CURVEPOINT	::method x attribute
+400	::METHOD	CURVEPOINT	::method y attribute
+401	::METHOD	CURVEPOINT	::method add abstract
+402	::METHOD	CURVEPOINT	::method multiply abstract
+411	::CLASS	EDWARDSPOINT	::class EdwardsPoint subclass CurvePoint public
+413	::METHOD	EDWARDSPOINT	::method init
+417	::METHOD	EDWARDSPOINT	::method add
+421	::METHOD	EDWARDSPOINT	::method edwards_add
+444	::METHOD	EDWARDSPOINT	::method multiply
+467	::CLASS	GOLDILOCKSPOINT	::class GoldilocksPoint subclass CurvePoint public
+469	::METHOD	GOLDILOCKSPOINT	::method init
+473	::METHOD	GOLDILOCKSPOINT	::method add
+494	::METHOD	GOLDILOCKSPOINT	::method multiply
+513	::CLASS	ED25519	::class Ed25519 public
+516	::METHOD	ED25519	::method G class
+530	::METHOD	ED25519	::method keypair class
+548	::METHOD	ED25519	::method sign class
+574	::METHOD	ED25519	::method verify class
+605	::CLASS	ED448	::class Ed448 public
+608	::METHOD	ED448	::method l class
+612	::METHOD	ED448	::method G class
+629	::METHOD	ED448	::method keypair class
+648	::CLASS	X25519	::class X25519 public
+650	::METHOD	X25519	::method publicKey class
+655	::METHOD	X25519	::method sharedSecret class
+660	::METHOD	X25519	::method encryptStream class
+664	::METHOD	X25519	::method decryptStream class
+680	::CLASS	CHACHA20	::class ChaCha20 public
+682	::METHOD	CHACHA20	::method crypt class
+686	::METHOD	CHACHA20	::method encrypt class
+690	::METHOD	CHACHA20	::method decrypt class
+717	::CLASS	RSA	::class RSA public
+722	::METHOD	RSA	::method keypair class
+735	::METHOD	RSA	::method encrypt class
+743	::METHOD	RSA	::method decrypt class
+751	::METHOD	RSA	::method generateKeypair class
+761	::METHOD	RSA	::method sign class
+766	::METHOD	RSA	::method verify class
+808	::CLASS	RSASTREAM	::class RSAStream public
+812	::METHOD	RSASTREAM	::method encrypt class
+833	::METHOD	RSASTREAM	::method decrypt class
+856	::METHOD	RSASTREAM	::method encryptStream class
+861	::METHOD	RSASTREAM	::method decryptStream class
+886	::CLASS	CRYPTOSTREAM	::class CryptoStream subclass Stream public
+897	::METHOD	CRYPTOSTREAM	::method init
+918	::METHOD	CRYPTOSTREAM	::method charOut
+936	::METHOD	CRYPTOSTREAM	::method lineOut
+956	::METHOD	CRYPTOSTREAM	::method charIn
+980	::METHOD	CRYPTOSTREAM	::method lineIn
+1009	::METHOD	CRYPTOSTREAM	::method _readAll private
+1029	::METHOD	CRYPTOSTREAM	::method _chacha_crypt private
+1066	::METHOD	CRYPTOSTREAM	::method md5
+1070	::METHOD	CRYPTOSTREAM	::method sha512
+1074	::METHOD	CRYPTOSTREAM	::method hash
+1080	::METHOD	CRYPTOSTREAM	::method sign
+1085	::METHOD	CRYPTOSTREAM	::method verify
+1090	::METHOD	CRYPTOSTREAM	::method encrypt
+1099	::METHOD	CRYPTOSTREAM	::method decryptHex class
+1103	::METHOD	CRYPTOSTREAM	::method encryptRSA
+1109	::METHOD	CRYPTOSTREAM	::method decryptRSA class
+1120	::ROUTINE	-	::routine rx_mod_inverse
+1132	::ROUTINE	-	::routine rx_pow_mod
+1142	::ROUTINE	-	::routine rx_recover_x
+1155	::ROUTINE	-	::routine rx_decompress_point
+1175	::ROUTINE	-	::routine rx_x25519_ladder
+1202	::ROUTINE	-	::routine rx_mod_inverse_x
+1206	::ROUTINE	-	::routine rx_pow_mod_x
+1217	::ROUTINE	-	::routine rx_le_hex_decode
+1233	::ROUTINE	-	::routine rx_le_hex_encode
+1249	::ROUTINE	-	::routine rx_be_hex_decode
+1260	::ROUTINE	-	::routine rx_be_hex_encode
+1272	::ROUTINE	-	::routine rx_clamp_scalar
+1285	::ROUTINE	-	::routine rx_compress_point
+1296	::ROUTINE	-	::routine rx_string_to_int
+1309	::ROUTINE	-	::routine rx_int_to_string
+1324	::ROUTINE	-	::routine rx_encrypt_stream
+1339	::ROUTINE	-	::routine rx_decrypt_stream
+1356	::ROUTINE	-	::routine rx_add64
+1360	::ROUTINE	-	::routine rx_and64
+1370	::ROUTINE	-	::routine rx_or64
+1379	::ROUTINE	-	::routine rx_xor64
+1388	::ROUTINE	-	::routine rx_shr64
+1392	::ROUTINE	-	::routine rx_rotr64
+1399	::ROUTINE	-	::routine rx_shr_large
+1403	::ROUTINE	-	::routine rx_xor_large
+1419	::ROUTINE	-	::routine rx_rsa_pow_mod
+1430	::ROUTINE	-	::routine rx_rsa_string_to_int
+1454	::ROUTINE	-	::routine rx_rsa_int_to_string
+1481	::ROUTINE	-	::routine rx_compress_point448
+1510	::ROUTINE	-	::routine rx_xor32
+1521	::ROUTINE	-	::routine rx_add32
+1526	::ROUTINE	-	::routine rx_rotl32
+1534	::ROUTINE	-	::routine rx_le_hex_encode32
+1542	::ROUTINE	-	::routine rx_chacha_quarter_round
+1551	::ROUTINE	-	::routine rx_chacha20_block
+1594	::ROUTINE	-	::routine rx_chacha20_crypt
+1621	::ROUTINE	-	::routine rx_generate_prime_1024 public
+1633	::ROUTINE	-	::routine rx_generate_1024_candidate public
+1645	::ROUTINE	-	::routine rx_is_prime_mr public
+1669	::ROUTINE	-	::routine rx_get_prime_witness public
+1681	::ROUTINE	-	::routine rx_get_cached_prime public
+1710	::ROUTINE	-	::routine sin EXTERNAL "LIBRARY rxmath RxCalcSin"

@@ -1,0 +1,9 @@
+rx2cpp native package compiled ROOT BRANCH LEAF classes=3
+Built native ooRexx library: /mnt/data/rx2cpp_work/rx2cpp_oorexx_v0.30.2_object_index/build/inheritance-clang++/librx2cpp_inherit.so
+PASS 3-level inherited method dispatch, scope slots, class identity, separate instances
+PASS root token access is class-directed, not intercepted by subclass override
+PASS native COPY fails closed until per-scope deep-copy exists
+PASS no Foreign Runtime or librexx dynamic linkage
+PASS fail-closed inheritance_unknown_parent
+PASS fail-closed inheritance_derived_init
+PASS fail-closed inheritance_reserved_accessor

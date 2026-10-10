@@ -1,0 +1,5 @@
+path	sha256	result	first_diagnostic
+complex.cls	446c5d4fdd4ddb4acbaa065cb68c21a5c9808e6812ed225ee19d205368d68f52	rejected	rx2cpp:59:26: unsupported source character ',' 
+pipe.cls	e051af64f97c8bef0fa3daaefa44aaf40fd59706b4e81ccb22ce14d52e1019dc	rejected	rx2cpp:60:10: unsupported source character '.' 
+semcls.cls	990fba90b093a33429c79b2dfa7d802ada803c254bc099a3a35a21c4f521f7e7	rejected	rx2cpp:98:3: unsupported source character '.' 
+treeDirectory.cls	5109ef23ba1d09bedb07251ec3ce37eb17d925a7e1b4ea74a43d7438b26b3753	rejected	rx2cpp:52:10: unsupported source character '.' 

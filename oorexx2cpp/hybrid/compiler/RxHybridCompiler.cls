@@ -1,0 +1,145 @@
+/* The first genuine OO class-compiler ruleset.
+   Deliberately limited to one ::CLASS with ::METHOD, EXPOSE, USE ARG,
+   assignment, arithmetic/comparisons and scalar RETURN. Unknown constructs
+   are rejected, never handed to an implicit interpreter fallback. */
+::class RxHybridCompiler public
+::attribute stream get
+::attribute atomExpr get
+::attribute messageExpr get
+::attribute unaryExpr get
+::attribute mulExpr get
+::attribute addExpr get
+::attribute compareExpr get
+::attribute current get
+::attribute className get
+::attribute parentName get
+::attribute isMixin get
+::attribute mixinNames get
+::attribute allowInheritance get
+::attribute methods get
+::attribute constants get
+::method init
+  expose stream atomExpr messageExpr unaryExpr mulExpr addExpr compareExpr rules current className methods constants parentName allowInheritance isMixin mixinNames
+  use arg source, allowInheritance
+  if arg(2, 'O') then allowInheritance = .false
+  parentName = ''
+  isMixin = .false
+  mixinNames = .array~new
+  stream = .RxStream~new(.RxLexer~new(source)~scan)
+  atomExpr = .RxExprAtom~new
+  messageExpr = .RxHybridExprNoMessage~new
+  unaryExpr = .RxExprUnary~new
+  mulExpr = .RxExprMultiply~new
+  addExpr = .RxExprConcat~new
+  compareExpr = .RxExprLogical~new(.RxExprCompare~new)
+  rules = .RxHybridRules~new
+  current = .nil
+  className = ''
+  methods = .array~new
+  constants = .array~new
+::method setParentName
+  expose parentName allowInheritance
+  use arg name
+  if \allowInheritance then self~stream~fail('inheritance requires the native package compiler')
+  parentName = name
+::method setMixinParentName
+  expose isMixin
+  use arg name
+  self~setParentName(name)
+  isMixin = .true
+::method addMixin
+  expose mixinNames allowInheritance
+  use arg name
+  if \allowInheritance then self~stream~fail('INHERIT requires native package compiler')
+  mixinNames~append(name)
+::method checkName private
+  expose methods constants
+  use arg name
+  if name == 'INIT' | name == 'UNINIT' | name == 'COPY' | name == 'RX2CPP_NATIVE_TOKEN' then
+    self~stream~fail('reserved class selector ' || name)
+  do m over methods
+    if m~selector == name | m~selector == name || '=' then
+      self~stream~fail('duplicate class selector ' || name)
+  end
+  do entry over constants
+    if entry[1] == name then self~stream~fail('duplicate class selector ' || name)
+  end
+::method addAttribute
+  expose methods
+  use arg name, mode
+  self~checkName(name)
+  if mode == 'BOTH' | mode == 'GET' then do
+    getter = .RxHybridMethod~new(name)
+    getter~returnValue('rx::get(fields_, ' || .RxQuote~cpp(name) || ')')
+    methods~append(getter)
+  end
+  if mode == 'BOTH' | mode == 'SET' then do
+    setter = .RxHybridMethod~new(name || '=')
+    setter~markAttributeSetter
+    setter~setParameter('VALUE')
+    setter~addInstruction('rx::set(fields_, ' || .RxQuote~cpp(name) || ', rx::Value::string(argument));')
+    setter~returnValue('rx::Value::string("")')
+    methods~append(setter)
+  end
+::method addConstant
+  expose constants
+  use arg name, value
+  self~checkName(name)
+  constants~append(.array~of(name, value))
+::method parse
+  expose stream className methods constants current rules
+  s = stream
+  s~skipSeparators
+  className = .RxHybridClassDirective~new~parse(self)
+  s~skipSeparators
+  do while s~peek~kind \= 'EOF'
+    if s~lookAheadText(1) == 'ATTRIBUTE' then do
+      .RxHybridAttributeDirective~new~parse(self)
+      s~skipSeparators
+      iterate
+    end
+    if s~lookAheadText(1) == 'CONSTANT' then do
+      .RxHybridConstantDirective~new~parse(self)
+      s~skipSeparators
+      iterate
+    end
+    directive = .RxHybridMethodDirective~new~parse(self)
+    methodName = directive[1]
+    do entry over constants
+      if entry[1] == methodName then s~fail('duplicate method and constant ' || methodName)
+    end
+    do method over methods
+      if method~selector == methodName then s~fail('duplicate method ' || methodName)
+    end
+    current = .RxHybridMethod~new(methodName)
+    current~setGuard(directive[2])
+    s~skipSeparators
+    do while s~peek~kind \= 'EOF' & \s~is('::')
+      if current~hasReturn then s~fail('statement after RETURN')
+      rule = rules~find(self)
+      if rule == .nil then s~fail('unsupported class method instruction')
+      rule~emit(self)
+      s~skipSeparators
+    end
+    if current~selector \= 'INIT' & \current~hasReturn then s~fail('non-INIT method must RETURN a scalar value')
+    methods~append(current)
+  end
+  if methods~items == 0 & constants~items == 0 then s~fail('class contains no methods or constants')
+  return self
+::requires 'core/RxStream.cls'
+::requires 'core/RxLexer.cls'
+::requires 'rules/ExprAtom.cls'
+::requires 'hybrid/rules/HybridExprNoMessage.cls'
+::requires 'rules/ExprUnary.cls'
+::requires 'rules/ExprMultiply.cls'
+::requires 'rules/ExprAdd.cls'
+::requires 'rules/ExprConcat.cls'
+::requires 'rules/ExprCompare.cls'
+::requires 'rules/ExprLogical.cls'
+::requires 'hybrid/compiler/RxHybridMethod.cls'
+::requires 'core/RxQuote.cls'
+::requires 'hybrid/compiler/RxHybridRules.cls'
+::requires 'hybrid/rules/HybridClassDirective.cls'
+::requires 'hybrid/rules/HybridMethodDirective.cls'
+::requires 'hybrid/rules/HybridAttributeDirective.cls'
+::requires 'hybrid/rules/HybridConstantDirective.cls'

@@ -1,0 +1,3 @@
+rx2cpp native package compiled INDEXEDCELL INDEXEDCHILD classes=2
+Built native ooRexx library: /tmp/tmp.araWc9RqV6/librx2cpp_objindex_setter.so
+PASS clang++ scalar []=/[] two-argument interpreter parity and 3 fail-closed cases

@@ -1,0 +1,4 @@
+PASS interpreter/native do_forever_nested
+PASS interpreter/native do_forever_select
+PASS interpreter/native do_while_compound
+PASS interpreter/native do_while_iterate

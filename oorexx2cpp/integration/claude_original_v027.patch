@@ -1,0 +1,795 @@
+diff -ruN rx27b/rx2cpp_oorexx_v0.27_language/INTEGRATION_V027_THREADS.md rx27_int/INTEGRATION_V027_THREADS.md
+--- rx27b/rx2cpp_oorexx_v0.27_language/INTEGRATION_V027_THREADS.md	1970-01-01 01:00:00.000000000 +0100
++++ rx27_int/INTEGRATION_V027_THREADS.md	2026-10-10 14:46:33.672241623 +0100
+@@ -0,0 +1,16 @@
++# v0.27 + Claude threading/operators — labelled integration (separate from v0.27 itself)
++
++Base: rx2cpp_oorexx_v0.27_language (unmodified; the patch `claude_threads_ops_on_v027.patch` applies with `patch -p1`).
++
++Adds: `GUARDED|UNGUARDED` method options + scope lock + compiled `SELF~sel[(arg)]` sends in the native class backend
++(threads v0.3); `||`, `&`, `&&` (ExprConcat; `&` tighter than `|`/`&&`, carried by the existing ExprLogical which
++now takes an optional inner parser); exact 0/1 `condition()`.
++Tests added: tests/test_concat.sh, tests/test_logic.sh, native/test_threads.sh, native/test_selfsend.sh
++(native ones need OO_ROOT).
++
++Verified on the supplied ooRexx 5.3.0 r13196, g++ and clang++: tests/run.sh, test_logic, test_concat, test_procedures,
++test_internal_routines, test_do_while_forever, test_select, test_parse, test_parse_context, test_compound,
++test_rexxcps_structural, test_thread_corpus (14 interpreter / 14 compiler fail-closed), native/test_threads,
++native/test_selfsend, test_package, test_inheritance, test_mixin, native/test.sh — all rc=0.
++
++Not done: GUARD ON WHEN, REPLY, compiled-body deadlock (98.905); threaded behaviour of PROCEDURE routines.
+diff -ruN rx27b/rx2cpp_oorexx_v0.27_language/core/RxCompiler.cls rx27_int/core/RxCompiler.cls
+--- rx27b/rx2cpp_oorexx_v0.27_language/core/RxCompiler.cls	2026-10-10 13:38:33.000000000 +0100
++++ rx27_int/core/RxCompiler.cls	2026-10-10 14:34:47.142168453 +0100
+@@ -24,7 +24,7 @@
+   messageExpr = .RxExprMessage~new
+   unaryExpr = .RxExprUnary~new
+   mulExpr = .RxExprMultiply~new
+-  addExpr = .RxExprAdd~new
++  addExpr = .RxExprConcat~new
+   compareExpr = .RxExprCompare~new
+   logicalExpr = .RxExprLogical~new
+   loopScopes = .array~new
+@@ -126,6 +126,7 @@
+ ::requires 'rules/ExprUnary.cls'
+ ::requires 'rules/ExprMultiply.cls'
+ ::requires 'rules/ExprAdd.cls'
++::requires 'rules/ExprConcat.cls'
+ ::requires 'rules/ExprCompare.cls'
+ ::requires 'rules/ExprLogical.cls'
+ ::requires 'core/RxRuleRegistry.cls'
+diff -ruN rx27b/rx2cpp_oorexx_v0.27_language/core/RxLexer.cls rx27_int/core/RxLexer.cls
+--- rx27b/rx2cpp_oorexx_v0.27_language/core/RxLexer.cls	2026-10-10 13:38:33.000000000 +0100
++++ rx27_int/core/RxLexer.cls	2026-10-10 14:34:47.142288065 +0100
+@@ -107,6 +107,14 @@
+         op = self~move || self~move || self~move
+         self~emit('OP', op, markLine, markCol)
+       end
++      when c == '|' & self~char(1) == '|' then do
++        self~move; self~move
++        self~emit('OP', '||', markLine, markCol)
++      end
++      when c == '&' & self~char(1) == '&' then do
++        self~move; self~move
++        self~emit('OP', '&&', markLine, markCol)
++      end
+       when pos(c, '+-*/%|&') > 0 & self~char(1) == '=' then do
+         op = self~move || self~move
+         self~emit('OP', op, markLine, markCol)
+@@ -148,7 +156,7 @@
+         op = self~move || self~move
+         self~emit('OP', op, markLine, markCol)
+       end
+-      when pos(c, '+-*/%=<>()') > 0 then do
++      when pos(c, '+-*/%=<>()&') > 0 then do
+         self~move
+         self~emit('OP', c, markLine, markCol)
+       end
+diff -ruN rx27b/rx2cpp_oorexx_v0.27_language/examples/concat_basic.rex rx27_int/examples/concat_basic.rex
+--- rx27b/rx2cpp_oorexx_v0.27_language/examples/concat_basic.rex	1970-01-01 01:00:00.000000000 +0100
++++ rx27_int/examples/concat_basic.rex	2026-10-10 14:34:47.142388295 +0100
+@@ -0,0 +1,18 @@
++a = "x"
++b = "y"
++say a || b
++say a || b || "z"
++say 1 + 2 || 3 + 4
++say 2 * 3 || 4
++say 5 || 5 = 55
++say ("a" || "b") == "ab"
++say "[" || "a " || " b" || "]"
++t = ""
++do i = 1 to 5
++  t = t || i
++end
++say t
++say t || t
++n = 7
++say "n=" || n
++say "" || ""
+diff -ruN rx27b/rx2cpp_oorexx_v0.27_language/examples/logic_basic.rex rx27_int/examples/logic_basic.rex
+--- rx27b/rx2cpp_oorexx_v0.27_language/examples/logic_basic.rex	1970-01-01 01:00:00.000000000 +0100
++++ rx27_int/examples/logic_basic.rex	2026-10-10 14:34:47.142458718 +0100
+@@ -0,0 +1,18 @@
++a = 1
++b = 0
++say a | b
++say a & b
++say a && b
++say a | b & b
++say (a | b) & b
++say 1 < 2 & 2 < 3
++say 1 > 2 | 3 > 2
++say a && a
++say b | b
++if a | b then say "or-true"
++if a & b then say "and-true"
++if a & b = 0 then say "and-with-compare"
++do i = 1 to 4
++  if i = 2 | i = 4 then say "i=" || i
++end
++say 1 + 1 = 2 & 2 * 2 = 4
+diff -ruN rx27b/rx2cpp_oorexx_v0.27_language/hybrid/compiled_registry.hpp rx27_int/hybrid/compiled_registry.hpp
+--- rx27b/rx2cpp_oorexx_v0.27_language/hybrid/compiled_registry.hpp	2026-10-09 22:42:52.000000000 +0100
++++ rx27_int/hybrid/compiled_registry.hpp	2026-10-10 14:34:47.142553244 +0100
+@@ -6,10 +6,62 @@
+ #include <string>
+ #include <unordered_map>
+ #include <mutex>
++#include <condition_variable>
++#include <thread>
++#include <vector>
+ #include <stdexcept>
+ 
+ namespace rx2cpp {
++/* Recursive lock whose whole recursion depth can be released while the native
++   method calls back into the interpreter, then restored. Holding a C++ lock
++   across an interpreter callout would hide a deadlock from ooRexx's detector. */
++class ScopeLock {
++    std::mutex m_;
++    std::condition_variable cv_;
++    std::thread::id owner_{};
++    unsigned depth_ = 0;
++public:
++    void lock() {
++        std::unique_lock<std::mutex> g(m_);
++        const auto me = std::this_thread::get_id();
++        cv_.wait(g, [&] { return depth_ == 0 || owner_ == me; });
++        owner_ = me; ++depth_;
++    }
++    void unlock() {
++        std::lock_guard<std::mutex> g(m_);
++        if (--depth_ == 0) { owner_ = std::thread::id(); cv_.notify_one(); }
++    }
++    unsigned release_all() {
++        std::lock_guard<std::mutex> g(m_);
++        const unsigned d = depth_;
++        depth_ = 0; owner_ = std::thread::id(); cv_.notify_one();
++        return d;
++    }
++    void reacquire(unsigned d) {
++        std::unique_lock<std::mutex> g(m_);
++        cv_.wait(g, [&] { return depth_ == 0; });
++        owner_ = std::this_thread::get_id(); depth_ = d;
++    }
++};
++/* SELF~selector(arg): the sender is installed only for the duration of one
++   interpreter-invoked native method on the current thread. It is never cached
++   globally; with no active frame the send fails explicitly. */
++struct SelfSender {
++    virtual ~SelfSender() = default;
++    virtual std::string send(const std::string &selector, const std::vector<std::string> &args) = 0;
++};
++namespace detail { inline thread_local SelfSender *currentSender = nullptr; }
++inline std::string selfSend(const std::string &selector, const std::vector<std::string> &args) {
++    if (!detail::currentSender)
++        throw std::runtime_error("SELF send outside an interpreter-invoked native method");
++    return detail::currentSender->send(selector, args);
++}
+ struct CompiledObject {
++    /* One lock per class scope. It protects the compiled C++ state against
++       concurrent interpreter activities even for UNGUARDED methods. It is a
++       memory-safety lock, not the ooRexx GUARD semantics (the interpreter's
++       scope lock still decides what GUARDED means). */
++    ScopeLock scope_lock;
+     virtual ~CompiledObject() = default;
+     virtual std::string invoke(const std::string &selector, const std::string &value) = 0;
+     virtual std::string invoke0(const std::string &selector) {
+diff -ruN rx27b/rx2cpp_oorexx_v0.27_language/hybrid/compiler/RxHybridCompiler.cls rx27_int/hybrid/compiler/RxHybridCompiler.cls
+--- rx27b/rx2cpp_oorexx_v0.27_language/hybrid/compiler/RxHybridCompiler.cls	2026-10-10 09:15:08.000000000 +0100
++++ rx27_int/hybrid/compiler/RxHybridCompiler.cls	2026-10-10 14:34:47.142719278 +0100
+@@ -29,8 +29,8 @@
+   messageExpr = .RxHybridExprNoMessage~new
+   unaryExpr = .RxExprUnary~new
+   mulExpr = .RxExprMultiply~new
+-  addExpr = .RxExprAdd~new
+-  compareExpr = .RxExprCompare~new
++  addExpr = .RxExprConcat~new
++  compareExpr = .RxExprLogical~new(.RxExprCompare~new)
+   rules = .RxHybridRules~new
+   current = .nil
+   className = ''
+@@ -57,11 +57,13 @@
+   className = .RxHybridClassDirective~new~parse(self)
+   s~skipSeparators
+   do while s~peek~kind \= 'EOF'
+-    methodName = .RxHybridMethodDirective~new~parse(self)
++    directive = .RxHybridMethodDirective~new~parse(self)
++    methodName = directive[1]
+     do method over methods
+       if method~selector == methodName then s~fail('duplicate method ' || methodName)
+     end
+     current = .RxHybridMethod~new(methodName)
++    current~setGuard(directive[2])
+     s~skipSeparators
+     do while s~peek~kind \= 'EOF' & \s~is('::')
+       if current~hasReturn then s~fail('statement after RETURN')
+@@ -82,7 +84,9 @@
+ ::requires 'rules/ExprUnary.cls'
+ ::requires 'rules/ExprMultiply.cls'
+ ::requires 'rules/ExprAdd.cls'
++::requires 'rules/ExprConcat.cls'
+ ::requires 'rules/ExprCompare.cls'
++::requires 'rules/ExprLogical.cls'
+ ::requires 'hybrid/compiler/RxHybridMethod.cls'
+ ::requires 'hybrid/compiler/RxHybridRules.cls'
+ ::requires 'hybrid/rules/HybridClassDirective.cls'
+diff -ruN rx27b/rx2cpp_oorexx_v0.27_language/hybrid/compiler/RxHybridMethod.cls rx27_int/hybrid/compiler/RxHybridMethod.cls
+--- rx27b/rx2cpp_oorexx_v0.27_language/hybrid/compiler/RxHybridMethod.cls	2026-10-09 22:42:07.000000000 +0100
++++ rx27_int/hybrid/compiler/RxHybridMethod.cls	2026-10-10 14:34:47.142806273 +0100
+@@ -6,9 +6,14 @@
+ ::attribute instructions get
+ ::attribute hasReturn get
+ ::attribute seenStatement get
++::attribute guard get
++::method setGuard
++  expose guard
++  use arg guard
+ ::method init
+-  expose selector parameter exposed instructions hasReturn seenStatement
++  expose selector parameter exposed instructions hasReturn seenStatement guard
+   use arg selector
++  guard = ''
+   parameter = ''
+   exposed = .array~new
+   instructions = .array~new
+diff -ruN rx27b/rx2cpp_oorexx_v0.27_language/hybrid/rules/HybridExprNoMessage.cls rx27_int/hybrid/rules/HybridExprNoMessage.cls
+--- rx27b/rx2cpp_oorexx_v0.27_language/hybrid/rules/HybridExprNoMessage.cls	2026-10-09 23:36:44.000000000 +0100
++++ rx27_int/hybrid/rules/HybridExprNoMessage.cls	2026-10-10 14:34:47.142899733 +0100
+@@ -1,10 +1,46 @@
+-/* Class generator has a different C++ ABI from the standalone script target.
+-   Do not silently introduce standalone message-expression emission until the
+-   class emitter integrates its object/proxy outcome dispatch deliberately. */
++/* Class generator message-sends (threading v0.2): the ONLY form accepted is
++   SELF~selector or SELF~selector(argument). It is a real dynamic send through the
++   interpreter, so a subclass override wins, and the exposed variables are reloaded
++   afterwards because the callee may have changed them. Every other receiver, chains
++   and cascades are rejected rather than approximated. */
+ ::class RxHybridExprNoMessage public
++::method init
++  expose n
++  n = 0
+ ::method parse
+   use arg ctx
++  s = ctx~stream
++  if s~peek~kind == 'IDENT' & s~peek~text == 'SELF' & s~lookAheadText(1) == '~' then return self~selfSend(ctx)
+   value = ctx~atomExpr~parse(ctx)
+-  if ctx~stream~is('~') | ctx~stream~is('~~') then
+-    ctx~stream~fail('class method message-send codegen not yet implemented')
++  if s~is('~') | s~is('~~') then
++    s~fail('class method message-send supports only SELF~selector[(argument)]')
+   return value
++::method selfSend private
++  expose n
++  use arg ctx
++  s = ctx~stream
++  if \ctx~allowInheritance then s~fail('SELF message sends require the native package compiler')
++  s~next
++  s~expect('~')
++  if s~peek~kind \= 'IDENT' then s~fail('expected literal method selector after SELF~')
++  selector = s~next~text
++  argExpr = ''
++  if s~accept('(') then do
++    if \s~is(')') then do
++      argExpr = ctx~compareExpr~parse(ctx)
++      if s~is(',') then s~fail('SELF send accepts at most one argument')
++    end
++    s~expect(')')
++  end
++  if s~is('~') | s~is('~~') then s~fail('chained or cascaded messages are not supported')
++  n += 1
++  tag = n
++  code = '([&]() -> rx::Value { std::vector<std::string> _sa' || tag || '; '
++  if argExpr \== '' then
++    code = code || 'rx::Value _av' || tag || ' = ' || argExpr || '; if (_av' || tag || '.isObject()) throw std::runtime_error("SELF send argument must be a scalar"); _sa' || tag || '.push_back(_av' || tag || '.bytes); '
++  code = code || 'rx::Value _r' || tag || ' = rx::Value::string(rx2cpp::selfSend(' || .RxQuote~cpp(selector) || ', _sa' || tag || ')); '
++  do field over ctx~current~exposed
++    code = code || 'rx::set(vars, ' || .RxQuote~cpp(field) || ', rx::get(fields_, ' || .RxQuote~cpp(field) || ')); '
++  end
++  return code || 'return _r' || tag || '; }())'
++::requires 'core/RxQuote.cls'
+diff -ruN rx27b/rx2cpp_oorexx_v0.27_language/hybrid/rules/HybridMethodDirective.cls rx27_int/hybrid/rules/HybridMethodDirective.cls
+--- rx27b/rx2cpp_oorexx_v0.27_language/hybrid/rules/HybridMethodDirective.cls	2026-10-09 22:47:55.000000000 +0100
++++ rx27_int/hybrid/rules/HybridMethodDirective.cls	2026-10-10 14:34:47.143027670 +0100
+@@ -8,5 +8,9 @@
+   if s~peek~kind \= 'IDENT' then s~fail('expected method identifier')
+   name = s~next~text
+   if wordpos(name, 'UNKNOWN UNINIT') > 0 then s~fail('reserved lifecycle method')
++  /* Threading v0.1: the only method option accepted is GUARDED or UNGUARDED.
++     It is carried to the ooRexx method declaration; anything else is rejected. */
++  guard = ''
++  if s~peek~kind == 'IDENT' & wordpos(s~peek~text, 'GUARDED UNGUARDED') > 0 then guard = s~next~text
+   s~separator
+-  return name
++  return .array~of(name, guard)
+diff -ruN rx27b/rx2cpp_oorexx_v0.27_language/include/minirexx_runtime.hpp rx27_int/include/minirexx_runtime.hpp
+--- rx27b/rx2cpp_oorexx_v0.27_language/include/minirexx_runtime.hpp	2026-10-10 13:55:25.000000000 +0100
++++ rx27_int/include/minirexx_runtime.hpp	2026-10-10 14:34:47.143156617 +0100
+@@ -436,12 +436,24 @@
+ }
+ inline Value sendBinary(const Value &lhs, const std::string &selector, const Value &rhs) {
+     if (lhs.isObject()) return lhs.object->sendBinary(selector, rhs);
++    if (selector == "|") return logicalOr(lhs, rhs);
++    if (selector == "&" || selector == "&&") {
++        // Both operands were already evaluated (Rexx never short-circuits) and must be exactly 0 or 1.
++        if (rhs.isObject()) throw std::runtime_error("object operand in logical operator is not implemented");
++        const bool l = condition(lhs), r = condition(rhs);
++        const bool out = selector == "&" ? (l && r) : (l != r);
++        return Value::string(out ? "1" : "0");
++    }
++    if (selector == "||") {
++        // Rexx concatenation joins the exact character strings, with no numeric normalisation.
++        if (rhs.isObject()) throw std::runtime_error("object operand in || is not implemented");
++        return Value::string(lhs.bytes + rhs.bytes);
++    }
+     if (selector == "+") return add(lhs, rhs);
+     if (selector == "-") return sub(lhs, rhs);
+     if (selector == "*") return mul(lhs, rhs);
+     if (selector == "/") return divide(lhs, rhs);
+     if (selector == "%") return wholeDivide9(lhs, rhs);
+-    if (selector == "|") return logicalOr(lhs, rhs);
+     if (selector == "=" || selector == "\\=" || selector == "==" || selector == "\\==" ||
+         selector == "<>" || selector == "><" || selector == "<" || selector == "<=" ||
+         selector == ">" || selector == ">=")
+@@ -457,10 +469,11 @@
+ inline bool condition(const Value &v) {
+     // Rexx logical conditions must be exactly 0 or 1, not generic C++ truthiness.
+     if (v.isObject()) throw std::runtime_error("object truth conversion not implemented");
+-    const std::string s = trim(v.bytes);
+-    if (s == "0") return false;
+-    if (s == "1") return true;
+-    throw std::runtime_error("IF condition must evaluate to 0 or 1");
++    // ooRexx accepts exactly "0" or "1": padded (" 1 "), zero-led ("01") and empty values are
++    // SYNTAX 34.1 in the reference interpreter (verified with IF and with & | &&), so no trimming.
++    if (v.bytes == "0") return false;
++    if (v.bytes == "1") return true;
++    throw std::runtime_error("logical value must be exactly 0 or 1");
+ }
+ inline bool within(std::int64_t current, std::int64_t limit, std::int64_t step) {
+     if (step == 0) throw std::runtime_error("DO BY 0 unsupported");
+diff -ruN rx27b/rx2cpp_oorexx_v0.27_language/native/NativeLibraryEmitter.cls rx27_int/native/NativeLibraryEmitter.cls
+--- rx27b/rx2cpp_oorexx_v0.27_language/native/NativeLibraryEmitter.cls	2026-10-10 09:15:08.000000000 +0100
++++ rx27_int/native/NativeLibraryEmitter.cls	2026-10-10 14:34:47.143305306 +0100
+@@ -47,10 +47,12 @@
+       if selector == 'INIT' then countInit += 1
+       symbol = 'rx_native_' || name~lower || '_' || selector~lower
+       cpp = cpp || 'RexxMethod2(RexxObjectPtr, ' || symbol || ', OSELF, self, ARGLIST, args)' || '0a'x
+-      cpp = cpp || '{ (void)self; return rx2cpp::call(context, args, ' || .RxQuote~cpp(name) || ', ' || .RxQuote~cpp(selector) || ', ' || ,
++      cpp = cpp || '{ return rx2cpp::call(context, args, self, ' || .RxQuote~cpp(name) || ', ' || .RxQuote~cpp(selector) || ', ' || ,
+             (selector == 'INIT')~string || ', ' || slotIndex || ', ' || isRoot~string || ', ' || .RxQuote~cpp(rootName) || '); }' || '0a'x
+       entries = entries || '    REXX_METHOD(' || symbol || ', ' || symbol || '),' || '0a'x
+-      source = source || '::method ' || selector || ' external "LIBRARY ' || packageName || ' ' || symbol || '"' || '0a'x
++      guardOption = ''
++      if method~guard \== '' then guardOption = ' ' || method~guard
++      source = source || '::method ' || selector || guardOption || ' external "LIBRARY ' || packageName || ' ' || symbol || '"' || '0a'x
+     end
+     if isRoot then do
+       if countInit \= 1 then raise syntax 40.1 array('rx2cpp: root class ' || name || ' requires exactly one INIT')
+diff -ruN rx27b/rx2cpp_oorexx_v0.27_language/native/fixtures/selfsend.cls rx27_int/native/fixtures/selfsend.cls
+--- rx27b/rx2cpp_oorexx_v0.27_language/native/fixtures/selfsend.cls	1970-01-01 01:00:00.000000000 +0100
++++ rx27_int/native/fixtures/selfsend.cls	2026-10-10 14:34:47.143407452 +0100
+@@ -0,0 +1,29 @@
++/* SELF~selector(...) inside compiled methods (threading v0.2).
++   Arithmetic only: the compiler has no concatenation operator yet. */
++::class Re public
++::method init
++  expose tag n
++  use arg start
++  tag = start
++  n = 0
++::method a
++  expose tag
++  tag = 1
++  return self~b(10) * 100 + tag
++::method b
++  expose tag
++  use arg s
++  tag = tag + 1
++  return s + tag
++::method bump
++  expose n
++  n = n + 1
++  return self~count()
++::method count
++  expose n
++  return n
++::method tag
++  expose tag
++  return tag
++::method bad
++  return self~nosuchmethod()
+diff -ruN rx27b/rx2cpp_oorexx_v0.27_language/native/fixtures/selfsend_client.rex rx27_int/native/fixtures/selfsend_client.rex
+--- rx27b/rx2cpp_oorexx_v0.27_language/native/fixtures/selfsend_client.rex	1970-01-01 01:00:00.000000000 +0100
++++ rx27_int/native/fixtures/selfsend_client.rex	2026-10-10 14:34:47.143435482 +0100
+@@ -0,0 +1,25 @@
++o = .Re~new(0)
++say "a:" o~a
++say "tag after:" o~tag
++s = .Sub~new(0)
++say "override:" s~a
++c = .Re~new(0)
++r = .Runner~new
++msgs = .array~new
++do 4; msgs~append(r~start("RUN", c, 2500)); end
++do m over msgs; m~result; end
++say "bump total (expect 10000):" c~count
++signal on syntax name caught
++say "NO ERROR" .Re~new(0)~bad
++exit
++caught:
++say "bad ->" condition('O')~code
++::requires 'rx2cpp_selfsend' library
++::class Sub subclass Re
++::method b
++  return 7
++::class Runner
++::method run unguarded
++  use arg c, k
++  do k; c~bump; end
++  return 0
+diff -ruN rx27b/rx2cpp_oorexx_v0.27_language/native/fixtures/strings.cls rx27_int/native/fixtures/strings.cls
+--- rx27b/rx2cpp_oorexx_v0.27_language/native/fixtures/strings.cls	1970-01-01 01:00:00.000000000 +0100
++++ rx27_int/native/fixtures/strings.cls	2026-10-10 14:34:47.143469515 +0100
+@@ -0,0 +1,13 @@
++/* String results and concatenation in compiled class methods (with SELF sends). */
++::class S public
++::method init
++  expose t
++  use arg start
++  t = start
++::method add
++  expose t
++  use arg x
++  t = t || x
++  return t
++::method who
++  return "A>" || self~add("x") || "/" || self~add("y")
+diff -ruN rx27b/rx2cpp_oorexx_v0.27_language/native/fixtures/strings_client.rex rx27_int/native/fixtures/strings_client.rex
+--- rx27b/rx2cpp_oorexx_v0.27_language/native/fixtures/strings_client.rex	1970-01-01 01:00:00.000000000 +0100
++++ rx27_int/native/fixtures/strings_client.rex	2026-10-10 14:34:47.143502235 +0100
+@@ -0,0 +1,5 @@
++s = .S~new("-")
++say s~add("a")
++say s~add("b")
++say .S~new("")~who
++::requires 'rx2cpp_strings' library
+diff -ruN rx27b/rx2cpp_oorexx_v0.27_language/native/fixtures/threads_guard.cls rx27_int/native/fixtures/threads_guard.cls
+--- rx27b/rx2cpp_oorexx_v0.27_language/native/fixtures/threads_guard.cls	1970-01-01 01:00:00.000000000 +0100
++++ rx27_int/native/fixtures/threads_guard.cls	2026-10-10 14:34:47.143530532 +0100
+@@ -0,0 +1,19 @@
++/* Guard options on compiled methods (threading v0.1). */
++::class Counter public
++::method init
++  expose value
++  use arg start
++  value = start
++::method add unguarded
++  expose value
++  use arg amount
++  value = value + amount
++  return value
++::method gadd guarded
++  expose value
++  use arg amount
++  value = value + amount
++  return value
++::method current
++  expose value
++  return value
+diff -ruN rx27b/rx2cpp_oorexx_v0.27_language/native/fixtures/threads_guard_client.rex rx27_int/native/fixtures/threads_guard_client.rex
+--- rx27b/rx2cpp_oorexx_v0.27_language/native/fixtures/threads_guard_client.rex	1970-01-01 01:00:00.000000000 +0100
++++ rx27_int/native/fixtures/threads_guard_client.rex	2026-10-10 14:34:47.143561402 +0100
+@@ -0,0 +1,18 @@
++/* flags reach the interpreter, and 4 activities keep exact counts on both kinds */
++say "ADD  guarded?" .Counter~method("ADD")~isGuarded
++say "GADD guarded?" .Counter~method("GADD")~isGuarded
++say "CURRENT guarded? (default)" .Counter~method("CURRENT")~isGuarded
++do sel over .array~of("ADD", "GADD")
++  c = .Counter~new(0)
++  r = .Runner~new
++  msgs = .array~new
++  do 4; msgs~append(r~start("RUN", c, sel, 25000)); end
++  do m over msgs; m~result; end
++  say sel "total (expect 100000):" c~current
++end
++::requires 'rx2cpp_threads' library
++::class Runner
++::method run unguarded
++  use arg c, sel, k
++  do k; c~send(sel, 1); end
++  return 0
+diff -ruN rx27b/rx2cpp_oorexx_v0.27_language/native/native_package_template.cpp.in rx27_int/native/native_package_template.cpp.in
+--- rx27b/rx2cpp_oorexx_v0.27_language/native/native_package_template.cpp.in	2026-10-10 09:21:29.000000000 +0100
++++ rx27_int/native/native_package_template.cpp.in	2026-10-10 14:34:47.143648757 +0100
+@@ -69,7 +69,35 @@
+     slots.emplace(slot, created);
+     return created;
+ }
+-static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args,
++/* The interpreter already holds a condition for this activity (for example the
++   callee raised an error). Return to ooRexx without raising a second one. */
++struct PendingCondition : std::runtime_error {
++    PendingCondition() : std::runtime_error("ooRexx condition pending") {}
++};
++namespace {
++struct ReleaseAndReacquire {
++    ScopeLock &lock; unsigned depth;
++    explicit ReleaseAndReacquire(ScopeLock &l) : lock(l), depth(l.release_all()) {}
++    ~ReleaseAndReacquire() { lock.reacquire(depth); }
++};
++class Frame final : public SelfSender {
++    RexxMethodContext *ctx_; RexxObjectPtr self_; ScopeLock &lock_; SelfSender *previous_;
++public:
++    Frame(RexxMethodContext *c, RexxObjectPtr s, ScopeLock &l)
++        : ctx_(c), self_(s), lock_(l), previous_(detail::currentSender) { detail::currentSender = this; }
++    ~Frame() override { detail::currentSender = previous_; }
++    std::string send(const std::string &selector, const std::vector<std::string> &args) override {
++        RexxArrayObject arr = ctx_->NewArray(args.size());
++        for (const auto &a : args) ctx_->ArrayAppendString(arr, a.data(), a.size());
++        RexxObjectPtr result;
++        { ReleaseAndReacquire released(lock_); result = ctx_->SendMessage(self_, selector.c_str(), arr); }
++        if (ctx_->CheckCondition()) throw PendingCondition();
++        if (result == NULLOBJECT) throw std::runtime_error("SELF~" + selector + " returned no value");
++        return stringValue(ctx_, result);
++    }
++};
++}
++static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObjectPtr selfObj,
+                           const std::string &className, const std::string &selector,
+                           bool initializer, int scopeIndex, bool isRoot, const std::string &rootClass) {
+     try {
+@@ -104,6 +132,8 @@
+             if (!object) throw std::runtime_error("expired native object handle");
+         }
+         std::string output;
++        std::lock_guard<ScopeLock> scopeHold(object->scope_lock);
++        Frame frame(ctx, selfObj, object->scope_lock);
+         if (count == 0) output = object->invoke0(selector);
+         else output = object->invoke(selector, stringValue(ctx, ctx->ArrayAt(args, 1)));
+         if (initializer) {
+@@ -112,6 +142,8 @@
+             return NULLOBJECT; // ooRexx INIT must not return an ordinary value
+         }
+         return ctx->NewString(output.data(), output.size());
++    } catch (const PendingCondition &) {
++        return NULLOBJECT;
+     } catch (const std::exception &e) {
+         report(ctx, e.what());
+         return NULLOBJECT;
+diff -ruN rx27b/rx2cpp_oorexx_v0.27_language/native/test_selfsend.sh rx27_int/native/test_selfsend.sh
+--- rx27b/rx2cpp_oorexx_v0.27_language/native/test_selfsend.sh	1970-01-01 01:00:00.000000000 +0100
++++ rx27_int/native/test_selfsend.sh	2026-10-10 14:34:47.143740497 +0100
+@@ -0,0 +1,28 @@
++#!/usr/bin/env bash
++# rx2cpp threading v0.2: SELF~selector(...) from compiled methods
++set -euo pipefail
++ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
++OO_ROOT=${OO_ROOT:?}; REXX_BIN=${REXX_BIN:-$OO_ROOT/bin/rexx}; CXX=${CXX:-g++}
++OUT=${OUT:-$ROOT/build/selfsend_$(basename "$CXX")}; rm -rf "$OUT"; mkdir -p "$OUT"
++export LD_LIBRARY_PATH="$OO_ROOT/lib:$OUT${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
++bo=$(CXX=$CXX "$ROOT/native/build.sh" "$ROOT/native/fixtures/selfsend.cls" "$OUT" rx2cpp_selfsend 2>&1) || { echo "BUILD FAILED"; echo "$bo"; exit 1; }
++actual=$("$REXX_BIN" "$ROOT/native/fixtures/selfsend_client.rex" 2>&1)
++expected=$'a: 1202\ntag after: 2\noverride: 701\nbump total (expect 10000): 10000\nbad -> 97.1'
++[ "$actual" == "$expected" ] || { echo "FAIL"; diff <(echo "$expected") <(echo "$actual") || true; exit 1; }
++echo "PASS $CXX SELF sends: state coherent both ways (1202), subclass override wins (701), 4x2500 threaded bumps exact, interpreter error passes through"
++rej() { printf '%s\n' "$2" > "$OUT/$1.cls"
++  if CXX=$CXX "$ROOT/native/build.sh" "$OUT/$1.cls" "$OUT/rej_$1" rx2cpp_rej_$1 >/dev/null 2>&1; then echo "FAIL $1 accepted"; exit 1; fi
++  echo "PASS reject $1"; }
++H=$'::class A public\n::method init\n  expose v\n  use arg s\n  v = s\n'
++rej other_receiver "$H::method m
++  x = \"q\"
++  return x~length()"
++rej chained        "$H::method m
++  return self~a()~b()"
++rej cascade        "$H::method m
++  return self~a()~~b()"
++rej two_args       "$H::method m
++  return self~a(1, 2)"
++printf '%s::method m\n  return self~a()\n::method a\n  return 1\n' "$H" > "$OUT/single.cls"
++if (cd "$ROOT" && "$REXX_BIN" rx2cpp_native.rex "$OUT/single.cls" "$OUT/single_out" x >/dev/null 2>&1); then echo "FAIL single-class path accepted SELF send"; exit 1; fi
++echo "PASS reject SELF send on single-class compiler path"
+diff -ruN rx27b/rx2cpp_oorexx_v0.27_language/native/test_threads.sh rx27_int/native/test_threads.sh
+--- rx27b/rx2cpp_oorexx_v0.27_language/native/test_threads.sh	1970-01-01 01:00:00.000000000 +0100
++++ rx27_int/native/test_threads.sh	2026-10-10 14:34:47.143784852 +0100
+@@ -0,0 +1,26 @@
++#!/usr/bin/env bash
++# rx2cpp threading v0.1: GUARDED/UNGUARDED on compiled methods + per-scope memory-safety lock
++set -euo pipefail
++ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
++OO_ROOT=${OO_ROOT:?}; REXX_BIN=${REXX_BIN:-$OO_ROOT/bin/rexx}; CXX=${CXX:-g++}
++OUT=${OUT:-$ROOT/build/threads_$(basename "$CXX")}; rm -rf "$OUT"; mkdir -p "$OUT"
++export LD_LIBRARY_PATH="$OO_ROOT/lib:$OUT${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
++CXX=$CXX "$ROOT/native/build.sh" "$ROOT/native/fixtures/threads_guard.cls" "$OUT" rx2cpp_threads >/dev/null
++actual=$("$REXX_BIN" "$ROOT/native/fixtures/threads_guard_client.rex")
++expected=$'ADD  guarded? 0\nGADD guarded? 1\nCURRENT guarded? (default) 1\nADD total (expect 100000): 100000\nGADD total (expect 100000): 100000'
++[ "$actual" == "$expected" ] || { echo "FAIL flags/counts"; diff <(echo "$expected") <(echo "$actual") || true; exit 1; }
++echo "PASS $CXX guard flags reach ooRexx; 4 activities x 25000 on guarded and unguarded compiled methods = exact"
++# fail-closed checks: nothing may be published for an unsupported option
++reject() { # name source
++  printf '%s\n' "$2" > "$OUT/$1.cls"
++  if CXX=$CXX "$ROOT/native/build.sh" "$OUT/$1.cls" "$OUT/rej_$1" rx2cpp_rej_$1 >/dev/null 2>&1; then
++    echo "FAIL $1 was accepted"; exit 1; fi
++  [ ! -e "$OUT/rej_$1/librx2cpp_rej_$1.so" ] || { echo "FAIL $1 published a library"; exit 1; }
++  echo "PASS reject $1"
++}
++reject private_option $'::class A public\n::method init\n  expose v\n  use arg s\n  v = s\n::method get private\n  expose v\n  return v'
++reject two_guards     $'::class A public\n::method init\n  expose v\n  use arg s\n  v = s\n::method get guarded unguarded\n  expose v\n  return v'
++# single-class hybrid compiler cannot honour the option, so it must refuse
++printf '::class A public\n::method init\n  expose v\n  use arg s\n  v = s\n::method get unguarded\n  expose v\n  return v\n' > "$OUT/single.cls"
++if (cd "$ROOT" && "$REXX_BIN" rx2cpp_native.rex "$OUT/single.cls" "$OUT/single_out" x >/dev/null 2>&1); then echo "FAIL single-class path accepted guard"; exit 1; fi
++echo "PASS reject guard option on single-class compiler path"
+diff -ruN rx27b/rx2cpp_oorexx_v0.27_language/rules/ExprConcat.cls rx27_int/rules/ExprConcat.cls
+--- rx27b/rx2cpp_oorexx_v0.27_language/rules/ExprConcat.cls	1970-01-01 01:00:00.000000000 +0100
++++ rx27_int/rules/ExprConcat.cls	2026-10-10 14:34:47.143839084 +0100
+@@ -0,0 +1,22 @@
++/* Explicit concatenation (||), associating left-to-right. In Rexx precedence it binds
++   looser than + and - and tighter than comparison. This object sits in the addExpr slot
++   so every consumer of that slot (comparison, DO control expressions) gets the correct
++   level; it delegates to the additive rule for its operands. Blank concatenation and
++   abuttal are NOT implemented: they remain rejected rather than guessed. */
++::class RxExprConcat public
++::method init
++  expose inner
++  inner = .RxExprAdd~new
++::method parse
++  expose inner
++  use arg ctx
++  s = ctx~stream
++  value = inner~parse(ctx)
++  do while s~is('||')
++    selector = s~next~text
++    rhs = inner~parse(ctx)
++    value = .RxOperatorRules~binary(value, selector, rhs)
++  end
++  return value
++::requires 'rules/ExprAdd.cls'
++::requires 'rules/OperatorRules.cls'
+diff -ruN rx27b/rx2cpp_oorexx_v0.27_language/rules/ExprLogical.cls rx27_int/rules/ExprLogical.cls
+--- rx27b/rx2cpp_oorexx_v0.27_language/rules/ExprLogical.cls	2026-10-10 12:43:29.000000000 +0100
++++ rx27_int/rules/ExprLogical.cls	2026-10-10 14:34:47.143880732 +0100
+@@ -1,14 +1,35 @@
+-/* Rexx logical OR has lower precedence than comparisons.
+-   Both operands are evaluated as object-message arguments before dispatch;
+-   runtime validates exact logical operands and preserves left method selection. */
++/* Rexx logical operators. Precedence below comparison: & binds tighter than | and &&.
++   All operands are evaluated (no short circuit); the runtime validates that each is
++   exactly 0 or 1 and preserves left method selection.
++   Default: operands come from ctx~compareExpr (standalone compiler, logicalExpr slot).
++   With an explicit inner parser (hybrid/native compiler) the object itself occupies the
++   compareExpr slot, so inner must be the comparison parser to avoid recursion. */
+ ::class RxExprLogical public
++::method init
++  expose inner
++  use arg inner = .nil
++::method operand private
++  expose inner
++  use arg ctx
++  if inner == .nil then return ctx~compareExpr~parse(ctx)
++  return inner~parse(ctx)
++::method andLevel private
++  use arg ctx
++  s = ctx~stream
++  value = self~operand(ctx)
++  do while s~is('&')
++    selector = s~next~text
++    rhs = self~operand(ctx)
++    value = .RxOperatorRules~binary(value, selector, rhs)
++  end
++  return value
+ ::method parse
+   use arg ctx
+   s = ctx~stream
+-  value = ctx~compareExpr~parse(ctx)
+-  do while s~is('|')
++  value = self~andLevel(ctx)
++  do while s~is('|') | s~is('&&')
+     selector = s~next~text
+-    rhs = ctx~compareExpr~parse(ctx)
++    rhs = self~andLevel(ctx)
+     value = .RxOperatorRules~binary(value, selector, rhs)
+   end
+   return value
+diff -ruN rx27b/rx2cpp_oorexx_v0.27_language/rules/OperatorRules.cls rx27_int/rules/OperatorRules.cls
+--- rx27b/rx2cpp_oorexx_v0.27_language/rules/OperatorRules.cls	2026-10-10 12:43:29.000000000 +0100
++++ rx27_int/rules/OperatorRules.cls	2026-10-10 14:34:47.143963436 +0100
+@@ -6,7 +6,7 @@
+ ::class RxOperatorRules public
+ ::method binary class
+   use arg lhs, selector, rhs
+-  if wordpos(selector, '+ - * / % | = \= <> >< == \== < <= > >=') == 0 then do
++  if wordpos(selector, '+ - * / % | || & && = \= <> >< == \== < <= > >=') == 0 then do
+     raise syntax 40.1 array ('rx2cpp: unsupported binary operator ' || selector)
+   end
+   /* Native C++ does not guarantee function-argument evaluation order.
+diff -ruN rx27b/rx2cpp_oorexx_v0.27_language/rx2cpp_hybrid.rex rx27_int/rx2cpp_hybrid.rex
+--- rx27b/rx2cpp_oorexx_v0.27_language/rx2cpp_hybrid.rex	2026-10-09 22:42:52.000000000 +0100
++++ rx27_int/rx2cpp_hybrid.rex	2026-10-10 14:34:47.144050185 +0100
+@@ -15,6 +15,9 @@
+ source = charin(input, 1, chars(input))
+ call stream input, 'C', 'CLOSE'
+ unit = .RxHybridCompiler~new(source)~parse
++do m over unit~methods
++  if m~guard \== '' then raise syntax 40.1 array('rx2cpp: GUARDED/UNGUARDED requires the native package compiler')
++end
+ cpp = .RxHybridCppEmitter~new~emit(unit)
+ proxy = .RxHybridProxyEmitter~new~emit(unit)
+ header = '#ifndef RX2CPP_GENERATED_HPP' || '0a'x || ,
+diff -ruN rx27b/rx2cpp_oorexx_v0.27_language/rx2cpp_native.rex rx27_int/rx2cpp_native.rex
+--- rx27b/rx2cpp_oorexx_v0.27_language/rx2cpp_native.rex	2026-10-10 08:09:05.000000000 +0100
++++ rx27_int/rx2cpp_native.rex	2026-10-10 14:34:47.144131351 +0100
+@@ -15,6 +15,9 @@
+ source = charin(input, 1, chars(input))
+ call stream input, 'C', 'CLOSE'
+ unit = .RxHybridCompiler~new(source)~parse
++do m over unit~methods
++  if m~guard \== '' then raise syntax 40.1 array('rx2cpp: GUARDED/UNGUARDED requires the native package compiler')
++end
+ cpp = .RxNativePackageEmitter~new~emit(unit, libraryName)
+ state = stream(output, 'C', 'OPEN WRITE REPLACE')
+ if left(state, 6) \= 'READY:' then raise syntax 40.1 array('rx2cpp: cannot write ' || output)
+diff -ruN rx27b/rx2cpp_oorexx_v0.27_language/tests/test_concat.sh rx27_int/tests/test_concat.sh
+--- rx27b/rx2cpp_oorexx_v0.27_language/tests/test_concat.sh	1970-01-01 01:00:00.000000000 +0100
++++ rx27_int/tests/test_concat.sh	2026-10-10 14:34:47.144215393 +0100
+@@ -0,0 +1,28 @@
++#!/usr/bin/env bash
++# Concatenation (||): interpreter-vs-native parity, class-path strings, fail-closed forms.
++set -euo pipefail
++ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
++REXX_BIN=${REXX_BIN:-rexx}; CXX=${CXX:-g++}
++WORK=${TEST_OUTPUT_DIR:-"$ROOT/build/concat-$(basename "$CXX")"}; rm -rf "$WORK"; mkdir -p "$WORK"
++if [[ -n "${REXX_LIB:-}" ]]; then export LD_LIBRARY_PATH="$REXX_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; fi
++name=concat_basic; src="$ROOT/examples/$name.rex"
++"$REXX_BIN" "$src" >"$WORK/$name.expected"
++"$ROOT/run-compiler.sh" "$src" "$WORK/$name.cpp"
++"$CXX" -std=c++17 -O2 -Wall -Wextra -Werror -I"$ROOT/include" "$WORK/$name.cpp" -o "$WORK/$name.native"
++"$WORK/$name.native" >"$WORK/$name.actual"
++cmp "$WORK/$name.expected" "$WORK/$name.actual" || { diff -u "$WORK/$name.expected" "$WORK/$name.actual"; exit 1; }
++echo "PASS $name ($(wc -l <"$WORK/$name.expected") lines identical to the interpreter)"
++for bad in 'say "a" ||' 'say || "a"' 'say "a" ||| "b"'; do
++  printf '%s\n' "$bad" > "$WORK/bad.rex"; rm -f "$WORK/bad.cpp"
++  if "$ROOT/run-compiler.sh" "$WORK/bad.rex" "$WORK/bad.cpp" >/dev/null 2>&1; then echo "FAIL accepted: $bad"; exit 1; fi
++  [[ ! -e "$WORK/bad.cpp" ]] || { echo "FAIL partial C++ for: $bad"; exit 1; }
++done
++echo "PASS 3 malformed concatenations rejected with no output"
++# class path
++export LD_LIBRARY_PATH="${OO_ROOT:?}/lib:$WORK${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
++OUT="$WORK/pkg"; mkdir -p "$OUT"
++bo=$(CXX=$CXX "$ROOT/native/build.sh" "$ROOT/native/fixtures/strings.cls" "$OUT" rx2cpp_strings 2>&1) || { echo "BUILD FAILED"; echo "$bo"; exit 1; }
++actual=$(LD_LIBRARY_PATH="$OUT:$LD_LIBRARY_PATH" "$REXX_BIN" "$ROOT/native/fixtures/strings_client.rex" 2>&1)
++expected=$'-a\n-ab\nA>x/xy'
++[ "$actual" == "$expected" ] || { echo "FAIL class strings"; diff <(echo "$expected") <(echo "$actual") || true; exit 1; }
++echo "PASS $CXX compiled class: string state, || and SELF sends compose (A>x/xy)"
+diff -ruN rx27b/rx2cpp_oorexx_v0.27_language/tests/test_logic.sh rx27_int/tests/test_logic.sh
+--- rx27b/rx2cpp_oorexx_v0.27_language/tests/test_logic.sh	1970-01-01 01:00:00.000000000 +0100
++++ rx27_int/tests/test_logic.sh	2026-10-10 14:34:47.144241037 +0100
+@@ -0,0 +1,30 @@
++#!/usr/bin/env bash
++# Logical operators & | &&: interpreter-vs-native parity, including which operand strings are legal.
++set -euo pipefail
++ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
++REXX_BIN=${REXX_BIN:-rexx}; CXX=${CXX:-g++}
++WORK=${TEST_OUTPUT_DIR:-"$ROOT/build/logic-$(basename "$CXX")"}; rm -rf "$WORK"; mkdir -p "$WORK"
++if [[ -n "${REXX_LIB:-}" ]]; then export LD_LIBRARY_PATH="$REXX_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; fi
++build() { "$ROOT/run-compiler.sh" "$1.rex" "$1.cpp" && "$CXX" -std=c++17 -O1 -Wall -Wextra -Werror -I"$ROOT/include" "$1.cpp" -o "$1.native"; }
++name=logic_basic; cp "$ROOT/examples/$name.rex" "$WORK/$name.rex"
++"$REXX_BIN" "$WORK/$name.rex" >"$WORK/$name.expected"; build "$WORK/$name"; "$WORK/$name.native" >"$WORK/$name.actual"
++cmp "$WORK/$name.expected" "$WORK/$name.actual" || { diff -u "$WORK/$name.expected" "$WORK/$name.actual"; exit 1; }
++echo "PASS $name ($(wc -l <"$WORK/$name.expected") lines identical to the interpreter)"
++# Which operand strings does the interpreter accept as logical values? Native must agree on
++# BOTH acceptance and result.
++i=0; mismatch=0
++for v in '"0"' '"1"' '" 1 "' '"01"' '"1.0"' '"2"' '""' '"a"' '"-0"'; do
++  i=$((i+1)); p="$WORK/val$i"; printf 'say %s | 0\n' "$v" > "$p.rex"
++  set +e; ie=$("$REXX_BIN" "$p.rex" 2>/dev/null); irc=$?; set -e; [ $irc -eq 0 ] && iok=ok || iok=err
++  build "$p"; set +e; ne=$("$p.native" 2>/dev/null); nrc=$?; set -e; [ $nrc -eq 0 ] && nok=ok || nok=err
++  if [ "$iok" != "$nok" ] || { [ "$iok" = ok ] && [ "$ie" != "$ne" ]; }; then
++    echo "MISMATCH operand $v: interpreter=$iok('$ie') native=$nok('$ne')"; mismatch=$((mismatch+1)); fi
++done
++[ $mismatch -eq 0 ] || { echo "FAIL $mismatch operand-acceptance mismatches"; exit 1; }
++echo "PASS operand acceptance identical for $i operand strings"
++for bad in 'say 1 |' 'say & 1' 'say 1 &&& 0'; do
++  printf '%s\n' "$bad" > "$WORK/bad.rex"; rm -f "$WORK/bad.cpp"
++  if "$ROOT/run-compiler.sh" "$WORK/bad.rex" "$WORK/bad.cpp" >/dev/null 2>&1; then echo "FAIL accepted: $bad"; exit 1; fi
++  [[ ! -e "$WORK/bad.cpp" ]] || { echo "FAIL partial C++ for: $bad"; exit 1; }
++done
++echo "PASS 3 malformed logical expressions rejected with no output"

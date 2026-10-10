@@ -1,0 +1,118 @@
+{
+  "source": "/mnt/data/rx2cpp_oorexx_v0.17/examples/rexxcps_loop_kernel.rex",
+  "notes": [
+    "1,000,000 body executions; NOT RexxCPS standard benchmark; GCC -O2, same host, stdout captured, process startup included",
+    "Runs are alternated; one warm-up per target; exact output checked"
+  ],
+  "summary": {
+    "ooRexx": {
+      "median_seconds": 0.415431,
+      "mean_seconds": 0.420523
+    },
+    "native": {
+      "median_seconds": 0.109759,
+      "mean_seconds": 0.110446
+    },
+    "speedup_median": 3.785
+  },
+  "runs": [
+    {
+      "run": 1,
+      "target": "ooRexx",
+      "wall_seconds": 0.415431,
+      "exit": 0,
+      "output_sha256": "f7aa1966606b435629546c6f933030f81a3bc0e68a15bcc2fa6e7cd4b0e94090"
+    },
+    {
+      "run": 1,
+      "target": "native",
+      "wall_seconds": 0.116785,
+      "exit": 0,
+      "output_sha256": "f7aa1966606b435629546c6f933030f81a3bc0e68a15bcc2fa6e7cd4b0e94090"
+    },
+    {
+      "run": 2,
+      "target": "native",
+      "wall_seconds": 0.117596,
+      "exit": 0,
+      "output_sha256": "f7aa1966606b435629546c6f933030f81a3bc0e68a15bcc2fa6e7cd4b0e94090"
+    },
+    {
+      "run": 2,
+      "target": "ooRexx",
+      "wall_seconds": 0.458428,
+      "exit": 0,
+      "output_sha256": "f7aa1966606b435629546c6f933030f81a3bc0e68a15bcc2fa6e7cd4b0e94090"
+    },
+    {
+      "run": 3,
+      "target": "ooRexx",
+      "wall_seconds": 0.422858,
+      "exit": 0,
+      "output_sha256": "f7aa1966606b435629546c6f933030f81a3bc0e68a15bcc2fa6e7cd4b0e94090"
+    },
+    {
+      "run": 3,
+      "target": "native",
+      "wall_seconds": 0.108318,
+      "exit": 0,
+      "output_sha256": "f7aa1966606b435629546c6f933030f81a3bc0e68a15bcc2fa6e7cd4b0e94090"
+    },
+    {
+      "run": 4,
+      "target": "native",
+      "wall_seconds": 0.109479,
+      "exit": 0,
+      "output_sha256": "f7aa1966606b435629546c6f933030f81a3bc0e68a15bcc2fa6e7cd4b0e94090"
+    },
+    {
+      "run": 4,
+      "target": "ooRexx",
+      "wall_seconds": 0.395851,
+      "exit": 0,
+      "output_sha256": "f7aa1966606b435629546c6f933030f81a3bc0e68a15bcc2fa6e7cd4b0e94090"
+    },
+    {
+      "run": 5,
+      "target": "ooRexx",
+      "wall_seconds": 0.40765,
+      "exit": 0,
+      "output_sha256": "f7aa1966606b435629546c6f933030f81a3bc0e68a15bcc2fa6e7cd4b0e94090"
+    },
+    {
+      "run": 5,
+      "target": "native",
+      "wall_seconds": 0.109759,
+      "exit": 0,
+      "output_sha256": "f7aa1966606b435629546c6f933030f81a3bc0e68a15bcc2fa6e7cd4b0e94090"
+    },
+    {
+      "run": 6,
+      "target": "native",
+      "wall_seconds": 0.109925,
+      "exit": 0,
+      "output_sha256": "f7aa1966606b435629546c6f933030f81a3bc0e68a15bcc2fa6e7cd4b0e94090"
+    },
+    {
+      "run": 6,
+      "target": "ooRexx",
+      "wall_seconds": 0.406579,
+      "exit": 0,
+      "output_sha256": "f7aa1966606b435629546c6f933030f81a3bc0e68a15bcc2fa6e7cd4b0e94090"
+    },
+    {
+      "run": 7,
+      "target": "ooRexx",
+      "wall_seconds": 0.436866,
+      "exit": 0,
+      "output_sha256": "f7aa1966606b435629546c6f933030f81a3bc0e68a15bcc2fa6e7cd4b0e94090"
+    },
+    {
+      "run": 7,
+      "target": "native",
+      "wall_seconds": 0.10126,
+      "exit": 0,
+      "output_sha256": "f7aa1966606b435629546c6f933030f81a3bc0e68a15bcc2fa6e7cd4b0e94090"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+a = .Dish~new('base')
+say a~rootValue
+say a~saltValue
+say a~pepperValue
+say a~dishValue
+say a~who
+say a~saltSet('S')
+say a~pepperSet('P')
+say a~dishSet('D')
+say a~rootValue
+say a~saltValue
+say a~pepperValue
+say a~dishValue
+say a~isA(.Salt)
+say a~isA(.Pepper)
+b = .Grand~new('grand-root')
+say b~rootValue
+say b~saltSet('grand-salt')
+say b~pepperSet('grand-pepper')
+say b~dishSet('grand-dish')
+say b~grandSet('grand-leaf')
+say b~rootValue
+say b~saltValue
+say b~pepperValue
+say b~dishValue
+say b~grandValue
+say b~who
+say a~rootValue
+say a~saltValue
+say a~pepperValue
+say a~dishValue
+::requires 'rx2cpp_mixin' library

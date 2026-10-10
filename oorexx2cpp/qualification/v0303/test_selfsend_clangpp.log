@@ -1,0 +1,6 @@
+PASS clang++ SELF sends: state coherent both ways (1202), subclass override wins (701), 4x2500 threaded bumps exact, interpreter error passes through
+PASS reject other_receiver
+PASS reject chained
+PASS reject cascade
+PASS reject two_args
+PASS reject SELF send on single-class compiler path

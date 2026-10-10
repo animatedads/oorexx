@@ -1,0 +1,5 @@
+Repository: https://github.com/ooRexx/ooRexx
+Source: interpreter/expression/BuiltinFunctions.cpp
+Blob SHA: 05ea58114e9e5b59a1cceebf8dd418b78058d342
+81 BUILTIN macros scanned, source min/max checked, 3 dynamic-max forms
+Source itself is NOT bundled in the redistribution package; supply official checkout

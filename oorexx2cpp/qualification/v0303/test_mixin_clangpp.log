@@ -1,0 +1,9 @@
+rx2cpp native package compiled ROOT SALT PEPPER DISH GRAND classes=5
+Built native ooRexx library: /mnt/data/rx2cpp_merge_workspace/base302/rx2cpp_oorexx_v0.30.2_object_index/build/mixin-clang++/librx2cpp_mixin.so
+PASS two sibling mixins, class-scoped EXPOSE, method precedence, identity
+PASS no foreign-runtime dependency
+PASS fail-closed mixin_bad_nonmixin
+PASS fail-closed mixin_bad_root
+PASS fail-closed mixin_bad_duplicate
+PASS fail-closed mixin_bad_repeat_path
+PASS fail-closed mixin_bad_unknown

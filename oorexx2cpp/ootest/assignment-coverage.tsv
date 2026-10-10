@@ -1,0 +1,12 @@
+source_group	test_method	original_scope	ported_fixture	ported_scope	status
+Assignments.testGroup	test_+=	decimal loop and integer i3 case	assignment_ootest_microcases.rex	i3+=10 only	PARTIAL_NATIVE
+Assignments.testGroup	test_-=	decimal loop and integer i3 case	assignment_ootest_microcases.rex	i3-=10 only	PARTIAL_NATIVE
+Assignments.testGroup	test_/=	decimal loop and i3 division	assignment_ootest_microcases.rex	i3/=10 only	PARTIAL_NATIVE
+Assignments.testGroup	test_*=	decimal multiplication and i3 integer	assignment_ootest_microcases.rex	i3*=10 only	PARTIAL_NATIVE
+Assignments.testGroup	test_//=	decimal remainder and integer i3	(none)	(none)	UNSUPPORTED
+Assignments.testGroup	test_%=	decimal integer division and integer i3	(none)	(none)	UNSUPPORTED
+Assignments.testGroup	test_**=	exponentiation	(none)	(none)	UNSUPPORTED
+Assignments.testGroup	test_|=	logical OR	(none)	(none)	UNSUPPORTED
+Assignments.testGroup	test_&=	logical AND	(none)	(none)	UNSUPPORTED
+Assignments.testGroup	test_&&=	logical XOR	(none)	(none)	UNSUPPORTED
+Assignments.testGroup	test_||=	concatenation	(none)	(none)	UNSUPPORTED

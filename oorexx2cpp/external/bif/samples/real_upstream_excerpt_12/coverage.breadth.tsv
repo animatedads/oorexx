@@ -1,0 +1,82 @@
+name	route	source_line	status
+CENTER	NATIVE_SUBSET	5	ADMITTED
+REVERSE	NATIVE_SUBSET	22	ADMITTED
+WORDS	NATIVE_SUBSET	35	ADMITTED
+TIME	NATIVE_SUBSET	48	ADMITTED
+COPIES	NATIVE_SUBSET	286	ADMITTED
+C2X	NATIVE_SUBSET	301	ADMITTED
+X2C	NATIVE_SUBSET	314	ADMITTED
+BITAND	NATIVE_SUBSET	327	ADMITTED
+BITOR	NATIVE_SUBSET	344	ADMITTED
+BITXOR	NATIVE_SUBSET	361	ADMITTED
+B2X	NATIVE_SUBSET	378	ADMITTED
+X2B	NATIVE_SUBSET	391	ADMITTED
+CENTRE	MISSING	-	not found in source
+DELSTR	MISSING	-	not found in source
+DELWORD	MISSING	-	not found in source
+INSERT	MISSING	-	not found in source
+LEFT	MISSING	-	not found in source
+OVERLAY	MISSING	-	not found in source
+POS	MISSING	-	not found in source
+LASTPOS	MISSING	-	not found in source
+RIGHT	MISSING	-	not found in source
+STRIP	MISSING	-	not found in source
+SPACE	MISSING	-	not found in source
+SUBSTR	MISSING	-	not found in source
+LOWER	MISSING	-	not found in source
+UPPER	MISSING	-	not found in source
+SUBWORD	MISSING	-	not found in source
+WORD	MISSING	-	not found in source
+WORDINDEX	MISSING	-	not found in source
+WORDLENGTH	MISSING	-	not found in source
+WORDPOS	MISSING	-	not found in source
+ABBREV	MISSING	-	not found in source
+C2D	MISSING	-	not found in source
+TRUNC	MISSING	-	not found in source
+X2D	MISSING	-	not found in source
+D2X	MISSING	-	not found in source
+D2C	MISSING	-	not found in source
+COMPARE	MISSING	-	not found in source
+LENGTH	MISSING	-	not found in source
+TRANSLATE	MISSING	-	not found in source
+VERIFY	MISSING	-	not found in source
+DATATYPE	MISSING	-	not found in source
+ADDRESS	MISSING	-	not found in source
+DIGITS	MISSING	-	not found in source
+FUZZ	MISSING	-	not found in source
+FORM	MISSING	-	not found in source
+USERID	MISSING	-	not found in source
+ERRORTEXT	MISSING	-	not found in source
+ARG	MISSING	-	not found in source
+DATE	MISSING	-	not found in source
+RANDOM	MISSING	-	not found in source
+XRANGE	MISSING	-	not found in source
+SYMBOL	MISSING	-	not found in source
+VAR	MISSING	-	not found in source
+VALUE	MISSING	-	not found in source
+ABS	MISSING	-	not found in source
+SIGN	MISSING	-	not found in source
+FORMAT	MISSING	-	not found in source
+MAX	MISSING	-	not found in source
+MIN	MISSING	-	not found in source
+SOURCELINE	MISSING	-	not found in source
+TRACE	MISSING	-	not found in source
+LINEIN	MISSING	-	not found in source
+CHARIN	MISSING	-	not found in source
+LINEOUT	MISSING	-	not found in source
+CHAROUT	MISSING	-	not found in source
+LINES	MISSING	-	not found in source
+CHARS	MISSING	-	not found in source
+STREAM	MISSING	-	not found in source
+QUEUED	MISSING	-	not found in source
+CONDITION	MISSING	-	not found in source
+CHANGESTR	MISSING	-	not found in source
+COUNTSTR	MISSING	-	not found in source
+RXFUNCADD	MISSING	-	not found in source
+RXFUNCDROP	MISSING	-	not found in source
+RXFUNCQUERY	MISSING	-	not found in source
+RXQUEUE	MISSING	-	not found in source
+SETLOCAL	MISSING	-	not found in source
+ENDLOCAL	MISSING	-	not found in source
+QUALIFY	MISSING	-	not found in source
+GC	MISSING	-	not found in source

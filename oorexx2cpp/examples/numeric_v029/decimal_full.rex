@@ -1,0 +1,51 @@
+say 2.2
+say 1.1
+say 0.01
+say .5
+say 1.
+say 12e2
+say 2.5E-3
+say 2.2+1.1
+say 1.2+2.34
+say .1+.2
+say 999999999+1
+say 1.0-2.25
+say 2-2.9
+say 1.1*2.2
+say 12345.6789*3
+say 999999999*2
+say 10/4
+say 1/3
+say 100/8
+say 9.5%2
+say 9.8%3
+say (-9.5%2)
+say 1.0+0
+say 1.00*2
+say 1.200+0.000
+say 2.000/2
+say 1.00-0
+say 100000000+0
+say 0.000001/10
+say 0.000001/100
+say 1/100000
+say 1.999999995+0
+say 1.999999994+0
+say 999999999+0.5
+numeric digits 4
+say 1/3
+say 12345+1
+say 11111*11111
+say 1.23456+0
+say 1.2345+0
+say 1.2344+0
+say 1.23450+0
+say 9.9999+0
+say 10000/1
+numeric form engineering
+say 1000000/3
+say 1/300000
+numeric form scientific
+numeric digits 9
+say 1.0
+say 1.00+0

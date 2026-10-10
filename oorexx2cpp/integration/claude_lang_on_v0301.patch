@@ -1,0 +1,1013 @@
+diff -ruN -x build -x '*.orig' a/INTEGRATION_CLAUDE_V0301.md b/INTEGRATION_CLAUDE_V0301.md
+--- a/INTEGRATION_CLAUDE_V0301.md	1970-01-01 01:00:00.000000000 +0100
++++ b/INTEGRATION_CLAUDE_V0301.md	2026-10-10 16:35:12.459537341 +0100
+@@ -0,0 +1,55 @@
++# Claude integration onto v0.30.1 (attribute/constant) — 2026-10-10
++
++Base: `rx2cpp_oorexx_v0.30.1_attribute_constant` (unchanged except the files below). Patch: `claude_lang_on_v0301.patch`
++(`diff -ruN` with SAME-NAMED roots `a/` `b/`; apply with `patch -p1`). The earlier x281 patch was whole-tree because its roots were
++named differently — do not use it.
++
++## What this adds (all differentially tested against ooRexx 5.3.0 r13196)
++
++| Item | Files | Evidence |
++| --- | --- | --- |
++| Unary `\` (logical NOT); previously "unsupported source character '\'" | `core/RxLexer.cls`, `rules/ExprUnary.cls`, `rules/OperatorRules.cls`, `include/minirexx_runtime.hpp` | `tests/test_claude_unary_strict.sh` |
++| `USE STRICT ARG` in internal routines: required args, optional with constant default (string/number), Error 40.3/40.4 | `rules/StmtUseArg.cls`, `core/RxCompiler.cls` (`routineName`), `rules/RxRoutineRules.cls`, runtime `useStrictArguments` | same test, both error codes checked against interpreter |
++| `//` remainder and `**` power | `core/RxLexer.cls`, `rules/ExprMultiply.cls`, `include/rx_rexx_number.hpp`, runtime dispatch | `tests/test_claude_numeric_ops.sh`: 27 hand cases + 250 seeded random cases, byte-exact; 1,244 further random cases run during development matched |
++| `NUMERIC DIGITS` cap raised 1000 -> 100000 (libs use 2000-3000) | `include/rx_rexx_number.hpp` | digits 3000 cases in hand fixture |
++| Bug: a quoted `'='` (or other operator text) between SAY items was parsed as the comparison operator | `rules/ExprCompare.cls` (requires OP token) | found by the random differential; also affected earlier x281 |
++| Harness: `tests/run.sh` sets `RX2CPP_BIF_DISABLED=1` (bootstrap-subset suite) | `tests/run.sh` | previously failed on missing `rxbif_breadth.hpp` |
++
++Semantics matched from upstream source (not guessed): `//` truncates operands longer than DIGITS to DIGITS+1 digits (no rounding)
++and returns the dividend unchanged when |x|<|y|; `**` is left-to-right binary powering at DIGITS+len(n)+1 with the base truncated to
++DIGITS+1, the negative-power reciprocal truncated to working digits+1 and rounded once at the end, formatted with the
++`adjusted >= DIGITS || |exponent| > 2*DIGITS` rule (`upstreamRule` flag on `formatRexxDecimal`; other callers unchanged).
++
++## Boundaries (not claimed)
++
++* `//` / `**` error text is a runtime `std::runtime_error` with the right *code* (26.12, 40.3, 40.4), not an ooRexx SYNTAX condition.
++* `**` exponent limited to 9 digits; `numeric form value`, `numeric digits` above 100000 unsupported.
++* USE STRICT ARG defaults must be constants (the interpreter also rejects expressions, error 35); `.nil` defaults need the object lane.
++  Omitted middle arguments (`call f 1,,3`) are not representable in the standalone lane yet.
++* Not done: SIGNAL ON/RAISE/CONDITION(). Survey of the user's libraries shows the dominant forms are
++  `raise syntax 88.900 array(...)` (502 uses) and `signal on syntax name L` / `signal off syntax` with the handler label inside the
++  routine. Blocker found first: labels followed by an instruction on the same line (`name: procedure; use arg ...`) are not
++  recognised by `RxRoutineRules~discover`, and duplicate handler labels (`rejected:` repeated; Rexx uses the first) are rejected.
++  This is the next item in this lane.
++
++## Lane split (to avoid collisions)
++
++* ChatGPT language lane: `~` sends, `::class`, `::method`, `::attribute`, `forward`, `a[i]`, `.array`/collections.
++* ChatGPT BIF lane: `c2x`, `x2c`, `bitxor` and the rest of `external/bif` (untouched here).
++* Claude lane: threading/operators, external libraries (`::requires … LIBRARY`, already merged by ChatGPT in v0.30.1), NUMERIC,
++  SIGNAL/RAISE/CONDITION, then label/routine syntax.
++* Files both lanes touch: `core/RxLexer.cls`, `core/RxCompiler.cls`, `rules/RxRoutineRules.cls`. Merge with 3-way, not overwrite.
++
++## Qualification run
++
++`tests/test_claude_unary_strict.sh` and `tests/test_claude_numeric_ops.sh`: pass on GCC. Full-suite regression on this tree
++(GCC then Clang) was started but **had not finished when this was packaged**; results will follow separately. Clang for the two new
++tests was not yet run.
++
++## Reproduction
++
++```
++export REXX_BIN=/path/to/rexx REXX_LIB=/path/to/lib OO_ROOT=/path/to/oorexx
++CXX=g++ tests/test_claude_unary_strict.sh && CXX=g++ tests/test_claude_numeric_ops.sh
++```
++Boost headers are required (v0.29+ decimal backend).
+diff -ruN -x build -x '*.orig' a/core/RxCompiler.cls b/core/RxCompiler.cls
+--- a/core/RxCompiler.cls	2026-10-10 16:35:12.439611295 +0100
++++ b/core/RxCompiler.cls	2026-10-10 16:35:12.456791624 +0100
+@@ -73,8 +73,10 @@
+   use arg name
+   return routines~hasIndex(name)
+ ::method beginRoutine
+-  expose inRoutine
++  expose inRoutine routineName
++  use arg routineName = ''
+   inRoutine = .true
++::attribute routineName get
+ ::method endRoutine
+   expose inRoutine
+   inRoutine = .false
+diff -ruN -x build -x '*.orig' a/core/RxLexer.cls b/core/RxLexer.cls
+--- a/core/RxLexer.cls	2026-10-10 16:35:12.439631819 +0100
++++ b/core/RxLexer.cls	2026-10-10 16:35:12.456909293 +0100
+@@ -196,7 +196,11 @@
+         op = self~move || self~move
+         self~emit('OP', op, markLine, markCol)
+       end
+-      when pos(c, '+-*/%=<>()&') > 0 then do
++      when (c == '/' & self~char(1) == '/') | (c == '*' & self~char(1) == '*') then do
++        op = self~move || self~move
++        self~emit('OP', op, markLine, markCol)
++      end
++      when pos(c, '+-*/%=<>()&\') > 0 then do
+         self~move
+         self~emit('OP', c, markLine, markCol)
+       end
+diff -ruN -x build -x '*.orig' a/examples/claude/numeric_ops_hand.rex b/examples/claude/numeric_ops_hand.rex
+--- a/examples/claude/numeric_ops_hand.rex	1970-01-01 01:00:00.000000000 +0100
++++ b/examples/claude/numeric_ops_hand.rex	2026-10-10 16:35:12.446769050 +0100
+@@ -0,0 +1,11 @@
++say 100 // 7; say -100 // 7; say 100 // -7; say 5.5 // 2; say 1e5 // 3; say 7 // 7; say 0 // 5
++say 2**10; say 2**0; say (-2)**3; say 2**-2; say 1.5**3; say 0**0; say 0**3
++say 3**3**2; say -2**2; say 2*3**2; say 10 // 3**2
++numeric digits 5
++say 7**20; say 3**-7; say 1.23456**7; say 9.99999**3
++numeric digits 50
++say 7**77; say 2**-30; say 1.0000001**1000
++numeric digits 3000
++x = 7**1500
++say length(x) substr(x,1,20)
++say length(10**2999 // 997)
+diff -ruN -x build -x '*.orig' a/examples/claude/numeric_ops_random.rex b/examples/claude/numeric_ops_random.rex
+--- a/examples/claude/numeric_ops_random.rex	1970-01-01 01:00:00.000000000 +0100
++++ b/examples/claude/numeric_ops_random.rex	2026-10-10 16:35:12.446782504 +0100
+@@ -0,0 +1,500 @@
++numeric digits 6
++say '426898 ** -11' '=' (426898 ** -11)
++numeric digits 5
++say '3117.2432 ** 32' '=' (3117.2432 ** 32)
++numeric digits 25
++say '82663369E-4 ** 29' '=' (82663369E-4 ** 29)
++numeric digits 4
++say '-0.87082635 // 11873424' '=' (-0.87082635 // 11873424)
++numeric digits 3
++say '6081.7757 ** 16' '=' (6081.7757 ** 16)
++numeric digits 5
++say '25086470 // -1001.5775' '=' (25086470 // -1001.5775)
++numeric digits 4
++say '16438702E4 ** -6' '=' (16438702E4 ** -6)
++numeric digits 25
++say '0.39189872 ** 5' '=' (0.39189872 ** 5)
++numeric digits 50
++say '-0.51887672 ** 30' '=' (-0.51887672 ** 30)
++numeric digits 50
++say '380104E-3 // 0.29800768' '=' (380104E-3 // 0.29800768)
++numeric digits 4
++say '2425.0105 // 0.44611047' '=' (2425.0105 // 0.44611047)
++numeric digits 9
++say '-32986076 // -23356316E1' '=' (-32986076 // -23356316E1)
++numeric digits 3
++say '9071.8002 // 99570868' '=' (9071.8002 // 99570868)
++numeric digits 50
++say '-67932144E6 // 21782540' '=' (-67932144E6 // 21782540)
++numeric digits 25
++say '99510759E-4 ** 1' '=' (99510759E-4 ** 1)
++numeric digits 9
++say '-4665605E-1 ** 6' '=' (-4665605E-1 ** 6)
++numeric digits 5
++say '-20293562E-4 // 70548570E-4' '=' (-20293562E-4 // 70548570E-4)
++numeric digits 15
++say '0.20648270 ** 22' '=' (0.20648270 ** 22)
++numeric digits 50
++say '4133.6011 ** 34' '=' (4133.6011 ** 34)
++numeric digits 3
++say '5132.0283 ** 22' '=' (5132.0283 ** 22)
++numeric digits 15
++say '8641.7279 ** 1' '=' (8641.7279 ** 1)
++numeric digits 25
++say '-1859.0994 ** -4' '=' (-1859.0994 ** -4)
++numeric digits 3
++say '-86132482E-2 ** 3' '=' (-86132482E-2 ** 3)
++numeric digits 5
++say '0.40805678 // -8337.6192' '=' (0.40805678 // -8337.6192)
++numeric digits 25
++say '27061102 ** 32' '=' (27061102 ** 32)
++numeric digits 3
++say '1049965E3 ** 21' '=' (1049965E3 ** 21)
++numeric digits 5
++say '-9549.4250 // -42092999' '=' (-9549.4250 // -42092999)
++numeric digits 5
++say '0.41528520 // 65774639' '=' (0.41528520 // 65774639)
++numeric digits 3
++say '0.68211135 ** 29' '=' (0.68211135 ** 29)
++numeric digits 6
++say '0.8552884 ** 5' '=' (0.8552884 ** 5)
++numeric digits 25
++say '14442657 // 60137446' '=' (14442657 // 60137446)
++numeric digits 50
++say '-63200459E2 ** 27' '=' (-63200459E2 ** 27)
++numeric digits 25
++say '-564.2513 ** 10' '=' (-564.2513 ** 10)
++numeric digits 25
++say '6120.2230 ** -1' '=' (6120.2230 ** -1)
++numeric digits 4
++say '5023951E-2 // 28978468E6' '=' (5023951E-2 // 28978468E6)
++numeric digits 9
++say '32924447E3 // -70361115' '=' (32924447E3 // -70361115)
++numeric digits 6
++say '-41840046E-2 ** 18' '=' (-41840046E-2 ** 18)
++numeric digits 9
++say '83210563E3 // 22339477E-1' '=' (83210563E3 // 22339477E-1)
++numeric digits 15
++say '-8611.1047 // 0.43233121' '=' (-8611.1047 // 0.43233121)
++numeric digits 5
++say '-9142.4181 // 96125226E-2' '=' (-9142.4181 // 96125226E-2)
++numeric digits 50
++say '53913040E3 ** -4' '=' (53913040E3 ** -4)
++numeric digits 25
++say '-0.83444631 // 28882228' '=' (-0.83444631 // 28882228)
++numeric digits 15
++say '2548508 ** 23' '=' (2548508 ** 23)
++numeric digits 50
++say '94007144E-1 // 19848333' '=' (94007144E-1 // 19848333)
++numeric digits 6
++say '0.60948866 ** -7' '=' (0.60948866 ** -7)
++numeric digits 25
++say '71056951 ** 20' '=' (71056951 ** 20)
++numeric digits 6
++say '30215080E-4 ** 12' '=' (30215080E-4 ** 12)
++numeric digits 6
++say '20415210 ** 19' '=' (20415210 ** 19)
++numeric digits 50
++say '-0.63231116 ** 3' '=' (-0.63231116 ** 3)
++numeric digits 9
++say '85895654 ** -11' '=' (85895654 ** -11)
++numeric digits 5
++say '68686684 ** 2' '=' (68686684 ** 2)
++numeric digits 15
++say '-788.6676 ** 28' '=' (-788.6676 ** 28)
++numeric digits 25
++say '-21231517 // 0.72284060' '=' (-21231517 // 0.72284060)
++numeric digits 6
++say '97685724E-3 ** 17' '=' (97685724E-3 ** 17)
++numeric digits 3
++say '0.97674819 // -8624.6040' '=' (0.97674819 // -8624.6040)
++numeric digits 15
++say '66278383E-2 ** -14' '=' (66278383E-2 ** -14)
++numeric digits 9
++say '-91198064 // 82676025' '=' (-91198064 // 82676025)
++numeric digits 25
++say '-28205779E1 ** 24' '=' (-28205779E1 ** 24)
++numeric digits 9
++say '81495437 // 2167.2680' '=' (81495437 // 2167.2680)
++numeric digits 25
++say '2776.0301 ** 34' '=' (2776.0301 ** 34)
++numeric digits 50
++say '0.99316000 ** 23' '=' (0.99316000 ** 23)
++numeric digits 5
++say '0.47229888 // 56767438' '=' (0.47229888 // 56767438)
++numeric digits 6
++say '-99555304 ** 8' '=' (-99555304 ** 8)
++numeric digits 9
++say '-1648.8297 ** 26' '=' (-1648.8297 ** 26)
++numeric digits 50
++say '6639.7657 ** 12' '=' (6639.7657 ** 12)
++numeric digits 25
++say '-29831529E3 ** 14' '=' (-29831529E3 ** 14)
++numeric digits 6
++say '0.4771697 // 9885.7204' '=' (0.4771697 // 9885.7204)
++numeric digits 5
++say '5058.3030 ** 27' '=' (5058.3030 ** 27)
++numeric digits 9
++say '77368084E-1 // -74267472E6' '=' (77368084E-1 // -74267472E6)
++numeric digits 15
++say '17747213E1 ** 25' '=' (17747213E1 ** 25)
++numeric digits 50
++say '80327999 // 0.50320260' '=' (80327999 // 0.50320260)
++numeric digits 50
++say '1676.6642 ** 39' '=' (1676.6642 ** 39)
++numeric digits 4
++say '4133.5920 ** 38' '=' (4133.5920 ** 38)
++numeric digits 9
++say '0.13988329 ** -7' '=' (0.13988329 ** -7)
++numeric digits 50
++say '-95703913E-1 // -0.87142339' '=' (-95703913E-1 // -0.87142339)
++numeric digits 5
++say '-38081194 // 8111666' '=' (-38081194 // 8111666)
++numeric digits 3
++say '9727.3612 ** 17' '=' (9727.3612 ** 17)
++numeric digits 15
++say '58051340 ** 7' '=' (58051340 ** 7)
++numeric digits 25
++say '59552672E4 ** -1' '=' (59552672E4 ** -1)
++numeric digits 5
++say '0.1808309 ** -2' '=' (0.1808309 ** -2)
++numeric digits 3
++say '-6130.7783 ** -5' '=' (-6130.7783 ** -5)
++numeric digits 5
++say '-29664280 // 84359146E-3' '=' (-29664280 // 84359146E-3)
++numeric digits 6
++say '9401.0824 ** 0' '=' (9401.0824 ** 0)
++numeric digits 6
++say '-80449234 ** 35' '=' (-80449234 ** 35)
++numeric digits 3
++say '0.53644444 // 0.92212060' '=' (0.53644444 // 0.92212060)
++numeric digits 25
++say '4606153E-4 // -77801508E-2' '=' (4606153E-4 // -77801508E-2)
++numeric digits 4
++say '34481791E0 ** 6' '=' (34481791E0 ** 6)
++numeric digits 15
++say '-89113972E6 // -39328878' '=' (-89113972E6 // -39328878)
++numeric digits 4
++say '0.65329635 ** 31' '=' (0.65329635 ** 31)
++numeric digits 5
++say '0.41847578 ** 28' '=' (0.41847578 ** 28)
++numeric digits 50
++say '31082374 // 57061119' '=' (31082374 // 57061119)
++numeric digits 50
++say '0.29254268 ** 25' '=' (0.29254268 ** 25)
++numeric digits 9
++say '0.81635885 // -2512981E4' '=' (0.81635885 // -2512981E4)
++numeric digits 3
++say '-2921.3827 // 176.3429' '=' (-2921.3827 // 176.3429)
++numeric digits 50
++say '0.33378778 ** 2' '=' (0.33378778 ** 2)
++numeric digits 5
++say '0.92823283 ** 39' '=' (0.92823283 ** 39)
++numeric digits 5
++say '38623671 ** 4' '=' (38623671 ** 4)
++numeric digits 15
++say '75144888E-2 ** 21' '=' (75144888E-2 ** 21)
++numeric digits 9
++say '3583.8777 // 9983.8052' '=' (3583.8777 // 9983.8052)
++numeric digits 3
++say '28216564E-1 // 6896.9662' '=' (28216564E-1 // 6896.9662)
++numeric digits 25
++say '0.51105995 ** -12' '=' (0.51105995 ** -12)
++numeric digits 5
++say '95712672 ** -8' '=' (95712672 ** -8)
++numeric digits 50
++say '6512327 ** 17' '=' (6512327 ** 17)
++numeric digits 9
++say '87610999E0 ** 31' '=' (87610999E0 ** 31)
++numeric digits 4
++say '-0.37481851 ** 35' '=' (-0.37481851 ** 35)
++numeric digits 9
++say '0.62179702 ** 7' '=' (0.62179702 ** 7)
++numeric digits 5
++say '0.71124043 // 2749.2346' '=' (0.71124043 // 2749.2346)
++numeric digits 9
++say '21693172 ** 35' '=' (21693172 ** 35)
++numeric digits 15
++say '9305.4021 ** -14' '=' (9305.4021 ** -14)
++numeric digits 5
++say '4360.3101 // 8343.5796' '=' (4360.3101 // 8343.5796)
++numeric digits 6
++say '1308.6686 ** 1' '=' (1308.6686 ** 1)
++numeric digits 15
++say '29072197E2 // -97887165' '=' (29072197E2 // -97887165)
++numeric digits 15
++say '0.30558402 // 25415623' '=' (0.30558402 // 25415623)
++numeric digits 50
++say '-6186.3438 // -6736343E3' '=' (-6186.3438 // -6736343E3)
++numeric digits 50
++say '22399342 ** 34' '=' (22399342 ** 34)
++numeric digits 3
++say '4155.2758 ** -11' '=' (4155.2758 ** -11)
++numeric digits 50
++say '12081220E1 // -59153074E0' '=' (12081220E1 // -59153074E0)
++numeric digits 9
++say '8581.4933 // 1908.9956' '=' (8581.4933 // 1908.9956)
++numeric digits 15
++say '0.74931328 ** 32' '=' (0.74931328 ** 32)
++numeric digits 4
++say '49414815 // 32250782E1' '=' (49414815 // 32250782E1)
++numeric digits 50
++say '71716795E-1 // 3544.9564' '=' (71716795E-1 // 3544.9564)
++numeric digits 5
++say '-1271.0693 // -0.56838362' '=' (-1271.0693 // -0.56838362)
++numeric digits 9
++say '11677462 ** -11' '=' (11677462 ** -11)
++numeric digits 6
++say '7218.4636 ** 20' '=' (7218.4636 ** 20)
++numeric digits 5
++say '-5788.0803 ** 9' '=' (-5788.0803 ** 9)
++numeric digits 25
++say '0.26431131 // 53320914E0' '=' (0.26431131 // 53320914E0)
++numeric digits 6
++say '-0.8009244 // -71083532E4' '=' (-0.8009244 // -71083532E4)
++numeric digits 5
++say '-3143.1043 // 3040.1124' '=' (-3143.1043 // 3040.1124)
++numeric digits 5
++say '-42313108 ** 28' '=' (-42313108 ** 28)
++numeric digits 50
++say '-7628.0657 ** 37' '=' (-7628.0657 ** 37)
++numeric digits 9
++say '62243253 ** 22' '=' (62243253 ** 22)
++numeric digits 25
++say '86408934E-2 // 46019830' '=' (86408934E-2 // 46019830)
++numeric digits 6
++say '-8649.8118 // 5312858' '=' (-8649.8118 // 5312858)
++numeric digits 15
++say '-73700872E3 // 53957830' '=' (-73700872E3 // 53957830)
++numeric digits 9
++say '0.19727346 ** 38' '=' (0.19727346 ** 38)
++numeric digits 4
++say '61243414E2 // 37961919' '=' (61243414E2 // 37961919)
++numeric digits 3
++say '-0.99430317 ** 21' '=' (-0.99430317 ** 21)
++numeric digits 25
++say '31206647E2 // 0.25459483' '=' (31206647E2 // 0.25459483)
++numeric digits 9
++say '38001291E-4 ** 2' '=' (38001291E-4 ** 2)
++numeric digits 25
++say '44220500E-1 ** 39' '=' (44220500E-1 ** 39)
++numeric digits 5
++say '-23760130 // -71117215E3' '=' (-23760130 // -71117215E3)
++numeric digits 3
++say '-2257.3934 ** 23' '=' (-2257.3934 ** 23)
++numeric digits 6
++say '76158930 ** -10' '=' (76158930 ** -10)
++numeric digits 9
++say '486.6516 // -0.56773077' '=' (486.6516 // -0.56773077)
++numeric digits 50
++say '-0.99709438 ** -7' '=' (-0.99709438 ** -7)
++numeric digits 3
++say '65055933E1 ** 33' '=' (65055933E1 ** 33)
++numeric digits 4
++say '0.77935827 // 0.35162219' '=' (0.77935827 // 0.35162219)
++numeric digits 3
++say '1770.7716 // 6866.7614' '=' (1770.7716 // 6866.7614)
++numeric digits 50
++say '33665906 // 4565.7896' '=' (33665906 // 4565.7896)
++numeric digits 15
++say '-29143236 ** 26' '=' (-29143236 ** 26)
++numeric digits 25
++say '-7786.4463 ** 1' '=' (-7786.4463 ** 1)
++numeric digits 4
++say '-1930.6558 ** 26' '=' (-1930.6558 ** 26)
++numeric digits 6
++say '-6416.9693 ** 15' '=' (-6416.9693 ** 15)
++numeric digits 15
++say '-682.5675 ** 11' '=' (-682.5675 ** 11)
++numeric digits 9
++say '0.40097124 ** 37' '=' (0.40097124 ** 37)
++numeric digits 5
++say '45751444 ** 18' '=' (45751444 ** 18)
++numeric digits 9
++say '85356779E-1 ** -6' '=' (85356779E-1 ** -6)
++numeric digits 3
++say '99719142 // 21043356E6' '=' (99719142 // 21043356E6)
++numeric digits 5
++say '69665018E2 ** 18' '=' (69665018E2 ** 18)
++numeric digits 4
++say '-38169538 ** 37' '=' (-38169538 ** 37)
++numeric digits 5
++say '0.8980666 // 46223693E-2' '=' (0.8980666 // 46223693E-2)
++numeric digits 25
++say '48000111E-1 ** 23' '=' (48000111E-1 ** 23)
++numeric digits 6
++say '-96858686E5 ** 7' '=' (-96858686E5 ** 7)
++numeric digits 5
++say '0.59803266 // -63514911E1' '=' (0.59803266 // -63514911E1)
++numeric digits 25
++say '4165.7245 // 0.50166262' '=' (4165.7245 // 0.50166262)
++numeric digits 15
++say '-80560134 // 0.52117429' '=' (-80560134 // 0.52117429)
++numeric digits 5
++say '-91998259 ** 28' '=' (-91998259 ** 28)
++numeric digits 25
++say '9601865E-2 ** -14' '=' (9601865E-2 ** -14)
++numeric digits 4
++say '91099868E2 ** 28' '=' (91099868E2 ** 28)
++numeric digits 25
++say '-7924.4535 // 264048' '=' (-7924.4535 // 264048)
++numeric digits 15
++say '1729.0032 // -84110853' '=' (1729.0032 // -84110853)
++numeric digits 25
++say '47941914E-3 ** 20' '=' (47941914E-3 ** 20)
++numeric digits 50
++say '0.56608749 ** -1' '=' (0.56608749 ** -1)
++numeric digits 3
++say '0.17348997 // -61605800' '=' (0.17348997 // -61605800)
++numeric digits 15
++say '51552207 ** -1' '=' (51552207 ** -1)
++numeric digits 50
++say '35360626E-3 ** 39' '=' (35360626E-3 ** 39)
++numeric digits 5
++say '45499547E-4 // 8845.5574' '=' (45499547E-4 // 8845.5574)
++numeric digits 15
++say '-16684603E2 ** -3' '=' (-16684603E2 ** -3)
++numeric digits 5
++say '-9816.0612 // -80558663E4' '=' (-9816.0612 // -80558663E4)
++numeric digits 50
++say '-7579.2079 // 48435780' '=' (-7579.2079 // 48435780)
++numeric digits 9
++say '0.50075145 // -0.28805368' '=' (0.50075145 // -0.28805368)
++numeric digits 50
++say '4353.7868 ** 4' '=' (4353.7868 ** 4)
++numeric digits 5
++say '5840.7348 ** 26' '=' (5840.7348 ** 26)
++numeric digits 9
++say '-0.73846606 // -72353531E6' '=' (-0.73846606 // -72353531E6)
++numeric digits 6
++say '11551448E3 ** 21' '=' (11551448E3 ** 21)
++numeric digits 9
++say '-83302746 ** 26' '=' (-83302746 ** 26)
++numeric digits 4
++say '-881.1621 // 45346597' '=' (-881.1621 // 45346597)
++numeric digits 4
++say '0.73962969 // 1675.0258' '=' (0.73962969 // 1675.0258)
++numeric digits 50
++say '0.508859 // 6118.1904' '=' (0.508859 // 6118.1904)
++numeric digits 6
++say '69199055E-1 ** -2' '=' (69199055E-1 ** -2)
++numeric digits 5
++say '-3314.5239 ** 36' '=' (-3314.5239 ** 36)
++numeric digits 5
++say '75785294E4 ** 20' '=' (75785294E4 ** 20)
++numeric digits 4
++say '32885274E5 ** 7' '=' (32885274E5 ** 7)
++numeric digits 5
++say '48197981E-1 ** 34' '=' (48197981E-1 ** 34)
++numeric digits 50
++say '24067076 ** 9' '=' (24067076 ** 9)
++numeric digits 9
++say '4446.7629 // 0.72466326' '=' (4446.7629 // 0.72466326)
++numeric digits 25
++say '96855912 // 92312169E3' '=' (96855912 // 92312169E3)
++numeric digits 9
++say '0.14740582 // 60831210E0' '=' (0.14740582 // 60831210E0)
++numeric digits 4
++say '-888.1947 ** -11' '=' (-888.1947 ** -11)
++numeric digits 3
++say '65033348E6 ** 10' '=' (65033348E6 ** 10)
++numeric digits 25
++say '54311084E6 ** 40' '=' (54311084E6 ** 40)
++numeric digits 4
++say '7610.2367 ** -10' '=' (7610.2367 ** -10)
++numeric digits 6
++say '-0.66831093 // 4465566' '=' (-0.66831093 // 4465566)
++numeric digits 25
++say '52608296 ** 17' '=' (52608296 ** 17)
++numeric digits 25
++say '1756.2977 ** 24' '=' (1756.2977 ** 24)
++numeric digits 6
++say '143.1651 ** 16' '=' (143.1651 ** 16)
++numeric digits 50
++say '12077785 ** 13' '=' (12077785 ** 13)
++numeric digits 3
++say '3666.9570 ** 23' '=' (3666.9570 ** 23)
++numeric digits 5
++say '0.13376266 // -6312.7282' '=' (0.13376266 // -6312.7282)
++numeric digits 4
++say '817837E0 // -63639327E4' '=' (817837E0 // -63639327E4)
++numeric digits 15
++say '-0.89458789 ** 25' '=' (-0.89458789 ** 25)
++numeric digits 50
++say '-553.7763 ** -10' '=' (-553.7763 ** -10)
++numeric digits 15
++say '4118.1945 ** 19' '=' (4118.1945 ** 19)
++numeric digits 4
++say '11965513E-1 ** 8' '=' (11965513E-1 ** 8)
++numeric digits 3
++say '-24319390 ** 32' '=' (-24319390 ** 32)
++numeric digits 25
++say '25003044 ** 23' '=' (25003044 ** 23)
++numeric digits 25
++say '76983835E-2 // -0.34398803' '=' (76983835E-2 // -0.34398803)
++numeric digits 25
++say '0.29685055 // 32497510' '=' (0.29685055 // 32497510)
++numeric digits 3
++say '323.3464 // -9459749' '=' (323.3464 // -9459749)
++numeric digits 9
++say '-0.93757730 ** -5' '=' (-0.93757730 ** -5)
++numeric digits 4
++say '38245646E-2 ** -7' '=' (38245646E-2 ** -7)
++numeric digits 50
++say '86643376 ** -13' '=' (86643376 ** -13)
++numeric digits 5
++say '-73934444 // -6682.9223' '=' (-73934444 // -6682.9223)
++numeric digits 50
++say '2104.2969 // 8904.9064' '=' (2104.2969 // 8904.9064)
++numeric digits 25
++say '35898670 ** -15' '=' (35898670 ** -15)
++numeric digits 3
++say '0.58678672 // -22635368E5' '=' (0.58678672 // -22635368E5)
++numeric digits 50
++say '24419526E-2 // 67697470E1' '=' (24419526E-2 // 67697470E1)
++numeric digits 6
++say '36754615 ** 32' '=' (36754615 ** 32)
++numeric digits 3
++say '0.86163902 ** -10' '=' (0.86163902 ** -10)
++numeric digits 4
++say '1688.4330 ** 35' '=' (1688.4330 ** 35)
++numeric digits 5
++say '-0.24288520 ** -5' '=' (-0.24288520 ** -5)
++numeric digits 15
++say '-688.4473 // 0.15851273' '=' (-688.4473 // 0.15851273)
++numeric digits 15
++say '90834751 ** 40' '=' (90834751 ** 40)
++numeric digits 9
++say '-280.8295 ** 32' '=' (-280.8295 ** 32)
++numeric digits 6
++say '96341991 ** 11' '=' (96341991 ** 11)
++numeric digits 6
++say '5963.7650 ** 10' '=' (5963.7650 ** 10)
++numeric digits 50
++say '-35303771E1 ** 38' '=' (-35303771E1 ** 38)
++numeric digits 5
++say '47581859 ** 34' '=' (47581859 ** 34)
++numeric digits 25
++say '-80034896E1 ** 37' '=' (-80034896E1 ** 37)
++numeric digits 6
++say '-0.9486642 // 6453.9877' '=' (-0.9486642 // 6453.9877)
++numeric digits 6
++say '31003408E-3 // 9467281' '=' (31003408E-3 // 9467281)
++numeric digits 50
++say '2172.5418 ** 9' '=' (2172.5418 ** 9)
++numeric digits 6
++say '46130499E-4 // 74424367' '=' (46130499E-4 // 74424367)
++numeric digits 25
++say '0.35423602 ** 31' '=' (0.35423602 ** 31)
++numeric digits 5
++say '79674925E-3 ** 37' '=' (79674925E-3 ** 37)
++numeric digits 15
++say '23521357E4 ** 40' '=' (23521357E4 ** 40)
++numeric digits 3
++say '7192.9816 ** 31' '=' (7192.9816 ** 31)
++numeric digits 3
++say '0.32016455 // 63588238E-4' '=' (0.32016455 // 63588238E-4)
++numeric digits 3
++say '11425179E5 ** 6' '=' (11425179E5 ** 6)
++numeric digits 25
++say '35605020 // -7366.3529' '=' (35605020 // -7366.3529)
+diff -ruN -x build -x '*.orig' a/examples/claude/unary_not.rex b/examples/claude/unary_not.rex
+--- a/examples/claude/unary_not.rex	1970-01-01 01:00:00.000000000 +0100
++++ b/examples/claude/unary_not.rex	2026-10-10 16:35:12.446720639 +0100
+@@ -0,0 +1,8 @@
++a = 1; b = 0
++say (\a) (\b) (\(a = b)) (\ (a \= b))
++if \b & a then say 'yes'
++if \ b = 1 then say 'neg'
++say \a = b
++x = '1'
++say \x||\x
++say \\x
+diff -ruN -x build -x '*.orig' a/examples/claude/use_strict_arg.rex b/examples/claude/use_strict_arg.rex
+--- a/examples/claude/use_strict_arg.rex	1970-01-01 01:00:00.000000000 +0100
++++ b/examples/claude/use_strict_arg.rex	2026-10-10 16:35:12.446753435 +0100
+@@ -0,0 +1,14 @@
++call f 1,2
++call f 1
++call h 5
++exit
++f:
++procedure
++use strict arg a, b = 7
++say a b
++return
++h:
++procedure
++use strict arg n, label = 'x', k = 3
++say n label k
++return
+diff -ruN -x build -x '*.orig' a/include/minirexx_runtime.hpp b/include/minirexx_runtime.hpp
+--- a/include/minirexx_runtime.hpp	2026-10-10 16:35:12.440483309 +0100
++++ b/include/minirexx_runtime.hpp	2026-10-10 16:35:12.457843157 +0100
+@@ -257,6 +257,26 @@
+     if (index >= args.size()) drop(vars, name);
+     else set(vars, name, args[index]);
+ }
++// USE STRICT ARG: exact argument-count contract (ooRexx 5.3 Error 40.3 / 40.4);
++// optional arguments carry a constant default.
++struct StrictArg { const char *name; bool required; const char *defaultValue; };
++inline void useStrictArguments(Variables &vars, const std::vector<Value> &args,
++                               const std::string &routine, std::initializer_list<StrictArg> spec) {
++    std::size_t minimum = 0;
++    for (const auto &a : spec) if (a.required) ++minimum;
++    if (args.size() < minimum)
++        throw std::runtime_error("Error 40.3: Not enough arguments in invocation of " + routine +
++                                 "; minimum expected is " + std::to_string(minimum) + ".");
++    if (args.size() > spec.size())
++        throw std::runtime_error("Error 40.4: Too many arguments in invocation of " + routine +
++                                 "; maximum expected is " + std::to_string(spec.size()) + ".");
++    std::size_t i = 0;
++    for (const auto &a : spec) {
++        if (i < args.size()) set(vars, a.name, args[i]);
++        else set(vars, a.name, Value::string(a.defaultValue));
++        ++i;
++    }
++}
+ #include "rx_rexx_number.hpp"
+ #include "rx_compound_symbols.hpp"
+ #include "rx_parse_template.hpp"
+@@ -516,6 +536,8 @@
+     if (selector == "*") return numericMul(lhs, rhs, numeric);
+     if (selector == "/") return numericDiv(lhs, rhs, numeric);
+     if (selector == "%") return numericWholeDivide(lhs, rhs, numeric);
++    if (selector == "//") return numericRemainder(lhs, rhs, numeric);
++    if (selector == "**") return numericPower(lhs, rhs, numeric);
+     if (selector == "=" || selector == "\\=" || selector == "==" || selector == "\\==" ||
+         selector == "<>" || selector == "><" || selector == "<" || selector == "<=" ||
+         selector == ">" || selector == ">=")
+@@ -533,6 +555,7 @@
+         result.coefficient = -result.coefficient;
+         return numberResult(result, numeric);
+     }
++    if (selector == "\\") return Value::string(condition(operand) ? "0" : "1");
+     throw std::runtime_error("unknown unary operator message: " + selector);
+ }
+ inline Value sendUnary(const std::string &selector, const Value &operand) {
+diff -ruN -x build -x '*.orig' a/include/rx_rexx_number.hpp b/include/rx_rexx_number.hpp
+--- a/include/rx_rexx_number.hpp	2026-10-10 16:35:12.440545256 +0100
++++ b/include/rx_rexx_number.hpp	2026-10-10 16:35:12.457677530 +0100
+@@ -10,7 +10,7 @@
+     cpp_int coefficient = 0; // signed; trailing decimal zeroes are significant
+     int exponent = 0;
+ };
+-constexpr int kMaxRexxScale = 10000; // bounded standalone subset; fail closed
++constexpr int kMaxRexxScale = 400000; // bounded standalone subset; fail closed
+ inline cpp_int decimalPow10(int n) {
+     if (n < 0 || n > kMaxRexxScale)
+         throw std::runtime_error("decimal exponent exceeds supported limit");
+@@ -65,7 +65,7 @@
+     return out;
+ }
+ inline void roundRexx(RexxDecimal &v, const ActivationNumeric &context) {
+-    if (context.digits < 1 || context.digits > 1000 || context.fuzz >= context.digits)
++    if (context.digits < 1 || context.digits > 100000 || context.fuzz >= context.digits)
+         throw std::runtime_error("unsupported NUMERIC context");
+     if (v.coefficient == 0) return;
+     const int len = decimalDigits(v.coefficient);
+@@ -86,7 +86,7 @@
+         ++v.exponent;
+     }
+ }
+-inline std::string formatRexxDecimal(const RexxDecimal &value, const ActivationNumeric &ctx, bool division = false) {
++inline std::string formatRexxDecimal(const RexxDecimal &value, const ActivationNumeric &ctx, bool division = false, bool upstreamRule = false) {
+     if (value.exponent < -kMaxRexxScale || value.exponent > kMaxRexxScale)
+         throw std::runtime_error("decimal exponent outside supported range");
+     if (value.coefficient == 0) return "0";
+@@ -94,8 +94,11 @@
+     std::string digits = (negative ? -value.coefficient : value.coefficient).convert_to<std::string>();
+     const int adjusted = static_cast<int>(digits.size()) - 1 + value.exponent;
+     const int fixedLower = -2 * static_cast<int>(ctx.digits);
+-    bool exponential = adjusted >= static_cast<int>(ctx.digits) ||
+-                       adjusted < (division ? -static_cast<int>(ctx.digits) - 1 : fixedLower);
++    // upstream NumberString::stringValue: exponential when adjusted >= DIGITS or |exponent| > 2*DIGITS
++    bool exponential = upstreamRule ? (adjusted >= static_cast<int>(ctx.digits) ||
++                                       std::abs(value.exponent) > 2 * static_cast<int>(ctx.digits))
++                                    : (adjusted >= static_cast<int>(ctx.digits) ||
++                       adjusted < (division ? -static_cast<int>(ctx.digits) - 1 : fixedLower));
+     std::string result;
+     if (exponential) {
+         int suffix = adjusted;
+@@ -277,6 +280,87 @@
+         throw std::runtime_error("whole division result exceeds NUMERIC DIGITS");
+     return numberResult({quotient, 0}, ctx);
+ }
++// x // y : remainder of the truncated integer quotient (sign of the dividend).
++inline Value numericRemainder(const Value &a, const Value &b, const ActivationNumeric &ctx) {
++    RexxDecimal x = parseRexxDecimal(a), y = parseRexxDecimal(b);
++    if (y.coefficient == 0) throw std::runtime_error("division by zero");
++    if (x.coefficient == 0) return Value::number("0");
++    // ooRexx checkNumber(): an operand longer than DIGITS is TRUNCATED (not rounded) to DIGITS+1 digits.
++    auto chop = [&](RexxDecimal &v) {
++        const int len = decimalDigits(v.coefficient), keep = static_cast<int>(ctx.digits) + 1;
++        if (len > static_cast<int>(ctx.digits) && len > keep) {
++            v.coefficient /= decimalPow10(len - keep);
++            v.exponent += len - keep;
++        }
++    };
++    chop(x); chop(y);
++    const int e = std::min(x.exponent, y.exponent);
++    cpp_int xc = x.coefficient * decimalPow10(x.exponent - e);
++    cpp_int yc = y.coefficient * decimalPow10(y.exponent - e);
++    const cpp_int quotient = xc / yc;                       // truncates toward zero
++    if (decimalDigits(quotient) > static_cast<int>(ctx.digits))
++        throw std::runtime_error("Error 26.12: Result of // operation did not result in a whole number");
++    if (quotient == 0) return numberResult(x, ctx);          // |x| < |y|: the dividend itself
++    return numberResult({xc - quotient * yc, e}, ctx);
++}
++// x ** n : integer power, ooRexx algorithm (left-to-right binary powering at DIGITS+len(n)+1).
++inline Value numericPower(const Value &a, const Value &b, const ActivationNumeric &ctx) {
++    RexxDecimal n = parseRexxDecimal(b);
++    // exponent must be a whole number
++    if (n.exponent < 0) {
++        cpp_int p = decimalPow10(-n.exponent);
++        if (n.coefficient % p != 0) throw std::runtime_error("Error 26.3: power must be a whole number");
++        n.coefficient /= p; n.exponent = 0;
++    } else n.coefficient *= decimalPow10(n.exponent);
++    if (decimalDigits(n.coefficient) > 9) throw std::runtime_error("Error 26.3: power must be a whole number");
++    const bool negativePower = n.coefficient < 0;
++    const std::uint64_t power = static_cast<std::uint64_t>(negativePower ? -n.coefficient : n.coefficient);
++    const int digits = static_cast<int>(ctx.digits);
++    RexxDecimal left = parseRexxDecimal(a);
++    // operand truncated (not rounded) to digits+1 digits
++    {
++        const int len = decimalDigits(left.coefficient);
++        if (left.coefficient != 0 && len > digits + 1) {
++            left.coefficient /= decimalPow10(len - (digits + 1));
++            left.exponent += len - (digits + 1);
++        }
++    }
++    if (left.coefficient == 0) {
++        if (negativePower) throw std::runtime_error("Error 42.3: arithmetic overflow in power");
++        return Value::number(power == 0 ? "1" : "0");
++    }
++    if (power == 0) return Value::number("1");
++    int extra = 0;
++    for (std::uint64_t t = power; t != 0; t /= 10) ++extra;
++    ActivationNumeric work = ctx;
++    work.digits = static_cast<std::size_t>(digits + extra + 1);
++    work.fuzz = 0;
++    RexxDecimal acc = left;
++    int top = 63;
++    while (!((power >> top) & 1)) --top;
++    for (int bit = top - 1; bit >= 0; --bit) {
++        acc = {acc.coefficient * acc.coefficient, acc.exponent * 2};
++        roundRexx(acc, work);
++        if ((power >> bit) & 1) {
++            acc = {acc.coefficient * left.coefficient, acc.exponent + left.exponent};
++            roundRexx(acc, work);
++        }
++    }
++    if (negativePower) {
++        // dividePower: 1 / acc produces WORKING DIGITS+1 significant digits, truncated; rounding happens once at the end.
++        const int keep = digits + extra + 2;
++        const int lenA = decimalDigits(acc.coefficient);
++        const int shift = keep + lenA;                       // enough scale for >= keep quotient digits
++        cpp_int q = decimalPow10(shift) / acc.coefficient;
++        int qe = -shift - acc.exponent;
++        const int lenQ = decimalDigits(q);
++        if (lenQ > keep) { q /= decimalPow10(lenQ - keep); qe += lenQ - keep; }
++        acc = {q, qe};
++    }
++    roundRexx(acc, ctx);
++    while (acc.coefficient != 0 && acc.coefficient % 10 == 0) { acc.coefficient /= 10; ++acc.exponent; }
++    return Value::number(formatRexxDecimal(acc, ctx, false, true));
++}
+ inline bool withinNumeric(const Value &current, const Value &limit, const Value &step,
+                           const ActivationNumeric &ctx) {
+     const int direction = numericRelation(step, Value::number("0"), ctx);
+@@ -286,7 +370,7 @@
+ }
+ inline void setNumericDigits(ActivationNumeric &ctx, const Value &v) {
+     const auto n = integer(v);
+-    if (n < 1 || n > 1000) throw std::runtime_error("NUMERIC DIGITS outside supported range 1..1000");
++    if (n < 1 || n > 100000) throw std::runtime_error("NUMERIC DIGITS outside supported range 1..100000");
+     if (ctx.fuzz >= static_cast<std::size_t>(n)) throw std::runtime_error("NUMERIC FUZZ must be less than DIGITS");
+     ctx.digits = static_cast<std::size_t>(n);
+ }
+diff -ruN -x build -x '*.orig' a/rules/ExprCompare.cls b/rules/ExprCompare.cls
+--- a/rules/ExprCompare.cls	2026-10-10 16:35:12.440137139 +0100
++++ b/rules/ExprCompare.cls	2026-10-10 16:35:12.457473688 +0100
+@@ -6,7 +6,7 @@
+   use arg ctx
+   s = ctx~stream
+   value = ctx~addExpr~parse(ctx)
+-  if wordpos(s~peek~text, '= \= <> >< == \== < <= > >=') > 0 then do
++  if s~peek~kind == 'OP' & wordpos(s~peek~text, '= \= <> >< == \== < <= > >=') > 0 then do
+     selector = s~next~text
+     rhs = ctx~addExpr~parse(ctx)
+     value = .RxOperatorRules~binary(value, selector, rhs)
+diff -ruN -x build -x '*.orig' a/rules/ExprMultiply.cls b/rules/ExprMultiply.cls
+--- a/rules/ExprMultiply.cls	2026-10-10 16:35:12.440300027 +0100
++++ b/rules/ExprMultiply.cls	2026-10-10 16:35:12.457526020 +0100
+@@ -1,13 +1,24 @@
+-/* Multiplication and division have equal precedence, associate left to right. */
++/* Multiplication, division, integer division and remainder have equal precedence, left to right.
++   Power (**) binds tighter (below only the prefix operators), also left to right: 2**3**2 = 64. */
+ ::class RxExprMultiply public
+-::method parse
++::method operand private
+   use arg ctx
+   s = ctx~stream
+   value = ctx~unaryExpr~parse(ctx)
+-  do while s~is('*') | s~is('/') | s~is('%')
++  do while s~is('**')
+     selector = s~next~text
+     rhs = ctx~unaryExpr~parse(ctx)
+     value = .RxOperatorRules~binary(value, selector, rhs)
+   end
+   return value
++::method parse
++  use arg ctx
++  s = ctx~stream
++  value = self~operand(ctx)
++  do while s~is('*') | s~is('/') | s~is('%') | s~is('//')
++    selector = s~next~text
++    rhs = self~operand(ctx)
++    value = .RxOperatorRules~binary(value, selector, rhs)
++  end
++  return value
+ ::requires 'rules/OperatorRules.cls'
+diff -ruN -x build -x '*.orig' a/rules/ExprUnary.cls b/rules/ExprUnary.cls
+--- a/rules/ExprUnary.cls	2026-10-10 16:35:12.440041478 +0100
++++ b/rules/ExprUnary.cls	2026-10-10 16:35:12.457538936 +0100
+@@ -5,5 +5,6 @@
+   s = ctx~stream
+   if s~accept('+') then return .RxOperatorRules~unary('+', self~parse(ctx))
+   if s~accept('-') then return .RxOperatorRules~unary('-', self~parse(ctx))
++  if s~accept('\') then return .RxOperatorRules~unary('\', self~parse(ctx))
+   return ctx~messageExpr~parse(ctx)
+ ::requires 'rules/OperatorRules.cls'
+diff -ruN -x build -x '*.orig' a/rules/OperatorRules.cls b/rules/OperatorRules.cls
+--- a/rules/OperatorRules.cls	2026-10-10 16:35:12.440190720 +0100
++++ b/rules/OperatorRules.cls	2026-10-10 16:35:12.457317684 +0100
+@@ -6,7 +6,7 @@
+ ::class RxOperatorRules public
+ ::method binary class
+   use arg lhs, selector, rhs
+-  if wordpos(selector, '+ - * / % | || & && = \= <> >< == \== < <= > >=') == 0 then do
++  if wordpos(selector, '+ - * / % // ** | || & && = \= <> >< == \== < <= > >=') == 0 then do
+     raise syntax 40.1 array ('rx2cpp: unsupported binary operator ' || selector)
+   end
+   /* Native C++ does not guarantee function-argument evaluation order.
+@@ -17,7 +17,7 @@
+          .RxQuote~cpp(selector) || ', _right, vars.numeric); }())'
+ ::method unary class
+   use arg selector, operand
+-  if wordpos(selector, '+ -') == 0 then do
++  if wordpos(selector, '+ - \') == 0 then do
+     raise syntax 40.1 array ('rx2cpp: unsupported unary operator ' || selector)
+   end
+   return 'rx::sendUnary(' || .RxQuote~cpp(selector) || ', ' || operand || ', vars.numeric)'
+diff -ruN -x build -x '*.orig' a/rules/RxRoutineRules.cls b/rules/RxRoutineRules.cls
+--- a/rules/RxRoutineRules.cls	2026-10-10 16:35:12.439793494 +0100
++++ b/rules/RxRoutineRules.cls	2026-10-10 16:35:12.457365224 +0100
+@@ -25,7 +25,7 @@
+     labelName = s~next~text
+     s~expect(':')
+     s~separator
+-    ctx~beginRoutine
++    ctx~beginRoutine(labelName~translate)
+     ctx~line(2, '_rxRoutines[' || .RxQuote~cpp(labelName) || '] = [&](rx::Variables& _rxCallerVars, const std::vector<rx::Value>& _rxProgramArgs) -> rx::MessageResult {')
+     ctx~line(3, '(void)_rxProgramArgs;')
+     .RxProcedureRules~emitBinding(ctx, 3)
+diff -ruN -x build -x '*.orig' a/rules/StmtUseArg.cls b/rules/StmtUseArg.cls
+--- a/rules/StmtUseArg.cls	2026-10-10 16:35:12.439921927 +0100
++++ b/rules/StmtUseArg.cls	2026-10-10 16:35:12.457070105 +0100
+@@ -9,7 +9,12 @@
+   s = ctx~stream
+   s~expect('USE')
+   if \ctx~inRoutine then s~fail('USE ARG is currently supported in internal routines only')
++  strict = s~accept('STRICT')
+   s~expect('ARG')
++  if strict then do
++    self~emitStrict(ctx, depth)
++    return
++  end
+   index = 0
+   do forever
+     if s~peek~kind \= 'IDENT' then s~fail('USE ARG requires simple variable names')
+@@ -20,4 +25,26 @@
+     if \s~accept(',') then leave
+   end
+   s~separator
++::method emitStrict private
++  use arg ctx, depth
++  s = ctx~stream
++  specs = ''; sawOptional = .false
++  do forever
++    if s~peek~kind \= 'IDENT' then s~fail('USE STRICT ARG requires simple variable names')
++    name = s~next~text
++    if pos('.', name) > 0 then s~fail('USE STRICT ARG compound variable targets not yet implemented')
++    if s~accept('=') then do
++      t = s~next
++      if t~kind \= 'STRING' & t~kind \= 'NUMBER' then s~fail('USE STRICT ARG default must be a string or number constant')
++      specs = specs || '{' || .RxQuote~cpp(name) || ', false, ' || .RxQuote~cpp(t~text) || '}, '
++      sawOptional = .true
++    end
++    else do
++      if sawOptional then s~fail('USE STRICT ARG required argument after an optional one')
++      specs = specs || '{' || .RxQuote~cpp(name) || ', true, ""}, '
++    end
++    if \s~accept(',') then leave
++  end
++  ctx~line(depth, 'rx::useStrictArguments(vars, _rxProgramArgs, ' || .RxQuote~cpp(ctx~routineName) || ', {' || specs~strip('T', ' ')~strip('T', ',') || '});')
++  s~separator
+ ::requires 'core/RxQuote.cls'
+diff -ruN -x build -x '*.orig' a/tests/run.sh b/tests/run.sh
+--- a/tests/run.sh	2026-10-10 16:35:12.426543893 +0100
++++ b/tests/run.sh	2026-10-10 16:35:12.447649286 +0100
+@@ -5,6 +5,7 @@
+ ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+ cd "$ROOT"
+ CXX=${CXX:-g++}
++export RX2CPP_BIF_DISABLED=1   # this suite qualifies the bootstrap subset without the BIF add-on
+ REXX_BIN=${REXX_BIN:-rexx}
+ TEST_OUTPUT_DIR=${TEST_OUTPUT_DIR:-build/qualification}
+ mkdir -p "$TEST_OUTPUT_DIR"
+diff -ruN -x build -x '*.orig' a/tests/test_claude_numeric_ops.sh b/tests/test_claude_numeric_ops.sh
+--- a/tests/test_claude_numeric_ops.sh	1970-01-01 01:00:00.000000000 +0100
++++ b/tests/test_claude_numeric_ops.sh	2026-10-10 16:35:12.447635556 +0100
+@@ -0,0 +1,14 @@
++#!/usr/bin/env bash
++# // (remainder) and ** (power): hand-written edge cases plus 250 random differential cases (seeded), exact parity.
++set -euo pipefail
++ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
++REXX_BIN=${REXX_BIN:-rexx}; CXX=${CXX:-g++}
++WORK=${TEST_OUTPUT_DIR:-"$ROOT/build/claude-numeric-ops-$(basename "$CXX")"}; rm -rf "$WORK"; mkdir -p "$WORK"
++if [[ -n "${REXX_LIB:-}" ]]; then export LD_LIBRARY_PATH="$REXX_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; fi
++for f in numeric_ops_hand numeric_ops_random; do
++  "$REXX_BIN" "$ROOT/examples/claude/$f.rex" >"$WORK/$f.exp"
++  "$ROOT/build.sh" "$ROOT/examples/claude/$f.rex" "$WORK/$f.bin" "$WORK/$f.cpp" >/dev/null
++  "$WORK/$f.bin" >"$WORK/$f.act"
++  cmp "$WORK/$f.exp" "$WORK/$f.act" || { diff -u "$WORK/$f.exp" "$WORK/$f.act" | head -20; exit 1; }
++  echo "PASS $f ($(wc -l <"$WORK/$f.exp") lines identical)"
++done
+diff -ruN -x build -x '*.orig' a/tests/test_claude_unary_strict.sh b/tests/test_claude_unary_strict.sh
+--- a/tests/test_claude_unary_strict.sh	1970-01-01 01:00:00.000000000 +0100
++++ b/tests/test_claude_unary_strict.sh	2026-10-10 16:35:12.447453997 +0100
+@@ -0,0 +1,24 @@
++#!/usr/bin/env bash
++# Unary \ (logical NOT) and USE STRICT ARG (required/optional, 40.3/40.4 contract): parity with the interpreter.
++set -euo pipefail
++ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
++REXX_BIN=${REXX_BIN:-rexx}; CXX=${CXX:-g++}
++WORK=${TEST_OUTPUT_DIR:-"$ROOT/build/claude-unary-strict-$(basename "$CXX")"}; rm -rf "$WORK"; mkdir -p "$WORK"
++if [[ -n "${REXX_LIB:-}" ]]; then export LD_LIBRARY_PATH="$REXX_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; fi
++for f in unary_not use_strict_arg; do
++  "$REXX_BIN" "$ROOT/examples/claude/$f.rex" >"$WORK/$f.exp"
++  "$ROOT/build.sh" "$ROOT/examples/claude/$f.rex" "$WORK/$f.bin" "$WORK/$f.cpp" >/dev/null
++  "$WORK/$f.bin" >"$WORK/$f.act"
++  cmp "$WORK/$f.exp" "$WORK/$f.act" || { diff -u "$WORK/$f.exp" "$WORK/$f.act"; exit 1; }
++  echo "PASS $f ($(wc -l <"$WORK/$f.exp") lines identical)"
++done
++# argument-count contract: too many / too few must fail at run time with the interpreter's 40.x code
++i=0
++for body in "call f 1,2,3|40.4" "call f|40.3"; do
++  i=$((i+1)); call=${body%%|*}; code=${body##*|}
++  printf '%s\nexit\nf:\nprocedure\nuse strict arg a, b = 7\nreturn\n' "$call" >"$WORK/c$i.rex"
++  o=$("$REXX_BIN" "$WORK/c$i.rex" 2>&1 || true); [[ "$o" == *"Error $code"* ]] || { echo "FAIL oracle $code: $call"; exit 1; }
++  "$ROOT/build.sh" "$WORK/c$i.rex" "$WORK/c$i.bin" "$WORK/c$i.cpp" >/dev/null
++  n=$("$WORK/c$i.bin" 2>&1 || true); [[ "$n" == *"Error $code"* ]] || { echo "FAIL native $code: $call -> $n"; exit 1; }
++done
++echo "PASS USE STRICT ARG count errors (40.3, 40.4) match"

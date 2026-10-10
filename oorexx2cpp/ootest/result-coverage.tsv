@@ -1,0 +1,7 @@
+source_group	upstream_method	covered_behaviour	fixture	coverage
+RESULT_RC_SIGL.testGroup	test_Result_with_Return	standalone message stores returned value; expression does not change RESULT; a no-return method drops RESULT; cascade retains receiver	tests/oorexx_message_outcome.rex + tests/native_message_outcome.cpp	PARTIAL_NATIVE_ABI_PARITY (different sources)
+RESULT_RC_SIGL.testGroup	test_Result_with_Return	RESULT after a returning .String message; expression-level message does not change RESULT	examples/message_result.rex; examples/message_chain.rex	PARTIAL_SAME_SOURCE_PARITY
+RESULT_RC_SIGL.testGroup	test_Result_with_Exit	method EXIT result and CALL routine invocation	(none)	UNSUPPORTED
+RESULT_RC_SIGL.testGroup	test_Result_with_Reply	asynchronous REPLY semantics	(none)	UNSUPPORTED
+RESULT_RC_SIGL.testGroup	test_Result_with_Return_ExternalFile	external routines, CALL, RESULT/RC	(none)	UNSUPPORTED
+RESULT_RC_SIGL.testGroup	test_Result_with_Exit_ExternalFile	external routines, CALL, RESULT/RC	(none)	UNSUPPORTED

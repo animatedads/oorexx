@@ -1,0 +1,169 @@
+#!/usr/bin/env rexx
+/* ooTest differential tests for rx2cpp.  Assertions compare COMPLETE binary
+   stdout and process status for separately interpreted and compiled sources.
+   Inputs are prepared by ootest/run.sh.  No user code is executed by this
+   file other than the ooTest framework itself. */
+parse source . . sourceFile
+group = .TestGroup~new(sourceFile)
+group~add(.RX2CPP.testGroup)
+if group~isAutomatedTest then return group
+result = group~suite~execute
+result~print
+return result
+
+::requires 'ooTest.frm'
+::class 'RX2CPP.testGroup' public subclass ooTestCase
+
+::method init
+  expose resultsDir
+  forward class (super) continue
+  resultsDir = value('RX2CPP_OOTEST_RESULTS_DIR',, 'ENVIRONMENT')
+
+/* Byte-for-byte comparisons: an ooRexx numeric string is NOT necessarily
+   equivalent to its native C++ formatting.  Compare stdout bytes, not just
+   printed numeric values, and compare exit status separately. */
+::method compareCase private
+  expose resultsDir
+  use strict arg name
+  self~assertTrue(resultsDir \== '', 'RX2CPP_OOTEST_RESULTS_DIR is required')
+  base = resultsDir || '/' || name || '.'
+  self~assertTrue(self~exists(base || 'expected.stdout'), 'missing interpreted output for ' || name)
+  self~assertTrue(self~exists(base || 'actual.stdout'), 'missing native output for ' || name)
+  self~assertTrue(self~exists(base || 'compile.status'), 'missing C++ compile result for ' || name)
+  self~assertEquals(0, self~status(base || 'compile.status'), 'C++ compilation failed for ' || name)
+  self~assertEquals(self~status(base || 'expected.status'), self~status(base || 'actual.status'), 'process status mismatch: ' || name)
+  self~assertSame(self~contents(base || 'expected.stdout'), self~contents(base || 'actual.stdout'), 'stdout byte mismatch: ' || name)
+
+::method negativeCase private
+  expose resultsDir
+  use strict arg name
+  base = resultsDir || '/' || name || '.'
+  self~assertTrue(self~exists(base || 'compile.status'), 'missing negative result: ' || name)
+  self~assertTrue(self~status(base || 'compile.status') \= 0, 'unsupported source accepted: ' || name)
+  self~assertFalse(self~exists(base || 'cpp'), 'unsupported source generated a C++ file: ' || name)
+  diagnostic = self~contents(base || 'compiler.log')
+  self~assertTrue(pos('rx2cpp:', diagnostic) > 0, 'missing rx2cpp diagnostic: ' || name)
+
+::method exists private
+  use strict arg path
+  return stream(path, 'C', 'QUERY EXISTS') \== ''
+
+::method contents private
+  use strict arg path
+  self~assertTrue(self~exists(path), 'missing output: ' || path)
+  length = chars(path)
+  if length = 0 then return ''
+  content = charin(path, 1, length)
+  call stream path, 'C', 'CLOSE'
+  return content
+
+::method status private
+  use strict arg path
+  return strip(strip(self~contents(path), 'T', '0a'x), 'T', '0d'x) + 0
+
+::method test_squares
+  self~compareCase('squares')
+::method test_operators
+  self~compareCase('operators')
+::method test_do_until_once
+  self~compareCase('do_until_once')
+::method test_division
+  self~compareCase('division')
+::method test_strings
+  self~compareCase('strings')
+::method test_exit_status_7
+  self~compareCase('exit_status_7')
+::method test_somerexx
+  self~compareCase('somerexx')
+::method test_shipped_hello_world
+  self~compareCase('shipped_hello_world')
+::method test_reject_unsupported_object
+  self~negativeCase('unsupported_object')
+::method test_reject_invalid_else
+  self~negativeCase('invalid_else')
+
+/* Interpreter semantics oracle; not itself a native compilation test.
+   These catch accidental assumptions about strictness and \\= vs \=. */
+::method test_interpreter_loose_strict_comparison
+  self~assertTrue('dog ' = 'dog')
+  self~assertFalse('dog ' == 'dog')
+  self~assertTrue('dog ' \= 'cat')
+  self~assertTrue('dog ' \== 'dog')
+
+/* This is a historical ooTest idiom: an expected interpreter condition is a
+   success, not an unexpected crash.  Native exception mapping is future work. */
+::method test_interpreter_expected_stream_syntax
+  self~expectSyntax(40.3)
+  ignored = stream()
+
+/* First blockers distilled from three historical upstream test groups. */
+/* Four independently verified compound operators, including ooTest 4.2
+   Assignments.testGroup's integer i3 cases and composition tests. */
+::method test_assignment_microcases
+  self~compareCase('assignment_ootest_microcases')
+::method test_assignment_chains
+  self~compareCase('assignment_chains')
+::method test_assignment_loop
+  self~compareCase('assignment_loop')
+::method test_assignment_literals
+  self~compareCase('assignment_literals')
+
+::method test_reject_missing_mod_assignment
+  self~negativeCase('augmented_unsupported_mod')
+::method test_reject_missing_remainder_assignment
+  self~negativeCase('augmented_unsupported_remainder')
+::method test_reject_missing_power_assignment
+  self~negativeCase('augmented_unsupported_power')
+::method test_reject_missing_logic_assignment
+  self~negativeCase('augmented_unsupported_logic')
+::method test_reject_compound_missing_rhs
+  self~negativeCase('augmented_missing_rhs')
+::method test_reject_missing_numeric_digits_rule
+  self~negativeCase('numeric_digits')
+::method test_reject_missing_abbrev_bif_rule
+  self~negativeCase('abbrev_bif')
+
+/* v0.12: source-level message instructions vs expressions, cascade,
+   RESULT isolation and chained calls. Unsupported selector syntax rejects. */
+::method test_message_result
+  self~compareCase('message_result')
+::method test_message_chain
+  self~compareCase('message_chain')
+::method test_message_in_loop
+  self~compareCase('message_in_loop')
+::method test_reject_missing_message_selector
+  self~negativeCase('invalid_message_selector')
+
+::method test_message_operator
+  self~compareCase('message_operator')
+
+/* v0.13: CALL instruction dispatch vs BIF expression calls; RESULT is
+   frame-local and must not be changed by expressions. */
+::method test_call_result
+  self~compareCase('call_result')
+::method test_builtin_abs
+  self~compareCase('builtin_abs')
+::method test_reject_unknown_call
+  self~negativeCase('call_unknown')
+::method test_reject_bad_call_arity
+  self~negativeCase('call_bad_arity')
+::method test_reject_call_condition_trap
+  self~negativeCase('call_condition')
+::method test_reject_bad_function_arity
+  self~negativeCase('function_bad_arity')
+
+/* Integer-only fragments from historic upstream ABS test methods.
+   Full method conformance is not claimed. */
+::method test_abs_ootest_microcases
+  self~compareCase('abs_ootest_microcases')
+
+/* v0.19: compound symbols, stem defaults/reset, dynamic tail substitution.
+   These exercise language syntax/runtime, not independently-owned BIF code. */
+::method test_compound_semantics
+  self~compareCase('compound_semantics')
+::method test_compound_loop
+  self~compareCase('compound_loop')
+::method test_compound_multitail
+  self~compareCase('compound_multitail')
+::method test_compound_trailing
+  self~compareCase('compound_trailing')

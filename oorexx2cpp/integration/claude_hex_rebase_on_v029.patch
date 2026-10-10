@@ -1,0 +1,250 @@
+--- a/core/RxLexer.cls
++++ b/core/RxLexer.cls
+@@ -22,9 +22,9 @@
+   else col = col + 1
+   return c
+ ::method emit
+-  expose out
+-  use arg kind, text, line, col
+-  out~append(.RxToken~new(kind, text, line, col))
++  expose out line col
++  use arg kind, text, markLine, markCol
++  out~append(.RxToken~new(kind, text, markLine, markCol, line, col))
+ ::method fault
+   expose line col
+   use arg reason
+@@ -66,21 +66,31 @@
+       end
+       when c == "'" | c == '"' then do
+         quote = self~move
+-        value = ''; closed = .false
++        value = ''; raw = ''; closed = .false
+         do while self~char \== ''
+           ch = self~move
+           if ch == '0a'x then self~fault('newline inside quoted string')
+           if ch == quote then do
+             if self~char == quote then do
+-              self~move; value = value || quote
++              self~move; value = value || quote; raw = raw || quote || quote
+             end
+             else do
+               closed = .true; leave
+             end
+           end
+-          else value = value || ch
++          else do
++            value = value || ch; raw = raw || ch
++          end
+         end
+         if \closed then self~fault('unclosed quoted string')
++        /* 'hex'X and 'bits'B are hexadecimal / binary string literals, NOT a string abutted to a variable
++           named X or B -- unless the X/B starts a longer symbol ('a'xy). Same test as the ooRexx scanner. */
++        suffix = self~char
++        if suffix \== '' & pos(suffix, 'xXbB') > 0 & \self~isRexxSymbolChar(self~char(1)) then do
++          self~move
++          if translate(suffix) == 'X' then value = self~packHex(raw)
++          else value = self~packBinary(raw)
++        end
+         self~emit('STRING', value, markLine, markCol)
+       end
+       when self~isStart(c) then do
+@@ -182,6 +192,84 @@
+   end
+   self~emit('EOF', '<eof>', line, col)
+   return out
++/* Characters that can continue a Rexx symbol (decides whether 'x' after a quote is a hex-literal marker). */
++::method isRexxSymbolChar private
++  use arg c
++  return c \== '' & verify(c, 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._!?$@#') = 0
++::method badLiteral private
++  use arg subcode, text
++  self~fault('Invalid hexadecimal or binary string (15.' || subcode || '): ' || text)
++/* 'hex'X: the same checks and packing as the ooRexx interpreter's LanguageParser::packHexLiteral. */
++::method packHex private
++  use arg raw
++  len = raw~length
++  if len == 0 then return ''
++  groupCount = 0; nibbles = 0
++  do i = len to 1 by -1
++    c = raw~substr(i, 1)
++    if c == ' ' | c == '09'x then do
++      if i == 1 | i == len then self~badLiteral(1, 'Incorrect location of whitespace character in position' i 'in hexadecimal string.')
++      else if groupCount // 2 \= 0 then self~badLiteral(5, 'Hexadecimal strings must be grouped in units that are multiples of two characters.')
++      groupCount = 0
++    end
++    else do
++      groupCount = groupCount + 1; nibbles = nibbles + 1
++    end
++  end
++  nibbleStart = nibbles // 2
++  chars = nibbles % 2 + nibbleStart
++  out = ''; p = 1
++  do n = 1 to chars
++    byte = 0
++    do while raw~substr(p, 1) == ' ' | raw~substr(p, 1) == '09'x
++      p = p + 1
++    end
++    do k = nibbleStart to 1
++      nib = raw~substr(p, 1); p = p + 1
++      if nib == '' | pos(nib, '0123456789abcdefABCDEF') == 0 then -
++        self~badLiteral(3, 'Only 0-9, a-f, A-F, and whitespace characters are valid in a hexadecimal string; found "' || nib || '".')
++      byte = byte * 16 + x2d(nib)
++    end
++    nibbleStart = 0
++    out = out || d2c(byte)
++  end
++  return out
++/* 'bits'B: the same checks and packing as LanguageParser::packBinaryLiteral. */
++::method packBinary private
++  use arg raw
++  len = raw~length
++  if len == 0 then return ''
++  groupCount = 0; bits = 0
++  do i = len to 1 by -1
++    c = raw~substr(i, 1)
++    if c == ' ' | c == '09'x then do
++      if i == 1 | i == len then self~badLiteral(2, 'Incorrect location of whitespace character in position' i 'in binary string.')
++      else if groupCount // 4 \= 0 then self~badLiteral(6, 'Binary strings must be grouped in units that are multiples of four characters.')
++      groupCount = 0
++    end
++    else do
++      groupCount = groupCount + 1; bits = bits + 1
++    end
++  end
++  byteSize = bits // 8
++  chars = bits % 8 + (byteSize \= 0)
++  if byteSize == 0 then byteSize = 8
++  out = ''; p = 1
++  do n = 1 to chars
++    byte = 0
++    do k = 1 to byteSize
++      bit = raw~substr(p, 1); p = p + 1
++      do while bit == ' ' | bit == '09'x
++        bit = raw~substr(p, 1); p = p + 1
++      end
++      byte = byte * 2
++      if bit == '1' then byte = byte + 1
++      else if bit \== '0' then self~badLiteral(4, 'Only 0, 1, and whitespace characters are valid in a binary string; found "' || bit || '".')
++    end
++    byteSize = 8
++    out = out || d2c(byte)
++  end
++  return out
+ ::method isStart private
+   use arg c
+   return c \== '' & pos(c, 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_') > 0
+--- a/core/RxToken.cls
++++ b/core/RxToken.cls
+@@ -4,6 +4,8 @@
+ ::attribute text get
+ ::attribute line get
+ ::attribute col get
++::attribute endLine get
++::attribute endCol get
+ ::method init
+-  expose kind text line col
+-  use arg kind, text, line, col
++  expose kind text line col endLine endCol
++  use arg kind, text, line, col, endLine = 0, endCol = 0
+--- a/core/RxStream.cls
++++ b/core/RxStream.cls
+@@ -17,6 +17,9 @@
+   i = cursor + offset
+   if i > tokens~items then return '<eof>'
+   return tokens[i]~text
++::method previous
++  expose tokens cursor
++  return tokens[cursor - 1]
+ ::method next
+   expose tokens cursor
+   t = tokens[cursor]
+@@ -24,7 +27,7 @@
+   return t
+ ::method is
+   use arg value
+-  return self~peek~text == value
++  return self~peek~kind \= 'STRING' & self~peek~text == value
+ ::method accept
+   use arg value
+   if \self~is(value) then return .false
+--- a/core/RxQuote.cls
++++ b/core/RxQuote.cls
+@@ -21,4 +21,5 @@
+       end
+     end
+   end
++  if pos('00'x, value) > 0 then return 'std::string(' || answer || '"' || ', ' || value~length || ')'
+   return answer || '"'
+--- a/rules/StmtSay.cls
++++ b/rules/StmtSay.cls
+@@ -1,4 +1,5 @@
+-/* Language rule: SAY expression list, each item separated by one output space. */
++/* Language rule: SAY expression list. Items separated by blanks are written with one output space;
++   items that touch (abuttal, e.g. 'a'b or '['x']') are concatenated with NO space, as in Rexx. */
+ ::class RxStmtSay public
+ ::method accepts
+   use arg ctx
+@@ -7,10 +8,25 @@
+   use arg ctx, depth
+   s = ctx~stream
+   s~expect('SAY')
++  items = .array~new
++  abut = .false
++  do while s~peek~kind \= 'SEP' & s~peek~kind \= 'EOF'
++    startTok = s~peek
++    value = ctx~logicalExpr~parse(ctx)
++    if abut then do
++      last = items~items
++      items[last] = .RxOperatorRules~binary(items[last], '||', value)
++    end
++    else items~append(value)
++    prev = s~previous
++    nxt = s~peek
++    abut = nxt~kind \= 'SEP' & nxt~kind \= 'EOF' & nxt~line == prev~endLine & nxt~col == prev~endCol
++  end
+   values = ''
+-  do while s~peek~kind \= 'SEP' & s~peek~kind \= 'EOF'
++  do v over items
+     if values \= '' then values = values || ', '
+-    values = values || ctx~logicalExpr~parse(ctx)
++    values = values || v
+   end
+   ctx~line(depth, 'rx::say({' || values || '});')
+   s~separator
++::requires 'rules/OperatorRules.cls'
+--- a/rules/ParseTemplateRules.cls
++++ b/rules/ParseTemplateRules.cls
+@@ -23,21 +23,21 @@
+         targets~append('.')
+         operations~append('rx::ParseOp::target()')
+       end
+-      when t~kind == 'INT' then do
++      when (t~kind == 'INT' | t~kind == 'NUMBER') & verify(t~text, '0123456789') == 0 then do
+         position = s~next~text
+         if position~length > 18 then s~fail('PARSE position outside supported int64 range')
+         operations~append('rx::ParseOp::absolute(' || position || ')')
+         patterns = patterns + 1
+       end
+       when s~accept('+') then do
+-        if s~peek~kind \= 'INT' then s~fail('PARSE + pattern requires an integer position')
++        if \self~integerPosition(s~peek) then s~fail('PARSE + pattern requires an integer position')
+         offset = s~next~text
+         if offset~length > 18 then s~fail('PARSE relative position outside supported int64 range')
+         operations~append('rx::ParseOp::relative(' || offset || ')')
+         patterns = patterns + 1
+       end
+       when s~accept('-') then do
+-        if s~peek~kind \= 'INT' then s~fail('PARSE - pattern requires an integer position')
++        if \self~integerPosition(s~peek) then s~fail('PARSE - pattern requires an integer position')
+         offset = s~next~text
+         if offset~length > 18 then s~fail('PARSE relative position outside supported int64 range')
+         operations~append('rx::ParseOp::relative(-' || offset || ')')
+@@ -67,5 +67,8 @@
+     initializer = initializer || operations[i]
+   end
+   return .array~of(initializer, targets, patterns)
++::method integerPosition class
++  use arg token
++  return (token~kind == 'INT' | token~kind == 'NUMBER') & verify(token~text, '0123456789') == 0
+ ::requires 'rules/CompoundSymbols.cls'
+ ::requires 'core/RxQuote.cls'

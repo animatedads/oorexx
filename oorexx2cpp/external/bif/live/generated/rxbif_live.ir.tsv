@@ -1,0 +1,4 @@
+name	source_line	min	max	mode	source_basis
+DIGITS	4	0	0	LIVE_CALL_SCOPED	upstream_cpp_BUILTIN
+FUZZ	14	0	0	LIVE_CALL_SCOPED	upstream_cpp_BUILTIN
+FORM	24	0	0	LIVE_CALL_SCOPED	upstream_cpp_BUILTIN

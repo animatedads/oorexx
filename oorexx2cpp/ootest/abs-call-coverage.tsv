@@ -1,0 +1,12 @@
+upstream_group	method	feature	status	evidence	limitation
+ABS.testGroup	test_4	ABS(003)	NATIVE_PASS	examples/abs_ootest_microcases.rex	only isolated expression
+ABS.testGroup	test_5	ABS(-000003)	NATIVE_PASS	examples/abs_ootest_microcases.rex	only isolated expression
+ABS.testGroup	test_9	ABS('   3  ')	NATIVE_PASS	examples/abs_ootest_microcases.rex	only isolated expression
+ABS.testGroup	test_15	ABS('300  ')	NATIVE_PASS	examples/abs_ootest_microcases.rex	only isolated expression
+ABS.testGroup	test_16	ABS('          300')	NATIVE_PASS	examples/abs_ootest_microcases.rex	only isolated expression
+ABS.testGroup	test_18	ABS(a)	NATIVE_PASS	examples/abs_ootest_microcases.rex	only isolated expression
+ABS.testGroup	test_19	ABS(a+b)	NATIVE_PASS	examples/abs_ootest_microcases.rex	only isolated expression
+ABS.testGroup	test_12	ABS(0+31)	NATIVE_PASS	examples/abs_ootest_microcases.rex	only isolated expression
+ABS.testGroup	test_13	ABS(0+'  31 ')	NATIVE_PASS	examples/abs_ootest_microcases.rex	only isolated expression
+CALL.testGroup	test_1	CALL syntax and RESULT	PARTIAL	examples/call_result.rex	internals external routines PRO CEDURE SIGL and RC not supported
+RESULT_RC_SIGL.testGroup	test_Result_with_Return	CALL sets RESULT	PARTIAL	examples/call_result.rex	internal return and no-return pending

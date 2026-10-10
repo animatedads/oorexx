@@ -1,0 +1,25 @@
+Upstream excerpt attribution / license notice
+
+Copyright (c) 1995, 2004 IBM Corporation. All rights reserved.
+Copyright (c) 2005-2014 Rexx Language Association. All rights reserved.
+
+Upstream source in fixtures/BuiltinFunctions.excerpt.cpp is extracted from
+Open Object Rexx interpreter/expression/BuiltinFunctions.cpp.
+Source repository: https://github.com/ooRexx/ooRexx
+Git blob inspected: 05ea58114e9e5b59a1cceebf8dd418b78058d342
+
+The upstream program and accompanying materials are made available under the
+Common Public License v1.0: https://www.oorexx.org/license.html
+
+Redistributions of source code must retain the above copyright notice, the
+list of conditions and the disclaimer. Redistributions in binary form must
+reproduce this notice and disclaimer in the documentation and/or other
+materials. Neither the name Rexx Language Association nor contributors' names
+may be used to endorse derivative products without permission.
+
+THE SOFTWARE IS PROVIDED BY COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS",
+WITHOUT EXPRESS OR IMPLIED WARRANTIES, INCLUDING WARRANTIES OF
+MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE. IN NO EVENT SHALL
+THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE FOR DIRECT, INDIRECT,
+INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES OR LOSSES, EVEN IF
+ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.

@@ -1,0 +1,13 @@
+RBI1	name	min	max	kind	cpp_method	source_arguments	origin_line	delegate_call
+RBI1	CENTER	2	3	METHOD	center	string:required_string,length:required_integer,pad:optional_pad	5	string->center(length,pad)
+RBI1	REVERSE	1	1	METHOD	reverse	string:required_string	22	string->reverse()
+RBI1	WORDS	1	1	METHOD	words	string:required_string	35	string->words()
+RBI1	TIME	0	3	CLOCK_SUBSET		dynamic-context	48	activation
+RBI1	COPIES	2	2	METHOD	copies	string:required_string,n:required_integer	286	string->copies(n)
+RBI1	C2X	1	1	METHOD	c2x	string:required_string	301	string->c2x()
+RBI1	X2C	1	1	METHOD	x2c	string:required_string	314	string->x2c()
+RBI1	BITAND	1	3	METHOD	bitAnd	string1:required_string,string2:optional_string,pad:optional_pad	327	string1->bitAnd(string2,pad)
+RBI1	BITOR	1	3	METHOD	bitOr	string1:required_string,string2:optional_string,pad:optional_pad	344	string1->bitOr(string2,pad)
+RBI1	BITXOR	1	3	METHOD	bitXor	string1:required_string,string2:optional_string,pad:optional_pad	361	string1->bitXor(string2,pad)
+RBI1	B2X	1	1	METHOD	b2x	string:required_string	378	string->b2x()
+RBI1	X2B	1	1	METHOD	x2b	string:required_string	391	string->x2b()

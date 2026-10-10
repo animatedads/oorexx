@@ -1,0 +1,3 @@
+rx2cpp native package compiled WIDGET classes=1
+Built native ooRexx library: /tmp/tmp.VDCpvgDrDR/librx2cpp_attrmodeconstant.so
+PASS clang++ ::ATTRIBUTE GET/SET ::CONSTANT class+instance: exact interpreter parity; 5 protected rejections

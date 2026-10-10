@@ -1,0 +1,68 @@
+#!/usr/bin/env rexx
+/* Focused ooTest qualification for the independent SELECT/WHEN grammar rule.
+   Test fixtures are executed by tests/test_select.sh using ooRexx 5.3 and
+   compiled C++ before this group runs. */
+parse source . . src
+suite = .TestGroup~new(src)
+suite~add(.RX2CPPSelect.testGroup)
+if suite~isAutomatedTest then return suite
+result = suite~suite~execute
+result~print
+return result
+::requires 'ooTest.frm'
+::class 'RX2CPPSelect.testGroup' public subclass ooTestCase
+::method init
+  expose directory
+  forward class (super) continue
+  directory = value('RX2CPP_SELECT_RESULTS_DIR',, 'ENVIRONMENT')
+::method read private
+  use strict arg path
+  self~assertTrue(stream(path, 'C', 'QUERY EXISTS') \== '', 'missing: ' || path)
+  n = chars(path)
+  if n == 0 then return ''
+  bytes = charin(path, 1, n)
+  call stream path, 'C', 'CLOSE'
+  return bytes
+::method compare private
+  expose directory
+  use strict arg name
+  self~assertSame(self~read(directory || '/' || name || '.expected'), -
+                  self~read(directory || '/' || name || '.actual'), 'native stdout for ' || name)
+::method rejected private
+  expose directory
+  use strict arg name
+  self~assertTrue(stream(directory || '/' || name || '.cpp', 'C', 'QUERY EXISTS') == '', 'partial C++ for ' || name)
+  self~assertTrue(pos('rx2cpp:', self~read(directory || '/' || name || '.err')) > 0, 'diagnostic for ' || name)
+::method test_select_basic
+  self~compare('select_basic')
+::method test_select_otherwise
+  self~compare('select_otherwise')
+::method test_select_nested
+  self~compare('select_nested')
+::method test_select_compound
+  self~compare('select_compound')
+::method test_select_no_otherwise
+  self~compare('select_no_otherwise')
+::method test_select_short_circuit
+  self~compare('select_short_circuit')
+::method test_select_otherwise_do
+  self~compare('select_otherwise_do')
+::method test_select_semicolon
+  self~compare('select_semicolon')
+::method test_reject_no_when
+  self~rejected('no_when')
+::method test_reject_when_after_otherwise
+  self~rejected('when_after_otherwise')
+::method test_reject_missing_then
+  self~rejected('missing_then')
+::method test_reject_duplicate_otherwise
+  self~rejected('duplicate_otherwise')
+::method test_reject_stray_body
+  self~rejected('stray_body')
+::method test_reject_empty_select
+  self~rejected('empty_select')
+/* Negative SELECT reference semantics, unlike successful-output checks,
+   do not claim exact native exception codes. */
+::method test_no_match_native_error
+  expose directory
+  self~assertTrue(pos('SELECT:', self~read(directory || '/no_match.native_error')) > 0)

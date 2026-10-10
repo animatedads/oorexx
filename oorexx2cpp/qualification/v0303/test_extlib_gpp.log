@@ -1,0 +1,7 @@
+PASS math_sock (10 lines identical to the interpreter)
+PASS loopback (15 lines identical to the interpreter)
+PASS native executable has no interpreter dynamic-link dependency
+PASS library argument error propagates (88.901)
+PASS missing library fails at start (98.926)
+PASS 6 fail-closed forms rejected with no output
+PASS built-in names are never external routines

@@ -1,0 +1,12 @@
+=== Developer Registry ===
+
+ID    : 101
+Name  : Thomas Dyer
+Role  : Systems Architect
+Skills : ooRexx, C++, Linux
+----------------------------------------
+ID    : 102
+Name  : Alex Mercer
+Role  : Infrastructure Engineer
+Skills : Python, SQL, Bash
+----------------------------------------

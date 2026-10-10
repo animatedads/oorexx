@@ -1,0 +1,23 @@
+PASS interpreter/native arg_comma
+PASS interpreter/native call_return
+PASS interpreter/native function_expression
+PASS interpreter/native internal_over_builtin
+PASS interpreter/native nested_calls
+PASS interpreter/native no_return_value
+PASS interpreter/native recursive
+PASS interpreter/native routine_loop
+PASS interpreter/native use_arg
+PASS interpreter/native use_arg_omitted
+PASS reject duplicate_labels
+PASS reject label_without_exit
+PASS reject missing_return
+PASS reject procedure_requires_scoping
+PASS reject procedure_expose
+PASS reject signal_unsupported
+PASS reject exit_within_routine
+PASS reject unknown_internal
+PASS reject use_arg_at_entry
+PASS reject label_in_block
+PASS reject improper_label
+PASS reject unsupported_implicit_concatenation
+Internal routine qualification: 10 byte-identical programs, 12 protected-output rejection cases; CXX=clang++

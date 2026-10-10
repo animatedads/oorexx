@@ -1,0 +1,13 @@
+name	status	line	evidence
+CENTER	ADMITTED_SUBSET	5	return string->center(length,pad)
+REVERSE	ADMITTED_SUBSET	22	return string->reverse()
+WORDS	ADMITTED_SUBSET	35	return string->words()
+TIME	ADMITTED_SUBSET	48	context->getTime; qualified subset, not full conversion
+COPIES	ADMITTED_SUBSET	286	return string->copies(n)
+C2X	ADMITTED_SUBSET	301	return string->c2x()
+X2C	ADMITTED_SUBSET	314	return string->x2c()
+BITAND	ADMITTED_SUBSET	327	return string1->bitAnd(string2,pad)
+BITOR	ADMITTED_SUBSET	344	return string1->bitOr(string2,pad)
+BITXOR	ADMITTED_SUBSET	361	return string1->bitXor(string2,pad)
+B2X	ADMITTED_SUBSET	378	return string->b2x()
+X2B	ADMITTED_SUBSET	391	return string->x2b()

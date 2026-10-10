@@ -1,0 +1,10 @@
+rx2cpp native package compiled COUNTER MULTIPLIER classes=2
+Built native ooRexx library: /mnt/data/rx2cpp_work/rx2cpp_oorexx_v0.30.2_object_index/build/native-package-clang++/librx2cpp_dual.so
+PASS two classes, same method names, independent state, identity
+PASS 2000 calls and state integrity
+PASS package shared library has no librexx/Foreign Runtime dependencies
+PASS fail-closed: duplicate_class
+PASS fail-closed: unsupported_inheritance
+PASS fail-closed: unsupported_routine
+PASS preexisting .Array class protected from collision
+PASS failed compilation preserves previous valid shared library
