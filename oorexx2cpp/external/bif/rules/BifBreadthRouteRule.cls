@@ -23,8 +23,19 @@
   /* Original native forwarding rule is authoritative.  Do not claim native
      acceptance if the upstream C++ call shape has changed. */
   if mode == 'NATIVE_SUBSET' then do
-    validated = native~convert(definition)
-    if validated == .nil then mode = 'HOST_ACTIVATION'
+    if n == 'SIGN' then do
+      /* SIGN uses a dedicated native numeric scanner rather than the generic
+         RexxString method forwarder. Preserve native admission only while
+         the upstream source still selects the string sign() method. */
+      body = definition~joined
+      if pos('required_string(SIGN, n)',body) == 0 | ,
+         pos('return n->sign()',body) == 0 | ,
+         pos('fix_args(SIGN)',body) == 0 then mode = 'HOST_ACTIVATION'
+    end
+    else do
+      validated = native~convert(definition)
+      if validated == .nil then mode = 'HOST_ACTIVATION'
+    end
   end
   return .BifIR~new(n, definition~line, expectedMin, expectedMax, mode, ,
           'source-verified catalog; route ' || mode, 'original C++ BUILTIN wrapper', mode)

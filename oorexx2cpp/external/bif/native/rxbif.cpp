@@ -5,6 +5,7 @@
    05ea58114e9e5b59a1cceebf8dd418b78058d342. See CLOCK_SEMANTICS.md and README.md.
    This conservative native subset rejects cases not yet qualified. */
 #include "rxbif.hpp"
+#include "rxbif_sign.hpp"
 #include <array>
 #include <cstdint>
 #include <ctime>
@@ -16,7 +17,7 @@
 namespace rxbif {
 namespace {
 const std::vector<Signature> kSpecs = {
-    {"ABBREV",2,3}, {"B2X",1,1}, {"BITAND",1,3}, {"BITOR",1,3}, {"BITXOR",1,3}, {"C2X",1,1}, {"CENTER",2,3}, {"CENTRE",2,3},
+    {"SIGN",1,1}, {"ABBREV",2,3}, {"B2X",1,1}, {"BITAND",1,3}, {"BITOR",1,3}, {"BITXOR",1,3}, {"C2X",1,1}, {"CENTER",2,3}, {"CENTRE",2,3},
     {"CHANGESTR",3,4}, {"COMPARE",2,3}, {"COPIES",2,2}, {"COUNTSTR",2,2},
     {"DATE",0,5}, {"DELSTR",1,3}, {"DELWORD",2,3}, {"INSERT",2,5},
     {"LASTPOS",2,4}, {"LEFT",2,3}, {"LOWER",1,3}, {"OVERLAY",2,5},
@@ -362,6 +363,13 @@ rx::Value invoke(const std::string &name,const std::vector<rx::Value> &a,Context
     if(a.size()<spec->minArgs||a.size()>spec->maxArgs)bad(name,"incorrect argument count");
     const auto get=[&](size_t i)->const std::string&{return str(a,i,name);};
     const auto ct=[&](size_t i,std::int64_t mi=0)->size_t{return count(a,i,name,mi);};
+    if(name=="SIGN") {
+        const auto result=rxbif_sign::parse(get(0));
+        if(result.status==rxbif_sign::Status::UnqualifiedRange)
+            throw NativeSubsetUnsupported("BIF SIGN: exponent boundary requires ooRexx numeric normalization");
+        if(result.status!=rxbif_sign::Status::Valid)bad(name,"invalid numeric argument");
+        return sv(result.sign==0 ? "0" : result.sign>0 ? "1" : "-1");
+    }
     if(name=="DATE"){
         const char style=a.empty()?'N':caseMode(get(0),name);
         Date now=nowDate(c),d=now;

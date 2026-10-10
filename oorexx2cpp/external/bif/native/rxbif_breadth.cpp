@@ -80,7 +80,7 @@ const std::vector<Spec>& catalog() {
         {"VAR",1,1,"HOST_ACTIVATION"},
         {"VALUE",1,3,"HOST_ACTIVATION"},
         {"ABS",1,1,"RX2CPP_BASE_SUBSET"},
-        {"SIGN",1,1,"ISOLATED_REXX"},
+        {"SIGN",1,1,"NATIVE_SUBSET"},
         {"FORMAT",1,5,"HOST_ACTIVATION"},
         {"MAX",1,std::numeric_limits<std::size_t>::max(),"ISOLATED_REXX"},
         {"MIN",1,std::numeric_limits<std::size_t>::max(),"ISOLATED_REXX"},
@@ -116,6 +116,8 @@ rx::Value invoke(const std::string& requested, const std::vector<Slot>& a, Conte
     if(found == all.end()) throw std::runtime_error("unknown ooRexx BUILTIN: " + name);
     if(a.size() < found->minArgs || a.size() > found->maxArgs)
         throw std::runtime_error("BIF " + name + ": incorrect argument count");
+    if (name=="SIGN" && a.size()==1 && !a[0])
+        throw std::runtime_error("BIF SIGN: required argument omitted");
     if (ctx.preferChainback) return delegate(name,a,ctx);
     // Exact, precision-independent subset. All other DATATYPE options retain
     // their original route; never accidentally treat them as supported native.
