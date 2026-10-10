@@ -1,0 +1,17 @@
+{
+  "repository": "https://github.com/ooRexx/ooRexx",
+  "commit": "de1db87f486d430d1faa9151b8a2d5f328ab70f2",
+  "obtained_via": "GitHub connector fetch_file at exact pinned revision",
+  "local_checkout_requalified": false,
+  "files": [
+    {"path":"interpreter/execution/NativeActivation.cpp","git_blob_sha":"fb868e6b1bb98751e6eeba1f4adaba211a0aa356"},
+    {"path":"interpreter/instructions/CommandIOConfiguration.cpp","git_blob_sha":"bf6c6699237f36c116cf099f2124d039e9a71111"},
+    {"path":"interpreter/memory/Setup.cpp","git_blob_sha":"e98cd16a8981ba87734fc8b6154a12c398d2afb0"},
+    {"path":"interpreter/package/LibraryPackage.cpp","git_blob_sha":"08aa634d8984ddd13ec450906e0dbe2af097ae99"},
+    {"path":"interpreter/runtime/InternalPackage.cpp","git_blob_sha":"a426d5111837d3bb1179f8b74864c786f4df6951"},
+    {"path":"interpreter/runtime/Interpreter.cpp","git_blob_sha":"6f1ed75f9bb0281bb9a72963a0fa8c0908096aab"},
+    {"path":"interpreter/runtime/RexxUtilCommon.cpp","git_blob_sha":"bd839de19d0c4cb0cae7919e3652440347a6997f"},
+    {"path":"interpreter/streamLibrary/FileNative.cpp","git_blob_sha":"93eac8d97ca07a4f3d9a92c0976c5328d86cab57"},
+    {"path":"interpreter/streamLibrary/StreamNative.cpp","git_blob_sha":"c12de9062350ca4c6afff6f4e6099edd7ad0eb4d"}
+  ]
+}

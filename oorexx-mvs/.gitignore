@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.o
+*.obj
+*.370.s
+*.exe
+cfront-patched
+build/

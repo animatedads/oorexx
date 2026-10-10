@@ -1,0 +1,20 @@
+ooRexx MVS dev18 host-side increment, 2026-10-10
+INHERITED: 190/199 cfront->cc370 permitted core at dev16, not rerun
+Current local environment: no pinned full ooRexx source checkout, cfront or cc370 binary
+No MVS/370 assembler, MVS link-edit, JES, or actual MVS execution performed
+== C90 adapter integration tests against RecordSet dev11 ==
+PASS MVS RecordSet host seam, EOF, DD and retryable close
+PASS MVS record positioning, metadata, unknown count, and pending cleanup
+== Host SJLJ and unmatched activation regression ==
+PASS MVS unwind chain selection (host mock)
+PASS unmatched activation terminates with SIGABRT (host mock)
+== RecordSet owner tests ==
+PASS dev11 RecordSet allocation/QSAM transaction and safe close ordering
+PASS dev9 checked close propagates owned-DD release failure
+PASS dev11 retryable RecordSet DD lease lifecycle
+== shell syntax, Python syntax ==
+PASS shell syntax
+PASS Python AST parse (7 source scripts)
+== recordset archive SHA256 ==
+fe7a51dd574737f82b30b93b8b665b57f99890f0e6388b12c43220fdb645ef04  oorexx_recordset_v0.1-dev11.zip
+Overall: PASS host-side changes; no new cfront/cc370 translation passes asserted.
