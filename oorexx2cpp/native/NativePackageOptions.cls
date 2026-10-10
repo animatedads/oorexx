@@ -3,6 +3,8 @@
  * accumulate in source order, including duplicates and successive directives.
  * This native backend currently admits the subset DIGITS, FUZZ, FORM only.
  * Runtime conditions, TRACE, and PROLOG must fail closed until supported.
+ * The class parser removes each verified, stand-alone ::OPTIONS directive
+ * from its class sections after numeric defaults have been collected.
  * The class method activation receives these defaults independently of the
  * invoking program. This parser never evaluates numeric expressions.
  */
@@ -22,18 +24,13 @@
   use arg source
   tokens = .RxLexer~new(source)~scan
   previous = 'SEP'
-  seenClass = .false
   do i = 1 to tokens~items
     token = tokens[i]
     if token~kind == 'EOF' then leave
     if token~text == '::' & previous == 'SEP' then do
       if i + 1 > tokens~items then self~reject(token~line, 'missing directive name')
       name = tokens[i+1]~text
-      if name == 'CLASS' then seenClass = .true
       if name == 'OPTIONS' then do
-        /* Later placement is valid ooRexx but unsupported by the current
-           native class section splitter. Do not silently discard it. */
-        if seenClass then self~reject(token~line, '::OPTIONS after ::CLASS requires package-wide section processing (not implemented)')
         present = .true
         seenAny = .false
         j = i + 2

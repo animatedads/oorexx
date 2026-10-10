@@ -1,6 +1,6 @@
 /* One package may contain several independent ::CLASS definitions.
-   This first version accepts only top-level class definitions, no
-   source preamble, ::ROUTINE, inheritance or external dependencies.
+   Package-level ::OPTIONS declarations are parsed separately and erased
+   from class sections; other unsupported package directives fail closed.
    We use the Rexx lexer to find declarations so quoted text and block
    comments cannot accidentally be treated as class boundaries. */
 ::class RxNativePackageParser public
@@ -11,6 +11,7 @@
   options = .RxNativePackageOptions~new~parse(source)
   tokens = .RxLexer~new(source)~scan
   positions = .array~new
+  optionsLines = .directory~new
   previous = 'SEP'
   do i = 1 to tokens~items
     tok = tokens[i]
@@ -19,7 +20,26 @@
       if i + 1 > tokens~items then self~reject(tok~line, 'incomplete directive')
       directive = tokens[i+1]~text
       if directive == 'CLASS' then positions~append(tok~line)
-      else if directive \= 'METHOD' & directive \= 'ATTRIBUTE' & directive \= 'CONSTANT' & directive \= 'OPTIONS' then self~reject(tok~line, 'unsupported directive ' || directive)
+      else if directive == 'OPTIONS' then do
+        /* Removing a physical line must not discard a neighbouring directive
+           after a semicolon, or a continued token stream. Fail closed. */
+        if optionsLines~hasIndex(tok~line) then
+          self~reject(tok~line, 'multiple ::OPTIONS on one line unsupported')
+        j = i + 2
+        do while j <= tokens~items & tokens[j]~kind \= 'SEP' & tokens[j]~kind \= 'EOF'
+          if tokens[j]~line \= tok~line then
+            self~reject(tok~line, 'continued ::OPTIONS directive unsupported')
+          j += 1
+        end
+        do k = 1 to tokens~items
+          if tokens[k]~line == tok~line & tokens[k]~kind \= 'SEP' then do
+            if k < i | k >= j then
+              self~reject(tok~line, '::OPTIONS must occupy its own line')
+          end
+        end
+        optionsLines[tok~line] = .true
+      end
+      else if directive \= 'METHOD' & directive \= 'ATTRIBUTE' & directive \= 'CONSTANT' then self~reject(tok~line, 'unsupported directive ' || directive)
     end
     if tok~kind == 'SEP' then previous = 'SEP'
     else previous = 'OTHER'
@@ -65,7 +85,10 @@
     else finish = lines~items
     section = ''
     do j = start to finish
-      section = section || lines[j] || '0a'x
+      /* ooRexx package options do not belong to any individual class.
+         Retain an empty line to preserve source-location diagnostics. */
+      if optionsLines~hasIndex(j) then section = section || '0a'x
+      else section = section || lines[j] || '0a'x
     end
     unit = .RxHybridCompiler~new(section, .true)~parse
     name = unit~className
