@@ -1,3 +1,9 @@
+## v0.30.13 — IF/THEN/ELSE and DO WHILE in native routines
+
+The existing hybrid method/routine compiler now translates restricted structured `IF` and `DO WHILE` instructions to native C++, with nested branches and conditional returns. Conditions use the existing ooRexx expression compiler. The GCC/Clang differential test covers class methods and package routines and rejects unsupported DO forms without replacing the last good `.so`. The unchanged Library `crypto.cls` advances past line 1123 and stops at line 1134 on the current two-argument `USE ARG` ABI. See [QUALIFICATION_V0313.md](QUALIFICATION_V0313.md) and `native/test_control_routines.sh`.
+
+---
+
 ## v0.30.12 — Native `::ROUTINE EXTERNAL` and numeric activation
 
 Restricted private `::ROUTINE ... EXTERNAL "LIBRARY ..."` declarations now

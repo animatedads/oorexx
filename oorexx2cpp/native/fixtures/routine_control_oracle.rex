@@ -1,0 +1,11 @@
+say rx_control(-4,10)
+say rx_control(0,10)
+say rx_control(1,10)
+say rx_control(25,7)
+say rx_control(10,10)
+say .ControlHost~new~reduce(-4,10)
+say .ControlHost~new~reduce(25,7)
+say rx_nested(6)
+say rx_nested(1)
+say rx_nested(0)
+::requires 'routine_control.cls'

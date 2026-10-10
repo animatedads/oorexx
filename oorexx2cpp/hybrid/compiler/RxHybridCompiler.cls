@@ -10,6 +10,7 @@
 ::attribute mulExpr get
 ::attribute addExpr get
 ::attribute compareExpr get
+::attribute logicalExpr get
 ::attribute current get
 ::attribute className get
 ::attribute parentName get
@@ -19,7 +20,7 @@
 ::attribute methods get
 ::attribute constants get
 ::method init
-  expose stream atomExpr messageExpr unaryExpr mulExpr addExpr compareExpr rules current className methods constants parentName allowInheritance isMixin mixinNames
+  expose stream atomExpr messageExpr unaryExpr mulExpr addExpr compareExpr logicalExpr rules current className methods constants parentName allowInheritance isMixin mixinNames controlDepth
   use arg source, allowInheritance
   if arg(2, 'O') then allowInheritance = .false
   parentName = ''
@@ -32,8 +33,10 @@
   mulExpr = .RxExprMultiply~new
   addExpr = .RxExprConcat~new
   compareExpr = .RxExprLogical~new(.RxExprCompare~new)
+  logicalExpr = compareExpr
   rules = .RxHybridRules~new
   current = .nil
+  controlDepth = 0
   className = ''
   methods = .array~new
   constants = .array~new
@@ -86,6 +89,27 @@
   use arg name, value
   self~checkName(name)
   constants~append(.array~of(name, value))
+/* Control forms and method bodies must resolve statements through the same
+   shared hybrid rule registry. Nested RETURN compiles a C++ branch return,
+   but is not an unconditional method terminator. */
+::method controlDepth
+  expose controlDepth
+  return controlDepth
+::method enterControl
+  expose controlDepth
+  controlDepth += 1
+::method leaveControl
+  expose controlDepth
+  if controlDepth <= 0 then self~stream~fail('control stack underflow')
+  controlDepth -= 1
+::method emitStatement
+  expose rules
+  s = self~stream
+  if s~peek~kind == 'EOF' | s~is('::') | s~is('ELSE') | s~is('END') then
+    s~fail('expected executable statement')
+  rule = rules~find(self)
+  if rule == .nil then s~fail('unsupported class method instruction')
+  rule~emit(self)
 ::method parse
   expose stream className methods constants current rules
   s = stream
@@ -116,9 +140,7 @@
     s~skipSeparators
     do while s~peek~kind \= 'EOF' & \s~is('::')
       if current~hasReturn then s~fail('statement after RETURN')
-      rule = rules~find(self)
-      if rule == .nil then s~fail('unsupported class method instruction')
-      rule~emit(self)
+      self~emitStatement
       s~skipSeparators
     end
     if current~selector \= 'INIT' & \current~hasReturn then s~fail('non-INIT method must RETURN a scalar value')

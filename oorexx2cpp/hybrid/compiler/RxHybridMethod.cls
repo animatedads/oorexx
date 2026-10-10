@@ -58,6 +58,17 @@
   if hasReturn then raise syntax 40.1 array('rx2cpp: statement after RETURN is not supported')
   instructions~append(line)
   seenStatement = .true
+/* A RETURN inside IF/DO exits at run time only if its branch is taken.
+   The enclosing method must still have an unconditional final RETURN in
+   the current restricted ABI, so this does not mark hasReturn. */
+::method branchReturnValue
+  expose instructions seenStatement hasReturn
+  use arg expression
+  if hasReturn then raise syntax 40.1 array('rx2cpp: RETURN after terminal RETURN')
+  instructions~append('{ const rx::Value result = ' || expression || ';')
+  instructions~append('if (result.isObject()) throw std::runtime_error("non-scalar return requires interpreter proxy");')
+  instructions~append('return result.bytes; }')
+  seenStatement = .true
 ::method returnValue
   expose instructions seenStatement hasReturn
   use arg expression
