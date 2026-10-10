@@ -1,4 +1,4 @@
-/* Compile a restricted PUBLIC ::ROUTINE body using the existing native
+/* Compile restricted PUBLIC and package-private ::ROUTINE bodies using the existing native
    method-body compiler, without creating a second Rexx expression backend.
    The generated class is a private C++ implementation detail; package routine
    exports are registered through the official RexxPackageEntry ABI. */
@@ -6,8 +6,9 @@
 ::attribute sanitized get
 ::attribute implementation get
 ::attribute names get
+::attribute visibilities get
 ::method parse
-  expose sanitized implementation names
+  expose sanitized implementation names visibilities
   use arg source
   lines = source~makeArray('0a'x)
   tokens = .RxLexer~new(source)~scan
@@ -29,6 +30,7 @@
     else before = 'OTHER'
   end
   names = .array~new
+  visibilities = .directory~new
   ignored = .directory~new
   if starts~items == 0 then do
     sanitized = source
@@ -55,18 +57,29 @@
     if header~items < 5 | header[1]~text \= '::' | header[2]~text \= 'ROUTINE' then
       self~reject(start, 'invalid ::ROUTINE declaration')
     if header[3]~kind \= 'IDENT' then self~reject(start, 'routine name must be a simple symbol')
-    do h = 5 to header~items
-      if header[h]~kind \= 'SEP' & header[h]~kind \= 'EOF' then
-        self~reject(start, 'routine declaration must occupy its own line')
-    end
     name = header[3]~text
-    if header[4]~text \= 'PUBLIC' | header[5]~kind \= 'SEP' then
-      self~reject(start, 'only ::ROUTINE name PUBLIC is supported by native ABI')
+    /* Unqualified ::ROUTINE is private by default (ooRexx package scope).
+       PUBLIC and PRIVATE are optional explicit visibility modifiers. */
+    visibility = 'PRIVATE'
+    if header[4]~text == 'PUBLIC' | header[4]~text == 'PRIVATE' then do
+      visibility = header[4]~text
+      if header[5]~kind \= 'SEP' then
+        self~reject(start, 'unsupported ::ROUTINE options; expected name [PUBLIC|PRIVATE]')
+    end
+    else if header[4]~kind \= 'SEP' then
+      self~reject(start, 'unsupported ::ROUTINE options; expected name [PUBLIC|PRIVATE]')
+    endIndex = 4
+    if header[4]~text == 'PUBLIC' | header[4]~text == 'PRIVATE' then endIndex = 5
+    /* Any same-line extra instruction or directive is unsupported. */
+    if header[endIndex+1]~kind \= 'EOF' then
+      self~reject(start, 'routine declaration must occupy its own line')
+
     if seen~hasIndex(name) then self~reject(start, 'duplicate ::ROUTINE ' || name)
     seen[name] = .true
     if verify(name, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_') > 0 then
       self~reject(start, 'unsupported routine identifier ' || name)
     names~append(name)
+    visibilities[name] = visibility
     if start == 1 then self~reject(start, 'native routine must follow a package class')
     synthetic[start] = '::method ' || name
     ignored[start] = .true

@@ -91,6 +91,17 @@
       self~identifier(routineName, 'routine')
       if routineName == 'RX2CPP_ROUTINE_IMPL' then
         raise syntax 40.1 array('rx2cpp: reserved native routine identifier')
+      visibility = routines~visibilities[routineName]
+      entryName = routineName
+      if visibility == 'PRIVATE' then do
+        /* ABI symbol aliases are linker implementation details; never export
+           the original package-private selector from RexxPackageEntry. */
+        entryName = 'RX2CPP_PRIVATE_' || routineName
+        if routines~visibilities~hasIndex(entryName) then
+          raise syntax 40.1 array('rx2cpp: private routine ABI alias collision ' || entryName)
+        source = source || '::routine ' || routineName || ' private external "LIBRARY ' || ,
+                  packageName || ' ' || entryName || '"' || '0a'x
+      end
       symbol = 'rx_native_routine_' || routineName~lower
       routineDefs = routineDefs || 'RexxRoutine1(RexxObjectPtr, ' || symbol || ', ARGLIST, args)' || '0a'x
       routineDefs = routineDefs || '{' || '0a'x
@@ -108,7 +119,7 @@
       routineDefs = routineDefs || '    return NULLOBJECT;' || '0a'x
       routineDefs = routineDefs || '  }' || '0a'x
       routineDefs = routineDefs || '}' || '0a'x
-      routineEntries = routineEntries || '    REXX_TYPED_ROUTINE(' || routineName || ', ' || symbol || '),' || '0a'x
+      routineEntries = routineEntries || '    REXX_TYPED_ROUTINE(' || entryName || ', ' || symbol || '),' || '0a'x
     end
   end
   if arg(5, 'E') then source = source || extras

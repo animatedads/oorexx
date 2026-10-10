@@ -1,3 +1,9 @@
+## v0.30.11 — private native package routines
+
+The native `.so` backend now accepts implicit and explicit PRIVATE `::ROUTINE` declarations using the existing scalar compiled ABI. GCC and Clang pass interpreter parity, ooRexx package-owned routine visibility and direct handle invocation, and fail-closed rollback tests. Crypto now reaches its external `::ROUTINE sin` declaration; it does not compile. See [qualification](QUALIFICATION_V0311.md) and `native/test_private_routines.sh`.
+
+---
+
 ## v0.30.8 — ooRexx native-package directive preservation
 
 The linked-interpreter `.so` backend now retains verified `::ANNOTATE`

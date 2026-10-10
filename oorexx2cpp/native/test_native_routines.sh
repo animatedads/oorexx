@@ -19,7 +19,7 @@ cmp "$OUT/oracle.out" "$OUT/native.out"
 echo "PASS native routine and class interpreter parity: $(wc -l <"$OUT/native.out") lines"
 # A failed compile never overwrites the previous successfully built native library.
 before=$(sha256sum "$OUT/lib${PACKAGE}.so" | cut -d' ' -f1)
-for kind in private external duplicate quoted missing_return too_many_arg expose complex_body; do
+for kind in external duplicate quoted missing_return too_many_arg expose complex_body; do
   file="$OUT/bad_$kind.cls"
   { cat <<'REXX'
 ::class RoutineHost public
@@ -28,7 +28,6 @@ for kind in private external duplicate quoted missing_return too_many_arg expose
   counter = 0
 REXX
     case "$kind" in
-      private) printf '\n::routine foo private\n  return 5\n';;
       external) printf '\n::routine foo public external "LIBRARY rxmath sin"\n';;
       duplicate) printf '\n::routine foo public\n  return 1\n::routine foo public\n  return 2\n';;
       quoted) printf '\n::routine "foo" public\n  return 2\n';;
