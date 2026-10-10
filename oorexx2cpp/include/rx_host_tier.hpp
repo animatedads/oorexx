@@ -71,6 +71,7 @@ struct HostObject final : ObjectDispatch {
     static RexxObjectPtr toRexx(RexxThreadContext *c, const Value &v) {
         if (!v.isObject()) return c->String(v.bytes.data(), v.bytes.size());
         if (auto h = std::dynamic_pointer_cast<HostObject>(v.object)) return h->handle;
+        if (std::dynamic_pointer_cast<NilObject>(v.object)) return c->Nil();
         throw std::runtime_error("native object cannot be passed to the hosted interpreter (not implemented)");
     }
     MessageResult sendMessage(const std::string &selector, const std::vector<Value> &args) override {
@@ -82,14 +83,22 @@ struct HostObject final : ObjectDispatch {
         if (!result) return std::nullopt;
         return wrap(c, result);
     }
+    Value sendBinary(const std::string &selector, const Value &rhs) override {
+        const MessageResult r = sendMessage(selector, {rhs});
+        if (!r) throw std::runtime_error("hosted operator did not return a result");
+        return *r;
+    }
     std::string display() const override {
         auto r = const_cast<HostObject *>(this)->sendMessage("STRING", {});
-        return r ? r->bytes : std::string();
+        if (!r) throw std::runtime_error("hosted STRING method returned no result");
+        return r->isObject() ? r->object->display() : r->bytes;
     }
 };
 
 // Strings and numbers become plain native values; everything else stays a live handle.
 inline Value wrap(RexxThreadContext *c, RexxObjectPtr o) {
+    if (!o) throw std::runtime_error("hosted tier: null object is not .NIL");
+    if (o == c->Nil()) return rx::nil();
     if (c->IsString(o)) {
         RexxStringObject s = static_cast<RexxStringObject>(o);
         return Value::string(std::string(c->StringData(s), c->StringLength(s)));
@@ -102,12 +111,46 @@ inline Value wrap(RexxThreadContext *c, RexxObjectPtr o) {
 // cannot translate natively runs in the interpreter as one package. Its classes and routines are then looked up
 // here by the natively compiled main program.
 inline RexxPackageObject &unitPackage() { static RexxPackageObject p = nullptr; return p; }
+// GetPackageRoutines returns an ooRexx StringTable. Pin one wrapper per unit.
+inline std::shared_ptr<HostObject> &cachedPackageRoutines() {
+    static std::shared_ptr<HostObject> retained;
+    return retained;
+}
 inline void loadUnit(const std::string &name, const std::string &source) {
     RexxThreadContext *c = Session::get().ctx();
     RexxPackageObject p = c->LoadPackageFromData(name.c_str(), source.c_str(), source.size());
     if (c->CheckCondition()) raisePending(c);
+    if (!p) throw std::runtime_error("hosted tier: package load returned null");
     c->RequestGlobalReference(p);
+    cachedPackageRoutines().reset();
+    if (unitPackage()) c->ReleaseGlobalReference(unitPackage());
     unitPackage() = p;
+}
+
+// .OUTPUT belongs to the thread's local environment, not to the class registry.
+inline Value localSymbol(const std::string &name) {
+    RexxThreadContext *c = Session::get().ctx();
+    RexxDirectoryObject local = c->GetLocalEnvironment();
+    if (c->CheckCondition()) raisePending(c);
+    if (!local) throw std::runtime_error("hosted tier: local environment unavailable");
+    RexxObjectPtr object = c->DirectoryAt(local, name.c_str());
+    if (c->CheckCondition()) raisePending(c);
+    if (!object) throw SyntaxCondition("98.926", "hosted tier: unknown local symbol ." + name, false);
+    return wrap(c, object);
+}
+// .ROUTINES belongs to the source's package, not the global environment.
+inline Value packageRoutines() {
+    RexxThreadContext *c = Session::get().ctx();
+    // A source with no directives has an empty package routine directory.
+    if (!unitPackage()) loadUnit("rx2cpp-empty-directives", "\n");
+    auto &pinned = cachedPackageRoutines();
+    if (!pinned) {
+        RexxDirectoryObject routines = c->GetPackageRoutines(unitPackage());
+        if (c->CheckCondition()) raisePending(c);
+        if (!routines) throw std::runtime_error("hosted tier: GetPackageRoutines returned null");
+        pinned = std::make_shared<HostObject>(static_cast<RexxObjectPtr>(routines));
+    }
+    return Value::fromObject(pinned);
 }
 
 // .NAME environment symbols that name a class: the loaded unit's classes first, then the interpreter's.

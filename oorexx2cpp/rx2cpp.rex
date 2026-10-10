@@ -17,6 +17,28 @@ if existing == "" then do
 end
 source = charin(input, 1, chars(input))
 call stream input, 'C', 'CLOSE'
+/* .ROUTINES must report the defining package's actual ::ROUTINEs.
+   Host the directive section as a unit before compiling main code, rather than
+   building a false empty native routine directory. Lexer inspection ignores
+   quoted strings and comments. RX2CPP_HOSTED=0 retains fail-closed behavior. */
+signal on syntax name compilerError
+signal on error name compilerError
+signal on failure name compilerError
+if value('RX2CPP_HOSTED', , 'ENVIRONMENT') \= '0' then do
+  directiveLine = .RxHostSplit~firstDirectiveLine(source)
+  if directiveLine > 0 then do
+    candidateParts = .RxHostSplit~split(source, directiveLine)
+    symbolTokens = .RxLexer~new(candidateParts[1])~scan
+    do symbolToken over symbolTokens
+      if symbolToken~kind == 'DOTIDENT' & symbolToken~text == 'ROUTINES' then do
+        mainPart = candidateParts[1]
+        unitPart = candidateParts[2]
+        attempt = 2
+        leave
+      end
+    end
+  end
+end
 compileAttempt:
 signal on syntax name compilerError
 signal on error name compilerError

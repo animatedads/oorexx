@@ -15,13 +15,21 @@
     end
     when t~kind == 'DOTIDENT' then do
       s~next
+      /* .NIL is a singleton, never a string or absent method result. */
+      if t~text == 'NIL' then return 'rx::nil()'
+      if t~text == 'OUTPUT' | t~text == 'ROUTINES' then do
+        if \ctx~hostedEnabled then s~fail('.' || t~text || ' requires RX2CPP_HOSTED=1')
+        ctx~markHosted('.' || t~text)
+        if t~text == 'OUTPUT' then return 'rx::host::localSymbol("OUTPUT")'
+        return 'rx::host::packageRoutines()'
+      end
       if ctx~hasProgramClass(t~text) then return 'rx::Value::fromObject(_rxClasses.at(' || .RxQuote~cpp(t~text) || '))'
       if t~text == 'ARRAY' then return 'rx::Value::fromObject(std::make_shared<rx::ArrayClass>())'
       /* .TRUE/.FALSE are the strings 1 and 0 */
       if t~text == 'TRUE' then return 'rx::Value::string("1")'
       if t~text == 'FALSE' then return 'rx::Value::string("0")'
       /* Environment symbols that are not classes (or need native support) stay fail-closed. */
-      if wordpos(t~text, 'NIL ENVIRONMENT LOCAL METHODS ROUTINES RS STDOUT STDERR STDIN STDQUE TRACEOBJECT ERROR OUTPUT INPUT DEBUGINPUT') = 0 & ctx~hostedEnabled then do
+      if wordpos(t~text, 'ENVIRONMENT LOCAL METHODS RS STDOUT STDERR STDIN STDQUE TRACEOBJECT ERROR OUTPUT INPUT DEBUGINPUT') = 0 & ctx~hostedEnabled then do
         ctx~markHosted('.' || t~text)
         return 'rx::host::findClass(' || .RxQuote~cpp(t~text) || ')'
       end

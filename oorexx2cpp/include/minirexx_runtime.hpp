@@ -75,6 +75,24 @@ struct ObjectDispatch {
         throw std::runtime_error("object has no display conversion");
     }
 };
+// ooRexx .NIL is one live singleton object, not a C++ null result.
+// Unimplemented .Object messages must reject rather than approximate.
+struct NilObject final : ObjectDispatch {
+    std::string display() const override { return "The NIL object"; }
+    MessageResult sendMessage(const std::string &selector,
+                              const std::vector<Value> &args) override {
+        std::string canonical = selector;
+        std::transform(canonical.begin(), canonical.end(), canonical.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+        if (canonical == "STRING" && args.empty()) return Value::string(display());
+        return ObjectDispatch::sendMessage(canonical, args);
+    }
+};
+inline Value nil() {
+    static const std::shared_ptr<ObjectDispatch> singleton = std::make_shared<NilObject>();
+    return Value::fromObject(singleton);
+}
+
 /* Small native .ARRAY subset. Index operations use ooRexx message selectors
    [] and []= (value FIRST, index SECOND); no C++ indexing semantics leak in.
    Uninitialised elements and multidimensional arrays are unsupported. */
