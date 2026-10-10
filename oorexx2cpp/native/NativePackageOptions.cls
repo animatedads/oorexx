@@ -1,8 +1,8 @@
-/* The numeric subset of ooRexx package ::OPTIONS.
+/* The qualified native-package subset of ooRexx ::OPTIONS.
  * ooRexx Reference 5.0, section 3.6 (printed pages 100-102): options
  * accumulate in source order, including duplicates and successive directives.
- * This native backend currently admits the subset DIGITS, FUZZ, FORM only.
- * Runtime conditions, TRACE, and PROLOG must fail closed until supported.
+ * Numeric DIGITS/FUZZ/FORM, no-code PROLOG/NOPROLOG, and TRACE OFF are
+ * admitted. All other tracing and condition policy modes fail closed.
  * The class parser removes each verified, stand-alone ::OPTIONS directive
  * from its class sections after numeric defaults have been collected.
  * The class method activation receives these defaults independently of the
@@ -13,14 +13,18 @@
 ::attribute fuzz get
 ::attribute form get
 ::attribute present get
+::attribute prolog get
+::attribute trace get
 ::method init
-  expose digits fuzz form present
+  expose digits fuzz form present prolog trace
   digits = 9
   fuzz = 0
   form = 'SCIENTIFIC'
   present = .false
+  prolog = 'PROLOG'
+  trace = 'OFF'
 ::method parse
-  expose digits fuzz form present
+  expose digits fuzz form present prolog trace
   use arg source
   tokens = .RxLexer~new(source)~scan
   previous = 'SEP'
@@ -48,6 +52,23 @@
               else fuzz = n
               j += 2
             end
+            when name == 'PROLOG' | name == 'NOPROLOG' then do
+              /* Native package sources never contain main/prolog executable
+                 code. Preserve interpreter metadata, but do not pretend that
+                 an executable prolog has been compiled into the .so. */
+              prolog = name
+              j += 1
+            end
+            when name == 'TRACE' then do
+              if j + 1 > tokens~items then self~reject(token~line, 'TRACE needs a setting')
+              value = tokens[j+1]~text
+              /* Compiled C++ method bodies have no Rexx instruction tracing.
+                 Only OFF is equivalent to the native execution semantics. */
+              if value \= 'OFF' & value \= 'O' then
+                self~reject(tokens[j+1]~line, 'native TRACE currently supports only OFF')
+              trace = 'OFF'
+              j += 2
+            end
             when name == 'FORM' then do
               if j + 1 > tokens~items then self~reject(token~line, 'FORM needs SCIENTIFIC or ENGINEERING')
               value = tokens[j+1]~text
@@ -71,9 +92,9 @@
   if fuzz < 0 | fuzz >= digits then self~reject(1, 'FUZZ must be less than DIGITS')
   return self
 ::method directive
-  expose digits fuzz form present
+  expose digits fuzz form present prolog trace
   if \present then return ''
-  return '::options digits ' || digits || ' fuzz ' || fuzz || ' form ' || form
+  return '::options digits ' || digits || ' fuzz ' || fuzz || ' form ' || form || ' ' || prolog || ' trace ' || trace
 ::method reject private
   use arg line, reason
   raise syntax 40.1 array('rx2cpp: native ::OPTIONS line ' || line || ': ' || reason)

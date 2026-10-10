@@ -7,7 +7,7 @@
   use arg unit, packageName, template
   return self~emitPackage(.array~of(unit), packageName, template)
 ::method emitPackage
-  use arg units, packageName, template, options
+  use arg units, packageName, template, options, extras
   self~identifier(packageName, 'package')
   cpp = ''
   entries = ''
@@ -84,6 +84,7 @@
     else if countInit \= 0 then raise syntax 40.1 array('rx2cpp: derived INIT is unsupported')
   end
   if countClasses == 0 then raise syntax 40.1 array('rx2cpp: empty class package')
+  if arg(5, 'E') then source = source || extras
   output = template~changeStr('%METHOD_DEFINITIONS%', cpp)
   output = output~changeStr('%METHOD_ENTRIES%', entries)
   output = output~changeStr('%CLASS_SOURCE%', .RxQuote~cpp(source))

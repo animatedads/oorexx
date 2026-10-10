@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Qualify real ::OPTIONS package numeric defaults in loaded class .so files.
-# Unsupported nonnumeric options stay fail-closed until runtime semantics exist.
+# Non-OFF tracing and unsupported condition options remain fail-closed.
 set -euo pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 OO_ROOT=${OO_ROOT:-${OO_REXX_ROOT:-/usr/local}}
@@ -29,7 +29,7 @@ for declaration in \
   '::options fuzz 1 form nonsense' \
   '::options digits 25 fuzz 25' \
   '::options digits (10 + 10)' \
-  '::options prolog'; do
+  '::options trace intermediate'; do
   printf '%s\n' "$declaration" '::class OptionsProbe public' '::method init' '::method get' '  return 1' > "$OUT/reject.cls"
   if "$ROOT/native/build.sh" "$OUT/reject.cls" "$OUT" rx2cpp_pkgoptions > "$OUT/reject.log" 2>&1; then
     echo "FAIL: accepted unsupported ::OPTIONS: $declaration" >&2; exit 1

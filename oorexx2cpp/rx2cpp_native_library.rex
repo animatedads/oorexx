@@ -9,13 +9,16 @@ signal on syntax name compilerError
 signal on error name compilerError
 signal on failure name compilerError
 source = readSource(input)
+extras = .RxNativePackageExtras~new~parse(source)
+source = extras~sanitized
 gateOK = .RxNativeSourceGate~new~validate(source)
 parser = .RxNativePackageParser~new
 units = parser~parse(source)
+extras~validate(units)
 options = parser~options
 template = readSource('native/native_package_template.cpp.in')
 emitter = .RxNativeLibraryEmitter~new
-nativeSource = emitter~emitPackage(units, packageName, template, options)
+nativeSource = emitter~emitPackage(units, packageName, template, options, extras~suffix)
 cpp = ''
 header = '#ifndef RX2CPP_GENERATED_HPP' || '0a'x || ,
          '#define RX2CPP_GENERATED_HPP' || '0a'x || ,
@@ -55,3 +58,4 @@ compilerError:
 ::requires 'native/NativeLibraryEmitter.cls'
 ::requires 'native/NativePackageParser.cls'
 ::requires 'native/NativeSourceGate.cls'
+::requires 'native/NativePackageExtras.cls'

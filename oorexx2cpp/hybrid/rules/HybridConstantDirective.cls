@@ -16,6 +16,11 @@
       value = "'" || token~text~changeStr("'", "''") || "'"
       s~next
     end
+    when token~text == '-' | token~text == '+' then do
+      sign = s~next~text
+      if s~peek~kind \= 'NUMBER' then s~fail('signed CONSTANT must be a numeric literal')
+      value = sign || s~next~text
+    end
     when token~kind == 'NUMBER' | token~kind == 'INT' | token~kind == 'IDENT' then do
       value = token~text
       s~next

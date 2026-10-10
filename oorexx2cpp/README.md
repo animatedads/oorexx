@@ -1,3 +1,22 @@
+## v0.30.8 — ooRexx native-package directive preservation
+
+The linked-interpreter `.so` backend now retains verified `::ANNOTATE`
+(PACKAGE/CLASS/METHOD/CONSTANT), raw `::RESOURCE` blocks, and resolvable
+`::REQUIRES 'file' NAMESPACE name` declarations in its interpreter-loaded
+source. Package annotations and resources remain accessible through ooRexx's
+package objects; namespace lookup and constant getters retain native ooRexx
+semantics. The parser removes these directives and opaque resource contents
+from class-method translation, while validating metadata targets and preserving
+physical source line numbering for diagnostics.
+
+`::CONSTANT` now includes signed scalar numeric literals in this backend.
+`::OPTIONS PROLOG/NOPROLOG` and `TRACE OFF` are accepted only in class packages
+without executable prologs; native C++ method bodies still do not implement
+interpreter clause tracing. Unsupported trace modes, annotation targets,
+namespace forms and calculated constants fail closed. Standalone executable
+compilation is unchanged. See `QUALIFICATION_V0308.md` and
+`native/test_package_extras.sh` for reproducible ooRexx 5.3 differential tests.
+
 # RX2CPP v0.30.6 — Gemini Developer Registry native compilation
 
 See `README_V0306.md` and `QUALIFICATION_V0306.md`. The original fixture runs natively with byte-exact ooRexx 5.3 output under GCC and Clang. This is a narrowly qualified standalone class subset, not complete object-language support.
