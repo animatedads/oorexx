@@ -9,9 +9,7 @@ if input == output then do
   say 'rx2cpp: input and output paths must differ'
   exit 64
 end
-signal on syntax name compilerError
-signal on error name compilerError
-signal on failure name compilerError
+attempt = 1
 existing = stream(input, "C", "QUERY EXISTS")
 if existing == "" then do
   say 'rx2cpp: cannot find source:' input
@@ -19,7 +17,12 @@ if existing == "" then do
 end
 source = charin(input, 1, chars(input))
 call stream input, 'C', 'CLOSE'
-compiler = .RxCompiler~new(source, existing)
+compileAttempt:
+signal on syntax name compilerError
+signal on error name compilerError
+signal on failure name compilerError
+if attempt == 1 then compiler = .RxCompiler~new(source, existing)
+else compiler = .RxCompiler~new(mainPart, existing, unitPart)
 generated = compiler~compile
 /* Write only after full validation; a rejected input never overwrites output. */
 status = stream(output, "C", "OPEN WRITE REPLACE")
@@ -32,6 +35,21 @@ call stream output, "C", "CLOSE"
 exit 0
 compilerError:
   detail = condition('A')
+  /* Hosted tier: a rejection inside the directive section (::CLASS options, ::REQUIRES of Rexx programs, ...)
+     retries with that section run by the embedded interpreter; a rejection in the main code stays final. */
+  if attempt == 1 & value('RX2CPP_HOSTED', , 'ENVIRONMENT') \= '0' & left(detail, 7) == 'rx2cpp:' then do
+    parse var detail 'rx2cpp:' failLine ':' .
+    firstLine = .RxHostSplit~firstDirectiveLine(source)
+    if datatype(failLine, 'W') & firstLine > 0 then do
+      if failLine >= firstLine then do
+        parts = .RxHostSplit~split(source, firstLine)
+        mainPart = parts[1]
+        unitPart = parts[2]
+        attempt = 2
+        signal compileAttempt
+      end
+    end
+  end
   if detail \== '' & left(detail, 7) == 'rx2cpp:' then do
     say detail
     exit 65

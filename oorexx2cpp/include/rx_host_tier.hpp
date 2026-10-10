@@ -98,13 +98,52 @@ inline Value wrap(RexxThreadContext *c, RexxObjectPtr o) {
     return Value::fromObject(std::make_shared<HostObject>(o));
 }
 
-// .NAME environment symbols that name a class the interpreter provides.
+// The program's directive section (::CLASS with options, ::REQUIRES of Rexx programs, ...) that the compiler
+// cannot translate natively runs in the interpreter as one package. Its classes and routines are then looked up
+// here by the natively compiled main program.
+inline RexxPackageObject &unitPackage() { static RexxPackageObject p = nullptr; return p; }
+inline void loadUnit(const std::string &name, const std::string &source) {
+    RexxThreadContext *c = Session::get().ctx();
+    RexxPackageObject p = c->LoadPackageFromData(name.c_str(), source.c_str(), source.size());
+    if (c->CheckCondition()) raisePending(c);
+    c->RequestGlobalReference(p);
+    unitPackage() = p;
+}
+
+// .NAME environment symbols that name a class: the loaded unit's classes first, then the interpreter's.
 inline Value findClass(const std::string &name) {
     RexxThreadContext *c = Session::get().ctx();
+    if (unitPackage()) {
+        RexxClassObject own = c->FindPackageClass(unitPackage(), name.c_str());   // own and ::REQUIRES-imported classes
+        if (c->CheckCondition()) c->ClearCondition();
+        if (own) return Value::fromObject(std::make_shared<HostObject>(static_cast<RexxObjectPtr>(own)));
+    }
     RexxClassObject cls = c->FindClass(name.c_str());
     if (c->CheckCondition()) c->ClearCondition();
     if (!cls) throw SyntaxCondition("98.926", "hosted tier: no interpreter class named ." + name, false);
     return Value::fromObject(std::make_shared<HostObject>(static_cast<RexxObjectPtr>(cls)));
+}
+
+// CALL/function invocation of a ::ROUTINE that lives in the loaded unit (private routines included).
+inline MessageResult callRoutine(const std::string &name, const std::vector<Value> &args) {
+    RexxThreadContext *c = Session::get().ctx();
+    RexxObjectPtr r = unitPackage() ? c->DirectoryAt(c->GetPackageRoutines(unitPackage()), name.c_str()) : nullptr;
+    if (!r) throw SyntaxCondition("43.1", "Could not find routine \"" + name + "\"", false);
+    RexxArrayObject list = c->NewArray(args.size());
+    for (std::size_t i = 0; i < args.size(); ++i) c->ArrayPut(list, HostObject::toRexx(c, args[i]), i + 1);
+    RexxObjectPtr result = c->CallRoutine(static_cast<RexxRoutineObject>(r), list);
+    if (c->CheckCondition()) raisePending(c);
+    if (!result) return std::nullopt;
+    return wrap(c, result);
+}
+inline Value callValue(const std::string &name, const std::vector<Value> &args) {
+    MessageResult r = callRoutine(name, args);
+    if (!r) throw SyntaxCondition("44.1", "Function \"" + name + "\" did not return data", false);
+    return *r;
+}
+inline void callInstruction(Variables &vars, const std::string &name, const std::vector<Value> &args) {
+    MessageResult r = callRoutine(name, args);
+    if (r) set(vars, "RESULT", *r); else drop(vars, "RESULT");
 }
 
 }}

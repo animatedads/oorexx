@@ -32,23 +32,25 @@
     end
   end
   internal = ctx~hasRoutine(name)
-  external = \internal & ctx~hasLibraries & \.RxBuiltinRules~isBuiltinName(name)
-  if \internal & \external then .RxBuiltinRules~validate(s, name, args~items)
+  hosted = \internal & ctx~hasHostRoutine(name)
+  external = \internal & \hosted & ctx~hasLibraries & \.RxBuiltinRules~isBuiltinName(name)
+  if \internal & \external & \hosted then .RxBuiltinRules~validate(s, name, args~items)
   do argExpr over args
-    if argExpr == 'RX2CPP_OMITTED' & external then s~fail('omitted arguments to external library routines are not implemented')
+    if argExpr == 'RX2CPP_OMITTED' & (external | hosted) then s~fail('omitted arguments to external library or hosted routines are not implemented')
     if argExpr == 'RX2CPP_OMITTED' & (internal | \.RxBuiltinRules~externalEnabled) then -
       s~fail('omitted arguments need the external BIF dispatcher')
   end
   var = '_callargs' || ctx~label
   ctx~line(depth, '{')
-  if internal | external | \.RxBuiltinRules~externalEnabled then type = 'rx::Value'
+  if internal | external | hosted | \.RxBuiltinRules~externalEnabled then type = 'rx::Value'
   else type = 'rxbif_breadth::Slot'
   ctx~line(depth + 1, 'std::vector<' || type || '> ' || var || ';')
   do argExpr over args
     if argExpr == 'RX2CPP_OMITTED' then ctx~line(depth + 1, var || '.push_back(std::nullopt);')
     else ctx~line(depth + 1, var || '.push_back(' || argExpr || ');')
   end
-  if external then code = 'rx::ext::callInstruction(vars, ' || .RxQuote~cpp(name) || ', ' || var || ');'
+  if hosted then code = 'rx::host::callInstruction(vars, ' || .RxQuote~cpp(name) || ', ' || var || ');'
+  else if external then code = 'rx::ext::callInstruction(vars, ' || .RxQuote~cpp(name) || ', ' || var || ');'
   else if internal then code = 'rx::callInternalInstruction(vars, _rxRoutines, ' || .RxQuote~cpp(name) || ', ' || var || ');'
   else if .RxBuiltinRules~externalEnabled then code = 'rx::dispatchBifInstruction(vars, _rxBifRuntime, ' || .RxQuote~cpp(name) || ', ' || var || ');'
   else code = 'rx::callInstruction(vars, ' || .RxQuote~cpp(name) || ', ' || var || ');'

@@ -68,7 +68,7 @@
       if hosted~items > 0 then do
         names = ''
         do h over hosted
-          names = names '.' || h
+          names = names h
         end
         output = output || '// RX2CPP_HOSTED:' || names || ' (interpreter session; links librexx)' || '0a'x
         output = output || '#include "rx_host_tier.hpp"' || '0a'x

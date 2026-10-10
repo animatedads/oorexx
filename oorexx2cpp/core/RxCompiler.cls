@@ -14,9 +14,10 @@
 ::attribute compareExpr get
 ::attribute logicalExpr get
 ::method init
-  expose libraries stream atomExpr builtinExpr messageExpr unaryExpr mulExpr addExpr compareExpr logicalExpr registry emitter serial sourceName rexxVersion loopScopes inRoutine routineKind packageOptions hostedClasses routines lastMainInstruction programClasses methodExposes
-  use arg source, inputName
+  expose libraries stream atomExpr builtinExpr messageExpr unaryExpr mulExpr addExpr compareExpr logicalExpr registry emitter serial sourceName rexxVersion loopScopes inRoutine routineKind packageOptions hostedClasses hostUnit hostRoutines routines lastMainInstruction programClasses methodExposes
+  use arg source, inputName, hostUnit = ''
   sourceName = inputName
+  hostRoutines = .RxHostSplit~routineNames(hostUnit)
   programClasses = .RxProgramClasses~new(source)
   source = programClasses~programSource
   methodExposes = .array~new
@@ -34,6 +35,7 @@
   inRoutine = .false
   routineKind = 'LABEL'
   hostedClasses = .array~new
+  if hostUnit \== '' then hostedClasses~append('directive unit')
   lastMainInstruction = ''
   routines = .RxRoutineRules~discover(stream)
   libraries = .RxLibraryRules~discover(stream)
@@ -78,6 +80,13 @@
   expose hostedClasses
   use arg name
   if hostedClasses~index(name) == .nil then hostedClasses~append(name)
+/* ::ROUTINE of the hosted unit: built-ins and internal labels win, as for any ::ROUTINE. */
+::method hasHostRoutine
+  expose hostRoutines routines
+  use arg name
+  if \hostRoutines~hasIndex(name) then return .false
+  if routines~hasIndex(name) then return .false
+  return \.RxBuiltinRules~isBuiltinName(name)
 ::attribute hostedClasses get
 ::method hasProgramClass
   expose programClasses
@@ -176,9 +185,19 @@
   if packageOptions~at('DIGITS') \= 9 then self~line(depth, 'vars.numeric.digits = ' || packageOptions~at('DIGITS') || ';')
   if packageOptions~at('FUZZ') \= 0 then self~line(depth, 'vars.numeric.fuzz = ' || packageOptions~at('FUZZ') || ';')
   if packageOptions~at('FORM') == 'ENGINEERING' then self~line(depth, 'vars.numeric.engineering = true;')
+/* Hosted directive section: loaded into the embedded interpreter before the main program runs. */
+::method emitHostUnit
+  expose hostUnit sourceName
+  if hostUnit == '' then return
+  delimiter = 'RXUNIT'
+  do while pos(')' || delimiter || '"', hostUnit) > 0
+    delimiter = delimiter || 'X'
+  end
+  self~line(2, 'rx::host::loadUnit(' || .RxQuote~cpp(sourceName) || ', R"' || delimiter || '(' || hostUnit || ')' || delimiter || '");')
 ::method compile
   expose emitter
   emitter~header(self~hasLibraries)
+  self~emitHostUnit
   self~emitNumericDefaults(2)
   do lib over self~libraries
     self~line(2, 'rx::ext::require(' || .RxQuote~cpp(lib) || ');')
@@ -211,6 +230,7 @@
 ::requires 'rules/RxRoutineRules.cls'
 ::requires 'rules/RxLibraryRules.cls'
 ::requires 'rules/RxOptionsRules.cls'
+::requires 'rules/RxHostSplit.cls'
 ::requires 'core/RxStream.cls'
 ::requires 'core/RxLexer.cls'
 ::requires 'rules/ExprAtom.cls'

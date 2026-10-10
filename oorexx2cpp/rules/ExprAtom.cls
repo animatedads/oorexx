@@ -22,7 +22,7 @@
       if t~text == 'FALSE' then return 'rx::Value::string("0")'
       /* Environment symbols that are not classes (or need native support) stay fail-closed. */
       if wordpos(t~text, 'NIL ENVIRONMENT LOCAL METHODS ROUTINES RS STDOUT STDERR STDIN STDQUE TRACEOBJECT ERROR OUTPUT INPUT DEBUGINPUT') = 0 & ctx~hostedEnabled then do
-        ctx~markHosted(t~text)
+        ctx~markHosted('.' || t~text)
         return 'rx::host::findClass(' || .RxQuote~cpp(t~text) || ')'
       end
       s~fail('unsupported environment class .' || t~text)
