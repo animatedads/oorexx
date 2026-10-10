@@ -163,7 +163,12 @@
         self~move
         self~emit('OP', c, markLine, markCol)
       end
-      when c == '~' | c == ',' | c == '.' | c == '|' then do
+      when c == ',' then do
+        self~move
+        /* A comma that ends a line (blanks and comments aside) continues the clause and is not a token. */
+        if \self~continued then self~emit('OP', c, markLine, markCol)
+      end
+      when c == '~' | c == '.' | c == '|' then do
         self~move
         self~emit('OP', c, markLine, markCol)
       end
@@ -200,6 +205,7 @@
         op = self~move || self~move
         self~emit('OP', op, markLine, markCol)
       end
+      when c == '-' & self~continuedAfterMove then nop
       when pos(c, '+-*/%=<>()&\') > 0 then do
         self~move
         self~emit('OP', c, markLine, markCol)
@@ -209,6 +215,49 @@
   end
   self~emit('EOF', '<eof>', line, col)
   return out
+/* After a , or - has been consumed: if only blanks/comments remain before the newline , swallow them and
+   the newline and answer true (line continuation); otherwise leave the position untouched and answer false. */
+::method continued
+  expose p line col
+  sp = p; sl = line; sc = col
+  do forever
+    c = self~char
+    if c == ' ' | c == '09'x | c == '0d'x then self~move
+    else if c == '-' & self~char(1) == '-' then do
+      do while self~char \== '' & self~char \= '0a'x
+        self~move
+      end
+    end
+    else if c == '/' & self~char(1) == '*' then do
+      self~move; self~move
+      depth = 1
+      do while depth > 0 & self~char \== ''
+        if self~char == '/' & self~char(1) == '*' then do
+          self~move; self~move; depth = depth + 1
+        end
+        else if self~char == '*' & self~char(1) == '/' then do
+          self~move; self~move; depth = depth - 1
+        end
+        else self~move
+      end
+    end
+    else leave
+  end
+  if self~char == '0a'x then do
+    self~move
+    return .true
+  end
+  p = sp; line = sl; col = sc
+  return .false
+/* A lone - is consumed here only when it ends a line (continuation); returns false and consumes nothing otherwise. */
+::method continuedAfterMove
+  expose p line col
+  sp = p; sl = line; sc = col
+  if self~char \== '-' then return .false
+  self~move
+  if self~continued then return .true
+  p = sp; line = sl; col = sc
+  return .false
 /* Characters that can continue a Rexx symbol (decides whether 'x' after a quote is a hex-literal marker). */
 ::method isRexxSymbolChar private
   use arg c
@@ -289,7 +338,7 @@
   return out
 ::method isStart private
   use arg c
-  return c \== '' & pos(c, 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_') > 0
+  return c \== '' & pos(c, 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_!?') > 0
 ::method isRest private
   use arg c
   return self~isStart(c) | self~isDigit(c)

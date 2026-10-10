@@ -23,7 +23,7 @@ if RX2CPP_HOSTED=0 "$ROOT/build.sh" "$src" "$WORK/off.bin" "$WORK/off.cpp" >"$WO
 grep -Eq 'rx2cpp:[0-9]+:[0-9]+:' "$WORK/off.log" || { cat "$WORK/off.log"; echo "FAIL opt-out rejection lacks a source location"; exit 1; }
 echo "PASS RX2CPP_HOSTED=0 rejects the unit"
 # an unsupported construct in the MAIN code is not rescued by the hosted tier
-printf 'x = 1 ?? 2\n::class A public subclass object\n' > "$WORK/badmain.rex"
+printf 'x = 1 ` 2\n::class A public subclass object\n' > "$WORK/badmain.rex"
 if "$ROOT/build.sh" "$WORK/badmain.rex" "$WORK/bad.bin" "$WORK/bad.cpp" >"$WORK/bad.log" 2>&1; then echo "FAIL bad main code was accepted"; exit 1; fi
 grep -Eq 'rx2cpp:1:' "$WORK/bad.log" || { cat "$WORK/bad.log"; echo "FAIL main-code rejection should point at line 1"; exit 1; }
 echo "PASS main-code rejection stays final"

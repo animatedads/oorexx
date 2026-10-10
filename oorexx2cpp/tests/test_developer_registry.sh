@@ -33,7 +33,7 @@ for declaration in \
   '::class ARRAY' \
   '::class Example' ; do
   printf 'say "before"\nexit\n%s\n::attribute field\n::attribute field\n' "$declaration" >"$WORK/reject.rex"
-  if "$ROOT/run-compiler.sh" "$WORK/reject.rex" "$WORK/developer_registry.cpp" >"$WORK/reject.log" 2>&1; then
+  if RX2CPP_HOSTED=0 "$ROOT/run-compiler.sh" "$WORK/reject.rex" "$WORK/developer_registry.cpp" >"$WORK/reject.log" 2>&1; then
     echo "FAIL: accepted unsupported or duplicate class syntax: $declaration" >&2; exit 1
   fi
   [[ $accepted == "$(sha256sum "$WORK/developer_registry.cpp")" ]] || {
@@ -41,12 +41,12 @@ for declaration in \
   }
 done
 printf 'say 1\nexit\n::class Plain\n::method show abstract\n' >"$WORK/reject.rex"
-if "$ROOT/run-compiler.sh" "$WORK/reject.rex" "$WORK/developer_registry.cpp" >"$WORK/reject.log" 2>&1; then
+if RX2CPP_HOSTED=0 "$ROOT/run-compiler.sh" "$WORK/reject.rex" "$WORK/developer_registry.cpp" >"$WORK/reject.log" 2>&1; then
   echo 'FAIL: accepted abstract method' >&2; exit 1
 fi
 [[ $accepted == "$(sha256sum "$WORK/developer_registry.cpp")" ]]
 printf 'say 1\nexit\n::class Plain\n::method show\n  forward\n' >"$WORK/reject.rex"
-if "$ROOT/run-compiler.sh" "$WORK/reject.rex" "$WORK/developer_registry.cpp" >"$WORK/reject.log" 2>&1; then
+if RX2CPP_HOSTED=0 "$ROOT/run-compiler.sh" "$WORK/reject.rex" "$WORK/developer_registry.cpp" >"$WORK/reject.log" 2>&1; then
   echo 'FAIL: accepted unsupported FORWARD' >&2; exit 1
 fi
 [[ $accepted == "$(sha256sum "$WORK/developer_registry.cpp")" ]]

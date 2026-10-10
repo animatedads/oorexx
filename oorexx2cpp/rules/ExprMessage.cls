@@ -19,6 +19,7 @@
   if asInstruction then code = code || ' { '
   else code = code || ' -> rx::Value { '
   code = code || 'rx::Value ' || current || ' = ' || receiver || '; '
+  attrAssign = .false
   do while s~is('~') | s~is('~~') | s~is('[')
     indexed = s~is('[')
     cascade = .false
@@ -36,8 +37,15 @@
         s~fail('expected literal method selector after ~ or ~~')
       selector = s~next~text
       args = .array~new
+      /* receiver~attribute = value  sends  attribute=(value)  and is an assignment, not a message instruction. */
+      if asInstruction & s~is('=') then do
+        s~next
+        selector = selector || '='
+        args~append(ctx~logicalExpr~parse(ctx))
+        attrAssign = .true
+      end
     end
-    if \indexed & s~accept('(') then do
+    if \indexed & \attrAssign & s~accept('(') then do
       if \s~is(')') then do forever
         args~append(ctx~logicalExpr~parse(ctx))
         if \s~accept(',') then leave
@@ -52,7 +60,9 @@
     cascading = 'false'
     if cascade then cascading = 'true'
     callExpr = current || ', ' || .RxQuote~cpp(selector) || ', ' || argVar || ', ' || cascading
-    if asInstruction & \s~is('~') & \s~is('~~') & \s~is('[') then
+    if attrAssign then
+      code = code || 'rx::sendMessage(' || current || ', ' || .RxQuote~cpp(selector) || ', ' || argVar || '); '
+    else if asInstruction & \s~is('~') & \s~is('~~') & \s~is('[') then
       code = code || 'rx::messageInstruction(vars, ' || callExpr || '); '
     else
       code = code || current || ' = rx::messageValue(' || callExpr || '); '

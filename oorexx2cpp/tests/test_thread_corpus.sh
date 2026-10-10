@@ -24,7 +24,7 @@ if [[ "$MODE" == 'all' || "$MODE" == 'compiler' ]]; then
     name=$(basename "$f" .rex)
     target="$WORK/$name.cpp"
     printf '// SENTINEL: prior valid generated source\n' > "$target"
-    if "$ROOT/run-compiler.sh" "$f" "$target" > "$WORK/$name.log" 2>&1; then
+    if RX2CPP_HOSTED=0 "$ROOT/run-compiler.sh" "$f" "$target" > "$WORK/$name.log" 2>&1; then
       echo "NEEDS NATIVE QUALIFICATION: $name was accepted by the compiler" >&2
       # Do not silently claim threading correctness when compilation succeeds.
       exit 1

@@ -33,7 +33,7 @@ echo "PASS symbol-form library name is upper-cased and fails like the interprete
 # fail-closed source forms
 n=0
 reject() { n=$((n+1)); printf '%b\n' "$1" > "$WORK/rej$n.rex"; rm -f "$WORK/rej$n.cpp"
-  if "$ROOT/run-compiler.sh" "$WORK/rej$n.rex" "$WORK/rej$n.cpp" >/dev/null 2>&1; then echo "FAIL accepted: $1"; exit 1; fi
+  if RX2CPP_HOSTED=0 "$ROOT/run-compiler.sh" "$WORK/rej$n.rex" "$WORK/rej$n.cpp" >/dev/null 2>&1; then echo "FAIL accepted: $1"; exit 1; fi
   [[ ! -e "$WORK/rej$n.cpp" ]] || { echo "FAIL partial C++ for: $1"; exit 1; }; }
 reject 'say Foo(1)'                                              # external name without any LIBRARY declared
 reject 'say 1\n::requires "other.rex"'                           # Rexx program requires: not implemented

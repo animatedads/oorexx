@@ -1,3 +1,2 @@
-/* Must fail: static class reference syntax not yet implemented. */
-a = .array~of(1, 2)
-say a~items
+/* Must fail: ADDRESS (command execution) is not implemented. */
+address system 'ls'

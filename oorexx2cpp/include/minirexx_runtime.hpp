@@ -684,6 +684,11 @@ inline Value sendBinary(const Value &lhs, const std::string &selector, const Val
         if (rhs.isObject()) throw std::runtime_error("object operand in || is not implemented");
         return Value::string(lhs.bytes + rhs.bytes);
     }
+    if (selector == " ") {
+        // Blank concatenation: exactly one blank between the operands.
+        if (rhs.isObject()) throw std::runtime_error("object operand in blank concatenation is not implemented");
+        return Value::string(lhs.bytes + " " + rhs.bytes);
+    }
     if (selector == "+") return numericAdd(lhs, rhs, numeric);
     if (selector == "-") return numericSub(lhs, rhs, numeric);
     if (selector == "*") return numericMul(lhs, rhs, numeric);

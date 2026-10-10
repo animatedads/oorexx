@@ -24,6 +24,7 @@
   rules~append(.RxStmtRaise~new)
   rules~append(.RxStmtExit~new)
   rules~append(.RxStmtReturn~new)
+  rules~append(.RxStmtInterpret~new)
   rules~append(.RxStmtCall~new)
   rules~append(.RxStmtCompoundAssign~new)
   rules~append(.RxStmtMessage~new)
@@ -53,6 +54,7 @@
 ::requires 'rules/StmtRaise.cls'
 ::requires 'rules/StmtExit.cls'
 ::requires 'rules/StmtReturn.cls'
+::requires 'rules/StmtInterpret.cls'
 ::requires 'rules/StmtCall.cls'
 ::requires 'rules/StmtCompoundAssign.cls'
 ::requires 'rules/StmtMessage.cls'

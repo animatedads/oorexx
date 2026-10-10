@@ -22,7 +22,7 @@ for name in compound_semantics compound_loop compound_multitail compound_trailin
     passed=$((passed+1))
 done
 # Ensure future BIF/macro features are not silently interpreted as compounds.
-printf 'x = .array~of(1,2)\n' > "$WORK/unsupported.rex"
+printf 'x = .environment~of(1,2)\n' > "$WORK/unsupported.rex"
 rm -f "$WORK/unsupported.cpp"
 if "$ROOT/run-compiler.sh" "$WORK/unsupported.rex" "$WORK/unsupported.cpp" >"$WORK/unsupported.log" 2>&1; then
     echo 'FAIL unsupported object syntax accepted' >&2; exit 1

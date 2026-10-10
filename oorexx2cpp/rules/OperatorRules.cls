@@ -6,7 +6,7 @@
 ::class RxOperatorRules public
 ::method binary class
   use arg lhs, selector, rhs
-  if wordpos(selector, '+ - * / % // ** | || & && = \= <> >< == \== < <= > >=') == 0 then do
+  if selector \== ' ' & wordpos(selector, '+ - * / % // ** | || & && = \= <> >< == \== < <= > >=') == 0 then do
     raise syntax 40.1 array ('rx2cpp: unsupported binary operator ' || selector)
   end
   /* Native C++ does not guarantee function-argument evaluation order.

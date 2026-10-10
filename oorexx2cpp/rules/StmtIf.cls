@@ -11,10 +11,12 @@
   s~expect('IF')
   cond = ctx~logicalExpr~parse(ctx)
   s~expect('THEN')
+  s~skipSeparators   /* THEN may be followed by a line break before its instruction */
   ctx~line(depth, 'if (rx::condition(' || cond || ')) {')
   self~branch(ctx, depth + 1)
   ctx~line(depth, '}')
   if s~accept('ELSE') then do
+    s~skipSeparators
     ctx~line(depth, 'else {')
     self~branch(ctx, depth + 1)
     ctx~line(depth, '}')

@@ -5,11 +5,14 @@
 ::class RxStmtLoopOver public
 ::method accepts
   use arg ctx
-  return ctx~stream~is('LOOP')
+  s = ctx~stream
+  if s~is('LOOP') then return .true
+  /* DO symbol OVER expression is the same iterator form as LOOP symbol OVER expression. */
+  return s~is('DO') & s~lookAheadKind(1) == 'IDENT' & s~lookAheadText(2) == 'OVER'
 ::method emit
   use arg ctx, depth
   s = ctx~stream
-  s~expect('LOOP')
+  s~next
   if s~peek~kind \= 'IDENT' then s~fail('LOOP OVER requires a simple iterator variable')
   name = s~next~text
   s~expect('OVER')

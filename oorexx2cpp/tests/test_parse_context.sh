@@ -46,7 +46,6 @@ negatives=(
   'parse source'
   'parse version'
   'parse arg'
-  'parse upper arg x,'
   'parse lower'
   'parse upper unknown x'
   'parse arg a + x'

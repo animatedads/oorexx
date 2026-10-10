@@ -95,7 +95,7 @@ for pair in 'unsupported:~' 'incomplete-division:/' 'doubled-backslash:invalid' 
         cp examples/unsupported.rex "$TEST_OUTPUT_DIR/$name.rex"
     fi
     rm -f "$TEST_OUTPUT_DIR/$name.cpp"
-    if ./run-compiler.sh "$TEST_OUTPUT_DIR/$name.rex" "$TEST_OUTPUT_DIR/$name.cpp" >"$TEST_OUTPUT_DIR/$name.log" 2>&1; then
+    if RX2CPP_HOSTED=0 ./run-compiler.sh "$TEST_OUTPUT_DIR/$name.rex" "$TEST_OUTPUT_DIR/$name.cpp" >"$TEST_OUTPUT_DIR/$name.log" 2>&1; then
         fail "Unsupported syntax accepted: $name"
     fi
     [[ ! -f "$TEST_OUTPUT_DIR/$name.cpp" ]] || fail "Invalid source emitted C++: $name"

@@ -28,3 +28,13 @@ embedded in the binary. The stateless detached BIF chainback is the degenerate c
 * Variable pool sharing for `INTERPRET` (native frame <-> interpreter context) and `.local`/`.environment` access.
 * Macrospace (`RexxAddMacro`/`RexxLoadMacroSpace`) as the carrier for precompiled Rexx routines: not yet tested.
 * Native tier must stay the default and the differential-test oracle.
+
+## INTERPRET (hosted)
+
+`INTERPRET expr` evaluates `expr` natively and runs the string in the embedded interpreter (`rx::host::interpret`).
+The activation's simple variables and NUMERIC settings are copied in, the code runs, and every variable (new, changed,
+dropped) and the NUMERIC settings are copied back. Variable names are matched case-insensitively as everywhere else
+(uppercase keys). Fail closed at run time with an explicit message: stem/compound variables, EXPOSEd variables, native
+objects held in variables, interpreted RETURN/EXIT/SIGNAL/LEAVE. SYNTAX errors inside the string surface as the
+interpreter's own error and exit status (e.g. 221 for Error 35). `RX2CPP_HOSTED=0` restores the compile-time rejection.
+Test: `tests/test_claude_hosted_interpret.sh`.

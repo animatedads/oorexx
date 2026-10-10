@@ -18,7 +18,7 @@ for f in routine_directive routine_numeric_builtin routine_exit routine_trap rou
 done
 for f in "$ROOT"/examples/claude/reject/routine_*.rex; do
   b=$(basename "$f" .rex)
-  if "$ROOT/build.sh" "$f" "$WORK/$b.bin" "$WORK/$b.cpp" >"$WORK/$b.blog" 2>&1; then echo "FAIL $b was accepted"; exit 1; fi
+  if RX2CPP_HOSTED=0 "$ROOT/build.sh" "$f" "$WORK/$b.bin" "$WORK/$b.cpp" >"$WORK/$b.blog" 2>&1; then echo "FAIL $b was accepted"; exit 1; fi
   grep -Eq 'rx2cpp:[0-9]+:[0-9]+:' "$WORK/$b.blog" || { cat "$WORK/$b.blog"; echo "FAIL $b rejected without a source location"; exit 1; }
   echo "PASS $b rejected: $(grep -Eo 'rx2cpp:[0-9]+:[0-9]+: [^(]*' "$WORK/$b.blog" | head -1)"
 done

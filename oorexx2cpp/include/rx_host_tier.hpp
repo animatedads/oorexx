@@ -189,5 +189,80 @@ inline void callInstruction(Variables &vars, const std::string &name, const std:
     if (r) set(vars, "RESULT", *r); else drop(vars, "RESULT");
 }
 
+// INTERPRET: the code string runs in the embedded interpreter with a copy of the activation's simple variables and
+// NUMERIC settings; afterwards every variable (new, changed, dropped) and the NUMERIC settings are copied back.
+// Not implemented (fail closed at run time, never silently wrong): stem/compound variables, EXPOSEd variables,
+// native objects held in variables, and interpreted code that leaves the wrapper (RETURN, EXIT, SIGNAL, LEAVE).
+inline const char *interpretWrapper() {
+    return
+        "::routine rxinterp\n"
+        "  use arg _rx_code, _rx_in, _rx_d, _rx_f, _rx_fm\n"
+        "  do _rx_n over _rx_in~allIndexes\n"
+        "    _rx_x = value(_rx_n, _rx_in[_rx_n])\n"
+        "  end\n"
+        "  numeric digits _rx_d\n"
+        "  numeric fuzz _rx_f\n"
+        "  numeric form value _rx_fm\n"
+        "  interpret _rx_code\n"
+        "  _rx_out = .array~new\n"
+        "  _rx_v = .context~variables\n"
+        "  do _rx_n over _rx_v~allIndexes\n"
+        "    if _rx_n~left(4) \\== '_RX_' then do\n"
+        "      _rx_out~append(_rx_n)\n"
+        "      _rx_out~append(_rx_v[_rx_n])\n"
+        "    end\n"
+        "  end\n"
+        "  _rx_out~append('_RX_D'); _rx_out~append(digits())\n"
+        "  _rx_out~append('_RX_F'); _rx_out~append(fuzz())\n"
+        "  _rx_out~append('_RX_FM'); _rx_out~append(form())\n"
+        "  return _rx_out\n";
+}
+inline void interpret(Variables &vars, const Value &code) {
+    if (code.isObject()) throw std::runtime_error("INTERPRET of an object is not implemented");
+    if (!vars.exposed.empty()) throw std::runtime_error("INTERPRET with EXPOSEd variables is not implemented");
+    RexxThreadContext *c = Session::get().ctx();
+    static RexxRoutineObject routine = nullptr;
+    if (!routine) {
+        const std::string src = interpretWrapper();
+        RexxPackageObject p = c->LoadPackageFromData("rx2cpp_interpret", src.c_str(), src.size());
+        if (c->CheckCondition()) raisePending(c);
+        c->RequestGlobalReference(p);
+        routine = static_cast<RexxRoutineObject>(c->DirectoryAt(c->GetPackageRoutines(p), "RXINTERP"));
+        c->RequestGlobalReference(routine);
+    }
+    RexxDirectoryObject in = c->NewDirectory();
+    for (const auto &kv : vars) {
+        if (kv.first.find('.') != std::string::npos)
+            throw std::runtime_error("INTERPRET with stem or compound variables is not implemented");
+        c->DirectoryPut(in, HostObject::toRexx(c, kv.second), kv.first.c_str());
+    }
+    RexxArrayObject a = c->NewArray(5);
+    c->ArrayPut(a, c->String(code.bytes.data(), code.bytes.size()), 1);
+    c->ArrayPut(a, in, 2);
+    c->ArrayPut(a, c->String(std::to_string(vars.numeric.digits).c_str()), 3);
+    c->ArrayPut(a, c->String(std::to_string(vars.numeric.fuzz).c_str()), 4);
+    c->ArrayPut(a, c->String(vars.numeric.engineering ? "ENGINEERING" : "SCIENTIFIC"), 5);
+    RexxObjectPtr r = c->CallRoutine(routine, a);
+    if (c->CheckCondition()) raisePending(c);
+    if (!r || !c->IsOfType(r, "ARRAY"))
+        throw std::runtime_error("INTERPRET of RETURN, EXIT, SIGNAL or LEAVE is not implemented");
+    RexxArrayObject out = static_cast<RexxArrayObject>(r);
+    std::unordered_map<std::string, Value> after;
+    const size_t n = c->ArrayItems(out);
+    for (size_t i = 1; i + 1 <= n; i += 2) {
+        RexxObjectPtr nm = c->ArrayAt(out, i), val = c->ArrayAt(out, i + 1);
+        if (!nm || !val) continue;
+        after.insert_or_assign(std::string(c->ObjectToStringValue(nm)), wrap(c, val));
+    }
+    for (auto it = vars.begin(); it != vars.end();)
+        if (!after.count(it->first)) it = vars.erase(it); else ++it;
+    for (auto &kv : after) {
+        if (kv.first == "_RX_D") vars.numeric.digits = std::stoul(kv.second.bytes);
+        else if (kv.first == "_RX_F") vars.numeric.fuzz = std::stoul(kv.second.bytes);
+        else if (kv.first == "_RX_FM") vars.numeric.engineering = kv.second.bytes == "ENGINEERING";
+        else vars.insert_or_assign(kv.first, kv.second);
+    }
+}
+
 }}
 #endif
