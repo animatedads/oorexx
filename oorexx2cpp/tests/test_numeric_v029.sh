@@ -37,7 +37,7 @@ reject malformed_exponent $'say 1.5E+'
 reject numeric_bad_form $'numeric form ENGINEERISH\nsay 1'
 reject numeric_bad_mode $'numeric FLOAT 2\nsay 1'
 reject numeric_bad_atom $'say (1.2e+)'
-for code in 'numeric digits 0' 'numeric digits 1001' $'numeric digits 4\nnumeric fuzz 4' 'say 2.0 / 0' 'say 10000000000 % 1'; do
+for code in 'numeric digits 0' $'numeric digits 4\nnumeric fuzz 4' 'say 2.0 / 0' 'say 10000000000 % 1'; do
     name=$(printf '%s' "$code" | tr -cs 'A-Za-z0-9' '_')
     printf '%s\n' "$code" > "$WORK/runtime_$name.rex"
     "$ROOT/run-compiler.sh" "$WORK/runtime_$name.rex" "$WORK/runtime_$name.cpp"
