@@ -166,6 +166,13 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
 }
 }
 
+[[maybe_unused]] static std::string rx2cpp_routine_string(RexxCallContext *ctx, RexxObjectPtr object) {
+    if (object == NULLOBJECT || !ctx->IsOfType(object, "STRING"))
+        throw std::runtime_error("native routine accepts only ooRexx String scalar values");
+    auto s = ctx->ObjectToString(object);
+    return std::string(ctx->StringData(s), ctx->StringLength(s));
+}
+%ROUTINE_DEFINITIONS%
 %METHOD_DEFINITIONS%
 
 // Called in the defining root's method scope, including for subclass objects.
@@ -237,9 +244,13 @@ static void RexxEntry loadPackage(RexxThreadContext *ctx) {
     }
 }
 
+static RexxRoutineEntry nativeRoutines[] = {
+%ROUTINE_ENTRIES%    REXX_LAST_ROUTINE()
+};
+
 static RexxPackageEntry generated_package_entry = {
     STANDARD_PACKAGE_HEADER
     REXX_CURRENT_INTERPRETER_VERSION,
-    %PACKAGE_NAME%, "0.17.0-dev1", loadPackage, nullptr, nullptr, nativeMethods
+    %PACKAGE_NAME%, "0.17.0-dev1", loadPackage, nullptr, nativeRoutines, nativeMethods
 };
 OOREXX_GET_PACKAGE(generated)

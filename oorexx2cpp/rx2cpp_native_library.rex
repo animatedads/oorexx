@@ -11,14 +11,22 @@ signal on failure name compilerError
 source = readSource(input)
 extras = .RxNativePackageExtras~new~parse(source)
 source = extras~sanitized
+routines = .RxNativePackageRoutines~new~parse(source)
+source = routines~sanitized
 gateOK = .RxNativeSourceGate~new~validate(source)
 parser = .RxNativePackageParser~new
 units = parser~parse(source)
 extras~validate(units)
+if routines~implementation \= .nil then do
+  do unit over units
+    if unit~className == 'RX2CPP_ROUTINE_IMPL' then
+      raise syntax 40.1 array('rx2cpp: reserved internal routine implementation class name')
+  end
+end
 options = parser~options
 template = readSource('native/native_package_template.cpp.in')
 emitter = .RxNativeLibraryEmitter~new
-nativeSource = emitter~emitPackage(units, packageName, template, options, extras~suffix)
+nativeSource = emitter~emitPackage(units, packageName, template, options, extras~suffix, routines)
 cpp = ''
 header = '#ifndef RX2CPP_GENERATED_HPP' || '0a'x || ,
          '#define RX2CPP_GENERATED_HPP' || '0a'x || ,
@@ -26,6 +34,11 @@ header = '#ifndef RX2CPP_GENERATED_HPP' || '0a'x || ,
          '#include <memory>' || '0a'x || ,
          'namespace rx2cpp {' || '0a'x
 names = ''
+if routines~implementation \= .nil then do
+  routineUnit = routines~implementation
+  cpp = cpp || .RxHybridCppEmitter~new~emit(routineUnit, .false, options)
+  header = header || 'std::shared_ptr<CompiledObject> makeGeneratedObject_RX2CPP_ROUTINE_IMPL();' || '0a'x
+end
 do unit over units
   cpp = cpp || .RxHybridCppEmitter~new~emit(unit, .false, options)
   header = header || 'std::shared_ptr<CompiledObject> makeGeneratedObject_' || unit~className || '();' || '0a'x
@@ -59,3 +72,4 @@ compilerError:
 ::requires 'native/NativePackageParser.cls'
 ::requires 'native/NativeSourceGate.cls'
 ::requires 'native/NativePackageExtras.cls'
+::requires 'native/NativePackageRoutines.cls'

@@ -636,3 +636,17 @@ The class backend now supports separate `::ATTRIBUTE name GET` and
 class-object and instance getters. See `ATTRIBUTE_CONSTANT_SEMANTICS_V0301.md`.
 Run `native/test_attribute_constant.sh` with `OO_ROOT`, `REXX_BIN` and optional
 `CXX=g++` or `CXX=clang++` for differential qualification.
+
+## v0.30.9 — native package PUBLIC routine subset
+
+The existing native `.so` compiler now compiles supported `::ROUTINE name PUBLIC`
+into C++ and registers exported typed routine entry points. Class and routine
+compilation share the native ooRexx rule/emitter implementation, with separate
+routine activation storage. The GCC/Clang reference acceptance checks cover
+classes interleaved with routines, package numeric defaults, binary-safe
+returns, `CALL`/`RESULT`, and rollback on rejected declarations.
+
+This does **not** add native package `PRIVATE`, `EXTERNAL`, routine-only packages,
+or the full routine-body language. In particular, unchanged `crypto.cls` is
+still unsupported at its first package-private `::ROUTINE`. See
+`QUALIFICATION_V0309.md` and `native/test_native_routines.sh`.

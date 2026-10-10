@@ -7,7 +7,7 @@
   use arg unit, packageName, template
   return self~emitPackage(.array~of(unit), packageName, template)
 ::method emitPackage
-  use arg units, packageName, template, options, extras
+  use arg units, packageName, template, options, extras, routines
   self~identifier(packageName, 'package')
   cpp = ''
   entries = ''
@@ -84,9 +84,38 @@
     else if countInit \= 0 then raise syntax 40.1 array('rx2cpp: derived INIT is unsupported')
   end
   if countClasses == 0 then raise syntax 40.1 array('rx2cpp: empty class package')
+  routineDefs = ''
+  routineEntries = ''
+  if arg(6, 'E') then do
+    do routineName over routines~names
+      self~identifier(routineName, 'routine')
+      if routineName == 'RX2CPP_ROUTINE_IMPL' then
+        raise syntax 40.1 array('rx2cpp: reserved native routine identifier')
+      symbol = 'rx_native_routine_' || routineName~lower
+      routineDefs = routineDefs || 'RexxRoutine1(RexxObjectPtr, ' || symbol || ', ARGLIST, args)' || '0a'x
+      routineDefs = routineDefs || '{' || '0a'x
+      routineDefs = routineDefs || '  try {' || '0a'x
+      routineDefs = routineDefs || '    const size_t count = context->ArrayItems(args);' || '0a'x
+      routineDefs = routineDefs || '    auto obj = rx2cpp::makeGeneratedObject_RX2CPP_ROUTINE_IMPL();' || '0a'x
+      routineDefs = routineDefs || '    std::string value;' || '0a'x
+      routineDefs = routineDefs || '    if (count == 0) value = obj->invoke0(' || .RxQuote~cpp(routineName) || ');' || '0a'x
+      routineDefs = routineDefs || '    else if (count == 1) value = obj->invoke(' || .RxQuote~cpp(routineName) || ', rx2cpp_routine_string(context, context->ArrayAt(args, 1)));' || '0a'x
+      routineDefs = routineDefs || '    else if (count == 2) value = obj->invoke2(' || .RxQuote~cpp(routineName) || ', rx2cpp_routine_string(context, context->ArrayAt(args, 1)), rx2cpp_routine_string(context, context->ArrayAt(args, 2)));' || '0a'x
+      routineDefs = routineDefs || '    else throw std::runtime_error("routine supports at most two arguments");' || '0a'x
+      routineDefs = routineDefs || '    return context->NewString(value.data(), value.size());' || '0a'x
+      routineDefs = routineDefs || '  } catch (const std::exception &e) {' || '0a'x
+      routineDefs = routineDefs || '    context->RaiseException1(Rexx_Error_Execution_user_defined, context->String(e.what()));' || '0a'x
+      routineDefs = routineDefs || '    return NULLOBJECT;' || '0a'x
+      routineDefs = routineDefs || '  }' || '0a'x
+      routineDefs = routineDefs || '}' || '0a'x
+      routineEntries = routineEntries || '    REXX_TYPED_ROUTINE(' || routineName || ', ' || symbol || '),' || '0a'x
+    end
+  end
   if arg(5, 'E') then source = source || extras
   output = template~changeStr('%METHOD_DEFINITIONS%', cpp)
   output = output~changeStr('%METHOD_ENTRIES%', entries)
+  output = output~changeStr('%ROUTINE_DEFINITIONS%', routineDefs)
+  output = output~changeStr('%ROUTINE_ENTRIES%', routineEntries)
   output = output~changeStr('%CLASS_SOURCE%', .RxQuote~cpp(source))
   output = output~changeStr('%CLASS_COUNT%', countClasses)
   output = output~changeStr('%CLASS_NAMES%', classes)
