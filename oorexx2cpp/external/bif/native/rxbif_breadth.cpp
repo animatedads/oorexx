@@ -1,6 +1,7 @@
 #include "rxbif_breadth.hpp"
 #include "rxbif_symbol.hpp"
 #include "rxbif_trunc.hpp"
+#include "rxbif_x2d.hpp"
 #include <algorithm>
 #include <cctype>
 #include <limits>
@@ -58,7 +59,7 @@ const std::vector<Spec>& catalog() {
         {"X2C",1,1,"NATIVE_SUBSET"},
         {"C2D",1,2,"ISOLATED_REXX"},
         {"TRUNC",1,2,"NATIVE_SUBSET"},
-        {"X2D",1,2,"ISOLATED_REXX"},
+        {"X2D",1,2,"NATIVE_SUBSET"},
         {"D2X",1,2,"ISOLATED_REXX"},
         {"D2C",1,2,"ISOLATED_REXX"},
         {"COMPARE",2,3,"NATIVE_SUBSET"},
@@ -120,6 +121,33 @@ rx::Value invoke(const std::string& requested, const std::vector<Slot>& a, Conte
     if (name=="SIGN" && a.size()==1 && !a[0])
         throw std::runtime_error("BIF SIGN: required argument omitted");
     if (ctx.preferChainback) return delegate(name,a,ctx);
+    if(name=="X2D") {
+        if(!a[0])throw std::runtime_error("BIF X2D: required argument omitted");
+        if(a[0]->isObject() || (a.size()==2 && a[1] && a[1]->isObject()))
+            return delegate(name,a,ctx);
+        const bool supplied=a.size()==2 && a[1].has_value();
+        std::size_t width=0;
+        if(supplied){
+            const auto parsed=rxbif_x2d::parseWidth(a[1]->bytes);
+            if(parsed.kind==rxbif_x2d::WidthKind::Invalid)
+                throw std::runtime_error("BIF X2D: invalid width");
+            if(parsed.kind==rxbif_x2d::WidthKind::Unqualified)
+                return delegate(name,a,ctx);
+            width=parsed.value;
+        }
+        const auto numeric=ctx.currentNumeric
+            ? std::optional<NumericContext>{ctx.currentNumeric()} : ctx.numeric;
+        if(!numeric)throw std::runtime_error("BIF X2D: original NUMERIC context required");
+        validateNumericContext(*numeric);
+        const auto result=rxbif_x2d::run(a[0]->bytes,supplied,width,numeric->digits);
+        if(result.status==rxbif_x2d::Status::Value)return rx::Value::string(result.decimal);
+        if(result.status==rxbif_x2d::Status::InvalidHex)
+            throw std::runtime_error("BIF X2D: invalid hex digits or grouping");
+        if(result.status==rxbif_x2d::Status::Precision)
+            throw std::runtime_error("BIF X2D: result exceeds NUMERIC DIGITS");
+        return delegate(name,a,ctx); // typed resource/precision ceiling only
+    }
+
     if (name == "TRUNC" && !ctx.preferChainback) {
         if (!a[0]) throw std::runtime_error("BIF TRUNC: required argument omitted");
         if (!a[0]->isObject() && (a.size()==1 || !a[1] || !a[1]->isObject())) {

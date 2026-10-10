@@ -23,7 +23,15 @@
   /* Original native forwarding rule is authoritative.  Do not claim native
      acceptance if the upstream C++ call shape has changed. */
   if mode == 'NATIVE_SUBSET' then do
-    if n == 'TRUNC' then do
+    if n == 'X2D' then do
+      /* Native X2D dispatch depends on the exact upstream wrapper shape.
+         A changed delegate downgrades rather than retaining an unsafe route. */
+      body = definition~joined
+      if pos('required_string(X2D, string)',body) == 0 | ,
+         pos('optional_integer(X2D, n)',body) == 0 | ,
+         pos('return string->x2d(n)',body) == 0 then mode = 'HOST_ACTIVATION'
+    end
+    else if n == 'TRUNC' then do
       body = definition~joined
       if pos('required_string(TRUNC, number)',body) == 0 | ,
          pos('optional_integer(TRUNC, n)',body) == 0 | ,
