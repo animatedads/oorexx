@@ -1,0 +1,16 @@
+/* Query and control commands: committed outputs from ooRexx, no assumptions. */
+f='stream_commands.dat'
+say 'query-missing=' || (stream(f,'C','QUERY EXISTS') == '')
+say 'open='stream(f,'C','OPEN WRITE REPLACE')
+say 'write='charout(f,'41424344'x)
+say 'size='stream(f,'C','QUERY SIZE')
+say 'seek3='stream(f,'C','SEEK =3')
+say 'position3='stream(f,'C','QUERY POSITION')
+say 'seekend='stream(f,'C','SEEK +0')
+say 'position-relative='stream(f,'C','QUERY POSITION')
+say 'close='stream(f,'C','CLOSE')
+say 'exists=' || (stream(f,'C','QUERY EXISTS') \== '')
+say 'query-after-close='stream(f,'S')
+say 'open-read='stream(f,'C','OPEN READ')
+say 'charread='c2x(charin(f))
+say 'close-read='stream(f,'C','CLOSE')

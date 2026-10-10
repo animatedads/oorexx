@@ -1,0 +1,23 @@
+/* Positioned character I/O, LF/CRLF parsing, and crossing EOF. */
+f='seek_write.dat'
+say 'open='stream(f,'C','OPEN WRITE REPLACE')
+say 'write='charout(f,'41424344450A'x)
+say 'replace2='charout(f,'5A'x,2)
+say 'append-index='charout(f,'5959'x,7)
+say 'query-size='stream(f,'C','QUERY SIZE')
+say 'query-writepos='stream(f,'C','QUERY POSITION')
+say 'close='stream(f,'C','CLOSE')
+say 'read-open='stream(f,'C','OPEN READ')
+say 'read-all='c2x(charin(f,,8))
+say 'close-read='stream(f,'C','CLOSE')
+g='line_endings.dat'
+say 'g-open='stream(g,'C','OPEN WRITE REPLACE')
+say 'g-write='charout(g,'410D0A420A0A43'x)
+say 'g-close='stream(g,'C','CLOSE')
+say 'g-read='stream(g,'C','OPEN READ')
+say 'g-line1='c2x(linein(g))
+say 'g-line2='c2x(linein(g))
+say 'g-line3='c2x(linein(g))
+say 'g-line4='c2x(linein(g))
+say 'g-count='lines(g)
+say 'g-close2='stream(g,'C','CLOSE')
