@@ -1,0 +1,26 @@
+{
+  "schema": "oorexx.mvs.translation.sources/1",
+  "checkpoint": "dev18",
+  "source_archive": "oorexx-mvs-translation-scripts-dev18.zip",
+  "files": {
+    "api-interface-shapes.inc": "e9080718b80e326688761f4150fcd4900c4a2cc0",
+    "cfront-oorexx-mvs24.patch": "9e955c15c1090b0249e0a59443e3844cbc045cda",
+    "cfront-src-replacements/expr2.C": "9c4be6ae7a5695e7ca3cdc3bebb90dce7a68df84",
+    "cfront-src-replacements/main.C": "6932b20a618e58f78515d5cf71826989bad396a8",
+    "cfront-src-replacements/simpl2.C": "c769b1093f3a9b4109675159ce26c1cf71b4fb82",
+    "dev13_transform.py": "4bdb694a522b7d5b206c7bef8eb5e8ca644c34e9",
+    "dev14_post_transform.py": "8d09ef92852b23825560ee807f2ec2a68dc992cd",
+    "dev15_extra.py": "ce62d581bf8dcc510e5608e403d723f005188c89",
+    "dev15_post_transform.py": "0ff1bf40534537020397d6434e18b2c0cc706523",
+    "dev16_api_unwind.py": "2f5b47c2b65a600157fec19df6242be9494cf40d",
+    "dev16_extra.py": "0441edfee4b4c39cf9e3dac22282ddbc546c7e27",
+    "focus15.sh": "413f6bff16be71a55aaf95793d034f2c4dd910ca",
+    "mvs370.size": "d9c02a80c254fa1e00a088b6d55c64d4db25fad4",
+    "oorexx-mvs24-cfront-bulkpass-dev15.sh": "e2f963ad961d013848bf7c0553bbef47a3815a57",
+    "oorexx-mvs24-cfront-bulkpass-dev16.sh": "5406455e0696b6b3bb85a1b0701577d6c5d006d9",
+    "tests/run-recordset-host.sh": "b3a0c429f395819453c63d4543c59de3b36bd032",
+    "tests/run-unwind-host.sh": "aa66a66b972714fb14c6403d32648cdfc37b1f93",
+    "tools/fetch-pinned-oorexx.sh": "8ceb4a129da47549c00736f176192681dfe51149",
+    "tools/verify-pinned-source.py": "55062086cebea8e43ea88819944ae8e9454cf9c7"
+  }
+}
