@@ -1,0 +1,43 @@
+--- a/src/main.C
++++ b/src/main.C
+@@ -89,7 +89,7 @@
+ int warning_opt;	// produce more warnings if set
+ int dem_opt_local = 0;
+ int dem_opt_mem = 0;
+-int perf_opt=0;         // Break link compatibility performance option
++int perf_opt=1;         // ooRexx/MVS: allocate before ctor; placement new requires caller-supplied storage
+ 			// ** For now there is no option to turn this on
+ int pt_opt;		// it need pt instantiation mechanism
+ int dtpt_opt=0;		// if need pt instantiation mechanism
+--- a/src/expr2.C
++++ b/src/expr2.C
+@@ -2470,6 +2470,9 @@
+                                 // constructor.
+                                 Pexpr p;
+ 				Pexpr args = e2;
++                                /* A single placement argument is not an ELIST. */
++                                if (args && args->base != ELIST)
++                                        args = new expr(ELIST,args,0);
+                                 Pexpr sz = new texpr(SIZEOF,tt,0);
+                                 (void) tt->tsizeof();
+                                 sz->tp = uint_type;
+--- a/src/simpl2.C
++++ b/src/simpl2.C
+@@ -2377,6 +2377,17 @@
+ 	Pexpr p;
+ 	Pexpr args = pe->e2;
+ 
++	/*
++	 * A single placement argument is represented by the parser as the
++	 * expression itself, not as an ELIST.  mk_new_with_args() appends the
++	 * implicit sizeof(T) argument in front of the placement arguments, so
++	 * normalise the one-argument form here before constructing the call.
++	 * Without this, call_fct() walks a malformed argument list and reports
++	 * the placement argument as missing/wrong for every type.
++	 */
++	if (args && args->base != ELIST)
++		args = new expr(ELIST,args,0);
++
+ 	// Pexpr ce = new texpr(SIZEOF,tt,0);
+ 	Pexpr ce;
+ 	if (vec) 
