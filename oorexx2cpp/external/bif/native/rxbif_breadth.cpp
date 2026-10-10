@@ -1,4 +1,5 @@
 #include "rxbif_breadth.hpp"
+#include "rxbif_symbol.hpp"
 #include <algorithm>
 #include <cctype>
 #include <limits>
@@ -116,6 +117,17 @@ rx::Value invoke(const std::string& requested, const std::vector<Slot>& a, Conte
     if(a.size() < found->minArgs || a.size() > found->maxArgs)
         throw std::runtime_error("BIF " + name + ": incorrect argument count");
     if (ctx.preferChainback) return delegate(name,a,ctx);
+    // Exact, precision-independent subset. All other DATATYPE options retain
+    // their original route; never accidentally treat them as supported native.
+    if (!ctx.preferChainback && name == "DATATYPE" && a.size() == 2 &&
+        a[0] && a[1] && !a[0]->isObject() && !a[1]->isObject() &&
+        !a[1]->bytes.empty()) {
+        const unsigned char ch = static_cast<unsigned char>(a[1]->bytes[0]);
+        if (ch == 'S' || ch == 's' || ch == 'V' || ch == 'v')
+            return rx::Value::string(rxbif_symbol::datatype(
+                a[0]->bytes, static_cast<char>(ch == 's' ? 'S' : ch == 'v' ? 'V' : ch)) ? "1" : "0");
+    }
+
     const std::string mode = found->mode;
     if (mode == "NATIVE_SUBSET" || mode == "RX2CPP_BASE_SUBSET") {
         bool complete = true;
