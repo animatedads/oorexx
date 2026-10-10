@@ -14,7 +14,7 @@
 ::attribute compareExpr get
 ::attribute logicalExpr get
 ::method init
-  expose libraries stream atomExpr builtinExpr messageExpr unaryExpr mulExpr addExpr compareExpr logicalExpr registry emitter serial sourceName rexxVersion loopScopes inRoutine routines lastMainInstruction programClasses methodExposes
+  expose libraries stream atomExpr builtinExpr messageExpr unaryExpr mulExpr addExpr compareExpr logicalExpr registry emitter serial sourceName rexxVersion loopScopes inRoutine routineKind routines lastMainInstruction programClasses methodExposes
   use arg source, inputName
   sourceName = inputName
   programClasses = .RxProgramClasses~new(source)
@@ -32,6 +32,7 @@
   logicalExpr = .RxExprLogical~new
   loopScopes = .array~new
   inRoutine = .false
+  routineKind = 'LABEL'
   lastMainInstruction = ''
   routines = .RxRoutineRules~discover(stream)
   libraries = .RxLibraryRules~discover(stream)
@@ -95,6 +96,7 @@
   expose programClasses
   programClasses~emit(self)
 ::attribute inRoutine get
+::attribute routineKind get
 ::method libraries
   expose libraries
   return libraries
@@ -102,17 +104,23 @@
   expose libraries
   return libraries~items > 0
 ::method hasRoutine
-  expose routines
+  expose routines routineKind
   use arg name
-  return routines~hasIndex(name)
+  if \routines~hasIndex(name) then return .false
+  /* a ::ROUTINE code unit cannot see the main program's labels */
+  if routineKind == 'ROUTINE' then return routines[name] == 'ROUTINE' & \.RxBuiltinRules~isBuiltinName(name)
+  /* built-in functions take precedence over ::ROUTINE directives (labels still win) */
+  if routines[name] == 'ROUTINE' & .RxBuiltinRules~isBuiltinName(name) then return .false
+  return .true
 ::method beginRoutine
-  expose inRoutine routineName
-  use arg routineName = ''
+  expose inRoutine routineName routineKind
+  use arg routineName = '', routineKind = 'LABEL'
   inRoutine = .true
 ::attribute routineName get
 ::method endRoutine
-  expose inRoutine
+  expose inRoutine routineKind
   inRoutine = .false
+  routineKind = 'LABEL'
 ::method lastMainInstruction
   expose lastMainInstruction
   return lastMainInstruction
@@ -174,7 +182,7 @@
       self~stream~fail('routine labels require a top-level EXIT or RETURN immediately before routine definitions')
     .RxRoutineRules~emitAll(self)
   end
-  .RxLibraryRules~consume(self~stream)
+  .RxRoutineRules~emitDirectives(self)
   if self~stream~peek~kind \= 'EOF' then self~stream~fail('unexpected tokens after program')
   self~emitProgramClasses
   emitter~footer

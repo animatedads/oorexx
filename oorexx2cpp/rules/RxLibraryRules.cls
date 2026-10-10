@@ -14,9 +14,13 @@
       iterate
     end
     if i + 3 > tokens~items then stream~fail('incomplete directive')
+    if tokens[i + 1]~text == 'ROUTINE' & tokens[i + 1]~kind == 'IDENT' then do   /* compiled by RxRoutineRules */
+      i = i + 2
+      iterate
+    end
     if tokens[i + 1]~text \= 'REQUIRES' then do
       stream~position(i + 1)
-      stream~fail('unsupported directive (only ::REQUIRES "name" LIBRARY is implemented)')
+      stream~fail('unsupported directive (only ::REQUIRES "name" LIBRARY and ::ROUTINE are implemented)')
     end
     kind = tokens[i + 2]~kind
     if kind \= 'STRING' & kind \= 'IDENT' then do
@@ -28,7 +32,6 @@
       stream~fail('only ::REQUIRES ... LIBRARY is implemented (no Rexx program requires, no options)')
     end
     name = tokens[i + 2]~text
-    if kind == 'IDENT' then name = name~lower
     if name == '' | verify(name, 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.') \= 0 then do
       stream~position(i + 2)
       stream~fail('library name must be a plain file stem')

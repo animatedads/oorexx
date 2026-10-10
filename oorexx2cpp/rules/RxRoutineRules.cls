@@ -15,8 +15,23 @@
     end
     /* A label may be followed by an instruction on the same line (name: procedure; ...).
        Duplicate labels are legal Rexx: the FIRST occurrence is the target. */
-    names[t~text] = .true
+    names[t~text] = 'LABEL'
   end
+  /* ::ROUTINE name [PUBLIC|PRIVATE] directives: separate code units.  Call resolution order is
+     internal label, built-in, ::ROUTINE, external (see ooRexx reference 3.9). */
+  seen = .directory~new
+  do i = 1 to tokens~items - 2
+    if tokens[i]~kind \= 'OP' | tokens[i]~text \= '::' then iterate
+    if tokens[i + 1]~kind \= 'IDENT' | tokens[i + 1]~text \= 'ROUTINE' then iterate
+    n = tokens[i + 2]
+    stream~position(i + 2)
+    if n~kind \= 'IDENT' then stream~fail('::ROUTINE name must be a simple symbol (quoted names not implemented)')
+    if seen~hasIndex(n~text) then stream~fail('duplicate ::ROUTINE ' || n~text)
+    if names~hasIndex(n~text) then stream~fail('::ROUTINE ' || n~text || ' shares its name with an internal label (not implemented)')
+    seen[n~text] = .true
+    names[n~text] = 'ROUTINE'
+  end
+  stream~position(1)
   return names
 ::method emitAll class
   use arg ctx
@@ -27,41 +42,86 @@
     labelName = s~next~text
     s~expect(':')
     if s~peek~kind == 'SEP' then s~skipSeparators
-    ctx~beginRoutine(labelName~translate)
     registered = labelName
     if emitted~hasIndex(labelName) then do
       dupCount = dupCount + 1
       registered = labelName || '#duplicate' || dupCount   /* never called: first label wins */
     end
     emitted[labelName] = .true
-    ctx~line(2, '_rxRoutines[' || .RxQuote~cpp(registered) || '] = [&](rx::Variables& _rxCallerVars, const std::vector<rx::Value>& _rxProgramArgs) -> rx::MessageResult {')
-    ctx~line(3, '(void)_rxProgramArgs;')
-    .RxProcedureRules~emitBinding(ctx, 3)
-    s~skipSeparators
-    trapped = s~signalAhead
-    if trapped then do
-      ctx~line(3, 'rx::TrapState _rxTrap;')
-      ctx~line(3, 'try {')
-    end
-    last = ''
-    do while s~peek~kind \= 'EOF' & \s~atLabel & \s~atDirective
-      last = s~peek~text
-      ctx~statement(3)
-      s~skipSeparators
-    end
-    if last \= 'RETURN' & last \= 'EXIT' then s~fail('internal routines currently require explicit trailing RETURN: ' || labelName)
-    ctx~line(3, 'return std::nullopt;')
-    if trapped then do
-      ctx~line(3, '} catch (const std::exception& _rxError) {')
-      ctx~line(4, 'std::string _rxHandler;')
-      ctx~line(4, 'if (!_rxTrap.take(_rxHandler, _rxError, false)) throw;')
-      ctx~line(4, 'return rx::invokeInternal(vars, _rxRoutines, _rxHandler, _rxProgramArgs);')
-      ctx~line(3, '}')
-    end
-    ctx~line(2, '};')
-    ctx~endRoutine
+    self~emitBody(ctx, labelName, registered, 'LABEL')
   end
   if s~peek~kind \= 'EOF' & \s~atDirective then s~fail('unexpected tokens after internal routine definitions')
+/* One routine body.  LABEL routines share or PROCEDURE-isolate the caller scope and must end in an
+   explicit RETURN/EXIT; ROUTINE (directive) code units always start with an empty variable pool and
+   default NUMERIC settings, cannot see the main program's labels, and may simply fall off the end. */
+::method emitBody class
+  use arg ctx, labelName, registered, kind
+  s = ctx~stream
+  ctx~beginRoutine(labelName~translate, kind)
+  ctx~line(2, '_rxRoutines[' || .RxQuote~cpp(registered) || '] = [&](rx::Variables& _rxCallerVars, const std::vector<rx::Value>& _rxProgramArgs) -> rx::MessageResult {')
+  ctx~line(3, '(void)_rxProgramArgs;')
+  if kind == 'ROUTINE' then do
+    ctx~line(3, '(void)_rxCallerVars;')
+    ctx~line(3, 'rx::Variables _rxRoutineVars;')
+    ctx~line(3, 'rx::Variables& vars = _rxRoutineVars;')
+  end
+  else .RxProcedureRules~emitBinding(ctx, 3)
+  ctx~line(3, '(void)vars;')
+  s~skipSeparators
+  trapped = s~signalAhead
+  if trapped then do
+    ctx~line(3, 'rx::TrapState _rxTrap;')
+    ctx~line(3, 'try {')
+  end
+  last = ''
+  do while s~peek~kind \= 'EOF' & \s~atLabel & \s~atDirective
+    last = s~peek~text
+    ctx~statement(3)
+    s~skipSeparators
+  end
+  if kind == 'ROUTINE' & s~atLabel then s~fail('labels inside ::ROUTINE are not implemented')
+  if kind == 'LABEL' & last \= 'RETURN' & last \= 'EXIT' then s~fail('internal routines currently require explicit trailing RETURN: ' || labelName)
+  ctx~line(3, 'return std::nullopt;')
+  if trapped then do
+    ctx~line(3, '} catch (const std::exception& _rxError) {')
+    ctx~line(4, 'std::string _rxHandler;')
+    ctx~line(4, 'if (!_rxTrap.take(_rxHandler, _rxError, false)) throw;')
+    ctx~line(4, 'return rx::invokeInternal(vars, _rxRoutines, _rxHandler, _rxProgramArgs);')
+    ctx~line(3, '}')
+  end
+  ctx~line(2, '};')
+  ctx~endRoutine
+/* Directives that follow the main program and any labels: ::ROUTINE (compiled) and
+   ::REQUIRES "name" LIBRARY (already validated and hoisted by RxLibraryRules~discover). */
+::method emitDirectives class
+  use arg ctx
+  s = ctx~stream
+  do while s~atDirective
+    s~next
+    word = s~next~text
+    if word == 'REQUIRES' then do
+      s~next; s~next
+      s~skipSeparators
+      iterate
+    end
+    if word \= 'ROUTINE' then s~fail('unsupported directive')
+    name = s~next~text
+    seenVisibility = .false
+    do while s~peek~kind == 'IDENT'
+      opt = s~peek~text
+      if opt == 'PUBLIC' | opt == 'PRIVATE' then do
+        if seenVisibility then s~fail('::ROUTINE accepts at most one of PUBLIC/PRIVATE')
+        seenVisibility = .true
+        s~next
+      end
+      else if opt == 'EXTERNAL' then s~fail('::ROUTINE ... EXTERNAL is not implemented')
+      else s~fail('unknown ::ROUTINE option ' || opt)
+    end
+    if s~peek~kind \= 'SEP' & s~peek~kind \= 'EOF' then s~fail('unexpected tokens after ::ROUTINE')
+    s~skipSeparators
+    self~emitBody(ctx, name, name, 'ROUTINE')
+  end
+  if s~peek~kind \= 'EOF' then s~fail('unexpected tokens after directives')
 ::requires 'core/RxQuote.cls'
 
 ::requires 'rules/RxProcedureRules.cls'
