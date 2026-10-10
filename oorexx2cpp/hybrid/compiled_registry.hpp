@@ -9,6 +9,7 @@
 #include <condition_variable>
 #include <thread>
 #include <vector>
+#include <optional>
 #include <stdexcept>
 
 namespace rx2cpp {
@@ -77,6 +78,13 @@ struct CompiledObject {
     }
     virtual std::string invoke0(const std::string &selector) {
         throw std::runtime_error("zero-argument selector not implemented: " + selector);
+    }
+    /* Native package routine ABI receives the ooRexx ARGLIST as sparse,
+       positional values; omitted and missing arguments stay unbound.
+       Class-method invoke0/invoke/invoke2 are intentionally unchanged. */
+    virtual std::string invokeMany(const std::string &selector,
+                                   const std::vector<std::optional<std::string>> &) {
+        throw std::runtime_error("multi-argument native routine not implemented: " + selector);
     }
 };
 class Registry {

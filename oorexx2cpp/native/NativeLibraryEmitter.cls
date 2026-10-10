@@ -106,13 +106,16 @@
       routineDefs = routineDefs || 'RexxRoutine1(RexxObjectPtr, ' || symbol || ', ARGLIST, args)' || '0a'x
       routineDefs = routineDefs || '{' || '0a'x
       routineDefs = routineDefs || '  try {' || '0a'x
-      routineDefs = routineDefs || '    const size_t count = context->ArrayItems(args);' || '0a'x
       routineDefs = routineDefs || '    auto obj = rx2cpp::makeGeneratedObject_RX2CPP_ROUTINE_IMPL();' || '0a'x
-      routineDefs = routineDefs || '    std::string value;' || '0a'x
-      routineDefs = routineDefs || '    if (count == 0) value = obj->invoke0(' || .RxQuote~cpp(routineName) || ');' || '0a'x
-      routineDefs = routineDefs || '    else if (count == 1) value = obj->invoke(' || .RxQuote~cpp(routineName) || ', rx2cpp_routine_string(context, context->ArrayAt(args, 1)));' || '0a'x
-      routineDefs = routineDefs || '    else if (count == 2) value = obj->invoke2(' || .RxQuote~cpp(routineName) || ', rx2cpp_routine_string(context, context->ArrayAt(args, 1)), rx2cpp_routine_string(context, context->ArrayAt(args, 2)));' || '0a'x
-      routineDefs = routineDefs || '    else throw std::runtime_error("routine supports at most two arguments");' || '0a'x
+      routineDefs = routineDefs || '    const size_t count = context->ArraySize(args);' || '0a'x
+      routineDefs = routineDefs || '    std::vector<std::optional<std::string>> positional;' || '0a'x
+      routineDefs = routineDefs || '    positional.reserve(count);' || '0a'x
+      routineDefs = routineDefs || '    for (size_t i = 1; i <= count; ++i) {' || '0a'x
+      routineDefs = routineDefs || '      RexxObjectPtr item = context->ArrayAt(args, i);' || '0a'x
+      routineDefs = routineDefs || '      if (item == NULLOBJECT) positional.emplace_back(std::nullopt);' || '0a'x
+      routineDefs = routineDefs || '      else positional.emplace_back(rx2cpp_routine_string(context, item));' || '0a'x
+      routineDefs = routineDefs || '    }' || '0a'x
+      routineDefs = routineDefs || '    const std::string value = obj->invokeMany(' || .RxQuote~cpp(routineName) || ', positional);' || '0a'x
       routineDefs = routineDefs || '    return context->NewString(value.data(), value.size());' || '0a'x
       routineDefs = routineDefs || '  } catch (const std::exception &e) {' || '0a'x
       routineDefs = routineDefs || '    context->RaiseException1(Rexx_Error_Execution_user_defined, context->String(e.what()));' || '0a'x

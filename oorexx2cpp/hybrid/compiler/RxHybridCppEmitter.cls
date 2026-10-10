@@ -30,6 +30,13 @@
   self~dispatch(lines, unit, 2, options)
   lines~append('    throw std::runtime_error("unsupported or wrong-arity native selector: " + selector);')
   lines~append('  }')
+  if suffix == 'RX2CPP_ROUTINE_IMPL' then do
+    lines~append('  std::string invokeMany(const std::string &selector, const std::vector<std::optional<std::string>> &arguments) override {')
+    lines~append('    (void)arguments;')
+    self~dispatchMany(lines, unit, options)
+    lines~append('    throw std::runtime_error("unsupported or wrong-arity native routine: " + selector);')
+    lines~append('  }')
+  end
   lines~append('};')
   lines~append('std::shared_ptr<CompiledObject> makeGeneratedObject_' || suffix || '() {')
   lines~append('  return std::make_shared<GeneratedObject_' || suffix || '>();')
@@ -48,9 +55,7 @@
 ::method dispatch private
   use arg lines, unit, arity, options
   do method over unit~methods
-    count = 0
-    if method~parameter \== '' then count += 1
-    if method~secondParameter \== '' then count += 1
+    count = method~parameters~items
     if count \= arity then iterate
     lines~append('    if (selector == ' || .RxQuote~cpp(method~selector) || ') {')
     lines~append('      rx::Variables vars;')
@@ -81,6 +86,32 @@
       lines~append('      ' || statement)
     end
     if method~selector == 'INIT' then lines~append('      return "";')
+    lines~append('    }')
+  end
+/* Vector invocation belongs only to synthetic package-routine classes.
+   Each invocation owns fresh local variables; scalar byte strings are bound
+   positionally and no object/class state is introduced. */
+::method dispatchMany private
+  use arg lines, unit, options
+  do method over unit~methods
+    count = method~parameters~items
+    lines~append('    if (selector == ' || .RxQuote~cpp(method~selector) || ') {')
+    lines~append('      rx::Variables vars;')
+    hasOptions = .false
+    if arg(3, 'E') then hasOptions = options~present
+    if hasOptions then do
+      lines~append('      vars.numeric.digits = ' || options~digits || ';')
+      lines~append('      vars.numeric.fuzz = ' || options~fuzz || ';')
+      if options~form == 'ENGINEERING' then lines~append('      vars.numeric.engineering = true;')
+    end
+    do position = 1 to count
+      name = method~parameters[position]
+      lines~append('      if (arguments.size() > ' || (position - 1) || ' && arguments[' || (position - 1) || '])')
+      lines~append('        rx::set(vars, ' || .RxQuote~cpp(name) || ', rx::Value::string(*arguments[' || (position - 1) || ']));')
+    end
+    do statement over method~instructions
+      lines~append('      ' || statement)
+    end
     lines~append('    }')
   end
 ::requires 'core/RxQuote.cls'

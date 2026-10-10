@@ -44,7 +44,7 @@ LD_LIBRARY_PATH="$OO_ROOT/lib:$OUT/instrumented${LD_LIBRARY_PATH:+:$LD_LIBRARY_P
 cmp "$OUT/oracle.out" "$OUT/instrumented/native.out"
 echo "PASS $CXX ooRexx GetPackageRoutines/GetPackagePublicRoutines + CallRoutine private handle"
 prior=$(sha256sum "$OUT/librx2cpp_private_test.so" | cut -d' ' -f1)
-for bad in duplicate conflicting_visibility external alias_collision non_scalar three_arg same_line return_missing; do
+for bad in duplicate conflicting_visibility external alias_collision non_scalar malformed_use_arg same_line return_missing; do
   src="$OUT/reject_$bad.cls"
   cat > "$src" <<'REXX'
 ::class RoutineHost public
@@ -58,7 +58,7 @@ REXX
     external) printf '\n::routine hidden external "LIBRARY rxmath"\n' >> "$src";;
     alias_collision) printf '\n::routine hidden private\n return 1\n::routine RX2CPP_PRIVATE_HIDDEN public\n return 2\n' >> "$src";;
     non_scalar) printf '\n::routine hidden private\n use arg n\n return n~string\n' >> "$src";;
-    three_arg) printf '\n::routine hidden\n use arg a,b,c\n return a\n' >> "$src";;
+    malformed_use_arg) printf '\n::routine hidden\n use arg a,,c\n return a\n' >> "$src";;
     same_line) printf '\n::routine hidden private; say "not standalone"\n return 1\n' >> "$src";;
     return_missing) printf '\n::routine hidden\n use arg n\n n = 1\n' >> "$src";;
   esac

@@ -1,3 +1,9 @@
+## v0.30.14 — positional native routine argument arrays
+
+Native package `::ROUTINE` implementations now bind declared `USE ARG` names by position in ooRexx's `ARGLIST` array. Sparse/omitted positions remain unassigned; surplus supplied arguments are ignored. The prior arbitrary 16-position ceiling is removed. GCC and Clang pass a 15-line differential fixture with 0, 3, 4, 6, 16, and 17 declared positions. Native class-method arity remains unchanged. The unmodified Crypto package now stops at the internal `RX_MOD_INVERSE` function call at line 1147, not at `USE ARG`. See [QUALIFICATION_V0314.md](QUALIFICATION_V0314.md).
+
+---
+
 ## v0.30.13 — IF/THEN/ELSE and DO WHILE in native routines
 
 The existing hybrid method/routine compiler now translates restricted structured `IF` and `DO WHILE` instructions to native C++, with nested branches and conditional returns. Conditions use the existing ooRexx expression compiler. The GCC/Clang differential test covers class methods and package routines and rejects unsupported DO forms without replacing the last good `.so`. The unchanged Library `crypto.cls` advances past line 1123 and stops at line 1134 on the current two-argument `USE ARG` ABI. See [QUALIFICATION_V0313.md](QUALIFICATION_V0313.md) and `native/test_control_routines.sh`.
