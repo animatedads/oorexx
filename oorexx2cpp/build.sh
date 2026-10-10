@@ -33,5 +33,10 @@ if grep -q rx_extlib_bridge "$cpp"; then   # ::REQUIRES ... LIBRARY: host needs 
     : "${OO_ROOT:?OO_ROOT (ooRexx install with include/oorexxapi.h) is required for ::REQUIRES LIBRARY}"
     extra+=( -I"$OO_ROOT/include" -ldl )
 fi
+if grep -q rx_host_tier "$cpp"; then   # hosted tier: classes loaded from an embedded interpreter session
+    : "${OO_ROOT:?OO_ROOT (ooRexx install with include/ and lib/) is required for hosted-tier classes}"
+    echo "rx2cpp: hosted tier: $(grep -m1 RX2CPP_HOSTED "$cpp" | sed 's|^// RX2CPP_HOSTED:||') -- binary links librexx" >&2
+    extra+=( -I"$OO_ROOT/include" -L"$OO_ROOT/lib" -Wl,-rpath,"$OO_ROOT/lib" -lrexx -lrexxapi )
+fi
 "${CXX:-g++}" -std=c++17 -O2 -Wall -Wextra -Werror -I"$ROOT/include" "$cpp" "${extra[@]}" -o "$native"
 printf 'Native executable: %s (generated C++: %s)\n' "$native" "$cpp"

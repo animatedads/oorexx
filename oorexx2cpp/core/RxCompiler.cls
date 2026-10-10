@@ -14,7 +14,7 @@
 ::attribute compareExpr get
 ::attribute logicalExpr get
 ::method init
-  expose libraries stream atomExpr builtinExpr messageExpr unaryExpr mulExpr addExpr compareExpr logicalExpr registry emitter serial sourceName rexxVersion loopScopes inRoutine routineKind packageOptions routines lastMainInstruction programClasses methodExposes
+  expose libraries stream atomExpr builtinExpr messageExpr unaryExpr mulExpr addExpr compareExpr logicalExpr registry emitter serial sourceName rexxVersion loopScopes inRoutine routineKind packageOptions hostedClasses routines lastMainInstruction programClasses methodExposes
   use arg source, inputName
   sourceName = inputName
   programClasses = .RxProgramClasses~new(source)
@@ -33,6 +33,7 @@
   loopScopes = .array~new
   inRoutine = .false
   routineKind = 'LABEL'
+  hostedClasses = .array~new
   lastMainInstruction = ''
   routines = .RxRoutineRules~discover(stream)
   libraries = .RxLibraryRules~discover(stream)
@@ -69,6 +70,15 @@
   end
   self~stream~fail(kind || ' has no matching active DO loop' || name)
 ::attribute methodExposes get
+/* Hosted tier (hosted_tier/README.md): environment classes the native runtime lacks are loaded from an embedded
+   interpreter session. RX2CPP_HOSTED=0 restores the fail-closed rejection. */
+::method hostedEnabled
+  return value('RX2CPP_HOSTED', , 'ENVIRONMENT') \= '0'
+::method markHosted
+  expose hostedClasses
+  use arg name
+  if hostedClasses~index(name) == .nil then hostedClasses~append(name)
+::attribute hostedClasses get
 ::method hasProgramClass
   expose programClasses
   use arg name
@@ -197,7 +207,7 @@
   if self~stream~peek~kind \= 'EOF' then self~stream~fail('unexpected tokens after program')
   self~emitProgramClasses
   emitter~footer
-  return emitter~finish
+  return emitter~finish(self~hostedClasses)
 ::requires 'rules/RxRoutineRules.cls'
 ::requires 'rules/RxLibraryRules.cls'
 ::requires 'rules/RxOptionsRules.cls'

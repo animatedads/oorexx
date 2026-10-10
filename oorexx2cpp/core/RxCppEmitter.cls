@@ -33,6 +33,7 @@
   self~line(0, '#include "minirexx_runtime.hpp"')
   if useLibraries then self~line(0, '#include "rx_extlib_bridge.hpp"')
   if .RxBuiltinRules~externalEnabled then self~line(0, '#include "rx_bif_integration.hpp"')
+  self~line(0, '// __RX2CPP_HOST_INCLUDE__')
   self~line(0, '#include <exception>')
   self~line(0, '#include <iostream>')
   self~line(0, 'int main(int argc, char **argv) {')
@@ -54,11 +55,23 @@
   self~line(0, '}')
 ::method finish
   expose lines routineLines classLines
+  use arg hosted = .nil
   output = ''
   do value over lines
     if pos('__RX2CPP_ROUTINE_DEFINITIONS__', value) > 0 then do
       do routineLine over routineLines
         output = output || routineLine || '0a'x
+      end
+    end
+    else if pos('__RX2CPP_HOST_INCLUDE__', value) > 0 then do
+      if hosted == .nil then iterate
+      if hosted~items > 0 then do
+        names = ''
+        do h over hosted
+          names = names '.' || h
+        end
+        output = output || '// RX2CPP_HOSTED:' || names || ' (interpreter session; links librexx)' || '0a'x
+        output = output || '#include "rx_host_tier.hpp"' || '0a'x
       end
     end
     else if pos('__RX2CPP_CLASS_DECLARATIONS__', value) > 0 then do
