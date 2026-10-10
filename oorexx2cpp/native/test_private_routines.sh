@@ -55,7 +55,7 @@ REXX
   case "$bad" in
     duplicate) printf '\n::routine hidden\n return 1\n::routine hidden private\n return 2\n' >> "$src";;
     conflicting_visibility) printf '\n::routine hidden private public\n return 1\n' >> "$src";;
-    external) printf '\n::routine hidden external "LIBRARY rxmath RxCalcSin"\n' >> "$src";;
+    external) printf '\n::routine hidden external "LIBRARY rxmath"\n' >> "$src";;
     alias_collision) printf '\n::routine hidden private\n return 1\n::routine RX2CPP_PRIVATE_HIDDEN public\n return 2\n' >> "$src";;
     non_scalar) printf '\n::routine hidden private\n use arg n\n return n~string\n' >> "$src";;
     three_arg) printf '\n::routine hidden\n use arg a,b,c\n return a\n' >> "$src";;

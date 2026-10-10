@@ -122,6 +122,11 @@
       routineEntries = routineEntries || '    REXX_TYPED_ROUTINE(' || entryName || ', ' || symbol || '),' || '0a'x
     end
   end
+  if arg(6, 'E') then do
+    do externalHeader over routines~externalDeclarations
+      source = source || externalHeader || '0a'x
+    end
+  end
   if arg(5, 'E') then source = source || extras
   output = template~changeStr('%METHOD_DEFINITIONS%', cpp)
   output = output~changeStr('%METHOD_ENTRIES%', entries)

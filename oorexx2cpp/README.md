@@ -1,6 +1,19 @@
+## v0.30.12 — Native `::ROUTINE EXTERNAL` and numeric activation
+
+Restricted private `::ROUTINE ... EXTERNAL "LIBRARY ..."` declarations now
+pass through to the interpreter-owned package; compiled native routine bodies
+support literal `NUMERIC DIGITS`, `FUZZ` and `FORM` context settings, including
+`NUMERIC DIGITS` before `USE ARG`. PUBLIC EXTERNAL, dynamic numeric arguments
+and general IF/DO routine control remain fail-closed. The unchanged Crypto
+source now reaches the `IF` at line 1123 but still does not compile.
+See [`QUALIFICATION_V0312.md`](QUALIFICATION_V0312.md) and
+`native/test_external_numeric_routines.sh` for differential evidence.
+
+---
+
 ## v0.30.11 — private native package routines
 
-The native `.so` backend now accepts implicit and explicit PRIVATE `::ROUTINE` declarations using the existing scalar compiled ABI. GCC and Clang pass interpreter parity, ooRexx package-owned routine visibility and direct handle invocation, and fail-closed rollback tests. Crypto now reaches its external `::ROUTINE sin` declaration; it does not compile. See [qualification](QUALIFICATION_V0311.md) and `native/test_private_routines.sh`.
+The native `.so` backend now recognizes implicit and explicit `PRIVATE` `::ROUTINE` declarations and registers them in the interpreter-owned package without exporting their source-level routine names. GCC/Clang parity, directory-visibility checks and rollback tests are in `QUALIFICATION_V0311.md` and `native/test_private_routines.sh`. Scalar 0–2 argument bodies only; `crypto.cls` still does not compile.
 
 ---
 
@@ -642,17 +655,3 @@ The class backend now supports separate `::ATTRIBUTE name GET` and
 class-object and instance getters. See `ATTRIBUTE_CONSTANT_SEMANTICS_V0301.md`.
 Run `native/test_attribute_constant.sh` with `OO_ROOT`, `REXX_BIN` and optional
 `CXX=g++` or `CXX=clang++` for differential qualification.
-
-## v0.30.9 — native package PUBLIC routine subset
-
-The existing native `.so` compiler now compiles supported `::ROUTINE name PUBLIC`
-into C++ and registers exported typed routine entry points. Class and routine
-compilation share the native ooRexx rule/emitter implementation, with separate
-routine activation storage. The GCC/Clang reference acceptance checks cover
-classes interleaved with routines, package numeric defaults, binary-safe
-returns, `CALL`/`RESULT`, and rollback on rejected declarations.
-
-This does **not** add native package `PRIVATE`, `EXTERNAL`, routine-only packages,
-or the full routine-body language. In particular, unchanged `crypto.cls` is
-still unsupported at its first package-private `::ROUTINE`. See
-`QUALIFICATION_V0309.md` and `native/test_native_routines.sh`.

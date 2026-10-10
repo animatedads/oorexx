@@ -7,8 +7,9 @@
 ::attribute implementation get
 ::attribute names get
 ::attribute visibilities get
+::attribute externalDeclarations get
 ::method parse
-  expose sanitized implementation names visibilities
+  expose sanitized implementation names visibilities externalDeclarations
   use arg source
   lines = source~makeArray('0a'x)
   tokens = .RxLexer~new(source)~scan
@@ -30,6 +31,7 @@
     else before = 'OTHER'
   end
   names = .array~new
+  externalDeclarations = .array~new
   visibilities = .directory~new
   ignored = .directory~new
   if starts~items == 0 then do
@@ -58,33 +60,59 @@
       self~reject(start, 'invalid ::ROUTINE declaration')
     if header[3]~kind \= 'IDENT' then self~reject(start, 'routine name must be a simple symbol')
     name = header[3]~text
-    /* Unqualified ::ROUTINE is private by default (ooRexx package scope).
-       PUBLIC and PRIVATE are optional explicit visibility modifiers. */
+    /* An EXTERNAL routine is implemented by ooRexx's named library, not the
+       native class compiler. Keep the original package directive verbatim. */
     visibility = 'PRIVATE'
-    if header[4]~text == 'PUBLIC' | header[4]~text == 'PRIVATE' then do
-      visibility = header[4]~text
-      if header[5]~kind \= 'SEP' then
-        self~reject(start, 'unsupported ::ROUTINE options; expected name [PUBLIC|PRIVATE]')
+    optionIndex = 4
+    if header[optionIndex]~text == 'PUBLIC' | header[optionIndex]~text == 'PRIVATE' then do
+      visibility = header[optionIndex]~text
+      optionIndex += 1
     end
-    else if header[4]~kind \= 'SEP' then
-      self~reject(start, 'unsupported ::ROUTINE options; expected name [PUBLIC|PRIVATE]')
-    endIndex = 4
-    if header[4]~text == 'PUBLIC' | header[4]~text == 'PRIVATE' then endIndex = 5
-    /* Any same-line extra instruction or directive is unsupported. */
-    if header[endIndex+1]~kind \= 'EOF' then
-      self~reject(start, 'routine declaration must occupy its own line')
-
+    isExternal = header[optionIndex]~text == 'EXTERNAL'
+    if isExternal then do
+      if visibility == 'PUBLIC' then
+        self~reject(start, 'PUBLIC EXTERNAL needs a native forwarding registration (not implemented)')
+      if header[optionIndex+1]~kind \= 'STRING' | ,
+         header[optionIndex+2]~kind \= 'SEP' | header[optionIndex+3]~kind \= 'EOF' then
+        self~reject(start, 'EXTERNAL needs one standalone quoted library specification')
+      spec = header[optionIndex+1]~text
+      if words(spec) \= 3 | translate(word(spec, 1)) \= 'LIBRARY' then
+        self~reject(start, 'EXTERNAL supports only LIBRARY package procedure')
+      namePattern = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_'
+      if verify(word(spec, 2), namePattern) > 0 | verify(word(spec, 3), namePattern) > 0 then
+        self~reject(start, 'unsafe EXTERNAL library or procedure')
+    end
+    else if header[optionIndex]~kind \= 'SEP' | header[optionIndex+1]~kind \= 'EOF' then
+      self~reject(start, 'unsupported ::ROUTINE options; expected name [PUBLIC|PRIVATE] [EXTERNAL "LIBRARY ..."]')
     if seen~hasIndex(name) then self~reject(start, 'duplicate ::ROUTINE ' || name)
     seen[name] = .true
     if verify(name, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_') > 0 then
       self~reject(start, 'unsupported routine identifier ' || name)
-    names~append(name)
-    visibilities[name] = visibility
-    if start == 1 then self~reject(start, 'native routine must follow a package class')
-    synthetic[start] = '::method ' || name
+    if isExternal then do
+      /* An external routine has no implementation body. Non-comment clauses
+         before the next directive must be diagnosed, not silently dropped. */
+      chunk = ''
+      do j = start + 1 to finish
+        chunk = chunk || lines[j] || '0a'x
+      end
+      bodyTokens = .RxLexer~new(chunk)~scan
+      do tk over bodyTokens
+        if tk~kind \= 'SEP' & tk~kind \= 'EOF' then
+          self~reject(start, 'EXTERNAL routine must not have an executable body')
+      end
+      externalDeclarations~append(line)
+    end
+    else do
+      names~append(name)
+      visibilities[name] = visibility
+      if start == 1 then self~reject(start, 'native routine must follow a package class')
+      synthetic[start] = '::method ' || name
+      do j = start + 1 to finish
+        synthetic[j] = lines[j]
+      end
+    end
     ignored[start] = .true
     do j = start + 1 to finish
-      synthetic[j] = lines[j]
       ignored[j] = .true
     end
   end
@@ -96,6 +124,10 @@
   routineSource = ''
   do textLine over synthetic
     routineSource = routineSource || textLine || '0a'x
+  end
+  if names~items == 0 then do
+    implementation = .nil
+    return self
   end
   implementation = .RxHybridCompiler~new(routineSource, .true)~parse
   if implementation~methods~items \= names~items then self~reject(1, 'native routine method count mismatch')

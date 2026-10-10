@@ -45,6 +45,13 @@
   if name == parameter then
     raise syntax 40.1 array('rx2cpp: duplicate USE ARG parameter ' || name)
   secondParameter = name
+/* NUMERIC alters activation context but does not prevent a subsequent
+   USE ARG in the same routine, as the ooRexx interpreter permits. */
+::method addNumericInstruction
+  expose instructions hasReturn
+  use arg cpp
+  if hasReturn then raise syntax 40.1 array('rx2cpp: NUMERIC after RETURN')
+  instructions~append(cpp)
 ::method addInstruction
   expose instructions seenStatement hasReturn
   use arg line

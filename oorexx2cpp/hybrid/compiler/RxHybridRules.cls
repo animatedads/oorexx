@@ -2,7 +2,7 @@
 ::class RxHybridRules public
 ::method init
   expose entries
-  entries = .array~of(.RxHybridExpose~new, .RxHybridUseArg~new, .RxHybridReturn~new, .RxHybridForward~new, .RxHybridAssign~new)
+  entries = .array~of(.RxHybridExpose~new, .RxHybridUseArg~new, .RxHybridReturn~new, .RxHybridForward~new, .RxHybridNumeric~new, .RxHybridAssign~new)
 ::method find
   expose entries
   use arg compiler
@@ -15,3 +15,4 @@
 ::requires 'hybrid/rules/HybridReturn.cls'
 ::requires 'hybrid/rules/HybridForward.cls'
 ::requires 'hybrid/rules/HybridAssign.cls'
+::requires 'hybrid/rules/HybridNumeric.cls'
