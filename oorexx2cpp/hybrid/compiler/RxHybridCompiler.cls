@@ -5,6 +5,8 @@
 ::class RxHybridCompiler public
 ::attribute stream get
 ::attribute atomExpr get
+::attribute builtinExpr get
+::attribute localRoutines get
 ::attribute messageExpr get
 ::attribute unaryExpr get
 ::attribute mulExpr get
@@ -20,14 +22,16 @@
 ::attribute methods get
 ::attribute constants get
 ::method init
-  expose stream atomExpr messageExpr unaryExpr mulExpr addExpr compareExpr logicalExpr rules current className methods constants parentName allowInheritance isMixin mixinNames controlDepth
-  use arg source, allowInheritance
+  expose stream atomExpr builtinExpr localRoutines messageExpr unaryExpr mulExpr addExpr compareExpr logicalExpr rules current className methods constants parentName allowInheritance isMixin mixinNames controlDepth
+  use arg source, allowInheritance, localRoutines = .nil
+  if localRoutines == .nil then localRoutines = .array~new
   if arg(2, 'O') then allowInheritance = .false
   parentName = ''
   isMixin = .false
   mixinNames = .array~new
   stream = .RxStream~new(.RxLexer~new(source)~scan)
   atomExpr = .RxExprAtom~new
+  builtinExpr = .RxHybridFunctionCall~new
   messageExpr = .RxHybridExprNoMessage~new
   unaryExpr = .RxExprUnary~new
   mulExpr = .RxExprMultiply~new
@@ -165,3 +169,4 @@
 ::requires 'hybrid/rules/HybridMethodDirective.cls'
 ::requires 'hybrid/rules/HybridAttributeDirective.cls'
 ::requires 'hybrid/rules/HybridConstantDirective.cls'
+::requires 'hybrid/rules/HybridFunctionCall.cls'

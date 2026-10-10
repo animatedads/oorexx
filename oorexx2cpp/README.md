@@ -1,3 +1,9 @@
+## v0.30.15 — Native package-local routine calls
+
+Compiled native package routines now invoke other compiled package-local `::ROUTINE`s, including private forward declarations, through positional scalar argument vectors preserving missing slots. Each invocation owns an independent activation; recursive and nested calls pass GCC/Clang interpreter parity. The ooRexx library ABI continues to use `RexxArrayObject ARGLIST` (1-based positions); object-valued argument preservation and `PARSE ARG` string conversion are separate future work. Original Crypto advances to the `X2D` BIF at line 1164 without producing a complete `.so`. See `QUALIFICATION_V0315.md` and `native/test_localcalls.sh`.
+
+---
+
 ## v0.30.14 — positional native routine argument arrays
 
 Native package `::ROUTINE` implementations now bind declared `USE ARG` names by position in ooRexx's `ARGLIST` array. Sparse/omitted positions remain unassigned; surplus supplied arguments are ignored. The prior arbitrary 16-position ceiling is removed. GCC and Clang pass a 15-line differential fixture with 0, 3, 4, 6, 16, and 17 declared positions. Native class-method arity remains unchanged. The unmodified Crypto package now stops at the internal `RX_MOD_INVERSE` function call at line 1147, not at `USE ARG`. See [QUALIFICATION_V0314.md](QUALIFICATION_V0314.md).

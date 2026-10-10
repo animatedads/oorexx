@@ -1,0 +1,9 @@
+say .RoutineLocalHost~new~class~id
+say OUTER('a','b','c')
+say SKIP('a','b','c')
+say EXTRA('a','b','c')
+say NESTED(1,2,3)
+say FACT(1)
+say FACT(5)
+say NONE()
+::requires 'routine_localcalls.cls'
