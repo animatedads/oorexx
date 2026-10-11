@@ -37,6 +37,24 @@ void mvsUnwindUncaught(int, void *);
 
 void mvsUnwindPush(MvsUnwindFrame *frame, int type)
 {
+    /* A null frame or duplicate entry would corrupt the SJLJ chain.  These
+     * are programming faults, not ooRexx language exceptions.  Fail closed. */
+    if (frame == 0 || (type != MVS_UNWIND_REXX_ACTIVATION &&
+                       type != MVS_UNWIND_NATIVE_ACTIVATION))
+    {
+        mvsUnwindUncaught(0, frame);
+        for (;;) { }
+    }
+    MvsUnwindFrame *entry = mvsUnwindGetTop();
+    while (entry != 0)
+    {
+        if (entry == frame)
+        {
+            mvsUnwindUncaught(0, frame);
+            for (;;) { }
+        }
+        entry = entry->previous;
+    }
     frame->previous = mvsUnwindGetTop();
     frame->object = 0;
     frame->type = type;
@@ -45,10 +63,15 @@ void mvsUnwindPush(MvsUnwindFrame *frame, int type)
 
 void mvsUnwindPop(MvsUnwindFrame *frame)
 {
-    if (mvsUnwindGetTop() == frame)
+    /* Silently ignoring an out-of-order or repeated pop leaves the active
+     * stack pointing at expired frames.  It must never resume execution. */
+    if (frame == 0 || mvsUnwindGetTop() != frame)
     {
-        mvsUnwindSetTop(frame->previous);
+        mvsUnwindUncaught(0, frame);
+        for (;;) { }
     }
+    mvsUnwindSetTop(frame->previous);
+    frame->previous = 0;
 }
 
 void mvsUnwindRaise(int type, void *object)
@@ -61,7 +84,7 @@ void mvsUnwindRaise(int type, void *object)
     if (frame == 0)
     {
         mvsUnwindUncaught(type, object);
-        return;
+        for (;;) { }   /* even if an invalid failure handler returns */
     }
     frame->object = object;
     mvsUnwindSetTop(frame);

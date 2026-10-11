@@ -1,7 +1,7 @@
 from pathlib import Path
 import sys
 root=Path(sys.argv[1])
-EH='''\ntypedef int MvsJmpBuf[32];\nextern "C" int setjmp(MvsJmpBuf);\nextern "C" void longjmp(MvsJmpBuf, int);\nstruct MvsUnwindFrame { MvsJmpBuf env; MvsUnwindFrame *previous; void *object; int type; };\nenum { MVS_UNWIND_REXX_ACTIVATION = 1, MVS_UNWIND_NATIVE_ACTIVATION = 2 };\nvoid mvsUnwindPush(MvsUnwindFrame *, int);\nvoid mvsUnwindPop(MvsUnwindFrame *);\nvoid mvsUnwindRaise(int, void *);\nclass MvsNativeUnwindGuard { public: MvsNativeUnwindGuard() { mvsUnwindPush(&frame, MVS_UNWIND_NATIVE_ACTIVATION); } ~MvsNativeUnwindGuard() { mvsUnwindPop(&frame); } MvsUnwindFrame frame; };\n'''
+EH='''\ntypedef int MvsJmpBuf[32];\nextern "C" int setjmp(MvsJmpBuf);\nextern "C" void longjmp(MvsJmpBuf, int);\nstruct MvsUnwindFrame { MvsJmpBuf env; MvsUnwindFrame *previous; void *object; int type; };\nenum { MVS_UNWIND_REXX_ACTIVATION = 1, MVS_UNWIND_NATIVE_ACTIVATION = 2 };\nvoid mvsUnwindPush(MvsUnwindFrame *, int);\nvoid mvsUnwindPop(MvsUnwindFrame *);\nvoid mvsUnwindRaise(int, void *);\nclass MvsNativeUnwindGuard { public: MvsNativeUnwindGuard() : armed(1) { mvsUnwindPush(&frame, MVS_UNWIND_NATIVE_ACTIVATION); } void release() { if (armed) { armed = 0; mvsUnwindPop(&frame); } } ~MvsNativeUnwindGuard() { release(); } MvsUnwindFrame frame; private: int armed; };\n'''
 
 def match_brace(t, open_pos):
     d=0; i=open_pos
@@ -39,7 +39,7 @@ def convert(t):
         n+=1; g='mvsApiGuard%d'%n
         repl=('MvsNativeUnwindGuard '+g+';\n'
               '    if (setjmp('+g+'.frame.env) == 0)\n    {'+try_body+'\n    }\n'
-              '    else\n    {\n        mvsUnwindPop(&'+g+'.frame);'+catch_body+'\n    }')
+              '    else\n    {\n        '+g+'.release();'+catch_body+'\n    }')
         t=t[:i]+repl+t[end_catch+1:]
         pos=i+len(repl)
     return t,n

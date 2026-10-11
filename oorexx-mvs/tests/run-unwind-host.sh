@@ -15,10 +15,11 @@ import sys
 def no_core():
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 
-r = subprocess.run([sys.argv[1], "--uncaught"],
-                   stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                   preexec_fn=no_core, check=False)
-if r.returncode != -signal.SIGABRT:
-    raise SystemExit("FAIL uncaught expected SIGABRT, got %d" % r.returncode)
-print("PASS unmatched activation terminates with SIGABRT (host mock)")
+for scenario in ("--uncaught", "--bad-pop", "--double-pop", "--duplicate-push", "--invalid-type"):
+    r = subprocess.run([sys.argv[1], scenario],
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                       preexec_fn=no_core, check=False)
+    if r.returncode != -signal.SIGABRT:
+        raise SystemExit("FAIL %s expected SIGABRT, got %d" % (scenario, r.returncode))
+    print("PASS %s fails closed with SIGABRT (host mock)" % scenario)
 PYHOST

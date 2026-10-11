@@ -24,6 +24,35 @@ int main(int argc, char **argv)
         mvsUnwindRaise(MVS_UNWIND_REXX_ACTIVATION, (void *)1);
         return 41; /* must not return */
     }
+    if (argc == 2 && std::strcmp(argv[1], "--bad-pop") == 0)
+    {
+        MvsUnwindFrame one, two;
+        mvsUnwindPush(&one, MVS_UNWIND_REXX_ACTIVATION);
+        mvsUnwindPush(&two, MVS_UNWIND_NATIVE_ACTIVATION);
+        mvsUnwindPop(&one); /* fails closed, cannot bypass two */
+        return 42;
+    }
+    if (argc == 2 && std::strcmp(argv[1], "--double-pop") == 0)
+    {
+        MvsUnwindFrame one;
+        mvsUnwindPush(&one, MVS_UNWIND_REXX_ACTIVATION);
+        mvsUnwindPop(&one);
+        mvsUnwindPop(&one); /* no silent reuse */
+        return 43;
+    }
+    if (argc == 2 && std::strcmp(argv[1], "--duplicate-push") == 0)
+    {
+        MvsUnwindFrame one;
+        mvsUnwindPush(&one, MVS_UNWIND_REXX_ACTIVATION);
+        mvsUnwindPush(&one, MVS_UNWIND_NATIVE_ACTIVATION);
+        return 44;
+    }
+    if (argc == 2 && std::strcmp(argv[1], "--invalid-type") == 0)
+    {
+        MvsUnwindFrame one;
+        mvsUnwindPush(&one, 99);
+        return 45;
+    }
     MvsUnwindFrame root, nested, latest;
     mvsUnwindPush(&root, MVS_UNWIND_REXX_ACTIVATION);
     CHECK(mvsUnwindGetTop() == &root);
