@@ -5,6 +5,8 @@ set -euo pipefail
 SRC=${1:?ooRexx source tree}; W=${2:?work dir}; HERE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 mkdir -p "$W"; rm -rf "$W/src" "$W/b"; cp -r "$SRC" "$W/src"
 sed -i 's/add_library(rexx SHARED/add_library(rexx STATIC/; s/add_library(rexxapi SHARED/add_library(rexxapi STATIC/' "$W/src/CMakeLists.txt"
+# the ncurses extension is not needed for the kernel: do not require curses headers just to configure
+sed -i '/liborxncurses.so ####/{n;s/if (NOT WIN32)/if (FALSE)/}' "$W/src/CMakeLists.txt"
 mkdir "$W/b"; ( cd "$W/b"; cmake ../src -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON >cfg.log
   make -j"$(nproc)" rexx rexxapi rexx_img >make.log )
 FL="$W/b/CMakeFiles/rexx.dir/flags.make"

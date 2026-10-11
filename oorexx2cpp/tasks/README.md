@@ -10,7 +10,7 @@ Rules for every card
 5. Commit only the files the card names. Commit message = one line of what you did, then these two lines:
    `Architecture: Tom Dyer. Coding: ChatGPT / Claude. Writer: <your model name>.`
    `Co-Authored-By: <your model name> <noreply@anthropic.com>`
-6. The report is a file `tasks/results/<card>.md` with: what you ran, the last 20 lines of each command output, PASS or FAIL.
+6. Write reports with the file-writing tool, never with chained echo commands. The report is a file `tasks/results/<card>.md` with: what you ran, the last 20 lines of each command output, PASS or FAIL.
 
 Setup (once per session)
     export OO_ROOT=<ooRexx install root that contains bin/rexx and lib/>
