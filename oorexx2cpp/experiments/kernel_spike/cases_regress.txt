@@ -1,0 +1,7 @@
+# found by the first small-model run (T2): harness faults, now fixed
+BITXOR|ff|0f
+USERID|
+QUALIFY|hello
+QUALIFY|A.B.C
+GC|
+GC|f

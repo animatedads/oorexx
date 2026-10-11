@@ -9,8 +9,10 @@ do line over .stream~new(file)~arrayIn
     if p == 0 then do; f~append(rest); leave; end
     f~append(rest~left(p - 1)); rest = rest~substr(p + 1)
   end
+  n = f~items
+  if n == 2 & f[2] == '' then n = 1   /* NAME| means NO arguments, like NAME() */
   call = f[1] || '('
-  do i = 2 to f~items
+  do i = 2 to n
     if i > 2 then call = call || ','
     if f[i] == '<empty>' then call = call || "''"
     else if f[i] \== '' then call = call || "'" || f[i]~changeStr("'", "''") || "'"

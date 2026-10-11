@@ -4,6 +4,9 @@
 set -uo pipefail
 W=${1:?workdir}; CASES=$(realpath "${2:?cases file}"); HERE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 ( cd "$W" && ./probe "$CASES" ) > "$W/probe.out" 2>&1
-rexx "$HERE/expected.rex" "$CASES" > "$W/expected.out" 2>&1
-if diff -u "$W/expected.out" "$W/probe.out" > "$W/diff.out"; then echo "ALL EQUAL ($(wc -l < "$W/probe.out") cases)"; exit 0; fi
+# run BOTH sides from the same directory (some functions, e.g. QUALIFY, depend on the working directory)
+INTERP=$(rexx -v 2>&1 | head -1)
+( cd "$W" && rexx "$HERE/expected.rex" "$CASES" ) > "$W/expected.out" 2>&1
+echo "oracle: $INTERP"
+if diff -a -u "$W/expected.out" "$W/probe.out" > "$W/diff.out"; then echo "ALL EQUAL ($(wc -l < "$W/probe.out") cases)"; exit 0; fi
 grep '^[-+]' "$W/diff.out" | grep -v '^\(---\|+++\)'; echo "DIFFERENCES FOUND"; exit 1

@@ -2,6 +2,8 @@
 
 Goal: a case file with at least 4 cases for each function in `experiments/kernel_spike/pure_bifs.txt`, run through
 `experiments/kernel_spike/compare.sh`, and a report of every difference. Do NOT fix differences. Just report them.
+Needs: the interpreter you compare against must be 5.3. Check: `rexx -v | head -1` must say `Version 5.3.0`.
+If it says 5.2.0 (for example a portable 5.2 build), STOP and report; the compiled-in source is 5.3 so differences would be meaningless.
 Needs: T1 finished (`$W/probe` and `$W/rexx.img` exist, W=/tmp/kernel_work) and `rexx` on PATH.
 
 Case file format (one case per line, saved as `tasks/results/cases_bif.txt`)
@@ -10,6 +12,7 @@ Case file format (one case per line, saved as `tasks/results/cases_bif.txt`)
 - A field that is EMPTY means the argument is omitted:  `SUBSTR|hello|2||*`  omits argument 3.
 - The field `<empty>` means the null string.
 - All arguments are plain strings. Lines starting with # are comments.
+- A line with only a name and one trailing `|` means NO arguments:  `USERID|`  is  `userid()`.
 - Worked examples (copy this style):
       SUBSTR|hello|2||*          substr('hello',2,,'*')
       SUBSTR|hello|2|6|*
@@ -34,3 +37,8 @@ Steps
 
 Stop rules: if `probe` crashes (Illegal instruction / Segmentation fault), copy the case line that ran last into the report
 (the last line of `$W/probe.out`) and stop; that case is a finding.
+
+Known differences (these are NOT findings; mention them in the report but do not count them)
+- `GC|` (no argument): the interpreter build may return 1 (debug build) while the compiled-in Release kernel returns 0.
+  The source returns .true only when forced or when built with _DEBUG.
+Output with a NUL byte (for example BITXOR|ff|0f) is compared byte for byte; the compare script uses `diff -a`.

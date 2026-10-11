@@ -32,6 +32,7 @@ int main(int argc, char **argv) {
             std::vector<std::string> f; std::stringstream ss(line); std::string x;
             while (std::getline(ss, x, '|')) f.push_back(x);
             if (!line.empty() && line.back() == '|') f.push_back("");
+            if (f.size() == 2 && f[1].empty()) f.pop_back();     // "NAME|" means NO arguments, like NAME()
             const Entry *e = nullptr;
             for (const Entry &t : table) if (f[0] == t.name) e = &t;
             printf("%s => ", line.c_str());
@@ -43,7 +44,8 @@ int main(int argc, char **argv) {
             }
             try {
                 RexxObject *r = e->fn(NULL, f.size() - 1, &st);
-                if (r == OREF_NULL) puts("(none)"); else printf("[%s]\n", r->stringValue()->getStringData());
+                if (r == OREF_NULL) puts("(none)");
+                else { RexxString *rs = r->stringValue(); putchar('['); fwrite(rs->getStringData(), 1, rs->getLength(), stdout); puts("]"); }   // binary safe
             } catch (...) { puts("ERROR"); }
         }
     }
