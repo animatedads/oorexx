@@ -19,6 +19,8 @@ export LD_LIBRARY_PATH="$OO_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 # replace a previously qualified library or leave new partial generated files.
 TMP=$(mktemp -d "$OUT/.rx2cpp-stage.XXXXXX")
 trap 'rm -rf -- "$TMP"' EXIT
+# Objects: .NAME classes and message sends use the host interpreter that loads this library
+export RX2CPP_HOST_API=1
 # BIFs: same add-on root and same dispatcher as build.sh (standalone programs)
 if [[ "${RX2CPP_BIF_DISABLED:-0}" != 1 && -z "${RX2CPP_BIF_ROOT:-}" && -f "$ROOT/external/bif/catalog/bifs.tsv" ]]; then
     export RX2CPP_BIF_ROOT="$ROOT/external/bif"
@@ -43,7 +45,7 @@ if [[ -n "${RX2CPP_BIF_ROOT:-}" ]]; then
 fi
 (cd "$ROOT" && "$REXX_BIN" rx2cpp_native_library.rex "$SOURCE" "$TMP/generated" "$PACKAGE")
 "$CXX" -std=c++17 -O2 -fPIC -shared -Wall -Wextra -Werror \
-    -I"$OO_INCLUDE" -I"$ROOT/include" -I"$ROOT/hybrid" -I"$TMP" "${bifflags[@]}" \
+    -I"$OO_INCLUDE" -I"$ROOT/include" -I"$ROOT/hybrid" -I"$TMP" -DRX2CPP_HOST_API "${bifflags[@]}" \
     "$TMP/generated.cpp" "$TMP/generated_package.cpp" "${bifsrc[@]}" -o "$TMP/lib${PACKAGE}.so"
 # Publish the binary last, after successful generation/linking.
 mv -f "$TMP/generated.cpp" "$OUT/generated.cpp"

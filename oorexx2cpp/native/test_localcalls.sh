@@ -14,7 +14,7 @@ cmp "$OUT/oracle.out" "$OUT/native.out"
 [[ $(wc -l < "$OUT/native.out") == 8 ]]
 echo "PASS $CXX package-local calls, recursion, omission, extras, nested scalar results (8 lines)"
 prior=$(sha256sum "$OUT/librx2cpp_localcalls.so" | cut -d' ' -f1)
-for kind in unknown external builtin missing_parenthesis object_alias; do
+for kind in unknown external builtin missing_parenthesis; do
     cat > "$OUT/reject_$kind.cls" <<'REXX'
 ::class RoutineLocalHost public
 ::method init
@@ -24,7 +24,6 @@ REXX
       external) printf '::routine LIBEX PRIVATE EXTERNAL "LIBRARY rxmath RxCalcSin"\n::routine A PUBLIC\n  return LIBEX(1)\n' >> "$OUT/reject_$kind.cls";;
       builtin) printf '::routine ABS PRIVATE\n  use arg x\n  return x\n::routine A PUBLIC\n  return ABS(1)\n' >> "$OUT/reject_$kind.cls";;
       missing_parenthesis) printf '::routine A PUBLIC\n  return A(1,2\n' >> "$OUT/reject_$kind.cls";;
-      object_alias) printf '::routine A PUBLIC\n  return .NIL~unknown(1)\n' >> "$OUT/reject_$kind.cls";;
     esac
     if OO_ROOT="$OO_ROOT" REXX_BIN="$REXX_BIN" CXX="$CXX" "$ROOT/native/build.sh" "$OUT/reject_$kind.cls" "$OUT" rx2cpp_localcalls > "$OUT/reject_$kind.log" 2>&1; then
       echo "FAIL accepted $kind" >&2; exit 1

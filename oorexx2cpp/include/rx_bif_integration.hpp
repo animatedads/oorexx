@@ -15,64 +15,7 @@
 #include <cstdlib>
 #include <memory>
 #endif
-#ifdef RX2CPP_KERNEL
-namespace rx {
-// A real interpreter object (array, directory, user class instance, class ...) living in the compiled-in kernel.
-// No marshalling: messages go to the kernel's own method dispatch, results are the kernel's own objects.
-struct KernelObject final : ObjectDispatch {
-    void *handle;
-    explicit KernelObject(void *h) : handle(h) {}
-    ~KernelObject() override { rxkernel::release(handle); }
-    static Value wrap(const rxkernel::Result &r) {
-        if (r.kind == 2) return Value::fromObject(std::make_shared<KernelObject>(r.obj));
-        return Value::string(r.bytes);
-    }
-    static void convert(const std::vector<Value> &args, std::vector<rxkernel::Arg> &out) {
-        for (const Value &v : args) {
-            rxkernel::Arg a;
-            if (v.isObject()) {
-                auto *k = dynamic_cast<KernelObject *>(v.object.get());
-                if (!k) throw std::runtime_error("only kernel objects can be passed to kernel messages");
-                a.obj = k->handle;
-            } else a.bytes = v.bytes;
-            out.push_back(std::move(a));
-        }
-    }
-    MessageResult sendMessage(const std::string &selector, const std::vector<Value> &args) override {
-        std::vector<rxkernel::Arg> in; convert(args, in);
-        rxkernel::Result r; std::string code, text;
-        if (!rxkernel::send(handle, selector, in, r, code, text)) {
-            if (code == "97.1") throw NoMethod(text);
-            throw SyntaxCondition(code, text, false);
-        }
-        if (r.kind == 0) return std::nullopt;
-        return wrap(r);
-    }
-    Value sendBinary(const std::string &selector, const Value &rhs) override {
-        auto r = sendMessage(selector, {rhs});
-        if (!r) throw std::runtime_error("operator message returned no value: " + selector);
-        return *r;
-    }
-    Value sendUnary(const std::string &selector) override {
-        auto r = sendMessage(selector, {});
-        if (!r) throw std::runtime_error("operator message returned no value: " + selector);
-        return *r;
-    }
-    std::string display() const override {
-        std::vector<rxkernel::Arg> none; rxkernel::Result r; std::string code, text;
-        if (!rxkernel::send(handle, "STRING", none, r, code, text) || r.kind != 1)
-            throw std::runtime_error("object has no string value");
-        return r.bytes;
-    }
-};
-// .NAME environment symbols resolve to the kernel's own classes (.ARRAY, .DIRECTORY, .LIST, ...).
-inline Value kernelClass(const std::string &name) {
-    void *h = rxkernel::findClass(name);
-    if (!h) throw std::runtime_error("unknown environment class ." + name);
-    return Value::fromObject(std::make_shared<KernelObject>(h));
-}
-}
-#endif
+#include "rx_object_bridge.hpp"
 namespace rx {
 struct BifRuntime {
     rxbif::Context native;

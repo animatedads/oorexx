@@ -10,6 +10,7 @@
   lines~append('// rx2cpp ooRexx class compiler output: ARGLIST ABI (any number of arguments)')
   lines~append('#include "generated.hpp"')
   lines~append('#include "minirexx_runtime.hpp"')
+  lines~append('#include "rx_object_bridge.hpp"')
   if .RxBuiltinRules~externalEnabled then do
     lines~append('#include "rx_bif_integration.hpp"')
     lines~append('#ifndef RX2CPP_BIF_HELPER')

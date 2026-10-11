@@ -11,6 +11,8 @@
   use arg ctx
   s = ctx~stream
   if s~peek~kind == 'IDENT' & s~peek~text == 'SELF' & s~lookAheadText(1) == '~' then return self~selfSend(ctx)
+  /* With interpreter objects available (host API), any receiver works: the shared message-send rule, one path. */
+  if value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' then return .RxExprMessage~new~parse(ctx, .false)
   value = ctx~atomExpr~parse(ctx)
   if s~is('~') | s~is('~~') then
     s~fail('class method message-send supports only SELF~selector[(argument)]')
@@ -47,3 +49,4 @@
   end
   return code || 'return _r' || tag || '; }())'
 ::requires 'core/RxQuote.cls'
+::requires 'rules/ExprMessage.cls'

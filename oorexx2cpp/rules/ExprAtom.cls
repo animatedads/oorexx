@@ -23,9 +23,9 @@
         if t~text == 'OUTPUT' then return 'rx::host::localSymbol("OUTPUT")'
         return 'rx::host::packageRoutines()'
       end
-      /* Kernel mode: environment classes are the interpreter's own objects, not reimplementations. */
-      if value('RX2CPP_KERNEL', , 'ENVIRONMENT') \= '' & wordpos(t~text, 'TRUE FALSE NIL') = 0 & \ctx~hasProgramClass(t~text) then -
-        return 'rx::kernelClass(' || .RxQuote~cpp(t~text) || ')'
+      /* Kernel / host-API mode: environment classes are the interpreter's own objects, not reimplementations. */
+      if (value('RX2CPP_KERNEL', , 'ENVIRONMENT') \= '' | value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '') & wordpos(t~text, 'TRUE FALSE NIL') = 0 & \ctx~hasProgramClass(t~text) then -
+        return 'rx::envClass(' || .RxQuote~cpp(t~text) || ')'
       if ctx~hasProgramClass(t~text) then return 'rx::Value::fromObject(_rxClasses.at(' || .RxQuote~cpp(t~text) || '))'
       if t~text == 'ARRAY' then return 'rx::Value::fromObject(std::make_shared<rx::ArrayClass>())'
       /* .TRUE/.FALSE are the strings 1 and 0 */

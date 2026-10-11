@@ -122,6 +122,11 @@
   rule~emit(self)
 /* ExprAtom is shared with the standalone compiler. Native classes have no program-class table and no
    hosted tier, so those environment-symbol branches are closed: .TRUE/.FALSE/.NIL work, other .NAMEs fail closed. */
+::method label
+  expose labelCounter
+  if var('LABELCOUNTER') = 0 then labelCounter = 0
+  labelCounter += 1
+  return labelCounter
 ::method hasProgramClass
   return .false
 ::method hostedEnabled

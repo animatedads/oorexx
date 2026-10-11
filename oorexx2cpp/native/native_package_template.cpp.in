@@ -4,6 +4,7 @@
 #include <oorexxerrors.h>
 #include "compiled_registry.hpp"
 #include "generated.hpp"
+#include "rx_object_bridge.hpp"
 #include <string>
 #include <memory>
 #include <mutex>
@@ -110,6 +111,9 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
                           const std::string &className, const std::string &selector,
                           bool initializer, bool attributeSetter, int scopeIndex, bool isRoot, const std::string &rootClass) {
     try {
+#ifdef RX2CPP_HOST_API
+        rxobj::Scope hostScope(ctx->threadContext);
+#endif
         const size_t count = ctx->ArraySize(args);
         std::shared_ptr<CompiledObject> object;
         std::string token;

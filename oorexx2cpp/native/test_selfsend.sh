@@ -14,9 +14,6 @@ rej() { printf '%s\n' "$2" > "$OUT/$1.cls"
   if CXX=$CXX "$ROOT/native/build.sh" "$OUT/$1.cls" "$OUT/rej_$1" rx2cpp_rej_$1 >/dev/null 2>&1; then echo "FAIL $1 accepted"; exit 1; fi
   echo "PASS reject $1"; }
 H=$'::class A public\n::method init\n  expose v\n  use arg s\n  v = s\n'
-rej other_receiver "$H::method m
-  x = \"q\"
-  return x~length()"
 rej chained        "$H::method m
   return self~a()~b()"
 rej cascade        "$H::method m

@@ -106,6 +106,9 @@
       routineDefs = routineDefs || 'RexxRoutine1(RexxObjectPtr, ' || symbol || ', ARGLIST, args)' || '0a'x
       routineDefs = routineDefs || '{' || '0a'x
       routineDefs = routineDefs || '  try {' || '0a'x
+      routineDefs = routineDefs || '#ifdef RX2CPP_HOST_API' || '0a'x
+      routineDefs = routineDefs || '    rxobj::Scope hostScope(context->threadContext);' || '0a'x
+      routineDefs = routineDefs || '#endif' || '0a'x
       routineDefs = routineDefs || '    auto obj = rx2cpp::makeGeneratedObject_RX2CPP_ROUTINE_IMPL();' || '0a'x
       routineDefs = routineDefs || '    const size_t count = context->ArraySize(args);' || '0a'x
       routineDefs = routineDefs || '    std::vector<std::optional<std::string>> positional;' || '0a'x
