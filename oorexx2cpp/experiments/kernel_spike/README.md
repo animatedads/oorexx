@@ -7,6 +7,15 @@ with `RexxCreateInterpreter`, enters it with `ApiContext`, and calls `RexxString
     substr('hello',2,,'*')   -> ello      (omitted length = OREF_NULL; the kernel applies the default)
     substr('hello',2,6,'*')  -> ello**
 
+`builtin_call.cpp` goes one level up: it puts the arguments on a real kernel `ExpressionStack` (omitted = NULL) and calls the
+compiled-in handler `builtin_function_NAME(context, argcount, stack)` itself. Output equals the interpreter, including its errors:
+
+    substr('hello',2,,'*') -> ello        pos('b','abcb',,3) -> 2        x2d('ff') -> 255
+    left('abc',,'*')       -> Error 40.5 (length IS required at run time although the source macro says optional_integer)
+
+That last line is the point: a hand-built defaults table would have been wrong; the real handler is right by construction.
+Kernel errors arrive as a C++ exception (`NativeActivation*`); the integration must run calls inside an activation that traps it.
+
 Findings
 - The kernel restores a saved image (`rexx.img`) at start-up (BASEIMAGE; searched in the library location, cwd, PATH).
   Missing image = SIGILL in `Interpreter::logicError("cannot locate startup image")`. Build target `rexx_img` makes it.
