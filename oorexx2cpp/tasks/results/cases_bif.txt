@@ -1,0 +1,234 @@
+# T2 case file: 56 pure built-in functions, four or more cases each
+# Format: NAME|arg1|arg2|arg3 ; empty field = omitted ; <empty> = null string
+CENTER|abc|7|*
+CENTER|abc|7
+CENTER|<empty>|5|-
+CENTER|abc|x
+CENTRE|abc|7|*
+CENTRE|abc|7
+CENTRE|<empty>|5|-
+CENTRE|abc|x
+DELSTR|hello|2|2
+DELSTR|hello|2
+DELSTR|<empty>|1|2
+DELSTR|hello|x|2
+DELWORD|a b c d|2|2
+DELWORD|a b c d|2
+DELWORD|<empty>|1|1
+DELWORD|a b c|x|1
+INSERT|abc|xyz|1|5|*
+INSERT|abc|xyz|1
+INSERT|<empty>|xyz|0
+INSERT|abc|xyz|x
+LEFT|abc|5|.
+LEFT|hello|3
+LEFT|<empty>|2|*
+LEFT|hello|x
+OVERLAY|abc|hello|2
+OVERLAY|abc|hello|2|3|*
+OVERLAY|<empty>|hello|2
+OVERLAY|abc|hello|x
+POS|b|abcb||3
+POS|b|abcb
+POS|<empty>|abc
+POS|b|abc|x
+LASTPOS|b|abcb
+LASTPOS|b|abcb||2
+LASTPOS|<empty>|abc
+LASTPOS|b|abcb|x
+REVERSE|abc
+REVERSE|12345
+REVERSE|<empty>
+REVERSE|hello world
+RIGHT|abc|5|.
+RIGHT|hello|3
+RIGHT|<empty>|2|*
+RIGHT|hello|x
+STRIP|xxabxx||x
+STRIP|  ab
+STRIP|xxabxx|L|x
+STRIP|<empty>||x
+STRIP|xxabxx|Z
+SPACE|a  b  c|1
+SPACE|a b c|2|-
+SPACE|<empty>|1
+SPACE|a b|x
+SUBSTR|hello|2||*
+SUBSTR|hello|2|6|*
+SUBSTR|hello|2
+SUBSTR|<empty>|1|2
+SUBSTR|hello|x|2
+LOWER|ABC
+LOWER|HELLO|2|3
+LOWER|ABC|1
+LOWER|<empty>
+LOWER|ab1C|x
+UPPER|abc
+UPPER|hello|2|3
+UPPER|abc|1
+UPPER|<empty>
+UPPER|ab1c|x
+SUBWORD|a b c d|2|2
+SUBWORD|a b c d|2
+SUBWORD|<empty>|1|1
+SUBWORD|a b c|x|1
+WORD|a b c|2
+WORD|a b c|4
+WORD|<empty>|1
+WORD|a b c|x
+WORDINDEX|a  b c|3
+WORDINDEX|a b c|5
+WORDINDEX|<empty>|1
+WORDINDEX|a b|x
+WORDLENGTH|abc de f|2
+WORDLENGTH|abc de|5
+WORDLENGTH|<empty>|1
+WORDLENGTH|abc|x
+COPIES|ab|3
+COPIES|ab|0
+COPIES|<empty>|3
+COPIES|ab|x
+WORDPOS|b|a b c
+WORDPOS|b|a b c|3
+WORDPOS|<empty>|a b c
+WORDPOS|b|a b c|x
+WORDS|a b c
+WORDS|<empty>
+WORDS|  a   b
+WORDS|one
+ABBREV|information|info
+ABBREV|information|inf|3
+ABBREV|<empty>|x
+ABBREV|info|i|x
+BITAND|ff|0f
+BITAND|ff
+BITAND|<empty>|0f
+BITAND|ff|zz
+BITOR|f0|0f
+BITOR|f0
+BITOR|<empty>|0f
+BITOR|f0|zz
+BITXOR|ff|0f
+BITXOR|ff
+BITXOR|<empty>|0f
+BITXOR|ff|zz
+B2X|11111111
+B2X|101
+B2X|<empty>
+B2X|12
+X2B|ff
+X2B|a
+X2B|<empty>
+X2B|zz
+C2X|AB
+C2X|a
+C2X|<empty>
+C2X|ab cd
+X2C|4142
+X2C|41
+X2C|<empty>
+X2C|4G
+C2D|A
+C2D|AB
+C2D|AB|1
+C2D|<empty>
+C2D|AB|x
+TRUNC|3.7
+TRUNC|3.14159|2
+TRUNC|<empty>
+TRUNC|abc
+X2D|ff
+X2D|ff|1
+X2D|<empty>
+X2D|zz
+D2X|255
+D2X|255|2
+D2X|<empty>
+D2X|abc
+D2C|65
+D2C|65|1
+D2C|<empty>
+D2C|x
+COMPARE|abc|abd
+COMPARE|abc|abc
+COMPARE|abc|ab|.
+COMPARE|<empty>|x
+COMPARE|abc|ab|xy
+LENGTH|hello
+LENGTH|<empty>
+LENGTH|  x
+LENGTH|12.5
+TRANSLATE|hello|HE|he
+TRANSLATE|hello|HELLO|hello
+TRANSLATE|<empty>
+TRANSLATE|abc|ABC|x
+VERIFY|abc123|0123456789
+VERIFY|abc123|0123456789|M
+VERIFY|123|0123456789
+VERIFY|<empty>|abc
+VERIFY|abc|xyz|X
+DATATYPE|123
+DATATYPE|12ab|W
+DATATYPE|<empty>|N
+DATATYPE|abc|Q
+USERID
+USERID|
+USERID|<empty>
+USERID|x
+ERRORTEXT|1
+ERRORTEXT|13
+ERRORTEXT|<empty>
+ERRORTEXT|x
+XRANGE|a|c
+XRANGE|a
+XRANGE|<empty>|b
+XRANGE|ab|c
+ABS|-5
+ABS|3.5
+ABS|<empty>
+ABS|x
+SIGN|-5
+SIGN|0
+SIGN|<empty>
+SIGN|x
+FORMAT|3.14159|5|2
+FORMAT|3.14159
+FORMAT|3.14159|6
+FORMAT|<empty>|2|1
+FORMAT|x|2|1
+MAX|1|5|3
+MAX|1
+MAX|<empty>|2
+MAX|1|x
+MIN|1|5|3
+MIN|7
+MIN|<empty>|2
+MIN|1|x
+CHANGESTR|a|banana|o|1
+CHANGESTR|a|banana|o
+CHANGESTR|<empty>|abc|X
+CHANGESTR|a|banana|o|x
+COUNTSTR|a|banana
+COUNTSTR|an|banana
+COUNTSTR|<empty>|abc
+COUNTSTR|aa|aaaa
+RXFUNCADD|NOSUCHFUNC3|NOSUCHLIB
+RXFUNCADD|<empty>|NOSUCHLIB|X
+RXFUNCADD|NOSUCH4|<empty>|X
+RXFUNCADD|NOSUCH5|NOSUCHLIB|NOSUCHPROC
+RXFUNCDROP|NOSUCHFUNC
+RXFUNCDROP|NOSUCHFUNC2
+RXFUNCDROP|<empty>
+RXFUNCDROP|x
+RXFUNCQUERY|NOSUCHFUNC
+RXFUNCQUERY|SYSLINEOUT
+RXFUNCQUERY|<empty>
+RXFUNCQUERY|x
+QUALIFY|hello
+QUALIFY
+QUALIFY|<empty>
+QUALIFY|A.B.C
+GC
+GC|<empty>
+GC|1
+GC|x
