@@ -6,6 +6,12 @@ if original == '' | temporary == '' then do
   say 'Usage: rexx inspector/inspect.rex source.cls temporary.cls'
   exit 64
 end
+/* Never delete or overwrite a pre-existing caller file, including an
+   alias for the original source.  Only our own new temporary is cleaned. */
+if original == temporary | stream(temporary, 'C', 'QUERY EXISTS') \== '' then do
+  say 'rx2cpp inspector: temporary path must not already exist'
+  exit 65
+end
 signal on syntax name failed
 signal on error name failed
 signal on failure name failed

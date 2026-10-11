@@ -10,8 +10,8 @@ trap 'rm -rf "$TMP"' EXIT
 run() { "$REXX_BIN" "$ROOT/inspector/inspect.rex" "$1" "$2"; }
 # Exercise real compiled objects, including private methods, class methods,
 # routines, original package options, and a wrapped prologue never executed.
-run "$ROOT/tests/fixtures/object_inspection/prologue.cls" "$TMP/one.cls" >"$TMP/one.map"
-run "$ROOT/tests/fixtures/object_inspection/prologue.cls" "$TMP/two.cls" >"$TMP/two.map"
+run "$ROOT/tests/fixtures/prologue.cls" "$TMP/one.cls" >"$TMP/one.map"
+run "$ROOT/tests/fixtures/prologue.cls" "$TMP/two.cls" >"$TMP/two.map"
 cmp "$TMP/one.map" "$TMP/two.map"
 ! test -e "$TMP/one.cls" && ! test -e "$TMP/two.cls"
 grep -q '^RX2CPP_OBJECT_MODEL/0.1$' "$TMP/one.map"
@@ -24,16 +24,27 @@ grep -q "$(printf '^ROUTINE\t\t494E5445524E414C\t50524956415445\t')" "$TMP/one.m
 ! grep -q '^CLASS.*46414B45' "$TMP/one.map"     # quoted ::class Fake
 # Verify class-side INIT is neutralised but its method source and original
 # selector are available in the model.  Instance INIT remains independent.
-run "$ROOT/tests/fixtures/object_inspection/class_init.cls" "$TMP/init.cls" >"$TMP/init.map"
+run "$ROOT/tests/fixtures/class_init.cls" "$TMP/init.cls" >"$TMP/init.map"
 ! grep -q 'SHOULD NOT RUN CLASS INIT' "$TMP/init.map"
 grep -q "$(printf '^CLASS_METHOD\t41\t494E4954\t5055424C4943\t.*494E5350454354494F4E5F414C494153')" "$TMP/init.map"
 grep -q "$(printf '^METHOD\t41\t494E4954\t')" "$TMP/init.map"
 # Fail closed before trying to execute prologues from imported packages.
-if run "$ROOT/tests/fixtures/object_inspection/requires.cls" "$TMP/requires.cls" >"$TMP/failed.out" 2>&1; then
+if run "$ROOT/tests/fixtures/requires.cls" "$TMP/requires.cls" >"$TMP/failed.out" 2>&1; then
   echo 'FAIL: inspector accepted a potentially executing ::REQUIRES' >&2; exit 1
 fi
 grep -q '::REQUIRES executes dependencies' "$TMP/failed.out"
 ! test -e "$TMP/requires.cls"
+# Regression: existing caller files must never be overwritten or deleted,
+# including accidental use of the original input as the temporary path.
+printf '%s\n' 'KEEP THIS FILE' > "$TMP/sentinel.cls"
+if run "$ROOT/tests/fixtures/object_inspection/class_init.cls" "$TMP/sentinel.cls" >"$TMP/sentinel.log" 2>&1; then
+  echo 'FAIL: accepted existing temp path' >&2; exit 1
+fi
+[[ $(cat "$TMP/sentinel.cls") == 'KEEP THIS FILE' ]]
+if run "$ROOT/tests/fixtures/object_inspection/class_init.cls" "$ROOT/tests/fixtures/object_inspection/class_init.cls" >"$TMP/self.log" 2>&1; then
+  echo 'FAIL: accepted original source as temp path' >&2; exit 1
+fi
+[[ -s "$ROOT/tests/fixtures/object_inspection/class_init.cls" ]]
 # Optional unmodified Crypto source differential inventory.
 if [[ -n ${CRYPTO_SOURCE:-} ]]; then
   run "$CRYPTO_SOURCE" "$TMP/crypto.cls" >"$TMP/crypto.map"
