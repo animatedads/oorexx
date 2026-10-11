@@ -21,8 +21,8 @@
     return .nil
   end
   edges~append(fromPath || '09'x || found)
-  if seen~hasIndex(found) then return seen[found]
   if active~hasItem(found) then raise syntax 40.1 array('rx2cpp inspector: circular ::REQUIRES at ' || found)
+  if seen~hasIndex(found) then return seen[found]
   counter += 1
   copy = 'd' || counter || '_' || .File~new(found)~name
   seen[found] = copy

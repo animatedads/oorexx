@@ -57,6 +57,11 @@ if "$REXX_BIN" "$ROOT/inspector/inspect.rex" --tree "$ROOT/tests/fixtures/object
 fi
 grep -q 'LIBRARY loads native code' "$TMP/treelib.out"
 ! test -e "$TMP/treelib"
+if "$REXX_BIN" "$ROOT/inspector/inspect.rex" --tree "$ROOT/tests/fixtures/object_inspection/cyc_a.cls" "$TMP/treecyc" >"$TMP/treecyc.out" 2>&1; then
+  echo 'FAIL: tree accepted a circular ::REQUIRES' >&2; exit 1
+fi
+grep -q 'circular ::REQUIRES' "$TMP/treecyc.out"
+! test -e "$TMP/treecyc"
 # Optional unmodified Crypto source differential inventory.
 if [[ -n ${CRYPTO_SOURCE:-} ]]; then
   run "$CRYPTO_SOURCE" "$TMP/crypto.cls" >"$TMP/crypto.map"
