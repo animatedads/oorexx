@@ -1,0 +1,8 @@
+SUBSTR|hello|2||*
+SUBSTR|hello|2|6|*
+POS|b|abcb||3
+X2D|ff
+LEFT|abc||*
+LEFT|abc|5|.
+RIGHT|abc|5|.
+STRIP|xxabxx||x

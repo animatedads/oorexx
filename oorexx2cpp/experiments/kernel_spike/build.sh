@@ -13,5 +13,7 @@ g++ -std=gnu++11 -O1 -fno-lifetime-dse $DEF $INC -I"$W/src/interpreter/api" -I"$
     "$W/b/lib/librexx.a" "$W/b/lib/librexxapi.a" -lpthread -ldl -o "$W/direct_call"
 g++ -std=gnu++11 -O1 -fno-lifetime-dse $DEF $INC -I"$W/src/interpreter/api" -I"$W/b" "$HERE/builtin_call.cpp" \
     "$W/b/lib/librexx.a" "$W/b/lib/librexxapi.a" -lpthread -ldl -o "$W/builtin_call"
+g++ -std=gnu++11 -O1 -fno-lifetime-dse $DEF $INC -I"$W/src/interpreter/api" -I"$W/b" -I"$HERE" "$HERE/probe.cpp" \
+    "$W/b/lib/librexx.a" "$W/b/lib/librexxapi.a" -lpthread -ldl -o "$W/probe"
 cp "$W/b/lib/rexx.img" "$W/"    # the kernel restores this memory image at start-up; without it: SIGILL in Interpreter::logicError
 ( cd "$W" && ./direct_call && ./builtin_call )
