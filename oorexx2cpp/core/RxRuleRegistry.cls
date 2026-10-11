@@ -2,7 +2,7 @@
    To add syntax, write an independently loadable ::class, ::requires it below,
    then register it here in lexical-priority order (fallback assignment last).
    The compiler coordinator does not change for new statement classes. */
-::class RxRuleRegistry public
+::class RxRuleRegistry subclass RxRexxRuleSelection public
 ::method init
   expose rules
   rules = .array~new
@@ -30,13 +30,9 @@
   rules~append(.RxStmtMessage~new)
   rules~append(.RxStmtIndexedAssign~new)
   rules~append(.RxStmtAssign~new)
-::method find
+::method rules
   expose rules
-  use arg context
-  do rule over rules
-    if rule~accepts(context) then return rule
-  end
-  return .nil
+  return rules
 ::requires 'rules/StmtNumeric.cls'
 ::requires 'rules/StmtSay.cls'
 ::requires 'rules/StmtDoUntil.cls'
@@ -62,3 +58,5 @@
 ::requires 'rules/StmtAssign.cls'
 
 ::requires 'rules/StmtLoopOver.cls'
+
+::requires 'core/RxRexxRuleSelection.cls'

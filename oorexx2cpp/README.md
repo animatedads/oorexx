@@ -1,3 +1,9 @@
+## v0.30.18 — One NUMERIC grammar; shared rule-selection implementation
+
+`core/RxNumericClause.cls` now parses executable `NUMERIC DIGITS/FUZZ/FORM` once for standalone and native backends, with adapters retaining expression parsing and emission only. `core/RxRexxRuleSelection.cls` owns ordered rule selection for both existing registries; their differing rule sets are not yet consolidated. ooRexx 5.3 direct NUMERIC rule tests and GCC/Clang standalone/native differential smoke and rollback passed on a staged historical integration baseline. The full latest-main suites have not been rerun. See [`UNIFIED_STATEMENTS_V0318.md`](UNIFIED_STATEMENTS_V0318.md) and `tests/test_shared_numeric.sh`.
+
+---
+
 ## v0.30.17 — Interpreter-owned object inspector
 
 `inspector/inspect.rex` builds one inspection-only temporary package and uses ooRexx `Package`, `Class`, `Method` and `Routine` objects to recover prologue, class, instance/class-side method and routine source. PRIVATE/PACKAGE visibility is preserved from real objects; private methods do not require PUBLIC rewriting. Class-side INIT is masked in the inspection copy to prevent execution, and ::REQUIRES is rejected pending isolated dependency loading. Unchanged Crypto yields 15 classes, 104 methods, 42 routines and a 50-line prologue. **This delivers the object-model interface, not a replacement for the native code emitter or a general safe sandbox.** [Design and tests](OBJECT_INSPECTION_V0317.md).
