@@ -11,8 +11,10 @@
 ::attribute package get
 ::attribute originalName get
 ::attribute prologLineCount get
+::attribute resolver
 ::method init
-  expose rows package prologLineCount originalName
+  expose rows package prologLineCount originalName resolver
+  resolver = .nil
   originalName = ''
   rows = .array~new
   package = .nil
@@ -27,41 +29,7 @@
     raise syntax 40.1 array('rx2cpp inspector: no such source ' || original)
   if stream(temporary, 'C', 'QUERY EXISTS') \== '' then
     raise syntax 40.1 array('rx2cpp inspector: temporary path already exists (refusing overwrite)')
-  text = charin(original, 1, chars(original))
-  call stream original, 'C', 'CLOSE'
-  tokens = .RxLexer~new(text)~scan
-  first = 0
-  previous = 'SEP'
-  do i = 1 to tokens~items - 1
-    t = tokens[i]
-    if t~kind == 'OP' & t~text == '::' & previous == 'SEP' then do
-      first = t~line
-      leave
-    end
-    if t~kind == 'SEP' then previous = 'SEP'
-    else previous = 'OTHER'
-  end
-  lines = text~makeArray('0a'x)
-  /* Package NEW eagerly executes class-side INIT and ::REQUIRES prologues.
-     Never run a dependency while inspecting a source-only package. */
-  self~safeHeaders(tokens, lines)
-  prefix = ''
-  suffix = ''
-  do i = 1 to lines~items
-    line = lines[i]~strip('T', '0d'x)
-    if first == 0 | i < first then do
-      prefix = prefix || line || '0a'x
-      prologLineCount += 1
-    end
-    else suffix = suffix || line || '0a'x
-  end
-  /* Collision is not a reason to rename a user class or to expose it. */
-  if prologLineCount > 0 then do
-    if self~declaresSynthetic(tokens) then
-      raise syntax 40.1 array('rx2cpp inspector: synthetic class name collision')
-    suffix = suffix || '0a'x || '::class ' || self~SYNTHETIC || ' public' || '0a'x || ,
-                         '::method main' || '0a'x || prefix
-  end
+  suffix = self~prepare(original)
   /* Opening a .Package via NEW compiles method/routine objects without
      invoking the synthetic MAIN. Never use REQUIRES to load this file. */
   status = stream(temporary, 'C', 'OPEN WRITE REPLACE')
@@ -105,15 +73,78 @@
 /* Block dependency imports (which execute their prologues) and rename
    class-side INIT so constructing the inspected package cannot invoke it.
    Only one physical-line ::METHOD header is currently admitted for aliasing. */
+/* Neutralised inspection text for one source: prologue relocated into the synthetic MAIN, class INIT aliased,
+   ::REQUIRES refused unless a resolver is set (then each one is mapped to an already-neutralised copy). */
+::method prepare
+  expose prologLineCount resolver
+  use arg original
+  text = charin(original, 1, chars(original))
+  call stream original, 'C', 'CLOSE'
+  tokens = .RxLexer~new(text)~scan
+  first = 0
+  previous = 'SEP'
+  do i = 1 to tokens~items - 1
+    t = tokens[i]
+    if t~kind == 'OP' & t~text == '::' & previous == 'SEP' then do
+      first = t~line
+      leave
+    end
+    if t~kind == 'SEP' then previous = 'SEP'
+    else previous = 'OTHER'
+  end
+  lines = text~makeArray('0a'x)
+  /* Package NEW eagerly executes class-side INIT and ::REQUIRES prologues.
+     Never run a dependency while inspecting a source-only package. */
+  self~safeHeaders(tokens, lines, original)
+  prefix = ''
+  suffix = ''
+  do i = 1 to lines~items
+    line = lines[i]~strip('T', '0d'x)
+    if first == 0 | i < first then do
+      prefix = prefix || line || '0a'x
+      prologLineCount += 1
+    end
+    else suffix = suffix || line || '0a'x
+  end
+  /* Collision is not a reason to rename a user class or to expose it. */
+  if prologLineCount > 0 then do
+    if self~declaresSynthetic(tokens) then
+      raise syntax 40.1 array('rx2cpp inspector: synthetic class name collision')
+    suffix = suffix || '0a'x || '::class ' || self~SYNTHETIC || ' public' || '0a'x || ,
+                         '::method main' || '0a'x || prefix
+  end
+  return suffix
+/* Point one ::REQUIRES at its neutralised scratch copy; LIBRARY (native code) is always refused. */
+::method mapRequires private
+  use arg tokens, lines, i, original
+  nameToken = tokens[i+2]
+  library = .false
+  j = i + 3
+  do while j <= tokens~items & tokens[j]~kind \= 'SEP' & tokens[j]~kind \= 'EOF'
+    if tokens[j]~text~translate == 'LIBRARY' then library = .true
+    j += 1
+  end
+  if library then raise syntax 40.1 array('rx2cpp inspector: ::REQUIRES LIBRARY loads native code: ' || nameToken~text)
+  if nameToken~line \= tokens[i]~line then raise syntax 40.1 array('rx2cpp inspector: continued ::REQUIRES unsupported')
+  mapped = self~resolver~map(nameToken~text, original)
+  line = lines[nameToken~line]
+  if mapped == .nil then lines[nameToken~line] = '-- (missing) ' || line
+  else if nameToken~kind == 'STRING' then
+    lines[nameToken~line] = left(line, nameToken~col-1) || "'" || mapped || "'" || substr(line, nameToken~col+length(nameToken~text)+2)
+  else
+    lines[nameToken~line] = left(line, nameToken~col-1) || "'" || mapped || "'" || substr(line, nameToken~col+length(nameToken~text))
 ::method safeHeaders private
-  use arg tokens, lines
+  use arg tokens, lines, original
   previous = 'SEP'
   do i = 1 to tokens~items - 2
     t = tokens[i]
     if t~text == '::' & previous == 'SEP' then do
       directive = tokens[i+1]~text
-      if directive == 'REQUIRES' then
-        raise syntax 40.1 array('rx2cpp inspector: ::REQUIRES executes dependencies; inspect them separately first')
+      if directive == 'REQUIRES' then do
+        if self~resolver == .nil then
+          raise syntax 40.1 array('rx2cpp inspector: ::REQUIRES executes dependencies; inspect them separately first')
+        self~mapRequires(tokens, lines, i, original)
+      end
       if directive == 'METHOD' & tokens[i+2]~text == self~INIT_ALIAS then
         raise syntax 40.1 array('rx2cpp inspector: reserved method alias collision')
       if directive == 'METHOD' & tokens[i+2]~text == 'INIT' then do
