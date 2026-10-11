@@ -22,6 +22,12 @@ Case file format (one case per line, saved as `tasks/results/cases_bif.txt`)
       STRIP|xxabxx||x
 
 Steps
+0. Refresh the tools (ALWAYS do this first; an old probe binary gives false differences):
+       git pull
+       experiments/kernel_spike/rebuild_probe.sh /tmp/kernel_work
+       experiments/kernel_spike/compare.sh /tmp/kernel_work experiments/kernel_spike/cases_regress.txt
+   Expect the compare to print ONLY the `GC|` difference (`-GC| => [1]`, `+GC| => [0]`). If it prints BITXOR, USERID or QUALIFY
+   lines, the probe is stale or the wrong directory is used: stop and report. Do not continue to step 1.
 1. `cat experiments/kernel_spike/pure_bifs.txt` : this is the list of 56 function names. Do every one.
 2. For each name, write 4 or more cases: (a) normal use, (b) an omitted middle argument if the function has
    optional arguments, (c) the null string `<empty>`, (d) a bad argument such as a letter where a number is expected.

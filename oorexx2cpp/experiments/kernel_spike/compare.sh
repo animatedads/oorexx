@@ -9,4 +9,4 @@ INTERP=$(rexx -v 2>&1 | head -1)
 ( cd "$W" && rexx "$HERE/expected.rex" "$CASES" ) > "$W/expected.out" 2>&1
 echo "oracle: $INTERP"
 if diff -a -u "$W/expected.out" "$W/probe.out" > "$W/diff.out"; then echo "ALL EQUAL ($(wc -l < "$W/probe.out") cases)"; exit 0; fi
-grep '^[-+]' "$W/diff.out" | grep -v '^\(---\|+++\)'; echo "DIFFERENCES FOUND"; exit 1
+grep -a '^[-+]' "$W/diff.out" | grep -a -v '^\(---\|+++\)'; echo "DIFFERENCES FOUND"; exit 1
