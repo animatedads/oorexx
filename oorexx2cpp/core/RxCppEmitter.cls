@@ -36,34 +36,15 @@
   self~line(0, '// __RX2CPP_HOST_INCLUDE__')
   self~line(0, '#include <exception>')
   self~line(0, '#include <iostream>')
-  library = value('RX2CPP_LIBRARY', , 'ENVIRONMENT') \= ''
-  if library then do   /* shared-library mode: program body runs once at load, routines are exported */
-    self~line(0, 'static rx::RoutineRegistry rxLibRoutines;')
-    self~line(0, 'static rx::Variables rxLibVars;')
-    self~line(0, 'static int rxLibMain() {')
-    self~line(1, 'int argc = 0; char **argv = nullptr;')
-  end
-  else self~line(0, 'int main(int argc, char **argv) {')
+  self~line(0, 'int main(int argc, char **argv) {')
   self~line(1, 'try {')
   self~line(2, 'rx::Variables vars;')
   self~line(2, 'const std::vector<rx::Value> _rxProgramArgs = rx::mainArguments(argc, argv);')
-  if library then self~line(2, 'rx::RoutineRegistry& _rxRoutines = rxLibRoutines;')
-  else self~line(2, 'rx::RoutineRegistry _rxRoutines;')
+  self~line(2, 'rx::RoutineRegistry _rxRoutines;')
   if .RxBuiltinRules~externalEnabled then self~line(2, 'rx::BifRuntime _rxBifRuntime;')
   self~line(2, '// __RX2CPP_ROUTINE_DEFINITIONS__')
   self~line(2, '// __RX2CPP_CLASS_DECLARATIONS__')
 ::method footer
-  if value('RX2CPP_LIBRARY', , 'ENVIRONMENT') \= '' then do
-    self~line(2, 'return 0;')
-    self~line(1, '} catch (const rx::ProgramExit &_rxExit) {')
-    self~line(2, 'return _rxExit.code;')
-    self~line(1, '} catch (const std::exception &e) {')
-    self~line(2, 'std::cerr << "rx2cpp runtime error: " << e.what() << ''\n'';')
-    self~line(2, 'return 1;')
-    self~line(1, '}')
-    self~line(0, '}')
-    return
-  end
   self~line(2, 'return 0;')
   self~line(1, '} catch (const rx::ProgramExit &_rxExit) {')
   self~line(2, 'return _rxExit.code;')

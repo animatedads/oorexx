@@ -38,32 +38,8 @@ if grep -q rx_host_tier "$cpp"; then   # hosted tier: classes loaded from an emb
     echo "rx2cpp: hosted tier: $(grep -m1 RX2CPP_HOSTED "$cpp" | sed 's|^// RX2CPP_HOSTED:||') -- binary links librexx" >&2
     extra+=( -I"$OO_ROOT/include" -L"$OO_ROOT/lib" -Wl,-rpath,"$OO_ROOT/lib" -lrexx -lrexxapi )
 fi
-if [[ -n "${RX2CPP_LIBRARY:-}" ]]; then   # RX2CPP_LIBRARY=NAME: build libNAME.so for ::requires "NAME" library
-    : "${OO_ROOT:?OO_ROOT (ooRexx install with include/oorexxapi.h) is required for library mode}"
-    names=$(grep -o '_rxRoutines\["[A-Z0-9_.!?]*"\] =' "$cpp" | sed 's/.*\["\(.*\)"\].*/\1/')
-    {
-        echo '#include "oorexxapi.h"'
-        echo 'static void rxLibLoad(RexxThreadContext *) { rxLibMain(); }'
-        echo 'static RexxObjectPtr rxLibCall(RexxCallContext *c, const char *n, RexxArrayObject a) {'
-        echo '    std::vector<rx::Value> args; size_t cnt = a ? c->ArrayItems(a) : 0;'
-        echo '    for (size_t i = 1; i <= cnt; i++) { RexxObjectPtr o = c->ArrayAt(a, i); args.push_back(rx::Value::string(o ? c->ObjectToStringValue(o) : "")); }'
-        echo '    try { auto r = rxLibRoutines.at(n)(rxLibVars, args); return r ? (RexxObjectPtr)c->String(r->bytes.c_str(), r->bytes.size()) : NULLOBJECT; }'
-        echo '    catch (const std::exception &e) { c->RaiseException1(Rexx_Error_Execution_user_defined, c->String(e.what())); return NULLOBJECT; } }'
-        for n in $names; do
-            printf 'RexxRoutine1(RexxObjectPtr, rxlib_%s, ARGLIST, args) { return rxLibCall(context, "%s", args); }\n' "${n//[^A-Za-z0-9_]/_}" "$n"
-        done
-        echo 'static RexxRoutineEntry rxLibRoutineTable[] = {'
-        for n in $names; do
-            printf '    REXX_TYPED_ROUTINE(%s, rxlib_%s),\n' "$n" "${n//[^A-Za-z0-9_]/_}"
-        done
-        echo '    REXX_LAST_ROUTINE() };'
-        echo "static RexxPackageEntry ${RX2CPP_LIBRARY}_package_entry = { STANDARD_PACKAGE_HEADER REXX_INTERPRETER_5_0_0, \"${RX2CPP_LIBRARY}\", \"1.0\", rxLibLoad, NULL, rxLibRoutineTable, NULL };"
-        echo "OOREXX_GET_PACKAGE(${RX2CPP_LIBRARY});"
-    } >> "$cpp"
-    libdir=$(dirname -- "$native")
-    "${CXX:-g++}" -std=c++17 -O2 -fPIC -shared -w -I"$ROOT/include" -I"$OO_ROOT/include" "$cpp" "${extra[@]}" -o "$libdir/lib${RX2CPP_LIBRARY}.so"
-    echo "rx2cpp: library: $libdir/lib${RX2CPP_LIBRARY}.so (use: ::requires \"${RX2CPP_LIBRARY}\" library)" >&2
-    exit 0
+if [[ -n "${RX2CPP_LIBRARY:-}" ]]; then   # RX2CPP_LIBRARY=NAME: libNAME.so (classes + routines) via the one native-package lane
+    exec "$ROOT/native/build.sh" "$input" "$(dirname -- "$native")" "$RX2CPP_LIBRARY"
 fi
 if [[ -n "${RX2CPP_KERNEL:-}" ]]; then   # RX2CPP_KERNEL=<kernel_spike work dir>: BIFs run in the compiled-in ooRexx kernel
     K=$RX2CPP_KERNEL; [[ -f "$K/b/lib/librexx.a" ]] || { echo "rx2cpp: no kernel in $K (run experiments/kernel_spike/build.sh)" >&2; exit 65; }
