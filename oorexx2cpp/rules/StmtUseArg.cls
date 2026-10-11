@@ -8,7 +8,7 @@
   use arg ctx, depth
   s = ctx~stream
   s~expect('USE')
-  if \ctx~inRoutine then s~fail('USE ARG is currently supported in internal routines only')
+  if \ctx~scope~bindsArguments then s~fail('USE ARG is currently supported in internal routines only')
   strict = s~accept('STRICT')
   s~expect('ARG')
   if strict then do

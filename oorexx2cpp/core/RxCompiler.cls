@@ -120,6 +120,15 @@
 ::method emitProgramClasses
   expose programClasses
   programClasses~emit(self)
+/* The scope the clause being compiled belongs to: rules ask it for policy instead of testing flags. */
+/* What a compiled unit's C++ lambda must see of the program's shared run-time state: the BIF runtime (random seed,
+   trace, external-function state) is one per program, so a method sees the same one as main code and routines. */
+::method activationCapture
+  if .RxBuiltinRules~externalEnabled then return '[&_rxBifRuntime]'
+  return '[]'
+::method scope
+  expose scopes
+  return scopes~current
 ::attribute inRoutine get
 ::attribute routineKind get
 ::method libraries
@@ -129,11 +138,11 @@
   expose libraries
   return libraries~items > 0
 ::method hasRoutine
-  expose routines routineKind
+  expose routines
   use arg name
   if \routines~hasIndex(name) then return .false
   /* a ::ROUTINE code unit cannot see the main program's labels */
-  if routineKind == 'ROUTINE' then return routines[name] == 'ROUTINE' & \.RxBuiltinRules~isBuiltinName(name)
+  if self~scope~isolatedRoutineKind then return routines[name] == 'ROUTINE' & \.RxBuiltinRules~isBuiltinName(name)
   /* built-in functions take precedence over ::ROUTINE directives (labels still win) */
   if routines[name] == 'ROUTINE' & .RxBuiltinRules~isBuiltinName(name) then return .false
   return .true
@@ -155,7 +164,7 @@
 ::method line
   expose emitter inRoutine
   use arg depth, source
-  if inRoutine then emitter~routineLine(depth, source)
+  if \self~scope~isEntryFunction then emitter~routineLine(depth, source)
   else emitter~line(depth, source)
 ::method statement
   expose scopes

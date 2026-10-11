@@ -122,6 +122,18 @@ inspectOne: procedure
     do m over cls~methods(.nil)~allIndexes~sort
       call emitMethod 'method', c'~'m, cls~method(m)
     end
+    /* inheritance chain and method resolution, as the interpreter resolves it (first owner wins; overridden entries follow) */
+    chain = cls~id; k = cls
+    do while k~superclass \== .nil
+      k = k~superclass; chain = chain'>'k~id
+    end
+    mix = ''; do sc over cls~superclasses~allItems; if sc~queryMixinClass then mix = mix sc~id; end
+    say 'chain'||'09'x||label||'09'x||c||'09'x||chain||'09'x||'mixins:'mix~strip
+    rs = cls~methods
+    do while rs~available
+      if rs~item~scope \== .Object then say 'resolves'||'09'x||label||'09'x||c'~'rs~index||'09'x||rs~item~scope~id
+      rs~next
+    end
     sup = cls~instanceMethods   /* class-side (::method x class) methods live here */
     do while sup~available
       if sup~item~scope == cls then call emitMethod 'class-method', c'~'sup~index~changeStr('RXTREE_INIT', 'INIT'), sup~item

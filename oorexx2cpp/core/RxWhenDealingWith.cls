@@ -45,6 +45,29 @@
     end
     otherwise raise syntax 40.1 array('rx2cpp: unknown code scope ' || kind)
   end
+/* ---- policy queries: the statement rules ask the scope, they never test which kind of unit they are in ---- */
+/* Kind of the enclosing activation body (a SIGNAL block belongs to the activation it traps; package level is the
+   program's entry function). */
+::method activationKind
+  expose kind activation
+  if activation == .nil | activation == self then return kind
+  return activation~activationKind
+/* The program entry function (main prologue): its RETURN/EXIT leave the process, it has no argument array of its own. */
+::method isEntryFunction
+  k = self~activationKind
+  return k == 'PACKAGE' | k == 'PROLOGUE' | k == 'CLASS'
+/* EXIT ends the whole program here (main code and internal label routines); in ::ROUTINE and ::METHOD it only leaves
+   the code unit with the value, exactly like RETURN (ooRexx 5.3: routine -> 5, method -> 6, label -> process status). */
+::method exitEndsProgram
+  k = self~activationKind
+  return k \== 'ROUTINE' & k \== 'METHOD'
+/* RETURN leaves a callable unit with a message result; in the entry function it is the process status. */
+::method returnsMessageResult
+  return \self~isEntryFunction
+::method bindsArguments
+  return \self~isEntryFunction
+::method isolatedRoutineKind
+  return self~activationKind == 'ROUTINE'
 ::method setPrologEnabled
   expose prologEnabled kind
   use arg enabled

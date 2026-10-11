@@ -100,7 +100,7 @@
         if aliases \= '' then aliases = aliases || ', '
         aliases = aliases || .RxQuote~cpp(a)
       end
-      ctx~classLine('_rxClass->methods[' || .RxQuote~cpp(methodName) || '] = [](rx::NativeInstance& _rxSelf, const std::vector<rx::Value>& _rxProgramArgs) -> rx::MessageResult {')
+      ctx~classLine('_rxClass->methods[' || .RxQuote~cpp(methodName) || '] = ' || ctx~activationCapture || '(rx::NativeInstance& _rxSelf, const std::vector<rx::Value>& _rxProgramArgs) -> rx::MessageResult {')
       ctx~classLine('rx::Variables vars(_rxSelf.fields, {' || aliases || '});')
       ctx~classLine('(void)_rxProgramArgs;')
       ctx~classLine('rx::RoutineRegistry _rxRoutines;')

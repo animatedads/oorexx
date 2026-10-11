@@ -22,6 +22,6 @@ if RX2CPP_HOSTED=0 "$ROOT/build.sh" "$ROOT/examples/claude/hosted_datetime.rex" 
   echo "FAIL RX2CPP_HOSTED=0 accepted a hosted class"; exit 1; fi
 grep -q 'unsupported environment class .DATETIME' "$WORK/off.blog" || { cat "$WORK/off.blog"; echo "FAIL missing rejection text"; exit 1; }
 echo "PASS RX2CPP_HOSTED=0 rejects with a source location"
-printf 'say .NIL\n' > "$WORK/nil.rex"
-if "$ROOT/build.sh" "$WORK/nil.rex" "$WORK/nil.bin" "$WORK/nil.cpp" >/dev/null 2>&1; then echo "FAIL .NIL must stay fail-closed"; exit 1; fi
+printf 'say .ENVIRONMENT\n' > "$WORK/nil.rex"
+if "$ROOT/build.sh" "$WORK/nil.rex" "$WORK/nil.bin" "$WORK/nil.cpp" >/dev/null 2>&1; then echo "FAIL .ENVIRONMENT must stay fail-closed"; exit 1; fi
 echo "PASS non-class environment symbols stay fail-closed"

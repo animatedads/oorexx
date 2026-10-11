@@ -8,20 +8,19 @@
   use arg ctx, depth
   s = ctx~stream
   s~expect('EXIT')
-  /* In a ::ROUTINE code unit EXIT ends only that routine, like RETURN (ooRexx behaviour). */
-  if ctx~inRoutine & ctx~routineKind == 'ROUTINE' then do
-    if s~peek~kind == 'SEP' | s~peek~kind == 'EOF' then ctx~line(depth, 'return std::nullopt;')
-    else ctx~line(depth, 'return rx::MessageResult(' || ctx~logicalExpr~parse(ctx) || ');')
-    s~separator
-    return
+  scope = ctx~scope
+  hasValue = \(s~peek~kind == 'SEP' | s~peek~kind == 'EOF')
+  if hasValue then code = ctx~logicalExpr~parse(ctx)
+  if \scope~exitEndsProgram then do      /* ::ROUTINE and ::METHOD: EXIT leaves the unit like RETURN */
+    if hasValue then ctx~line(depth, 'return rx::MessageResult(' || code || ');')
+    else ctx~line(depth, 'return std::nullopt;')
   end
-  if s~peek~kind == 'SEP' | s~peek~kind == 'EOF' then do
-    if ctx~inRoutine then ctx~line(depth, 'throw rx::ProgramExit{0};')
+  else if scope~isEntryFunction then do   /* main code: leave the entry function with the status */
+    if hasValue then ctx~line(depth, 'return rx::exitCode(' || code || ');')
     else ctx~line(depth, 'return 0;')
   end
-  else do
-    code = ctx~logicalExpr~parse(ctx)
-    if ctx~inRoutine then ctx~line(depth, 'throw rx::ProgramExit{rx::exitCode(' || code || ')};')
-    else ctx~line(depth, 'return rx::exitCode(' || code || ');')
+  else do                                  /* internal label routine: unwind to the entry function */
+    if hasValue then ctx~line(depth, 'throw rx::ProgramExit{rx::exitCode(' || code || ')};')
+    else ctx~line(depth, 'throw rx::ProgramExit{0};')
   end
   s~separator

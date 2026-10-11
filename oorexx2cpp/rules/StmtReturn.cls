@@ -10,12 +10,12 @@
   s = ctx~stream
   s~expect('RETURN')
   if s~peek~kind == 'SEP' | s~peek~kind == 'EOF' then do
-    if ctx~inRoutine then ctx~line(depth, 'return std::nullopt;')
+    if ctx~scope~returnsMessageResult then ctx~line(depth, 'return std::nullopt;')
     else ctx~line(depth, 'return 0;')
   end
   else do
     value = ctx~logicalExpr~parse(ctx)
-    if ctx~inRoutine then ctx~line(depth, 'return rx::MessageResult(' || value || ');')
+    if ctx~scope~returnsMessageResult then ctx~line(depth, 'return rx::MessageResult(' || value || ');')
     else ctx~line(depth, 'return rx::programReturnCode(' || value || ');')
   end
   s~separator
