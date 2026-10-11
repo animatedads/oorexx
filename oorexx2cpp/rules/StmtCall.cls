@@ -27,7 +27,8 @@
   end
   else if s~peek~kind \= 'SEP' & s~peek~kind \= 'EOF' then do
     do forever
-      args~append(ctx~logicalExpr~parse(ctx))
+      if s~is(',') then args~append('RX2CPP_OMITTED')
+      else args~append(ctx~logicalExpr~parse(ctx))
       if \s~accept(',') then leave
     end
   end

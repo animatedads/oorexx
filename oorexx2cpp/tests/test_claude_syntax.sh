@@ -15,3 +15,7 @@ for src in "$ROOT"/examples/claude/syntax_*.rex; do
   [[ $erc == $arc ]] || { echo "FAIL $f exit status interpreter=$erc native=$arc"; exit 1; }
   echo "PASS $f ($(wc -l <"$WORK/$f.exp") lines, status $arc identical)"
 done
+# CALL with an omitted argument compiles to an omitted slot (running it needs the BIF activation lane: ChatGPT's boundary).
+"$ROOT/build.sh" "$ROOT/tests/fixtures/omitted_arg_call.rex" "$WORK/om.bin" "$WORK/om.cpp" >"$WORK/om.blog" 2>&1 || { cat "$WORK/om.blog"; echo "FAIL build omitted_arg_call"; exit 1; }
+grep -q 'push_back(std::nullopt)' "$WORK/om.cpp" || { echo "FAIL omitted argument not emitted"; exit 1; }
+echo "PASS omitted_arg_call (compile-only)"
