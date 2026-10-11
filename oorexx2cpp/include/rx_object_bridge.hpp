@@ -217,6 +217,17 @@ struct EnvObject final : ObjectDispatch {
 #ifdef RX2CPP_HOST_API
 // Install the interpreter String fallback (done at every native entry; cheap and idempotent).
 inline MessageResult hostStringMessage(const Value &receiver, const std::string &selector, const std::vector<Value> &args) {
+    // Only numeric-sensitive String methods need a routine that carries the caller's NUMERIC settings (a routine call starts a
+    // whole activity and is slow); all others are a plain message send.
+    static const std::unordered_set<std::string> numericSensitive{
+        "ABS","CEILING","FLOOR","ROUND","TRUNC","FORMAT","SIGN","MAX","MIN","SQRT","C2D","D2C","X2D","D2X","B2X","X2B","DATATYPE",
+        "+","-","*","/","%","//","**","=","\\=","<",">","<=",">=","<>","><","==","\\==","COMPARE","ISINTEGER","ISWHOLE"};
+    std::string upperSelector = selector;
+    for (char &c : upperSelector) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    if (!numericSensitive.count(upperSelector)) {
+        EnvObject str(rxobj::stringHandle(receiver.bytes));
+        return str.sendMessage(selector, args);
+    }
     std::vector<rxobj::Arg> in; EnvObject::convert(args, in);
     const ActivationNumeric def;
     const ActivationNumeric &n = currentNumeric ? *currentNumeric : def;

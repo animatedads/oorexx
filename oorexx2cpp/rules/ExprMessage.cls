@@ -35,6 +35,7 @@
       selectorToken = s~peek
       if selectorToken~kind \= 'IDENT' & selectorToken~kind \= 'STRING' then
         s~fail('expected literal method selector after ~ or ~~')
+      selectorEnd = s~peek
       selector = s~next~text
       args = .array~new
       /* receiver~attribute = value  sends  attribute=(value)  and is an assignment, not a message instruction. */
@@ -45,7 +46,12 @@
         attrAssign = .true
       end
     end
-    if \indexed & \attrAssign & s~accept('(') then do
+    hasArgs = .false
+    if \indexed & \attrAssign then do
+      if s~is('(') then hasArgs = (s~peek~line == selectorEnd~endLine & s~peek~col == selectorEnd~endCol)
+    end
+    if hasArgs then do
+      s~next
       if \s~is(')') then do forever
         args~append(ctx~logicalExpr~parse(ctx))
         if \s~accept(',') then leave

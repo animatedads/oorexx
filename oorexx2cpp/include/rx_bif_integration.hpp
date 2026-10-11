@@ -199,3 +199,114 @@ inline void dispatchBifInstruction(Variables& vars, BifRuntime& bif,
     set(vars,"RESULT",dispatchBif(bif,vars,name,args));
 }
 } // namespace rx
+
+#ifdef RX2CPP_HOST_API
+namespace rx {
+/* Exact fast paths for the radix conversions that crypto-style code runs millions of times: unsigned values that fit in 128 bits and
+   in the caller's NUMERIC DIGITS. Anything else (signed, wide, malformed) returns nullopt and is decided by the interpreter. */
+inline std::string u128ToDecimal(unsigned __int128 v) {
+    if (v == 0) return "0";
+    std::string out;
+    while (v) { out.insert(out.begin(), static_cast<char>('0' + static_cast<int>(v % 10))); v /= 10; }
+    return out;
+}
+inline std::optional<unsigned __int128> decimalToU128(const std::string &t) {
+    if (t.empty() || t.size() > 38 || t.find_first_not_of("0123456789") != std::string::npos) return std::nullopt;
+    unsigned __int128 v = 0;
+    for (char c : t) v = v * 10 + static_cast<unsigned>(c - '0');
+    return v;
+}
+inline std::optional<std::string> fastRadix(const std::string &name, const Value &recv, const std::vector<Value> &args, std::size_t digits) {
+    for (const Value &a : args) if (a.isObject()) return std::nullopt;
+    const std::string &r = recv.bytes;
+    static const char *hexd = "0123456789ABCDEF";
+    if (name == "C2D" && args.empty()) {
+        if (r.size() > 16) return std::nullopt;
+        unsigned __int128 v = 0;
+        for (unsigned char c : r) v = (v << 8) | c;
+        std::string d = u128ToDecimal(v);
+        if (d.size() > digits) return std::nullopt;
+        return d;
+    }
+    if (name == "D2C" && args.size() == 1) {
+        auto v = decimalToU128(r);
+        auto len = decimalToU128(args[0].bytes);
+        if (!v || !len || *len > 16 || *len == 0 || r.size() > digits) return std::nullopt;
+        unsigned bytes = static_cast<unsigned>(*len);
+        std::string raw(bytes, '\0');
+        unsigned __int128 x = *v;
+        for (unsigned i = 0; i < bytes; i++) { raw[bytes - 1 - i] = static_cast<char>(x & 0xFF); x >>= 8; }
+        return raw;
+    }
+    if (name == "D2X" && args.size() == 1) {   // the length counts hexadecimal digits
+        auto v = decimalToU128(r);
+        auto len = decimalToU128(args[0].bytes);
+        if (!v || !len || *len > 32 || *len == 0 || r.size() > digits) return std::nullopt;
+        unsigned nibbles = static_cast<unsigned>(*len);
+        std::string hex(nibbles, '0');
+        unsigned __int128 x = *v;
+        for (unsigned i = 0; i < nibbles; i++) { hex[nibbles - 1 - i] = hexd[static_cast<unsigned>(x & 15)]; x >>= 4; }
+        return hex;
+    }
+    if (name == "X2D" && args.empty()) {
+        if (r.empty() || r.size() > 32) return std::nullopt;
+        unsigned __int128 v = 0;
+        for (char c : r) {
+            int d;
+            if (c >= '0' && c <= '9') d = c - '0'; else if (c >= 'a' && c <= 'f') d = c - 'a' + 10; else if (c >= 'A' && c <= 'F') d = c - 'A' + 10; else return std::nullopt;
+            v = (v << 4) | static_cast<unsigned>(d);
+        }
+        std::string d = u128ToDecimal(v);
+        if (d.size() > digits) return std::nullopt;
+        return d;
+    }
+    return std::nullopt;
+}
+}
+#endif
+
+#ifdef RX2CPP_HOST_API
+namespace rx {
+/* String messages that are exactly a BIF with the receiver as first argument (s~c2d == C2D(s)) run in the shared native BIF
+   engine under the caller's NUMERIC settings; anything the native subset does not cover goes on to the interpreter. */
+struct NotNativeBif {};
+inline StringMessageFallback &hostStringBifPrevious() { static StringMessageFallback f = nullptr; return f; }
+inline MessageResult hostStringBif(const Value &receiver, const std::string &selector, const std::vector<Value> &args) {
+    static const std::unordered_set<std::string> mirrored{
+        "C2D","C2X","X2C","X2D","D2C","D2X","B2X","X2B","LENGTH","SUBSTR","LEFT","RIGHT","CENTER","CENTRE","REVERSE","TRANSLATE",
+        "BITAND","BITOR","BITXOR","STRIP","WORD","WORDS","SUBWORD","WORDINDEX","WORDLENGTH","SPACE","COPIES","COMPARE","DELSTR",
+        "DELWORD","DATATYPE","VERIFY","ABBREV","ABS","SIGN","TRUNC","UPPER","LOWER"};
+    std::string name = selector;
+    for (char &c : name) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    auto fallback = [&]() -> MessageResult { return hostStringBifPrevious()(receiver, selector, args); };
+    if (name == "C2D" || name == "D2C" || name == "X2D" || name == "D2X") {
+        const ActivationNumeric def0;
+        const ActivationNumeric &n0 = currentNumeric ? *currentNumeric : def0;
+        if (auto fast = fastRadix(name, receiver, args, n0.digits)) return MessageResult(Value::string(*fast));
+    }
+    if (!mirrored.count(name)) return fallback();
+    std::vector<rxbif_breadth::Slot> slots;
+    slots.emplace_back(receiver);
+    for (const Value &a : args) {
+        if (a.isObject()) {
+            if (dynamic_cast<EnvObject *>(a.object.get()) && static_cast<EnvObject *>(a.object.get())->handle == nullptr) slots.emplace_back(std::nullopt);
+            else return fallback();
+        } else slots.emplace_back(a);
+    }
+    static thread_local rxbif::Context native;
+    const ActivationNumeric def;
+    const ActivationNumeric &n = currentNumeric ? *currentNumeric : def;
+    auto numeric = [&n]() -> rxbif_breadth::NumericContext {
+        return {n.digits, n.fuzz, n.engineering ? rxbif_breadth::NumericForm::Engineering : rxbif_breadth::NumericForm::Scientific};
+    };
+    rxbif_breadth::Handler refuse = [](const std::string &, const std::vector<rxbif_breadth::Slot> &,
+                                       const rxbif_breadth::NumericContext &) -> Value { throw NotNativeBif(); };
+    rxbif_breadth::Context ctx(native, refuse, std::nullopt, numeric);
+    try { return MessageResult(rxbif_breadth::invoke(name, slots, ctx)); }
+    catch (const NotNativeBif &) { return fallback(); }
+    catch (const SyntaxCondition &) { throw; }
+    catch (const std::runtime_error &) { return fallback(); }   // the native subset cannot do this one: the interpreter decides
+}
+inline const bool hostStringBifInstalled = (hostStringBifPrevious() = stringMessageFallback(), stringMessageFallback() = &hostStringBif, true);
+}
+#endif

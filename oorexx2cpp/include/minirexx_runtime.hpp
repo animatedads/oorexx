@@ -592,9 +592,9 @@ inline MessageResult sendStringBuiltin(const Value &receiver, const std::string 
 inline MessageResult sendMessage(const Value &receiver, const std::string &selector,
                                  const std::vector<Value> &args) {
     if (receiver.isObject()) return receiver.object->sendMessage(selector, args);
-    if (!stringMessageFallback()) return sendStringBuiltin(receiver, selector, args);
-    try { return sendStringBuiltin(receiver, selector, args); }
-    catch (const std::runtime_error &) { return stringMessageFallback()(receiver, selector, args); }
+    // Library mode: the interpreter is the authority for String methods (native exact paths first, in the hook); no throw-and-retry.
+    if (stringMessageFallback()) return stringMessageFallback()(receiver, selector, args);
+    return sendStringBuiltin(receiver, selector, args);
 }
 inline MessageResult sendStringBuiltin(const Value &receiver, const std::string &selector,
                                        const std::vector<Value> &args) {

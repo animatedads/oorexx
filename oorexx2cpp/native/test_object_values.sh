@@ -36,6 +36,11 @@ cat > "$OUT/o.cls" <<'EOC'
     w.i = w.i + K.i~at(1)
   end
   return total w.2
+::method strs
+  return 'abc'~c2x 'ff'x~c2d 'hello'~left(2) 'hello'~substr(2,3) 'x'~copies(3) 'abc'~upper 'abc'~subchar(2) 'a b c'~words '-5'~abs
+::method radix
+  numeric digits 40
+  return '3614090360'~d2c(4)~c2x 255~d2x(4) 'ff00'x~c2d 'FFFF'~x2d 4294967295~d2c(4)~c2d 300~d2x(2) 300~d2c(1)~c2x 18446744073709551615~d2x(16) 0~d2c(2)~c2x
 ::class Sub subclass Holder public
 ::method init
   expose own
@@ -57,7 +62,7 @@ say h~make~items h~make~at(2)
 say .Holder~slot~class~id
 s = .Sub~new
 say s~own s~keep(9) (s + 5) s~chain
-say h~pass(.array~of('a'))~items h~stems
+say h~pass(.array~of('a'))~items h~stems h~strs h~radix
 EOD
 cp "$OUT/o.cls" "$OUT/o_ref.cls"
 { cat "$OUT/driver.rex"; echo '::requires "o_ref.cls"'; } > "$OUT/ref.rex"

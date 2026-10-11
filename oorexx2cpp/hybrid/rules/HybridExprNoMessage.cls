@@ -26,16 +26,19 @@
   s~next
   s~expect('~')
   if s~peek~kind \= 'IDENT' then s~fail('expected literal method selector after SELF~')
-  selector = s~next~text
+  selectorToken = s~next
+  selector = selectorToken~text
   super = .false; anyOmitted = .false
   if s~accept(':') then do
     if s~peek~kind \= 'IDENT' | s~peek~text \== 'SUPER' then s~fail('only :SUPER message scopes are supported')
     if value('RX2CPP_HOST_API', , 'ENVIRONMENT') == '' then s~fail('SELF~message:SUPER requires the host-API native lane')
-    s~next
+    selectorToken = s~next
     super = .true
   end
   argExprs = .array~new
-  if s~accept('(') then do
+  abuts = s~is('(') & s~peek~line == selectorToken~endLine & s~peek~col == selectorToken~endCol
+  if abuts then do
+    s~next
     if \s~is(')') then do
       do forever
         if (s~is(',') | s~is(')')) & (super | value('RX2CPP_HOST_API', , 'ENVIRONMENT') \== '') then do
