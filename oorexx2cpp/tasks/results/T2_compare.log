@@ -1,3 +1,4 @@
 oracle: Open Object Rexx Version 5.3.0 r13196 - Internal Test Version
-grep: /tmp/kernel_work/diff.out: binary file matches
+-GC => [1]
++GC => [0]
 DIFFERENCES FOUND
