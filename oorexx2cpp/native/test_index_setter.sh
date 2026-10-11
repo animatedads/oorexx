@@ -20,7 +20,7 @@ grep -Fx 'two 809' "$OUT/index.native.out" >/dev/null
 grep -Fx 'child 6 14 20 20' "$OUT/index.native.out" >/dev/null
 grep -Fx 'isolated 33 20' "$OUT/index.native.out" >/dev/null
 accepted=$(sha256sum "$OUT/librx2cpp_objindex_setter.so")
-for testcase in 'use arg x, y, z' 'use arg x, ' 'use arg x, x'; do
+for testcase in 'use arg x, ' 'use arg x, x'; do
   { printf '%s\n' '::class BadCell public' '::method init' '::method "[]="'; printf '  %s\n' "$testcase"; printf '%s\n' '  return x'; } > "$OUT/rejected.cls"
   if "$ROOT/native/build.sh" "$OUT/rejected.cls" "$OUT" rx2cpp_objindex_setter > "$OUT/rejected.log" 2>&1; then
     echo "FAIL unsupported USE ARG accepted: $testcase" >&2; exit 1

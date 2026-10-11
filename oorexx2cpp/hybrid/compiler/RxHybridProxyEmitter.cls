@@ -14,7 +14,7 @@
   do method over unit~methods
     if method~selector == 'INIT' then iterate
     call = 'proxy~' || method~selector~lower
-    if method~parameter \== '' then call = call || '(argument)'
+    call = call || '(argument)'
     lines~append("  when operation == '" || method~selector || "' then return " || call)
   end
   lines~append('  otherwise raise syntax 40.1 array("rx2cpp: unsupported proxy selector")')
@@ -28,12 +28,7 @@
     if method~selector == 'INIT' then iterate
     lines~append('::method ' || method~selector~lower)
     lines~append('  expose token')
-    if method~parameter \== '' then do
-      lines~append('  use arg argument')
-      lines~append("  if \arg(1, 'E') then raise syntax 40.1 array('rx2cpp: missing proxy argument')")
-      call = '.array~of(argument)'
-    end
-    else call = '.array~new'
+    call = 'arg(1, "A")'
     lines~append("  return NativeDispatch(token, '" || method~selector || "', " || call || ')')
   end
   lines~append('::routine NativeDispatch external ''LIBRARY rx2cppbridge NativeDispatch''')

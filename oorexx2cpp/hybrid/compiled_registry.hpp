@@ -79,9 +79,19 @@ struct CompiledObject {
     virtual std::string invoke0(const std::string &selector) {
         throw std::runtime_error("zero-argument selector not implemented: " + selector);
     }
+    /* The ooRexx ARGLIST as sparse positional values (nullopt = omitted). Generated classes override this one
+       entry point and accept any number of arguments. Hand-written objects that only implement invoke0/invoke/invoke2
+       keep working through this default (at most two arguments). */
+    virtual std::string invokeArgs(const std::string &selector,
+                                   const std::vector<std::optional<std::string>> &arguments) {
+        auto at = [&](std::size_t i) { return arguments[i] ? *arguments[i] : std::string(); };
+        if (arguments.empty()) return invoke0(selector);
+        if (arguments.size() == 1) return invoke(selector, at(0));
+        if (arguments.size() == 2) return invoke2(selector, at(0), at(1));
+        throw std::runtime_error("selector does not accept " + std::to_string(arguments.size()) + " arguments: " + selector);
+    }
     /* Native package routine ABI receives the ooRexx ARGLIST as sparse,
-       positional values; omitted and missing arguments stay unbound.
-       Class-method invoke0/invoke/invoke2 are intentionally unchanged. */
+       positional values; omitted and missing arguments stay unbound. */
     virtual std::string invokeMany(const std::string &selector,
                                    const std::vector<std::optional<std::string>> &) {
         throw std::runtime_error("multi-argument native routine not implemented: " + selector);

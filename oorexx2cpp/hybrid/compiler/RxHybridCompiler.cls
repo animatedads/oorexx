@@ -85,7 +85,7 @@
     setter = .RxHybridMethod~new(name || '=')
     setter~markAttributeSetter
     setter~setParameter('VALUE')
-    setter~addInstruction('rx::set(fields_, ' || .RxQuote~cpp(name) || ', rx::Value::string(argument));')
+    setter~addInstruction('rx::set(fields_, ' || .RxQuote~cpp(name) || ', rx::Value::string(arguments.size() > 0 && arguments[0] ? *arguments[0] : std::string()));')
     setter~returnValue('rx::Value::string("")')
     methods~append(setter)
   end

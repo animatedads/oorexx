@@ -110,8 +110,7 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
                           const std::string &className, const std::string &selector,
                           bool initializer, bool attributeSetter, int scopeIndex, bool isRoot, const std::string &rootClass) {
     try {
-        const size_t count = ctx->ArrayItems(args);
-        if (count > 2) throw std::runtime_error("native methods support at most two arguments");
+        const size_t count = ctx->ArraySize(args);
         std::shared_ptr<CompiledObject> object;
         std::string token;
         if (initializer) {
@@ -143,11 +142,14 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
         std::string output;
         std::lock_guard<ScopeLock> scopeHold(object->scope_lock);
         Frame frame(ctx, selfObj, object->scope_lock);
-        if (count == 0) output = object->invoke0(selector);
-        else if (count == 1) output = object->invoke(selector, stringValue(ctx, ctx->ArrayAt(args, 1)));
-        else output = object->invoke2(selector,
-                                     stringValue(ctx, ctx->ArrayAt(args, 1)),
-                                     stringValue(ctx, ctx->ArrayAt(args, 2)));
+        std::vector<std::optional<std::string>> positional;
+        positional.reserve(count);
+        for (size_t i = 1; i <= count; ++i) {
+            RexxObjectPtr item = ctx->ArrayAt(args, i);
+            if (item == NULLOBJECT) positional.emplace_back(std::nullopt);
+            else positional.emplace_back(stringValue(ctx, item));
+        }
+        output = object->invokeArgs(selector, positional);
         // Generated ::ATTRIBUTE setters have no result; ordinary methods with
         // selectors ending in = (including []=) may explicitly RETURN a value.
         if (attributeSetter) return NULLOBJECT;

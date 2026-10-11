@@ -24,11 +24,13 @@
   s~expect('~')
   if s~peek~kind \= 'IDENT' then s~fail('expected literal method selector after SELF~')
   selector = s~next~text
-  argExpr = ''
+  argExprs = .array~new
   if s~accept('(') then do
     if \s~is(')') then do
-      argExpr = ctx~compareExpr~parse(ctx)
-      if s~is(',') then s~fail('SELF send accepts at most one argument')
+      argExprs~append(ctx~compareExpr~parse(ctx))
+      do while s~accept(',')
+        argExprs~append(ctx~compareExpr~parse(ctx))
+      end
     end
     s~expect(')')
   end
@@ -36,8 +38,9 @@
   n += 1
   tag = n
   code = '([&]() -> rx::Value { std::vector<std::string> _sa' || tag || '; '
-  if argExpr \== '' then
-    code = code || 'rx::Value _av' || tag || ' = ' || argExpr || '; if (_av' || tag || '.isObject()) throw std::runtime_error("SELF send argument must be a scalar"); _sa' || tag || '.push_back(_av' || tag || '.bytes); '
+  do i = 1 to argExprs~items
+    code = code || 'rx::Value _av' || tag || '_' || i || ' = ' || argExprs[i] || '; if (_av' || tag || '_' || i || '.isObject()) throw std::runtime_error("SELF send argument must be a scalar"); _sa' || tag || '.push_back(_av' || tag || '_' || i || '.bytes); '
+  end
   code = code || 'rx::Value _r' || tag || ' = rx::Value::string(rx2cpp::selfSend(' || .RxQuote~cpp(selector) || ', _sa' || tag || ')); '
   do field over ctx~current~exposed
     code = code || 'rx::set(vars, ' || .RxQuote~cpp(field) || ', rx::get(fields_, ' || .RxQuote~cpp(field) || ')); '

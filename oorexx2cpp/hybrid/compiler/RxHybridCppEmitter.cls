@@ -7,7 +7,7 @@
   if arg(2, 'O') then legacyFactory = .true
   suffix = unit~className
   lines = .array~new
-  lines~append('// rx2cpp ooRexx class compiler output: scalar/two-argument ABI v0.30.2')
+  lines~append('// rx2cpp ooRexx class compiler output: ARGLIST ABI (any number of arguments)')
   lines~append('#include "generated.hpp"')
   lines~append('#include "minirexx_runtime.hpp"')
   lines~append('#include <memory>')
@@ -16,20 +16,16 @@
   lines~append('class GeneratedObject_' || suffix || ' final : public CompiledObject, public rx::ObjectDispatch {')
   lines~append('  rx::Variables fields_;')
   lines~append('public:')
-  lines~append('  std::string invoke0(const std::string &selector) override {')
-  self~dispatch(lines, unit, 0, options)
-  lines~append('    throw std::runtime_error("unsupported or wrong-arity native selector: " + selector);')
+  /* One entry point: the ooRexx ARGLIST, any length. invoke0/invoke/invoke2 are thin adapters for
+     host code that still calls them; they carry no arity logic. */
+  lines~append('  std::string invokeArgs(const std::string &selector, const std::vector<std::optional<std::string>> &arguments) override {')
+  lines~append('    (void)arguments;')
+  self~dispatch(lines, unit, options)
+  lines~append('    throw std::runtime_error("unsupported native selector: " + selector);')
   lines~append('  }')
-  lines~append('  std::string invoke(const std::string &selector, const std::string &argument) override {')
-  lines~append('    (void)argument;')
-  self~dispatch(lines, unit, 1, options)
-  lines~append('    throw std::runtime_error("unsupported or wrong-arity native selector: " + selector);')
-  lines~append('  }')
-  lines~append('  std::string invoke2(const std::string &selector, const std::string &first, const std::string &second) override {')
-  lines~append('    (void)first; (void)second;')
-  self~dispatch(lines, unit, 2, options)
-  lines~append('    throw std::runtime_error("unsupported or wrong-arity native selector: " + selector);')
-  lines~append('  }')
+  lines~append('  std::string invoke0(const std::string &selector) override { return invokeArgs(selector, {}); }')
+  lines~append('  std::string invoke(const std::string &selector, const std::string &argument) override { return invokeArgs(selector, {argument}); }')
+  lines~append('  std::string invoke2(const std::string &selector, const std::string &first, const std::string &second) override { return invokeArgs(selector, {first, second}); }')
   if suffix == 'RX2CPP_ROUTINE_IMPL' then do
     lines~append('  std::string invokeMany(const std::string &selector, const std::vector<std::optional<std::string>> &arguments) override {')
     lines~append('    (void)arguments;')
@@ -53,14 +49,12 @@
   end
   return out
 ::method dispatch private
-  use arg lines, unit, arity, options
+  use arg lines, unit, options
   do method over unit~methods
-    count = method~parameters~items
-    if count \= arity then iterate
     lines~append('    if (selector == ' || .RxQuote~cpp(method~selector) || ') {')
     lines~append('      rx::Variables vars;')
     hasOptions = .false
-    if arg(4, 'E') then hasOptions = options~present
+    if arg(3, 'E') then hasOptions = options~present
     if hasOptions then do
       lines~append('      vars.numeric.digits = ' || options~digits || ';')
       lines~append('      vars.numeric.fuzz = ' || options~fuzz || ';')
@@ -70,17 +64,13 @@
     do field over method~exposed
       lines~append('      rx::set(vars, ' || .RxQuote~cpp(field) || ', rx::get(fields_, ' || .RxQuote~cpp(field) || '));')
     end
-    if arity > 0 then do
-      firstName = 'argument'
-      if arity > 1 then firstName = 'first'
-      lines~append('      rx::set(vars, ' || .RxQuote~cpp(method~parameter) || ', rx::Value::string(' || firstName || '));')
-      if method~exposed~hasItem(method~parameter) then
-        lines~append('      rx::set(fields_, ' || .RxQuote~cpp(method~parameter) || ', rx::get(vars, ' || .RxQuote~cpp(method~parameter) || '));')
-    end
-    if arity > 1 then do
-      lines~append('      rx::set(vars, ' || .RxQuote~cpp(method~secondParameter) || ', rx::Value::string(second));')
-      if method~exposed~hasItem(method~secondParameter) then
-        lines~append('      rx::set(fields_, ' || .RxQuote~cpp(method~secondParameter) || ', rx::get(vars, ' || .RxQuote~cpp(method~secondParameter) || '));')
+    do position = 1 to method~parameters~items
+      name = method~parameters[position]
+      lines~append('      if (arguments.size() > ' || (position - 1) || ' && arguments[' || (position - 1) || ']) {')
+      lines~append('        rx::set(vars, ' || .RxQuote~cpp(name) || ', rx::Value::string(*arguments[' || (position - 1) || ']));')
+      if method~exposed~hasItem(name) then
+        lines~append('        rx::set(fields_, ' || .RxQuote~cpp(name) || ', rx::get(vars, ' || .RxQuote~cpp(name) || '));')
+      lines~append('      }')
     end
     do statement over method~instructions
       lines~append('      ' || statement)

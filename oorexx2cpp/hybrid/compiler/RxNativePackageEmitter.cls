@@ -43,10 +43,7 @@
     cfunc = 'RX2CPP_METHOD_' || count
     definitions~append('::method ' || selector~lower || " external 'LIBRARY " || libraryName || ' ' || cfunc || "'")
     entries~append('  REXX_METHOD(' || cfunc || ', ' || cfunc || '),')
-    if method~parameter == '' then
-      lines~append('RexxMethod0(RexxObjectPtr, ' || cfunc || ') {')
-    else
-      lines~append('RexxMethod1(RexxObjectPtr, ' || cfunc || ', RexxObjectPtr, argument) {')
+    lines~append('RexxMethod1(RexxObjectPtr, ' || cfunc || ', ARGLIST, args) {')
     lines~append('  try {')
     lines~append('    rx::Variables fields_;')
     do field over method~exposed
@@ -60,10 +57,11 @@
       cfield = .RxQuote~cpp(field)
       lines~append('      rx::set(vars, ' || cfield || ', rx::get(fields_, ' || cfield || '));')
     end
-    if method~parameter \== '' then do
-      cparam = .RxQuote~cpp(method~parameter)
-      lines~append('      rx::set(vars, ' || cparam || ', readScalar(context, argument));')
-      if method~exposed~hasItem(method~parameter) then
+    do position = 1 to method~parameters~items
+      cparam = .RxQuote~cpp(method~parameters[position])
+      lines~append('      { RexxObjectPtr item = context->ArrayAt(args, ' || position || ');')
+      lines~append('        if (item != NULLOBJECT) rx::set(vars, ' || cparam || ', readScalar(context, item)); }')
+      if method~exposed~hasItem(method~parameters[position]) then
         lines~append('      rx::set(fields_, ' || cparam || ', rx::get(vars, ' || cparam || '));')
     end
     do statement over method~instructions

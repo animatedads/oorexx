@@ -2,7 +2,6 @@
 ::class RxHybridMethod public
 ::attribute selector get
 ::attribute parameter get
-::attribute secondParameter get
 ::attribute parameters get
 ::attribute exposed get
 ::attribute instructions get
@@ -17,12 +16,11 @@
   expose guard
   use arg guard
 ::method init
-  expose selector parameter secondParameter parameters exposed instructions hasReturn seenStatement guard attributeSetter
+  expose selector parameter parameters exposed instructions hasReturn seenStatement guard attributeSetter
   use arg selector
   guard = ''
   attributeSetter = .false
   parameter = ''
-  secondParameter = ''
   parameters = .array~new
   exposed = .array~new
   instructions = .array~new
@@ -34,8 +32,7 @@
   if seenStatement then raise syntax 40.1 array('rx2cpp: EXPOSE must precede executable instructions')
   if exposed~hasItem(name) then raise syntax 40.1 array('rx2cpp: duplicate exposed variable ' || name)
   exposed~append(name)
-/* Keep the first two names for the established class method ABI. Package
-   routines also track all positional names for the vector-based ABI. */
+/* Positional USE ARG names, any number (ARGLIST ABI). `parameter` is the first name. */
 ::method setParameter
   expose parameter parameters seenStatement
   use arg name
@@ -43,13 +40,6 @@
     raise syntax 40.1 array('rx2cpp: USE ARG may occur only once before statements')
   parameter = name
   parameters~append(name)
-::method setSecondParameter
-  expose parameter secondParameter parameters seenStatement
-  use arg name
-  if seenStatement | parameters~items \= 1 then
-    raise syntax 40.1 array('rx2cpp: second USE ARG parameter must follow the first')
-  self~addParameter(name)
-  secondParameter = name
 ::method addParameter
   expose parameters seenStatement
   use arg name

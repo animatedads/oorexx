@@ -21,8 +21,6 @@ rej chained        "$H::method m
   return self~a()~b()"
 rej cascade        "$H::method m
   return self~a()~~b()"
-rej two_args       "$H::method m
-  return self~a(1, 2)"
 printf '%s::method m\n  return self~a()\n::method a\n  return 1\n' "$H" > "$OUT/single.cls"
 if (cd "$ROOT" && "$REXX_BIN" rx2cpp_native.rex "$OUT/single.cls" "$OUT/single_out" x >/dev/null 2>&1); then echo "FAIL single-class path accepted SELF send"; exit 1; fi
 echo "PASS reject SELF send on single-class compiler path"

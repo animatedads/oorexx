@@ -58,13 +58,13 @@ RexxRoutine3(RexxObjectPtr, NativeDispatch,
     // A missing argument is never coerced into an empty string.
     const std::string method(selector);
     const bool decorated = method == "DECORATE";
-    const auto count = context->ArrayItems(arguments);
-    if (count > (decorated ? 2u : 1u) || (decorated && count != 2u)) {
+    const auto count = context->ArraySize(arguments);
+    if (decorated && count != 2u) {
         context->InvalidRoutine();
         return NULLOBJECT;
     }
     RexxObjectPtr value = NULLOBJECT;
-    if (count != 0u) {
+    if (decorated || count == 1u) {
         value = context->ArrayAt(arguments, 1);
         if (value == NULLOBJECT || !context->IsOfType(value, "String")) {
             context->InvalidRoutine();
@@ -83,13 +83,19 @@ RexxRoutine3(RexxObjectPtr, NativeDispatch,
     try {
         // Rexx .String is length-delimited; CSTRING conversion would silently
         // truncate embedded NUL bytes. Preserve the exact byte length both ways.
-        std::string argument;
-        if (count != 0u) {
-            auto stringValue = context->ObjectToString(value);
-            argument.assign(context->StringData(stringValue), context->StringLength(stringValue));
+        auto bytes = [&](RexxObjectPtr o) {
+            auto str = context->ObjectToString(o);
+            return std::string(context->StringData(str), context->StringLength(str));
+        };
+        std::vector<std::optional<std::string>> positional;
+        if (decorated) positional.emplace_back(bytes(value));
+        else for (size_t i = 1; i <= count; ++i) {
+            RexxObjectPtr item = context->ArrayAt(arguments, i);
+            if (item == NULLOBJECT) { positional.emplace_back(std::nullopt); continue; }
+            if (!context->IsOfType(item, "String")) { context->InvalidRoutine(); return NULLOBJECT; }
+            positional.emplace_back(bytes(item));
         }
-        const std::string result = count == 0u ? object->invoke0(method)
-            : object->invoke(method, argument);
+        const std::string result = object->invokeArgs(method, positional);
         return context->NewString(result.data(), result.size());
     } catch (const std::exception &) {
         context->InvalidRoutine();
