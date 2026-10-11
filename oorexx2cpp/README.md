@@ -1,3 +1,9 @@
+## v0.30.17 — Interpreter-owned object inspector
+
+`inspector/inspect.rex` builds one inspection-only temporary package and uses ooRexx `Package`, `Class`, `Method` and `Routine` objects to recover prologue, class, instance/class-side method and routine source. PRIVATE/PACKAGE visibility is preserved from real objects; private methods do not require PUBLIC rewriting. Class-side INIT is masked in the inspection copy to prevent execution, and ::REQUIRES is rejected pending isolated dependency loading. Unchanged Crypto yields 15 classes, 104 methods, 42 routines and a 50-line prologue. **This delivers the object-model interface, not a replacement for the native code emitter or a general safe sandbox.** [Design and tests](OBJECT_INSPECTION_V0317.md).
+
+---
+
 ## v0.30.16 — WhenDealingWith scope entry
 
 A shared lexical code-unit scope (`core/RxWhenDealingWith.cls`) now stands between the standalone/hybrid compiler entry points and their existing clause rule registries. Package prologue, class, method, package routine, internal LABEL, PROCEDURE, and SIGNAL have explicit scope/activation policies; the synthetic native routine class is classified as a package routine. `::OPTIONS PROLOG/NOPROLOG` is retained as a package option. **This is the first structural integration, not yet a complete unified statement grammar or native `.so` prologue implementation**. The standalone and hybrid rule registries, native BIF activation bridge and complete prologue-on-`::REQUIRES` semantics still require consolidation. [Design, limits and tests](SCOPE_ENGINE_V0316.md).
