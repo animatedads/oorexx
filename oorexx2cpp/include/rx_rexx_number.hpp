@@ -22,15 +22,36 @@ inline cpp_int decimalPow10(int n) {
     }
     return out;
 }
+// Fast path: plain integers of at most 9 digits under DIGITS >= 18 are exact in int64.
+inline bool smallInteger(const Value &v, const ActivationNumeric &ctx, std::int64_t &out) {
+    if (v.isObject() || ctx.digits < 18) return false;
+    const std::string &s = v.bytes;
+    std::size_t i = 0, n = s.size();
+    if (n == 0 || n > 10) return false;
+    bool neg = false;
+    if (s[0] == '-') { neg = true; i = 1; }
+    if (i >= n) return false;
+    std::int64_t r = 0;
+    for (; i < n; ++i) { if (s[i] < '0' || s[i] > '9') return false; r = r * 10 + (s[i] - '0'); }
+    if (r > 999999999) return false;
+    out = neg ? -r : r;
+    return true;
+}
 inline int decimalDigits(const cpp_int &c) {
     const cpp_int n = c < 0 ? -c : c;
+    if (n.is_zero() || msb(n) < 63) {
+        std::uint64_t u = static_cast<std::uint64_t>(n);
+        int d = 1;
+        while (u >= 10) { u /= 10; ++d; }
+        return d;
+    }
     return static_cast<int>(n.convert_to<std::string>().size());
 }
-inline RexxDecimal parseRexxDecimal(const Value &v) {
-    if (v.isObject()) throw std::runtime_error("numeric operation on an object requires message dispatch");
+inline bool tryParseRexxDecimal(const Value &v, RexxDecimal &out, const char *&err) {
+    if (v.isObject()) { err = "numeric operation on an object requires message dispatch"; return false; }
     const std::string s = trim(v.bytes);
-    if (s.empty() || s.size() > 10000) throw std::runtime_error("invalid Rexx decimal number");
-    RexxDecimal out;
+    if (s.empty() || s.size() > 10000) { err = "invalid Rexx decimal number"; return false; }
+    out = RexxDecimal();
     std::size_t i = 0;
     bool minus = false, sawDigit = false, dot = false;
     if (s[i] == '+' || s[i] == '-') { minus = s[i] == '-'; ++i; }
@@ -42,26 +63,31 @@ inline RexxDecimal parseRexxDecimal(const Value &v) {
         } else if (s[i] == '.' && !dot) dot = true;
         else break;
     }
-    if (!sawDigit) throw std::runtime_error("invalid Rexx decimal number");
+    if (!sawDigit) { err = "invalid Rexx decimal number"; return false; }
     if (i < s.size()) {
-        if (s[i] != 'E' && s[i] != 'e') throw std::runtime_error("invalid Rexx decimal number");
+        if (s[i] != 'E' && s[i] != 'e') { err = "invalid Rexx decimal number"; return false; }
         ++i;
         bool eneg = false;
         if (i < s.size() && (s[i] == '+' || s[i] == '-')) { eneg = s[i] == '-'; ++i; }
         if (i == s.size() || s[i] < '0' || s[i] > '9')
-            throw std::runtime_error("invalid Rexx decimal exponent");
+            { err = "invalid Rexx decimal exponent"; return false; }
         int e = 0;
         for (; i < s.size(); ++i) {
             if (s[i] < '0' || s[i] > '9' || e > kMaxRexxScale)
-                throw std::runtime_error("invalid Rexx decimal exponent");
+                { err = "invalid Rexx decimal exponent"; return false; }
             e = e * 10 + (s[i] - '0');
         }
         out.exponent += eneg ? -e : e;
     }
     if (out.exponent < -kMaxRexxScale || out.exponent > kMaxRexxScale)
-        throw std::runtime_error("decimal exponent outside supported range");
+        { err = "decimal exponent outside supported range"; return false; }
     for (char c : digits) out.coefficient = out.coefficient * 10 + (c - '0');
     if (minus) out.coefficient = -out.coefficient;
+    return true;
+}
+inline RexxDecimal parseRexxDecimal(const Value &v) {
+    RexxDecimal out; const char *err = nullptr;
+    if (!tryParseRexxDecimal(v, out, err)) throw std::runtime_error(err);
     return out;
 }
 inline void roundRexx(RexxDecimal &v, const ActivationNumeric &context) {
@@ -127,6 +153,7 @@ inline Value numberResult(RexxDecimal n, const ActivationNumeric &ctx) {
     return Value::number(formatRexxDecimal(n, ctx));
 }
 inline Value numericAdd(const Value &a, const Value &b, const ActivationNumeric &ctx) {
+    { std::int64_t p, q; if (smallInteger(a, ctx, p) && smallInteger(b, ctx, q)) return Value::number(std::to_string(p + q)); }
     RexxDecimal x = parseRexxDecimal(a), y = parseRexxDecimal(b);
     // Rexx addition normalizes operands to the current significant-digit
     // context, unlike multiplication, which carries additional guard digits.
@@ -190,6 +217,7 @@ inline Value numericAdd(const Value &a, const Value &b, const ActivationNumeric 
     return Value::number(formatRexxDecimal(rounded, ctx));
 }
 inline Value numericSub(const Value &a, const Value &b, const ActivationNumeric &ctx) {
+    { std::int64_t p, q; if (smallInteger(a, ctx, p) && smallInteger(b, ctx, q)) return Value::number(std::to_string(p - q)); }
     RexxDecimal y = parseRexxDecimal(b);
     y.coefficient = -y.coefficient;
     return numericAdd(a, Value::number(formatRexxDecimal(y, ctx)), ctx);
@@ -202,6 +230,7 @@ inline void truncateGuardDigits(RexxDecimal &v, const ActivationNumeric &ctx) {
     }
 }
 inline Value numericMul(const Value &a, const Value &b, const ActivationNumeric &ctx) {
+    { std::int64_t p, q; if (smallInteger(a, ctx, p) && smallInteger(b, ctx, q)) return Value::number(std::to_string(p * q)); }
     RexxDecimal x = parseRexxDecimal(a), y = parseRexxDecimal(b);
     // ooRexx uses one guard digit of operand precision in multiplication.
     truncateGuardDigits(x, ctx); truncateGuardDigits(y, ctx);
@@ -237,8 +266,7 @@ inline Value numericDiv(const Value &a, const Value &b, const ActivationNumeric 
     roundRexx(output, ctx);
     return Value::number(formatRexxDecimal(output, ctx, !exactQuotient));
 }
-inline int numericRelation(const Value &a, const Value &b, const ActivationNumeric &ctx) {
-    RexxDecimal x = parseRexxDecimal(a), y = parseRexxDecimal(b);
+inline int numericRelationDecimal(RexxDecimal x, RexxDecimal y, const ActivationNumeric &ctx) {
     // FUZZ affects comparison precision, not computation precision.
     ActivationNumeric cmp = ctx;
     cmp.digits -= cmp.fuzz;
@@ -250,8 +278,12 @@ inline int numericRelation(const Value &a, const Value &b, const ActivationNumer
     y.coefficient *= decimalPow10(y.exponent - e);
     return (x.coefficient > y.coefficient) - (x.coefficient < y.coefficient);
 }
+inline int numericRelation(const Value &a, const Value &b, const ActivationNumeric &ctx) {
+    return numericRelationDecimal(parseRexxDecimal(a), parseRexxDecimal(b), ctx);
+}
 inline bool numericString(const Value &v) {
-    try { (void)parseRexxDecimal(v); return true; } catch (const std::runtime_error &) { return false; }
+    RexxDecimal d; const char *err = nullptr;
+    return tryParseRexxDecimal(v, d, err);
 }
 inline Value numericCompare(const Value &a, const std::string &op, const Value &b,
                             const ActivationNumeric &ctx) {
@@ -260,7 +292,9 @@ inline Value numericCompare(const Value &a, const std::string &op, const Value &
     if (op == "==") return fromInteger(a.bytes == b.bytes);
     if (op == "\\==") return fromInteger(a.bytes != b.bytes);
     int rel;
-    if (numericString(a) && numericString(b)) rel = numericRelation(a, b, ctx);
+    RexxDecimal dx, dy; const char *perr = nullptr; std::int64_t sp, sq;
+    if (smallInteger(a, ctx, sp) && smallInteger(b, ctx, sq)) rel = (sp > sq) - (sp < sq);
+    else if (tryParseRexxDecimal(a, dx, perr) && tryParseRexxDecimal(b, dy, perr)) rel = numericRelationDecimal(dx, dy, ctx);
     else { const std::string as = trim(a.bytes), bs = trim(b.bytes); rel = (as > bs) - (as < bs); }
     if (op == "=") return fromInteger(rel == 0);
     if (op == "\\=" || op == "<>" || op == "><") return fromInteger(rel != 0);
