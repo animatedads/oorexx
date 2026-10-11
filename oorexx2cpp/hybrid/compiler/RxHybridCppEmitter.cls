@@ -10,6 +10,13 @@
   lines~append('// rx2cpp ooRexx class compiler output: ARGLIST ABI (any number of arguments)')
   lines~append('#include "generated.hpp"')
   lines~append('#include "minirexx_runtime.hpp"')
+  if .RxBuiltinRules~externalEnabled then do
+    lines~append('#include "rx_bif_integration.hpp"')
+    lines~append('#ifndef RX2CPP_BIF_HELPER')
+    lines~append('#define RX2CPP_BIF_HELPER')
+    lines~append('namespace { [[maybe_unused]] rx::BifRuntime &rx2cppBif() { static thread_local rx::BifRuntime runtime; return runtime; } }')
+    lines~append('#endif')
+  end
   lines~append('#include <memory>')
   lines~append('#include <stdexcept>')
   lines~append('namespace rx2cpp {')
@@ -105,3 +112,4 @@
     lines~append('    }')
   end
 ::requires 'core/RxQuote.cls'
+::requires 'rules/RxBuiltinRules.cls'

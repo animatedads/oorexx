@@ -120,6 +120,12 @@
   rule = rules~find(self)
   if rule == .nil then s~fail('unsupported class method instruction')
   rule~emit(self)
+/* ExprAtom is shared with the standalone compiler. Native classes have no program-class table and no
+   hosted tier, so those environment-symbol branches are closed: .TRUE/.FALSE/.NIL work, other .NAMEs fail closed. */
+::method hasProgramClass
+  return .false
+::method hostedEnabled
+  return .false
 ::method parse
   expose stream className methods constants current rules scopes
   s = stream
