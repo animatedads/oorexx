@@ -100,4 +100,40 @@ bool call(const std::string &n, const std::vector<std::string> &args, const std:
     }
     return ok;
 }
+
+void *findClass(const std::string &name) {
+    if (!start()) return nullptr;
+    if (!session) session.reset(new ApiContext(thread));
+    RexxClassObject c = thread->FindClass(name.c_str());
+    if (c == NULLOBJECT) { thread->ClearCondition(); return nullptr; }
+    return (void *)thread->RequestGlobalReference((RexxObjectPtr)c);
+}
+void *retain(void *h) { return h ? (void *)thread->RequestGlobalReference((RexxObjectPtr)h) : nullptr; }
+void release(void *h) { if (h && thread) thread->ReleaseGlobalReference((RexxObjectPtr)h); }
+bool sameObject(void *a, void *b) { return a == b; }
+bool send(void *target, const std::string &selector, const std::vector<Arg> &args, Result &out,
+          std::string &rxCode, std::string &rxText) {
+    if (!start()) { rxCode = "98.1"; rxText = "kernel unavailable"; return false; }
+    if (!session) session.reset(new ApiContext(thread));
+    RexxArrayObject arr = thread->NewArray(args.size());
+    for (size_t i = 0; i < args.size(); i++) {
+        RexxObjectPtr o = args[i].obj ? (RexxObjectPtr)args[i].obj
+                                      : (RexxObjectPtr)thread->NewString(args[i].bytes.data(), args[i].bytes.size());
+        thread->ArrayAppend(arr, o);
+    }
+    RexxObjectPtr r = thread->SendMessage((RexxObjectPtr)target, selector.c_str(), arr);
+    if (thread->CheckCondition()) {
+        RexxCondition cd; thread->DecodeConditionInfo(thread->GetConditionInfo(), &cd);
+        rxCode = std::to_string(cd.code / 1000) + "." + std::to_string(cd.code % 1000);
+        rxText = cd.message ? thread->ObjectToStringValue(cd.message) : "error in message " + selector;
+        thread->ClearCondition();
+        return false;
+    }
+    if (r == NULLOBJECT) { out.kind = 0; return true; }
+    if (thread->IsString(r) || thread->IsOfType(r, "STRING")) {
+        RexxStringObject str = thread->ObjectToString(r);
+        out.kind = 1; out.bytes.assign(thread->StringData(str), thread->StringLength(str));
+    } else { out.kind = 2; out.obj = (void *)thread->RequestGlobalReference(r); }
+    return true;
+}
 }
