@@ -122,6 +122,57 @@
   rule~emit(self)
 /* ExprAtom is shared with the standalone compiler. Native classes have no program-class table and no
    hosted tier, so those environment-symbol branches are closed: .TRUE/.FALSE/.NIL work, other .NAMEs fail closed. */
+/* Adapters so the standalone statement rules (DO forms, LEAVE/ITERATE) run unchanged in this lane. */
+::method line
+  use arg depth, source
+  self~current~addInstruction(source)
+::method statement
+  use arg depth
+  self~enterControl
+  self~emitStatement(depth)
+  self~leaveControl
+::method block
+  use arg depth, hasEnd, expectedName
+  if arg(3, 'O') then expectedName = ''
+  s = self~stream
+  s~skipSeparators
+  self~enterControl
+  do while s~peek~kind \= 'EOF' & \s~is('END') & \s~is('::')
+    if s~is('ELSE') then s~fail('ELSE without matching IF')
+    self~emitStatement(depth)
+    s~skipSeparators
+  end
+  self~leaveControl
+  s~expect('END')
+  if s~peek~kind == 'IDENT' then do
+    suffix = s~next~text
+    if expectedName == '' | suffix \= expectedName then s~fail('END control name mismatch: ' || suffix)
+  end
+  s~separator
+::method pushLoop
+  expose loopScopes
+  if var('LOOPSCOPES') = 0 then loopScopes = .array~new
+  use arg name, continueLabel, exitLabel
+  loopScopes~append(.array~of(name, continueLabel, exitLabel))
+::method popLoop
+  expose loopScopes
+  loopScopes~remove(loopScopes~items)
+::method loopTarget
+  expose loopScopes
+  use arg kind, name
+  if var('LOOPSCOPES') = 0 then loopScopes = .array~new
+  do i = loopScopes~items to 1 by -1
+    frame = loopScopes[i]
+    if name == '' | frame[1] == name then do
+      if kind == 'ITERATE' then return frame[2]
+      return frame[3]
+    end
+  end
+  self~stream~fail(kind || ' has no matching active DO loop' || name)
+::method scope
+  return .RxHybridScopeView~new
+::method routineName
+  return self~current~selector
 ::method label
   expose labelCounter
   if var('LABELCOUNTER') = 0 then labelCounter = 0
@@ -195,3 +246,9 @@
 ::requires 'hybrid/rules/HybridFunctionCall.cls'
 
 ::requires 'core/RxWhenDealingWith.cls'
+/* The statement rules ask the scope what it allows; native methods and routines always bind arguments. */
+::class RxHybridScopeView public
+::method bindsArguments
+  return .true
+::method isEntryFunction
+  return .false

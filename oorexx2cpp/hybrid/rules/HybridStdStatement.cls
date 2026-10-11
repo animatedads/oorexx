@@ -1,0 +1,26 @@
+/* Runs a standalone-compiler statement rule inside the native lane (one rule, two lanes). */
+::class RxHybridStdStatement public
+::method init
+  expose inner
+  use arg inner
+::method accepts
+  expose inner
+  use arg ctx
+  return inner~accepts(ctx)
+::method emit
+  expose inner
+  use arg ctx
+  inner~emit(ctx, 0)
+::requires 'rules/StmtDoUntil.cls'
+::requires 'rules/StmtDoWhile.cls'
+::requires 'rules/StmtDoForever.cls'
+::requires 'rules/StmtCountedDo.cls'
+::requires 'rules/StmtRepeatDo.cls'
+::requires 'rules/StmtLeaveIterate.cls'
+::requires 'rules/StmtIf.cls'
+::requires 'rules/StmtParse.cls'
+::requires 'rules/StmtSay.cls'
+::requires 'rules/StmtSelect.cls'
+::requires 'rules/StmtLoopOver.cls'
+::requires 'rules/StmtIndexedAssign.cls'
+::requires 'rules/StmtCompoundAssign.cls'

@@ -61,6 +61,9 @@
   do method over unit~methods
     lines~append('    if (selector == ' || .RxQuote~cpp(method~selector) || ') {')
     lines~append('      rx::Variables vars;')
+    lines~append('      std::vector<rx::Value> _rxProgramArgs;')
+    lines~append('      for (const auto &_a : arguments) _rxProgramArgs.push_back(rx::Value::string(_a ? *_a : std::string()));')
+    lines~append('      (void)_rxProgramArgs;')
     hasOptions = .false
     if arg(3, 'E') then hasOptions = options~present
     if hasOptions then do
@@ -95,6 +98,9 @@
     count = method~parameters~items
     lines~append('    if (selector == ' || .RxQuote~cpp(method~selector) || ') {')
     lines~append('      rx::Variables vars;')
+    lines~append('      std::vector<rx::Value> _rxProgramArgs;')
+    lines~append('      for (const auto &_a : arguments) _rxProgramArgs.push_back(rx::Value::string(_a ? *_a : std::string()));')
+    lines~append('      (void)_rxProgramArgs;')
     hasOptions = .false
     if arg(3, 'E') then hasOptions = options~present
     if hasOptions then do

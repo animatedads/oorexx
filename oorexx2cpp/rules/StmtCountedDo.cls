@@ -14,17 +14,34 @@
   if pos('.', name) > 0 then s~fail('compound control variable needs a dedicated DO rule')
   s~expect('=')
   first = ctx~addExpr~parse(ctx)
-  s~expect('TO')
-  last = ctx~addExpr~parse(ctx)
-  step = 'rx::Value::number("1")'
-  if s~accept('BY') then step = ctx~addExpr~parse(ctx)
+  /* TO and BY may appear in either order; each at most once. They are evaluated in the order written. */
+  last = ''; step = 'rx::Value::number("1")'; order = .array~new
+  do while s~is('TO') | s~is('BY')
+    kind = s~next~text
+    if kind == 'TO' then do
+      if last \== '' then s~fail('duplicate TO in DO')
+      last = ctx~addExpr~parse(ctx)
+    end
+    else do
+      if order~hasItem('BY') then s~fail('duplicate BY in DO')
+      step = ctx~addExpr~parse(ctx)
+    end
+    order~append(kind)
+  end
+  if last == '' then s~fail('counted DO without TO is not implemented')
   s~separator
   suffix = ctx~label
   iterLabel = '_rx_iter_' || suffix
   exitLabel = '_rx_exit_' || suffix
   ctx~line(depth, '{')
-  ctx~line(depth + 1, 'const rx::Value _end' || suffix || ' = ' || last || ';')
-  ctx~line(depth + 1, 'const rx::Value _step' || suffix || ' = ' || step || ';')
+  if order[1] == 'BY' then do
+    ctx~line(depth + 1, 'const rx::Value _step' || suffix || ' = ' || step || ';')
+    ctx~line(depth + 1, 'const rx::Value _end' || suffix || ' = ' || last || ';')
+  end
+  else do
+    ctx~line(depth + 1, 'const rx::Value _end' || suffix || ' = ' || last || ';')
+    ctx~line(depth + 1, 'const rx::Value _step' || suffix || ' = ' || step || ';')
+  end
   ctx~line(depth + 1, 'rx::set(vars, ' || .RxQuote~cpp(name) || ', ' || first || ');')
   ctx~line(depth + 1, 'if (false) { goto ' || iterLabel || '; goto ' || exitLabel || '; }')
   ctx~line(depth + 1, 'while (rx::withinNumeric(rx::get(vars, ' || .RxQuote~cpp(name) || '), _end' || suffix || ', _step' || suffix || ', vars.numeric)) {')
