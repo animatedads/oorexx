@@ -8,7 +8,7 @@ inline Value parseSourceString(const Value &source) {
     if (!source.isObject()) return source;
     MessageResult r;
     try { r = source.object->sendMessage("MAKESTRING", {}); }
-    catch (const std::exception &) { r = source.object->sendMessage("STRING", {}); }
+    catch (const NoMethod &) { r = source.object->sendMessage("STRING", {}); }
     if (!r || r->isObject()) throw std::runtime_error("PARSE source: string conversion did not return a string");
     return *r;
 }

@@ -47,6 +47,10 @@ struct Value {
 };
 // No result is different from returning .nil or any other object.
 using MessageResult = std::optional<Value>;
+// Thrown when an object has no such method (ooRexx error 97.1); any other failure keeps its own type.
+struct NoMethod : std::runtime_error {
+    using std::runtime_error::runtime_error;
+};
 struct ObjectDispatch {
     virtual MessageResult sendMessage(const std::string &selector,
                                       const std::vector<Value> &args) {
@@ -55,7 +59,7 @@ struct ObjectDispatch {
              selector == "<>" || selector == "><" || selector == "<" || selector == ">" ||
              selector == "<=" || selector == ">="))
             return sendBinary(selector, args.front());
-        throw std::runtime_error("unhandled object message: " + selector);
+        throw NoMethod("unhandled object message: " + selector);
     }
     virtual ~ObjectDispatch() = default;
     // .Object defines =, ==, \=, \==, <>, >< using object identity.

@@ -66,6 +66,12 @@
   return \self~isEntryFunction
 ::method bindsArguments
   return \self~isEntryFunction
+::method isolatesVariables
+  return self~variablePolicy == 'ISOLATED'
+::method needsExplicitReturn
+  return self~variablePolicy == 'CALLER'
+::method allowsInnerLabels
+  return self~variablePolicy \== 'ISOLATED'
 ::method isolatedRoutineKind
   return self~activationKind == 'ROUTINE'
 ::method setPrologEnabled

@@ -60,7 +60,8 @@
   ctx~beginRoutine(labelName~translate, kind)
   ctx~line(2, '_rxRoutines[' || .RxQuote~cpp(registered) || '] = [&](rx::Variables& _rxCallerVars, const std::vector<rx::Value>& _rxProgramArgs) -> rx::MessageResult {')
   ctx~line(3, '(void)_rxProgramArgs;')
-  if kind == 'ROUTINE' then do
+  scope = ctx~scope
+  if scope~isolatesVariables then do
     ctx~line(3, '(void)_rxCallerVars;')
     ctx~line(3, 'rx::Variables _rxRoutineVars;')
     ctx~line(3, 'rx::Variables& vars = _rxRoutineVars;')
@@ -80,8 +81,8 @@
     ctx~statement(3)
     s~skipSeparators
   end
-  if kind == 'ROUTINE' & s~atLabel then s~fail('labels inside ::ROUTINE are not implemented')
-  if kind == 'LABEL' & last \= 'RETURN' & last \= 'EXIT' then s~fail('internal routines currently require explicit trailing RETURN: ' || labelName)
+  if \scope~allowsInnerLabels & s~atLabel then s~fail('labels inside ::ROUTINE are not implemented')
+  if scope~needsExplicitReturn & last \= 'RETURN' & last \= 'EXIT' then s~fail('internal routines currently require explicit trailing RETURN: ' || labelName)
   ctx~line(3, 'return std::nullopt;')
   if trapped then do
     ctx~line(3, '} catch (const std::exception& _rxError) {')

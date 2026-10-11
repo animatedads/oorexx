@@ -11,7 +11,7 @@ tmp = .File~new(base'/rxtree.'time('F')'.'random(1,999999))
 tmp~makeDirs
 oldDir = directory()
 ctx = .directory~new
-ctx~tmp = tmp; ctx~opened = .set~new; ctx~missing = .list~new; ctx~order = .list~new; ctx~edges = .list~new
+ctx~tmp = tmp; ctx~opened = .set~new; ctx~missing = .list~new; ctx~libs = .list~new; ctx~order = .list~new; ctx~edges = .list~new
 mainName = .File~new(file)~absolutePath
 src = .stream~new(file)~arrayIn
 call openDeps ctx, file, src, .File~new(file)~parent
@@ -24,6 +24,7 @@ do d over ctx~order
 end
 call directory oldDir
 do m over ctx~missing; say 'missing'||'09'x||m; end
+do m over ctx~libs; say 'library-refused'||'09'x||m; end
 do e over ctx~edges; say 'edge'||'09'x||e; end
 call cleanup tmp
 exit status
@@ -36,7 +37,7 @@ openDeps: procedure
     if t~translate~left(11) \== '::REQUIRES ' then iterate
     parse var t . name .
     name = name~strip("B", "'")~strip("B", '"')
-    if t~translate~word(3) == 'LIBRARY' then iterate
+    if t~translate~word(3) == 'LIBRARY' then do; ctx~libs~append(name); iterate; end
     ctx~edges~append(.File~new(owner)~name'09'x||name)
     if ctx~opened~hasIndex(name) then iterate
     ctx~opened~put(name)
@@ -68,6 +69,7 @@ blankMissing: procedure
     if t~translate~left(11) == '::REQUIRES ' then do
       parse var t . nm .; nm = nm~strip("B", "'")~strip("B", '"')
       do m over ctx~missing; if m == nm then l = '-- (missing) ' l; end
+      if t~translate~word(3) == 'LIBRARY' then l = '-- (library, refused) ' l
     end
     r~append(l)
   end
