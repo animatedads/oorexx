@@ -49,7 +49,10 @@ if [[ -n "${RX2CPP_KERNEL:-}" ]]; then   # RX2CPP_KERNEL=<kernel_spike work dir>
     # shellcheck disable=SC2086
     "${CXX:-g++}" -std=gnu++11 -O2 -fno-lifetime-dse $KDEF $KINC -I"$K/src/interpreter/api" -I"$K/b" -I"$ROOT/kernel" -c "$ROOT/kernel/rx_kernel_bif.cpp" -o "$kobj"
     extra+=( -DRX2CPP_KERNEL -I"$ROOT/kernel" "$kobj" "$K/b/lib/librexx.a" "$K/b/lib/librexxapi.a" -lpthread -ldl )
-    cp "$K/b/lib/rexx.img" "$(dirname -- "$native")/rexx.img"   # the kernel restores this image at start-up (found beside the executable)
+    # embed rexx.img in the executable (unpacked to a cache dir at first run); no file needs to travel beside it
+    imgobj="$(dirname -- "$native")/$(basename -- "$native").img.o"
+    printf '.section .rodata\n.global rx2cpp_image_start\n.global rx2cpp_image_end\nrx2cpp_image_start:\n.incbin "%s"\nrx2cpp_image_end:\n.section .note.GNU-stack,"",@progbits\n' "$K/b/lib/rexx.img" > "$imgobj.s"
+    "${CXX:-g++}" -c "$imgobj.s" -o "$imgobj"; extra+=( "$imgobj" )
 fi
 if [[ -n "${RX2CPP_KERNEL:-}" ]]; then
     # strict warnings for the generated program; the kernel's own link-time warnings are not ours to fail on

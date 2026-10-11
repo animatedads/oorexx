@@ -15,6 +15,11 @@
 #include <cstring>
 #include <unordered_map>
 #include <memory>
+#include <cstdio>
+#include <sys/stat.h>
+#include <unistd.h>
+extern "C" const unsigned char rx2cpp_image_start[] __attribute__((weak));
+extern "C" const unsigned char rx2cpp_image_end[] __attribute__((weak));
 #include "bif_decls.inc"
 namespace {
 struct Entry { const char *name; RexxObject *(*fn)(RexxActivation *, size_t, ExpressionStack *); };
@@ -25,8 +30,28 @@ RexxInstance *instance = nullptr;
 RexxThreadContext *thread = nullptr;
 std::unique_ptr<ApiContext> session;   // one kernel entry for the whole run
 void shutdown() { session.reset(); if (instance) instance->Terminate(); }
+// The kernel restores rexx.img from disk; when the image is embedded, unpack it once to a cache directory on PATH.
+void unpackImage() {
+    if (!rx2cpp_image_start || !rx2cpp_image_end) return;
+    size_t n = (size_t)(rx2cpp_image_end - rx2cpp_image_start);
+    if (const char *e = getenv("REXX_IMG_DISABLE")) { (void)e; return; }
+    const char *tmp = getenv("TMPDIR"); std::string dir = std::string(tmp ? tmp : "/tmp") + "/rx2cpp-img-" + std::to_string(n) + "-" + std::to_string((long)getuid());
+    std::string file = dir + "/rexx.img";
+    struct stat st;
+    if (stat(file.c_str(), &st) != 0 || (size_t)st.st_size != n) {
+        mkdir(dir.c_str(), 0700);
+        std::string part = file + "." + std::to_string((long)getpid());
+        FILE *f = fopen(part.c_str(), "wb");
+        if (!f) return;
+        fwrite(rx2cpp_image_start, 1, n, f); fclose(f);
+        rename(part.c_str(), file.c_str());
+    }
+    const char *old = getenv("PATH");
+    setenv("PATH", (dir + ":" + (old ? old : "")).c_str(), 1);
+}
 bool start() {
     if (thread) return true;
+    unpackImage();
     if (!RexxCreateInterpreter(&instance, &thread, nullptr)) return false;
     std::atexit(shutdown);
     return true;
