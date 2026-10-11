@@ -1,4 +1,7 @@
 #pragma once
+#ifdef RX2CPP_KERNEL
+#include "rx_kernel_bif.h"
+#endif
 /* BIF v0.11 is a separately maintained add-on.  The compiled Rexx
    activation supplies its own variable provider on each BIF invocation.
    This deliberately narrow provider supports simple symbols, numeric literal
@@ -140,6 +143,12 @@ inline rxbif_variables::Reply frameVariableReply(Variables& vars,
 }
 inline Value dispatchBif(BifRuntime& bif, Variables& vars, const std::string& name,
                          const std::vector<BifSlot>& slots) {
+    if(name=="TRACE" || name=="ADDRESS") {   // language state owned by the compiled program, not by a BIF
+        if(slots.size()>1 || (slots.size()==1 && (!slots[0] || slots[0]->isObject())))
+            throw std::runtime_error("BIF "+name+": invalid arguments");
+        if(name=="TRACE") return Value::string(slots.empty() ? traceSetting() : traceSet(*slots[0]));
+        return Value::string(slots.empty() ? addressEnvironment() : addressSet(*slots[0]));
+    }
     if(name=="SYMBOL" || name=="VAR" || name=="VALUE") {
         rxbif_variables::VariableRouter router(bif.native,
             [&vars]{return frameNumeric(vars);},
@@ -149,6 +158,22 @@ inline Value dispatchBif(BifRuntime& bif, Variables& vars, const std::string& na
             });
         return router.invoke(name,slots);
     }
+#ifdef RX2CPP_KERNEL
+    // The compiled-in ooRexx kernel runs the REAL handler: validation, defaults, omitted arguments and error text included.
+    if(rxkernel::handles(name)) {
+        bool crossable=true;
+        std::vector<std::string> raw; std::vector<bool> present;
+        for(const auto& slot:slots) {
+            if(slot && slot->isObject()) { crossable=false; break; }
+            raw.push_back(slot ? slot->bytes : std::string()); present.push_back(static_cast<bool>(slot));
+        }
+        if(crossable) {
+            std::string out,code,text;
+            if(rxkernel::call(name,raw,present,out,code,text)) return Value::string(out);
+            throw SyntaxCondition(code,text,false);
+        }
+    }
+#endif
     // Supplier captures the CURRENT activation, including nested PROCEDURE.
     // A per-call context avoids retained references to expired routine locals.
     rxbif_breadth::Context current(bif.native,bif.dispatch.chainback,

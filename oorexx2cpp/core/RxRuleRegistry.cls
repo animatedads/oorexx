@@ -25,6 +25,9 @@
   rules~append(.RxStmtExit~new)
   rules~append(.RxStmtReturn~new)
   rules~append(.RxStmtInterpret~new)
+  rules~append(.RxStmtTrace~new)
+  rules~append(.RxStmtNop~new)
+  rules~append(.RxStmtAddress~new)
   rules~append(.RxStmtCall~new)
   rules~append(.RxStmtCompoundAssign~new)
   rules~append(.RxStmtMessage~new)
@@ -35,6 +38,9 @@
   return rules
 ::requires 'rules/StmtNumeric.cls'
 ::requires 'rules/StmtSay.cls'
+::requires 'rules/StmtTrace.cls'
+::requires 'rules/StmtNop.cls'
+::requires 'rules/StmtAddress.cls'
 ::requires 'rules/StmtDoUntil.cls'
 ::requires 'rules/StmtDoWhile.cls'
 ::requires 'rules/StmtDoForever.cls'

@@ -38,5 +38,26 @@ if grep -q rx_host_tier "$cpp"; then   # hosted tier: classes loaded from an emb
     echo "rx2cpp: hosted tier: $(grep -m1 RX2CPP_HOSTED "$cpp" | sed 's|^// RX2CPP_HOSTED:||') -- binary links librexx" >&2
     extra+=( -I"$OO_ROOT/include" -L"$OO_ROOT/lib" -Wl,-rpath,"$OO_ROOT/lib" -lrexx -lrexxapi )
 fi
-"${CXX:-g++}" -std=c++17 -O2 -Wall -Wextra -Werror -I"$ROOT/include" "$cpp" "${extra[@]}" -o "$native"
+if [[ -n "${RX2CPP_KERNEL:-}" ]]; then   # RX2CPP_KERNEL=<kernel_spike work dir>: BIFs run in the compiled-in ooRexx kernel
+    K=$RX2CPP_KERNEL; [[ -f "$K/b/lib/librexx.a" ]] || { echo "rx2cpp: no kernel in $K (run experiments/kernel_spike/build.sh)" >&2; exit 65; }
+    FL="$K/b/CMakeFiles/rexx.dir/flags.make"
+    KINC=$(grep CXX_INCLUDES "$FL" | sed 's/CXX_INCLUDES = //'); KDEF=$(grep CXX_DEFINES "$FL" | sed 's/CXX_DEFINES = //')
+    kobj="$(dirname -- "$native")/$(basename -- "$native").kernel.o"
+    # shellcheck disable=SC2086
+    "${CXX:-g++}" -std=gnu++11 -O2 -fno-lifetime-dse $KDEF $KINC -I"$K/src/interpreter/api" -I"$K/b" -I"$ROOT/kernel" -c "$ROOT/kernel/rx_kernel_bif.cpp" -o "$kobj"
+    extra+=( -DRX2CPP_KERNEL -I"$ROOT/kernel" "$kobj" "$K/b/lib/librexx.a" "$K/b/lib/librexxapi.a" -lpthread -ldl )
+    cp "$K/b/lib/rexx.img" "$(dirname -- "$native")/rexx.img"   # the kernel restores this image at start-up (found beside the executable)
+fi
+if [[ -n "${RX2CPP_KERNEL:-}" ]]; then
+    # strict warnings for the generated program; the kernel's own link-time warnings are not ours to fail on
+    gobj="$(dirname -- "$native")/$(basename -- "$native").gen.o"
+    cflags=( ); sources=( )
+    for item in "${extra[@]}"; do
+        case "$item" in -I*|-D*) cflags+=( "$item" );; esac
+    done
+    "${CXX:-g++}" -std=c++17 -O2 -Wall -Wextra -Werror -I"$ROOT/include" "${cflags[@]}" -c "$cpp" -o "$gobj"
+    "${CXX:-g++}" -std=c++17 -O2 -w -I"$ROOT/include" "$gobj" "${extra[@]}" -o "$native"
+else
+    "${CXX:-g++}" -std=c++17 -O2 -Wall -Wextra -Werror -I"$ROOT/include" "$cpp" "${extra[@]}" -o "$native"
+fi
 printf 'Native executable: %s (generated C++: %s)\n' "$native" "$cpp"

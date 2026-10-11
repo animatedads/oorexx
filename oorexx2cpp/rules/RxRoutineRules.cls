@@ -82,7 +82,12 @@
     s~skipSeparators
   end
   if \scope~allowsInnerLabels & s~atLabel then s~fail('labels inside ::ROUTINE are not implemented')
-  if scope~needsExplicitReturn & last \= 'RETURN' & last \= 'EXIT' then s~fail('internal routines currently require explicit trailing RETURN: ' || labelName)
+  atEnd = s~peek~kind == 'EOF'
+  if scope~needsExplicitReturn & last \= 'RETURN' & last \= 'EXIT' then do
+    /* Running off the END OF THE PROGRAM ends the program (implicit EXIT), whether reached by CALL or by a trap. */
+    if \atEnd then s~fail('a label that falls into another label is not implemented: ' || labelName)
+    ctx~line(3, 'throw rx::ProgramExit{0};')
+  end
   ctx~line(3, 'return std::nullopt;')
   if trapped then do
     ctx~line(3, '} catch (const std::exception& _rxError) {')

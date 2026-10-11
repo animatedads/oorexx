@@ -338,9 +338,38 @@ inline const Value *lookup(const Variables &vars, const std::string &name) {
     auto found = owner.find(name);
     return found == owner.end() ? nullptr : &found->second;
 }
+// TRACE / ADDRESS state (per thread). A compiled program has no trace output: settings that stay quiet are accepted,
+// settings that would print trace lines are refused loudly instead of silently ignored.
+inline std::string &traceSetting() { static thread_local std::string s = "N"; return s; }
+inline std::string &addressEnvironment() { static thread_local std::string s = "sh"; return s; }
+inline std::string traceSet(const Value &v) {
+    const std::string old = traceSetting();
+    std::string t = v.bytes;
+    std::size_t i = 0;
+    while (i < t.size() && (t[i] == '?' || t[i] == ' ' || (t[i] >= '0' && t[i] <= '9'))) ++i;
+    if (i >= t.size()) { traceSetting() = "N"; return old; }
+    const char c = static_cast<char>(std::toupper(static_cast<unsigned char>(t[i])));
+    if (c != 'O' && c != 'N' && c != 'F' && c != 'E')
+        throw std::runtime_error(std::string("TRACE setting '") + c + "' would produce trace output; not supported in compiled programs");
+    traceSetting() = std::string(1, c);
+    return old;
+}
+inline std::string addressSet(const Value &v) {
+    const std::string old = addressEnvironment();
+    addressEnvironment() = v.bytes;
+    return old;
+}
+// SIGNAL ON NOVALUE: while a TrapState has the trap armed, reading an unset variable raises NOVALUE.
+struct NoValueCondition : std::runtime_error {
+    std::string variable;
+    explicit NoValueCondition(std::string name) : std::runtime_error("NOVALUE: " + name), variable(std::move(name)) {}
+};
+inline thread_local const bool *novalueArmed = nullptr;
 inline Value get(const Variables &vars, const std::string &name) {
     const Value *v = lookup(vars, name);
-    return v ? *v : Value::string(name);
+    if (v) return *v;
+    if (novalueArmed && *novalueArmed) throw NoValueCondition(name);
+    return Value::string(name);
 }
 inline void set(Variables &vars, const std::string &name, Value value) {
     variableOwner(vars, name).insert_or_assign(name, std::move(value));
@@ -392,12 +421,27 @@ inline int uncaughtStatus(const std::string &what) {
 struct TrapState {
     bool syntaxOn = false;
     std::string syntaxLabel;
+    bool novalueOn = false;
+    std::string novalueLabel;
+    TrapState() = default;
+    TrapState(const TrapState &) = delete;
+    TrapState &operator=(const TrapState &) = delete;
+    ~TrapState() { if (novalueArmed == &novalueOn) novalueArmed = nullptr; }
     void on(const std::string &condition, const std::string &label) {
         if (condition == "SYNTAX") { syntaxOn = true; syntaxLabel = label; }
+        if (condition == "NOVALUE") { novalueOn = true; novalueLabel = label; novalueArmed = &novalueOn; }
     }
-    void off(const std::string &condition) { if (condition == "SYNTAX") syntaxOn = false; }
+    void off(const std::string &condition) {
+        if (condition == "SYNTAX") syntaxOn = false;
+        if (condition == "NOVALUE") { novalueOn = false; if (novalueArmed == &novalueOn) novalueArmed = nullptr; }
+    }
     // Rexx disables the trap when it fires.
     bool take(std::string &label, const std::exception &error, bool topLevel) {
+        if (dynamic_cast<const NoValueCondition *>(&error)) {
+            if (!novalueOn) return false;
+            novalueOn = false; if (novalueArmed == &novalueOn) novalueArmed = nullptr;
+            label = novalueLabel; return true;
+        }
         if (!syntaxOn) return false;
         const auto *raised = dynamic_cast<const SyntaxCondition *>(&error);
         if (raised && raised->skipInternalTraps && !topLevel) return false;
