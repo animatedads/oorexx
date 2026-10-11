@@ -6,9 +6,8 @@ OOREXX_SRC="${OOREXX_SRC:-/tmp/oorexx-src}"
 WORK="${WORK:-/tmp/oorexx-mvs24-cfront-bulkpass-dev16}"
 PIN="${PIN:-de1db87f486d430d1faa9151b8a2d5f328ab70f2}"
 
-mkdir -p "$WORK"/{mvs,compat,preprocessed,shadow,logs,reports}
-rm -f "$WORK"/preprocessed/* "$WORK"/shadow/* "$WORK"/logs/* "$WORK"/reports/* 2>/dev/null || true
-
+# Dev19: do not mutate a supplied source checkout or erase past output
+# before the source revision, toolchain and output-path checks succeed.
 say() { printf '\n==== %s ====\n' "$*"; }
 
 SWEEP_MODE="${SWEEP_MODE:-representative}"
@@ -62,21 +61,75 @@ for base in roots:
         print(rel)
 PY
 )"
-else
+elif [ "$SWEEP_MODE" = "residual" ]; then
+    # Exactly the nine dev16 failures; no 199/199 claim from this subset.
+    FILES="
+interpreter/execution/NativeActivation.cpp
+interpreter/instructions/CommandIOConfiguration.cpp
+interpreter/memory/Setup.cpp
+interpreter/package/LibraryPackage.cpp
+interpreter/runtime/InternalPackage.cpp
+interpreter/runtime/Interpreter.cpp
+interpreter/runtime/RexxUtilCommon.cpp
+interpreter/streamLibrary/FileNative.cpp
+interpreter/streamLibrary/StreamNative.cpp
+"
+elif [ "$SWEEP_MODE" = "representative" ]; then
     FILES="$REPRESENTATIVE_FILES"
+else
+    echo "Unsupported SWEEP_MODE=$SWEEP_MODE (use representative, residual or all)" >&2
+    exit 24
 fi
 
-say "0. Verify source pins"
-[ -d "$OOREXX_SRC/.git" ] || { echo "Missing ooRexx checkout"; exit 20; }
-git -C "$OOREXX_SRC" checkout --detach "$PIN" >/dev/null || exit 21
+say "0. Verify source pins and target toolchain before touching WORK"
+[ -d "$OOREXX_SRC" ] && git -C "$OOREXX_SRC" rev-parse --is-inside-work-tree 2>/dev/null | grep -qx true || {
+    echo "Missing ooRexx Git checkout" >&2; exit 20;
+}
+actual_pin="$(git -C "$OOREXX_SRC" rev-parse --verify HEAD 2>/dev/null)" || exit 21
+if [ "$actual_pin" != "$PIN" ]; then
+    echo "Incorrect ooRexx source: expected $PIN, found $actual_pin; checkout left untouched" >&2
+    exit 21
+fi
+if [ -n "$(git -C "$OOREXX_SRC" status --porcelain --untracked-files=all)" ]; then
+    echo "ooRexx checkout has modifications or untracked files; refusing unqualified source" >&2
+    exit 21
+fi
 CFRONT="$CFRONT_SRC/cfront"
-[ -x "$CFRONT" ] || { echo "Missing cfront"; exit 22; }
-
+[ -x "$CFRONT" ] || { echo "Missing cfront" >&2; exit 22; }
 CC370_SRC="${CC370_SRC:-/tmp/cc370-src}"
 XGCC="$CC370_SRC/build/gcc/xgcc"
-
-printf 'oorexx_commit=%s\n' "$(git -C "$OOREXX_SRC" rev-parse HEAD)"
+if [ "$SWEEP_MODE" = "residual" ] && [ ! -x "$XGCC" ]; then
+    echo "Residual sweep requires the cc370 xgcc toolchain" >&2
+    exit 23
+fi
+for rel in $FILES; do
+    [ -f "$OOREXX_SRC/$rel" ] || { echo "Missing pinned source: $rel" >&2; exit 25; }
+done
+# Reject a destructive WORK path or any symlinked output subtree.
+python3 - "$WORK" "$OOREXX_SRC" "$CFRONT_SRC" "$CC370_SRC" <<'PY_PREFLIGHT'
+from pathlib import Path
+import sys
+work = Path(sys.argv[1]).resolve()
+roots = [Path(p).resolve() for p in sys.argv[2:]]
+if Path(sys.argv[1]).is_symlink() or work == Path('/') or any(
+    work == root or work in root.parents or root in work.parents for root in roots
+):
+    sys.exit('Unsafe WORK directory: overlaps checkout or toolchain')
+for name in ('mvs', 'compat', 'preprocessed', 'shadow', 'logs', 'reports'):
+    if (work / name).is_symlink():
+        sys.exit('Unsafe WORK: symbolic output directory ' + name)
+PY_PREFLIGHT
+preflight_rc=$?
+[ "$preflight_rc" -eq 0 ] || exit 26
+printf 'oorexx_commit=%s\n' "$actual_pin"
 printf 'cfront_commit=%s\n' "$(git -C "$CFRONT_SRC" rev-parse HEAD 2>/dev/null || echo unknown)"
+printf 'sweep_mode=%s selected_units=%s\n' "$SWEEP_MODE" "$(printf '%s\n' $FILES | wc -l)"
+if [ "${MVS_PREFLIGHT_ONLY:-0}" = "1" ]; then
+    echo "PASS MVS source/toolchain/workdir preflight (no data modified)"
+    exit 0
+fi
+mkdir -p "$WORK"/{mvs,compat,preprocessed,shadow,logs,reports}
+rm -f "$WORK"/preprocessed/* "$WORK"/shadow/* "$WORK"/logs/* "$WORK"/reports/* 2>/dev/null || true
 
 # cfront cross-target data model: System/370 storage containers are 32-bit;
 # MVS 3.8J effective addressability remains 24-bit and is audited separately.
@@ -2391,9 +2444,11 @@ say "25. MVS SJLJ unwind runtime qualification"
 
 unwind_cf_rc=99
 unwind_cc370_rc=99
-if [ -f "$SCRIPT_DIR/MvsUnwind.cpp" ]; then
+UNWIND_SOURCE="$SCRIPT_DIR/runtime/MvsUnwind.cpp"
+[ -f "$UNWIND_SOURCE" ] || UNWIND_SOURCE="$SCRIPT_DIR/MvsUnwind.cpp"
+if [ -f "$UNWIND_SOURCE" ]; then
     set +e
-    "$CFRONT" "$CFRONT_XFLAG" <"$SCRIPT_DIR/MvsUnwind.cpp" \
+    "$CFRONT" "$CFRONT_XFLAG" <"$UNWIND_SOURCE" \
       >"$WORK/shadow/MvsUnwind.c" 2>"$WORK/logs/MvsUnwind.cfront.log"
     unwind_cf_rc=$?
     set -e 2>/dev/null || true
