@@ -18,7 +18,6 @@ reject() { # name source
   [ ! -e "$OUT/rej_$1/librx2cpp_rej_$1.so" ] || { echo "FAIL $1 published a library"; exit 1; }
   echo "PASS reject $1"
 }
-reject private_option $'::class A public\n::method init\n  expose v\n  use arg s\n  v = s\n::method get private\n  expose v\n  return v'
 reject two_guards     $'::class A public\n::method init\n  expose v\n  use arg s\n  v = s\n::method get guarded unguarded\n  expose v\n  return v'
 # single-class hybrid compiler cannot honour the option, so it must refuse
 printf '::class A public\n::method init\n  expose v\n  use arg s\n  v = s\n::method get unguarded\n  expose v\n  return v\n' > "$OUT/single.cls"

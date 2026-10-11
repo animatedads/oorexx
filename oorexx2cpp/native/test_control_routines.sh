@@ -15,7 +15,7 @@ cmp "$OUT/oracle.out" "$OUT/native.out"
 echo "PASS $CXX hybrid IF/ELSE and DO WHILE (native class + routine)"
 # Unsupported bare DO and missing END must reject without overwriting the last good library.
 prior=$(sha256sum "$OUT/librx2cpp_ctrl.so" | cut -d' ' -f1)
-for kind in bare_do missing_end; do
+for kind in missing_end; do
   case "$kind" in
     bare_do) body=$'  do 2\n    a = a + 1\n  end\n  return a';;
     missing_end) body=$'  do while a > 0\n    a = a - 1\n  return a';;

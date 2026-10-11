@@ -10,7 +10,15 @@
   name = s~next~text
   if pos('.', name) > 0 then s~fail('compound ATTRIBUTE names are unsupported')
   mode = 'BOTH'
-  if s~accept('GET') then mode = 'GET'
-  else if s~accept('SET') then mode = 'SET'
+  opts = .RxHybridMethodOptions~new
+  do while s~peek~kind == 'IDENT' & wordpos(s~peek~text, 'GET SET PUBLIC PRIVATE PROTECTED GUARDED UNGUARDED CLASS') > 0
+    word = s~next~text~upper
+    if word == 'GET' | word == 'SET' then do
+      if mode \== 'BOTH' then s~fail('duplicate or conflicting GET/SET')
+      mode = word
+    end
+    else opts~add(s, word)
+  end
   s~separator
-  ctx~addAttribute(name, mode)
+  ctx~addAttribute(name, mode, opts)
+::requires 'hybrid/rules/HybridMethodDirective.cls'

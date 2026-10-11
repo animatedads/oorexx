@@ -22,6 +22,7 @@
   rootOf = .directory~new
   do unit over units
     name = unit~className
+    classSide = unit~isClassSide
     self~identifier(name, 'class')
     countClasses += 1
     slotIndex += 1
@@ -29,21 +30,25 @@
     if isRoot then rootName = name
     else rootName = rootOf[unit~parentName]
     rootOf[name] = rootName
-    classes = classes || '    ' || .RxQuote~cpp(name) || ',' || '0a'x
+    if \classSide then classes = classes || '    ' || .RxQuote~cpp(name) || ',' || '0a'x
     factories = factories || '    if (className == ' || .RxQuote~cpp(name) || ') return makeGeneratedObject_' || name || '();' || '0a'x
-    source = source || '::class ' || name || ' public'
-    if unit~isMixin then source = source || ' mixinclass ' || unit~parentName
-    else if \isRoot then source = source || ' subclass ' || unit~parentName
-    if unit~mixinNames~items > 0 then do
-      source = source || ' inherit'
-      do mixin over unit~mixinNames
-        source = source || ' ' || mixin
+    if \classSide then do
+      source = source || '::class ' || name || ' public'
+      if unit~isMixin then source = source || ' mixinclass ' || unit~parentName
+      else if \isRoot then source = source || ' subclass ' || unit~parentName
+      if unit~mixinNames~items > 0 then do
+        source = source || ' inherit'
+        do mixin over unit~mixinNames
+          source = source || ' ' || mixin
+        end
       end
+      source = source || '0a'x
     end
-    source = source || '0a'x
     countInit = 0
     do method over unit~methods
       selector = method~selector
+      classOption = ''
+      if classSide then classOption = ' class'
       isSetter = selector~right(1) == '='
       selectorBase = selector
       if isSetter then selectorBase = selector~left(selector~length - 1)
@@ -54,27 +59,34 @@
       end
       if selector == 'RX2CPP_NATIVE_TOKEN' | selector == 'COPY' then
         raise syntax 40.1 array('rx2cpp: reserved native method ' || selector)
+      if method~isAbstract then do
+        abstractName = selector
+        if selector == '[]' | selector~right(1) == '=' then abstractName = '"' || selector || '"'
+        /* The interpreter owns abstract methods: declared, never implemented natively. */
+        source = source || '::method ' || abstractName || classOption || ' ' || method~declaration || ' abstract' || '0a'x
+        iterate
+      end
       if selector == 'INIT' then countInit += 1
       symbol = 'rx_native_' || name~lower || '_' || selectorSymbol
       if isSetter then symbol = symbol || '_set'
       cpp = cpp || 'RexxMethod2(RexxObjectPtr, ' || symbol || ', OSELF, self, ARGLIST, args)' || '0a'x
       cpp = cpp || '{ return rx2cpp::call(context, args, self, ' || .RxQuote~cpp(name) || ', ' || .RxQuote~cpp(selector) || ', ' || ,
-            (selector == 'INIT')~string || ', ' || method~attributeSetter~string || ', ' || slotIndex || ', ' || isRoot~string || ', ' || .RxQuote~cpp(rootName) || '); }' || '0a'x
+            (selector == 'INIT')~string || ', ' || method~attributeSetter~string || ', ' || slotIndex || ', ' || isRoot~string || ', ' || .RxQuote~cpp(rootName) || ', ' || classSide~string || '); }' || '0a'x
       entries = entries || '    REXX_METHOD(' || symbol || ', ' || symbol || '),' || '0a'x
-      guardOption = ''
-      if method~guard \== '' then guardOption = ' ' || method~guard
+      guardOption = ' ' || method~declaration
       declared = selector
       if isSetter | selector == '[]' then declared = '"' || selector || '"'
-      source = source || '::method ' || declared || guardOption || ' external "LIBRARY ' || packageName || ' ' || symbol || '"' || '0a'x
+      source = source || '::method ' || declared || classOption || guardOption || ' external "LIBRARY ' || packageName || ' ' || symbol || '"' || '0a'x
     end
     /* ::CONSTANT creates a getter on the class and instance. Delegate its
        declaration to ooRexx itself, not to the native instance registry. */
-    do constant over unit~constants
+    do constant over unit~constants   /* the class side has none */
       source = source || '::constant ' || constant[1]
       if constant[2] \== '' then source = source || ' ' || constant[2]
       source = source || '0a'x
     end
-    if isRoot then do
+    if classSide then nop
+    else if isRoot then do
       if countInit \= 1 then raise syntax 40.1 array('rx2cpp: root class ' || name || ' requires exactly one INIT')
       /* Only root owns token/lifetime; the inherited UNINIT releases all scopes. */
       source = source || '::method RX2CPP_NATIVE_TOKEN external "LIBRARY ' || packageName || ' rx_native_token"' || '0a'x

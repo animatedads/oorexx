@@ -13,7 +13,7 @@ cmp "$OUT/oracle.out" "$OUT/native.out"
 [[ $(wc -l < "$OUT/native.out") -eq 15 ]]
 echo "PASS $CXX 0/3/4/6/16/17 positional scalar arguments including missing, omitted and extras, private non-export parity"
 accepted=$(sha256sum "$OUT/librx2cpp_many.so" | cut -d' ' -f1)
-for kind in duplicate omission class_three function_call; do
+for kind in duplicate omission function_call; do
   case "$kind" in
     duplicate) header='::routine RX_DUP PUBLIC'; body=$'  use arg a,b,a\n  return a' ;;
     omission) header='::routine RX_OMIT PUBLIC'; body=$'  use arg a,,c\n  return a' ;;

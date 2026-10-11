@@ -16,8 +16,9 @@ source = charin(input, 1, chars(input))
 call stream input, 'C', 'CLOSE'
 unit = .RxHybridCompiler~new(source)~parse
 do m over unit~methods
-  if m~guard \== '' then raise syntax 40.1 array('rx2cpp: GUARDED/UNGUARDED requires the native package compiler')
+  if m~declaration \== '' | m~isAbstract then raise syntax 40.1 array('rx2cpp: method options (GUARDED/UNGUARDED/PRIVATE/PROTECTED/ABSTRACT) require the native package compiler')
 end
+if unit~classMethods~items > 0 then raise syntax 40.1 array('rx2cpp: CLASS methods require the native package compiler')
 cpp = .RxNativePackageEmitter~new~emit(unit, libraryName)
 state = stream(output, 'C', 'OPEN WRITE REPLACE')
 if left(state, 6) \= 'READY:' then raise syntax 40.1 array('rx2cpp: cannot write ' || output)

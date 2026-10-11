@@ -1,6 +1,8 @@
 /* A single validated, ooRexx-declared instance method. No shared globals. */
 ::class RxHybridMethod public
 ::attribute selector get
+::attribute options get
+::attribute isAbstract get
 ::attribute parameter get
 ::attribute parameters get
 ::attribute exposed get
@@ -12,12 +14,23 @@
 ::method markAttributeSetter
   expose attributeSetter
   attributeSetter = .true
+::method setOptions
+  expose options isAbstract guard
+  use arg options
+  guard = options~guard
+  isAbstract = options~isAbstract
+::method declaration
+  expose options guard
+  if options == .nil then return guard
+  return options~declaration
 ::method setGuard
   expose guard
   use arg guard
 ::method init
-  expose selector parameter parameters exposed instructions hasReturn seenStatement guard attributeSetter
+  expose selector parameter parameters exposed instructions hasReturn seenStatement guard attributeSetter options isAbstract
   use arg selector
+  options = .nil
+  isAbstract = .false
   guard = ''
   attributeSetter = .false
   parameter = ''

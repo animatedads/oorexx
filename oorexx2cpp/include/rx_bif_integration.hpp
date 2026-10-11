@@ -34,6 +34,18 @@ struct BifRuntime {
             if (!isolated) isolated=std::make_unique<rxbif_breadth::IsolatedOoRexx>(program);
             return isolated->call(name,args,numeric);
         },
+#elif defined(RX2CPP_HOST_API)
+        [](const std::string& name,
+           const std::vector<rxbif_breadth::Slot>& args,
+           const rxbif_breadth::NumericContext& numeric) -> Value {
+            std::vector<std::pair<bool, std::string>> in;
+            for (const auto& slot : args) {
+                if (slot && slot->isObject()) throw std::runtime_error("BIF " + name + ": object arguments need the interpreter");
+                in.emplace_back(static_cast<bool>(slot), slot ? slot->bytes : std::string());
+            }
+            return Value::string(rxobj::callBif(name, in, numeric.digits, numeric.fuzz,
+                                                numeric.form == rxbif_breadth::NumericForm::Engineering));
+        },
 #else
         rxbif_breadth::Handler{},
 #endif

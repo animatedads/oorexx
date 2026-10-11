@@ -109,10 +109,11 @@ public:
 }
 static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObjectPtr selfObj,
                           const std::string &className, const std::string &selector,
-                          bool initializer, bool attributeSetter, int scopeIndex, bool isRoot, const std::string &rootClass) {
+                          bool initializer, bool attributeSetter, int scopeIndex, bool isRoot, const std::string &rootClass, bool classSide) {
+    std::string failedInitToken;   // an INIT that throws must not leave its object registered
     try {
 #ifdef RX2CPP_HOST_API
-        rxobj::Scope hostScope(ctx->threadContext);
+        rxobj::Scope hostScope(ctx->threadContext, selfObj);
 #endif
         const size_t count = ctx->ArraySize(args);
         std::shared_ptr<CompiledObject> object;
@@ -121,6 +122,10 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
             if (ctx->GetObjectVariable("RX2CPP_NATIVE_ID") != NULLOBJECT)
                 throw std::runtime_error("native object already initialized");
             object = create(className);
+            // Register before the body runs: INIT may send messages (SELF~attr = ...) that arrive in this object.
+            token = Registry::instance().add(object);
+            ctx->SetObjectVariable("RX2CPP_NATIVE_ID", ctx->String(token.c_str()));
+            failedInitToken = token;
         } else {
             // The root class owns the single lifetime token. A derived method
             // asks the root method for it; normal ooRexx dispatch chooses that
@@ -136,11 +141,18 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
                 old = ctx->ForwardMessage(ctx->GetSelf(), "RX2CPP_NATIVE_TOKEN",
                                           definingRoot, ctx->NewArray(0));
             }
+            if (old == NULLOBJECT && classSide && isRoot) {
+                // The class object has no native state until its first CLASS method runs (no INIT CLASS declared).
+                object = create(className);
+                token = Registry::instance().add(object);
+                ctx->SetObjectVariable("RX2CPP_NATIVE_ID", ctx->String(token.c_str()));
+            } else {
             if (old == NULLOBJECT || ctx->CheckCondition())
                 throw std::runtime_error("native object not initialized or root token inaccessible");
             token = stringValue(ctx, old);
             object = isRoot ? Registry::instance().find(token)
                             : ScopeRegistry::instance().at(token, scopeIndex, className);
+            }
             if (!object) throw std::runtime_error("expired native object handle");
         }
         std::string output;
@@ -158,14 +170,15 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
         // selectors ending in = (including []=) may explicitly RETURN a value.
         if (attributeSetter) return NULLOBJECT;
         if (initializer) {
-            token = Registry::instance().add(object);
-            ctx->SetObjectVariable("RX2CPP_NATIVE_ID", ctx->String(token.c_str()));
+            failedInitToken.clear();
             return NULLOBJECT; // ooRexx INIT must not return an ordinary value
         }
         return ctx->NewString(output.data(), output.size());
     } catch (const PendingCondition &) {
+        if (!failedInitToken.empty()) Registry::instance().remove(failedInitToken);
         return NULLOBJECT;
     } catch (const std::exception &e) {
+        if (!failedInitToken.empty()) Registry::instance().remove(failedInitToken);
         report(ctx, e.what());
         return NULLOBJECT;
     }

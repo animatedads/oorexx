@@ -29,6 +29,21 @@
         operations~append('rx::ParseOp::absolute(' || position || ')')
         patterns = patterns + 1
       end
+      when s~accept('=') then do
+        if s~accept('(') then do
+          if s~peek~kind \= 'IDENT' then s~fail('PARSE variable position requires a symbol')
+          name = s~next~text
+          s~expect(')')
+          operations~append('rx::ParseOp::absoluteValue(' || .RxCompoundSymbols~load(name) || ')')
+        end
+        else if self~integerPosition(s~peek) then do
+          position = s~next~text
+          if position~length > 18 then s~fail('PARSE position outside supported int64 range')
+          operations~append('rx::ParseOp::absolute(' || position || ')')
+        end
+        else s~fail('PARSE = pattern requires an integer or (variable)')
+        patterns = patterns + 1
+      end
       when s~accept('+') then do
         if \self~integerPosition(s~peek) then s~fail('PARSE + pattern requires an integer position')
         offset = s~next~text

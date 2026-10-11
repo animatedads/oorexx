@@ -11,6 +11,7 @@ namespace rxobj {
 using Arg = rxkernel::Arg; using Result = rxkernel::Result;
 inline void *findClass(const std::string &n) { return rxkernel::findClass(n); }
 inline void release(void *h) { rxkernel::release(h); }
+inline void *selfHandle() { return nullptr; }   // the kernel backend has no receiver
 inline bool send(void *t, const std::string &s, const std::vector<Arg> &a, Result &r, std::string &c, std::string &x) {
     return rxkernel::send(t, s, a, r, c, x);
 }
@@ -21,12 +22,18 @@ namespace rxobj {
 struct Arg { void *obj = nullptr; std::string bytes; };
 struct Result { int kind = 0; std::string bytes; void *obj = nullptr; };
 inline thread_local RexxThreadContext *current = nullptr;
-// Set by every native method/routine entry for the duration of the call.
+inline thread_local RexxObjectPtr currentSelf = NULLOBJECT;
+// Set by every native method/routine entry for the duration of the call (self is NULLOBJECT in routines).
 struct Scope {
-    RexxThreadContext *previous;
-    explicit Scope(RexxThreadContext *c) : previous(current) { current = c; }
-    ~Scope() { current = previous; }
+    RexxThreadContext *previous; RexxObjectPtr previousSelf;
+    explicit Scope(RexxThreadContext *c, RexxObjectPtr self = NULLOBJECT)
+        : previous(current), previousSelf(currentSelf) { current = c; currentSelf = self; }
+    ~Scope() { current = previous; currentSelf = previousSelf; }
 };
+inline void *selfHandle() {
+    if (!current || currentSelf == NULLOBJECT) return nullptr;
+    return (void *)current->RequestGlobalReference(currentSelf);
+}
 inline RexxThreadContext *need() {
     if (!current) throw std::runtime_error("interpreter object used outside a native entry");
     return current;
@@ -58,6 +65,44 @@ inline bool send(void *target, const std::string &selector, const std::vector<Ar
         out.kind = 1; out.bytes.assign(t->StringData(str), t->StringLength(str));
     } else { out.kind = 2; out.obj = (void *)t->RequestGlobalReference(r); }
     return true;
+}
+// Delegated BIFs run in the host interpreter: a tiny routine per (name, omission pattern, NUMERIC settings), cached.
+inline std::string callBif(const std::string &name, const std::vector<std::pair<bool, std::string>> &args,
+                           std::size_t digits, std::size_t fuzz, bool engineering, const std::string &directives = std::string()) {
+    RexxThreadContext *t = need();
+    static thread_local std::unordered_map<std::string, RexxRoutineObject> cache;
+    std::string source = "numeric digits " + std::to_string(digits) + "; numeric fuzz " + std::to_string(fuzz) +
+                         "; numeric form " + (engineering ? "engineering" : "scientific") + "; return " + name + "(";
+    for (std::size_t i = 0; i < args.size(); i++) {
+        if (i) source += ",";
+        if (args[i].first) source += "arg(" + std::to_string(i + 1) + ")";
+    }
+    source += ")";
+    if (!directives.empty()) source += "\n" + directives + "\n";
+    auto it = cache.find(source);
+    RexxRoutineObject routine;
+    if (it == cache.end()) {
+        routine = t->NewRoutine("rx2cpp_bif", source.c_str(), source.size());
+        if (routine == NULLOBJECT) throw std::runtime_error("cannot create BIF routine for " + name);
+        t->RequestGlobalReference((RexxObjectPtr)routine);
+        cache.emplace(source, routine);
+    } else routine = it->second;
+    RexxArrayObject arr = t->NewArray(args.size());
+    for (const auto &a : args) {
+        if (a.first) t->ArrayAppend(arr, (RexxObjectPtr)t->NewString(a.second.data(), a.second.size()));
+        else t->ArrayAppend(arr, (RexxObjectPtr)t->Nil());
+    }
+    RexxObjectPtr r = t->CallRoutine(routine, arr);
+    if (t->CheckCondition()) {
+        RexxCondition cd; t->DecodeConditionInfo(t->GetConditionInfo(), &cd);
+        std::string code = std::to_string(cd.code / 1000) + "." + std::to_string(cd.code % 1000);
+        std::string text = cd.message ? t->ObjectToStringValue(cd.message) : "error in " + name;
+        t->ClearCondition();
+        throw rx::SyntaxCondition(code, text, false);
+    }
+    if (r == NULLOBJECT) return std::string();
+    RexxStringObject str = t->ObjectToString(r);
+    return std::string(t->StringData(str), t->StringLength(str));
 }
 }
 #endif
@@ -108,6 +153,12 @@ struct EnvObject final : ObjectDispatch {
         return r.bytes;
     }
 };
+// SELF inside a native method is the receiver, as the interpreter sees it.
+inline Value selfObject() {
+    void *h = rxobj::selfHandle();
+    if (!h) throw std::runtime_error("SELF is not available here");
+    return Value::fromObject(std::make_shared<EnvObject>(h));
+}
 // .NAME environment symbols resolve to the interpreter's own classes (.ARRAY, .DIRECTORY, .LIST, ...).
 inline Value envClass(const std::string &name) {
     void *h = rxobj::findClass(name);

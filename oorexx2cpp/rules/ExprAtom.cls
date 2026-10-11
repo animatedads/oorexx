@@ -38,6 +38,10 @@
       end
       s~fail('unsupported environment class .' || t~text)
     end
+    when t~kind == 'IDENT' & t~text == 'SELF' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' then do
+      s~next
+      return 'rx::selfObject()'
+    end
     when t~kind == 'IDENT' then do
       if wordpos(t~text, 'THEN TO BY DO UNTIL ELSE END IF EXIT') > 0 then s~fail('reserved word in expression')
       s~next

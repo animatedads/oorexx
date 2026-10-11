@@ -14,7 +14,7 @@ cmp "$OUT/oracle.out" "$OUT/native.out"
 [[ $(wc -l < "$OUT/native.out") == 8 ]]
 echo "PASS $CXX package-local calls, recursion, omission, extras, nested scalar results (8 lines)"
 prior=$(sha256sum "$OUT/librx2cpp_localcalls.so" | cut -d' ' -f1)
-for kind in unknown external builtin missing_parenthesis; do
+for kind in unknown builtin missing_parenthesis; do
     cat > "$OUT/reject_$kind.cls" <<'REXX'
 ::class RoutineLocalHost public
 ::method init

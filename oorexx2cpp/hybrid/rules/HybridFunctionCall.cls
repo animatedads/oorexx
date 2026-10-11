@@ -11,6 +11,9 @@
      path, so reject rather than invoke the wrong local routine. */
   if local & builtin then -
     s~fail('built-in precedence over native package routine is not implemented: ' || name)
+  external = .false
+  if .local~rx2cpp.externals~isA(.directory) then external = .local~rx2cpp.externals~hasIndex(name~upper)
+  if external & \local & \builtin then return self~parseExternal(ctx, name)
   if \local & \(builtin & .RxBuiltinRules~externalEnabled) then -
     s~fail('native package routine/function invocation is not yet supported: ' || name)
   if \local then return self~parseBuiltin(ctx, name)
@@ -37,6 +40,27 @@
   end
   code = code || 'return rx::Value::string(rx2cpp::makeGeneratedObject_RX2CPP_ROUTINE_IMPL()->invokeMany('
   return code || .RxQuote~cpp(name) || ', _rxArgList)); }())'
+/* EXTERNAL library routines declared in the package run through the host interpreter (declaration carried into the helper routine source). */
+::method parseExternal
+  use arg ctx, name
+  s = ctx~stream
+  s~expect('(')
+  args = .array~new
+  if \s~is(')') then do
+    do forever
+      if s~is(',') | s~is(')') then args~append('RX2CPP_OMITTED')
+      else args~append(ctx~compareExpr~parse(ctx))
+      if \s~accept(',') then leave
+    end
+  end
+  s~expect(')')
+  code = '([&]() -> rx::Value { std::vector<std::pair<bool, std::string>> _rxA; '
+  do argExpr over args
+    if argExpr == 'RX2CPP_OMITTED' then code = code || '_rxA.emplace_back(false, std::string()); '
+    else code = code || '_rxA.emplace_back(true, (' || argExpr || ').bytes); '
+  end
+  decl = .local~rx2cpp.externals[name~upper]
+  return code || 'return rx::Value::string(rxobj::callBif(' || .RxQuote~cpp(name) || ', _rxA, vars.numeric.digits, vars.numeric.fuzz, vars.numeric.engineering, ' || .RxQuote~cpp(decl) || ')); }())'
 /* Built-ins use the SAME dispatch as standalone programs (rx::dispatchBif): one function-resolution path. */
 ::method parseBuiltin
   use arg ctx, name

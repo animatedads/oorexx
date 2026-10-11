@@ -100,10 +100,6 @@
         self~reject(start, 'unknown or forward parent ' || unit~parentName)
       if unit~methods~items == 0 then
         self~reject(start, 'subclass with no native methods')
-      do m over unit~methods
-        if m~selector == 'INIT' then
-          self~reject(start, 'subclass INIT requires explicit SUPER dispatch (not implemented)')
-      end
     end
     graphRules~validate(unit, names, definitions, roots, scopes)
     names[name] = .true
@@ -111,6 +107,7 @@
     if unit~parentName == '' then roots[name] = name
     else roots[name] = roots[unit~parentName]
     units~append(unit)
+    if unit~classMethods~items > 0 then units~append(.RxHybridClassSide~new(unit))
   end
   return units
 ::method reject private

@@ -20,9 +20,10 @@
 ::attribute mixinNames get
 ::attribute allowInheritance get
 ::attribute methods get
+::attribute classMethods get
 ::attribute constants get
 ::method init
-  expose stream atomExpr builtinExpr localRoutines messageExpr unaryExpr mulExpr addExpr compareExpr logicalExpr rules current className methods constants parentName allowInheritance isMixin mixinNames controlDepth scopes
+  expose stream atomExpr builtinExpr localRoutines messageExpr unaryExpr mulExpr addExpr compareExpr logicalExpr rules current className methods classMethods constants parentName allowInheritance isMixin mixinNames controlDepth scopes
   use arg source, allowInheritance, localRoutines = .nil
   if localRoutines == .nil then localRoutines = .array~new
   if arg(2, 'O') then allowInheritance = .false
@@ -44,6 +45,7 @@
   controlDepth = 0
   className = ''
   methods = .array~new
+  classMethods = .array~new
   constants = .array~new
 ::method setParentName
   expose parentName allowInheritance
@@ -60,8 +62,10 @@
   use arg name
   if \allowInheritance then self~stream~fail('INHERIT requires native package compiler')
   mixinNames~append(name)
+::method isClassSide
+  return .false
 ::method checkName private
-  expose methods constants
+  expose methods classMethods constants
   use arg name
   if name == 'INIT' | name == 'UNINIT' | name == 'COPY' | name == 'RX2CPP_NATIVE_TOKEN' then
     self~stream~fail('reserved class selector ' || name)
@@ -73,21 +77,25 @@
     if entry[1] == name then self~stream~fail('duplicate class selector ' || name)
   end
 ::method addAttribute
-  expose methods
-  use arg name, mode
+  expose methods classMethods
+  use arg name, mode, options
   self~checkName(name)
+  target = methods
+  if arg(3, 'E') then if options~isClass then target = classMethods
   if mode == 'BOTH' | mode == 'GET' then do
     getter = .RxHybridMethod~new(name)
+    if arg(3, 'E') then getter~setOptions(options)
     getter~returnValue('rx::get(fields_, ' || .RxQuote~cpp(name) || ')')
-    methods~append(getter)
+    target~append(getter)
   end
   if mode == 'BOTH' | mode == 'SET' then do
     setter = .RxHybridMethod~new(name || '=')
+    if arg(3, 'E') then setter~setOptions(options)
     setter~markAttributeSetter
     setter~setParameter('VALUE')
     setter~addInstruction('rx::set(fields_, ' || .RxQuote~cpp(name) || ', rx::Value::string(arguments.size() > 0 && arguments[0] ? *arguments[0] : std::string()));')
     setter~returnValue('rx::Value::string("")')
-    methods~append(setter)
+    target~append(setter)
   end
 ::method addConstant
   expose constants
@@ -183,7 +191,7 @@
 ::method hostedEnabled
   return .false
 ::method parse
-  expose stream className methods constants current rules scopes
+  expose stream className methods classMethods constants current rules scopes
   s = stream
   s~skipSeparators
   className = .RxHybridClassDirective~new~parse(self)
@@ -207,23 +215,28 @@
       if entry[1] == methodName then s~fail('duplicate method and constant ' || methodName)
     end
     do method over methods
-      if method~selector == methodName then s~fail('duplicate method ' || methodName)
+      if method~selector == methodName & \directive[3]~isClass then s~fail('duplicate method ' || methodName)
+    end
+    do method over classMethods
+      if method~selector == methodName & directive[3]~isClass then s~fail('duplicate class method ' || methodName)
     end
     if className == 'RX2CPP_ROUTINE_IMPL' then scopes~setScope('::routine ' || methodName, 'ROUTINE')
     else scopes~setScope('::method ' || methodName, 'METHOD')
     current = .RxHybridMethod~new(methodName)
-    current~setGuard(directive[2])
+    current~setOptions(directive[3])
     s~skipSeparators
     do while s~peek~kind \= 'EOF' & \s~is('::')
       if current~hasReturn then s~fail('statement after RETURN')
+      if current~isAbstract then s~fail('an ABSTRACT method has no body')
       self~emitStatement
       s~skipSeparators
     end
-    if current~selector \= 'INIT' & \current~hasReturn then s~fail('non-INIT method must RETURN a scalar value')
-    methods~append(current)
+    if current~selector \= 'INIT' & \current~hasReturn & \current~isAbstract then current~returnValue('rx::Value::string(std::string())')
+    if directive[3]~isClass then classMethods~append(current)
+    else methods~append(current)
     scopes~endScope
   end
-  if methods~items == 0 & constants~items == 0 then s~fail('class contains no methods or constants')
+  if methods~items == 0 & classMethods~items == 0 & constants~items == 0 then s~fail('class contains no methods or constants')
   if className \= 'RX2CPP_ROUTINE_IMPL' then scopes~endScope
   return self
 ::requires 'core/RxStream.cls'
@@ -252,3 +265,26 @@
   return .true
 ::method isEntryFunction
   return .false
+/* The class-object side of a native class: its CLASS methods and attributes, with their own generated state object.
+   It is declared inside the same ::class section and shares no fields with the instances. */
+::class RxHybridClassSide public
+::attribute owner get
+::attribute className get
+::attribute methods get
+::method init
+  expose owner className methods
+  use arg owner
+  className = owner~className || '__CLASS'
+  methods = owner~classMethods
+::method constants
+  return .array~new
+::method parentName
+  return ''
+::method isMixin
+  return .false
+::method mixinNames
+  return .array~new
+::method isClassSide
+  return .true
+::method classMethods
+  return .array~new

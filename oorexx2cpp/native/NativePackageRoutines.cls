@@ -101,6 +101,8 @@
           self~reject(start, 'EXTERNAL routine must not have an executable body')
       end
       externalDeclarations~append(line)
+      if \.local~rx2cpp.externals~isA(.directory) then .local~put(.directory~new, "RX2CPP.EXTERNALS")
+      .local~rx2cpp.externals[name~upper] = line
     end
     else do
       names~append(name)

@@ -42,6 +42,14 @@ struct ParseOp {
     static ParseOp absolute(std::int64_t n) { return {Kind::Absolute, n, {}}; }
     static ParseOp relative(std::int64_t n) { return {Kind::Relative, n, {}}; }
     static ParseOp literal(std::string s) { return {Kind::Literal, 0, std::move(s)}; }
+    static ParseOp absoluteValue(const Value &v) {
+        if (v.isObject()) throw std::runtime_error("PARSE position must be a whole number");
+        std::size_t b = v.bytes.find_first_not_of(' '), e = v.bytes.find_last_not_of(' ');
+        std::string t = b == std::string::npos ? std::string() : v.bytes.substr(b, e - b + 1);
+        if (t.empty() || t.size() > 18 || t.find_first_not_of("0123456789") != std::string::npos)
+            throw std::runtime_error("PARSE position must be a whole number");
+        return absolute(std::stoll(t));
+    }
     static ParseOp literalValue(const Value &v) {
         if (v.isObject()) throw std::runtime_error("PARSE object delimiter conversion unsupported");
         if (v.bytes.empty()) throw std::runtime_error("empty dynamic PARSE delimiter unsupported");
