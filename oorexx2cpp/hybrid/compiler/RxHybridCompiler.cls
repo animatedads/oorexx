@@ -22,13 +22,14 @@
 ::attribute methods get
 ::attribute constants get
 ::method init
-  expose stream atomExpr builtinExpr localRoutines messageExpr unaryExpr mulExpr addExpr compareExpr logicalExpr rules current className methods constants parentName allowInheritance isMixin mixinNames controlDepth
+  expose stream atomExpr builtinExpr localRoutines messageExpr unaryExpr mulExpr addExpr compareExpr logicalExpr rules current className methods constants parentName allowInheritance isMixin mixinNames controlDepth scopes
   use arg source, allowInheritance, localRoutines = .nil
   if localRoutines == .nil then localRoutines = .array~new
   if arg(2, 'O') then allowInheritance = .false
   parentName = ''
   isMixin = .false
   mixinNames = .array~new
+  scopes = .RxWhenDealingWith~new
   stream = .RxStream~new(.RxLexer~new(source)~scan)
   atomExpr = .RxExprAtom~new
   builtinExpr = .RxHybridFunctionCall~new
@@ -107,7 +108,12 @@
   if controlDepth <= 0 then self~stream~fail('control stack underflow')
   controlDepth -= 1
 ::method emitStatement
+  expose scopes
+  use arg depth
+  scopes~rexxLogic(self, depth)
+::method rexxInstruction
   expose rules
+  use arg depth
   s = self~stream
   if s~peek~kind == 'EOF' | s~is('::') | s~is('ELSE') | s~is('END') then
     s~fail('expected executable statement')
@@ -115,10 +121,12 @@
   if rule == .nil then s~fail('unsupported class method instruction')
   rule~emit(self)
 ::method parse
-  expose stream className methods constants current rules
+  expose stream className methods constants current rules scopes
   s = stream
   s~skipSeparators
   className = .RxHybridClassDirective~new~parse(self)
+  /* Synthetic class is an implementation detail: its bodies are package ROUTINEs. */
+  if className \= 'RX2CPP_ROUTINE_IMPL' then scopes~setScope('::class ' || className, 'CLASS')
   s~skipSeparators
   do while s~peek~kind \= 'EOF'
     if s~lookAheadText(1) == 'ATTRIBUTE' then do
@@ -139,6 +147,8 @@
     do method over methods
       if method~selector == methodName then s~fail('duplicate method ' || methodName)
     end
+    if className == 'RX2CPP_ROUTINE_IMPL' then scopes~setScope('::routine ' || methodName, 'ROUTINE')
+    else scopes~setScope('::method ' || methodName, 'METHOD')
     current = .RxHybridMethod~new(methodName)
     current~setGuard(directive[2])
     s~skipSeparators
@@ -149,8 +159,10 @@
     end
     if current~selector \= 'INIT' & \current~hasReturn then s~fail('non-INIT method must RETURN a scalar value')
     methods~append(current)
+    scopes~endScope
   end
   if methods~items == 0 & constants~items == 0 then s~fail('class contains no methods or constants')
+  if className \= 'RX2CPP_ROUTINE_IMPL' then scopes~endScope
   return self
 ::requires 'core/RxStream.cls'
 ::requires 'core/RxLexer.cls'
@@ -170,3 +182,5 @@
 ::requires 'hybrid/rules/HybridAttributeDirective.cls'
 ::requires 'hybrid/rules/HybridConstantDirective.cls'
 ::requires 'hybrid/rules/HybridFunctionCall.cls'
+
+::requires 'core/RxWhenDealingWith.cls'

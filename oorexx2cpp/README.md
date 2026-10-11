@@ -1,3 +1,9 @@
+## v0.30.16 — WhenDealingWith scope entry
+
+A shared lexical code-unit scope (`core/RxWhenDealingWith.cls`) now stands between the standalone/hybrid compiler entry points and their existing clause rule registries. Package prologue, class, method, package routine, internal LABEL, PROCEDURE, and SIGNAL have explicit scope/activation policies; the synthetic native routine class is classified as a package routine. `::OPTIONS PROLOG/NOPROLOG` is retained as a package option. **This is the first structural integration, not yet a complete unified statement grammar or native `.so` prologue implementation**. The standalone and hybrid rule registries, native BIF activation bridge and complete prologue-on-`::REQUIRES` semantics still require consolidation. [Design, limits and tests](SCOPE_ENGINE_V0316.md).
+
+---
+
 ## v0.30.15 — Native package-local routine calls
 
 Compiled native package routines now invoke other compiled package-local `::ROUTINE`s, including private forward declarations, through positional scalar argument vectors preserving missing slots. Each invocation owns an independent activation; recursive and nested calls pass GCC/Clang interpreter parity. The ooRexx library ABI continues to use `RexxArrayObject ARGLIST` (1-based positions); object-valued argument preservation and `PARSE ARG` string conversion are separate future work. Original Crypto advances to the `X2D` BIF at line 1164 without producing a complete `.so`. See `QUALIFICATION_V0315.md` and `native/test_localcalls.sh`.

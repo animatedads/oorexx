@@ -14,12 +14,14 @@
 ::attribute compareExpr get
 ::attribute logicalExpr get
 ::method init
-  expose libraries stream atomExpr builtinExpr messageExpr unaryExpr mulExpr addExpr compareExpr logicalExpr registry emitter serial sourceName rexxVersion loopScopes inRoutine routineKind packageOptions hostedClasses hostUnit hostRoutines routines lastMainInstruction programClasses methodExposes
+  expose libraries stream atomExpr builtinExpr messageExpr unaryExpr mulExpr addExpr compareExpr logicalExpr registry emitter serial sourceName rexxVersion loopScopes inRoutine routineKind packageOptions hostedClasses hostUnit hostRoutines routines lastMainInstruction programClasses methodExposes scopes
   use arg source, inputName, hostUnit = ''
   sourceName = inputName
   hostRoutines = .RxHostSplit~routineNames(hostUnit)
   programClasses = .RxProgramClasses~new(source)
   source = programClasses~programSource
+  scopes = .RxWhenDealingWith~new
+  scopes~setScope(source, 'PROLOGUE')
   methodExposes = .array~new
   parse version rexxVersion
   stream = .RxStream~new(.RxLexer~new(source)~scan)
@@ -40,6 +42,7 @@
   routines = .RxRoutineRules~discover(stream)
   libraries = .RxLibraryRules~discover(stream)
   packageOptions = .RxOptionsRules~discover(stream)
+  scopes~setPrologPolicy(packageOptions~at('PROLOG'))
   if packageOptions~at('USED') & programClasses~definitions~items > 0 then -
     stream~fail('::OPTIONS together with local ::CLASS definitions is not implemented')
   registry = .RxRuleRegistry~new
@@ -101,7 +104,7 @@
 ::method compileMethod
   expose emitter inRoutine methodExposes
   use arg methodName
-  self~beginRoutine(methodName)
+  self~beginRoutine(methodName, 'METHOD')
   s = self~stream
   s~skipSeparators
   if s~accept('EXPOSE') then do
@@ -135,12 +138,15 @@
   if routines[name] == 'ROUTINE' & .RxBuiltinRules~isBuiltinName(name) then return .false
   return .true
 ::method beginRoutine
-  expose inRoutine routineName routineKind
+  expose inRoutine routineName routineKind scopes
   use arg routineName = '', routineKind = 'LABEL'
+  if scopes~current~kind == 'PROLOGUE' then scopes~endScope
+  scopes~setScope(routineName, routineKind)
   inRoutine = .true
 ::attribute routineName get
 ::method endRoutine
-  expose inRoutine routineKind
+  expose inRoutine routineKind scopes
+  scopes~endScope
   inRoutine = .false
   routineKind = 'LABEL'
 ::method lastMainInstruction
@@ -152,6 +158,10 @@
   if inRoutine then emitter~routineLine(depth, source)
   else emitter~line(depth, source)
 ::method statement
+  expose scopes
+  use arg depth
+  scopes~rexxLogic(self, depth)
+::method rexxInstruction
   expose registry
   use arg depth
   rule = registry~find(self)
@@ -246,3 +256,5 @@
 ::requires 'core/RxCppEmitter.cls'
 
 ::requires 'rules/RxProgramClasses.cls'
+
+::requires 'core/RxWhenDealingWith.cls'

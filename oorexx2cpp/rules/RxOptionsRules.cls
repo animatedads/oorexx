@@ -12,6 +12,7 @@
   digits = 9
   fuzz = 0
   form = 'SCIENTIFIC'
+  prologEnabled = .true
   used = .false
   i = 1
   do while i <= tokens~items
@@ -54,7 +55,10 @@
           form = f~text
           i = i + 2
         end
-        when word == 'PROLOG' | word == 'NOPROLOG' then i = i + 1
+        when word == 'PROLOG' | word == 'NOPROLOG' then do
+          prologEnabled = word == 'PROLOG'
+          i = i + 1
+        end
         otherwise do
           stream~position(i)
           stream~fail('::OPTIONS ' || word || ' is not implemented')
@@ -72,6 +76,7 @@
   opts~put(fuzz, 'FUZZ')
   opts~put(form, 'FORM')
   opts~put(used, 'USED')
+  opts~put(prologEnabled, 'PROLOG')
   return opts
 /* A symbol or string holding a whole number (1E2 is 100); sign tokens are rejected like the interpreter. */
 ::method wholeValue class
