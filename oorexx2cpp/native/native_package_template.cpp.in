@@ -48,7 +48,7 @@ public:
     }
 };
 static std::string stringValue(RexxMethodContext *ctx, RexxObjectPtr object) {
-    if (object == NULLOBJECT || !ctx->IsOfType(object, "STRING"))
+    if (object == NULLOBJECT || !(ctx->IsString(object) || ctx->IsOfType(object, "STRING")))
         throw std::runtime_error("only ooRexx String scalar values are supported");
     auto s = ctx->ObjectToString(object);
     return std::string(ctx->StringData(s), ctx->StringLength(s));
@@ -237,7 +237,7 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
 }
 
 [[maybe_unused]] static std::string rx2cpp_routine_string(RexxCallContext *ctx, RexxObjectPtr object) {
-    if (object == NULLOBJECT || !ctx->IsOfType(object, "STRING"))
+    if (object == NULLOBJECT || !(ctx->IsString(object) || ctx->IsOfType(object, "STRING")))
         throw std::runtime_error("native routine accepts only ooRexx String scalar values");
     auto s = ctx->ObjectToString(object);
     return std::string(ctx->StringData(s), ctx->StringLength(s));
