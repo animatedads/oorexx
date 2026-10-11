@@ -19,6 +19,9 @@ Steps
        [ello**]
        substr('hello',2,,'*') -> [ello]
 5. Confirm the files exist: `ls -la $W/probe $W/builtin_call $W/direct_call $W/rexx.img`  (all four must be listed).
+6. Show the version of the COMPILED-IN rexx (not the installed one): `cd $W/b/lib && ../bin/rexx -v | head -2`
+   Expect: `Open Object Rexx Version 5.3.0 r0` and a Build date of today. Also run: `../bin/rexx -e "say reverse('abc') x2d('ff')"` (expect `cba 255`).
+   Plain `rexx -v` is the INSTALLED interpreter and says r13196; that one is the reference, not our build.
 
 Expect: the 4 files above exist and the log contains `[ello**]`.
 If a file is missing or the log has `error`: copy the last 40 lines of the log into the report and stop.
@@ -26,6 +29,7 @@ Report: create `tasks/results/T1.md` with the Write/Edit tool (a file-writing to
 Contents: source commit, work dir, PASS or FAIL, and these three things (the log's last lines are only compiler warnings, do not use them):
   a. `ls -la $W/probe $W/builtin_call $W/direct_call $W/rexx.img`  (paste the output)
   b. `grep -n "ello" tasks/results/T1_build.log`  (paste the output; it must show [ello] and [ello**])
+  d. the output of the `../bin/rexx -v` command from step 6
   c. `grep -c "error:" $W/b/make.log`  (paste the number; it must be 0)
 The "left('abc',,'*') -> Rexx error raised by the kernel" line is CORRECT and is not a failure. Check it exists with `ls -la tasks/results/T1.md`.
 Self-check before finishing: `grep -c FAIL tasks/results/T1.md` must print 0 when the result is PASS (remove any old FAIL text from an earlier run).
