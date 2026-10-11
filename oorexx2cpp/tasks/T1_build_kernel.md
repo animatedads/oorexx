@@ -23,6 +23,10 @@ Steps
 Expect: the 4 files above exist and the log contains `[ello**]`.
 If a file is missing or the log has `error`: copy the last 40 lines of the log into the report and stop.
 Report: create `tasks/results/T1.md` with the Write/Edit tool (a file-writing tool, NOT a chain of echo commands).
-Contents: source commit, work dir, PASS or FAIL, and the last 20 lines of `tasks/results/T1_build.log`
-(get them with `tail -n 20 tasks/results/T1_build.log`, then paste). Check it exists with `ls -la tasks/results/T1.md`.
+Contents: source commit, work dir, PASS or FAIL, and these three things (the log's last lines are only compiler warnings, do not use them):
+  a. `ls -la $W/probe $W/builtin_call $W/direct_call $W/rexx.img`  (paste the output)
+  b. `grep -n "ello" tasks/results/T1_build.log`  (paste the output; it must show [ello] and [ello**])
+  c. `grep -c "error:" $W/b/make.log`  (paste the number; it must be 0)
+The "left('abc',,'*') -> Rexx error raised by the kernel" line is CORRECT and is not a failure. Check it exists with `ls -la tasks/results/T1.md`.
+Self-check before finishing: `grep -c FAIL tasks/results/T1.md` must print 0 when the result is PASS (remove any old FAIL text from an earlier run).
 Do not commit the build directory. Commit only `tasks/results/T1.md` and `tasks/results/T1_build.log`.

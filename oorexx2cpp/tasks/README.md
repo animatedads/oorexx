@@ -7,7 +7,7 @@ Rules for every card
 2. Work only in `tasks/results/` and any file the card names. Never edit `external/`, `core/`, `rules/`, `include/`, `inspector/`.
 3. If a command fails or output differs from "Expect", do NOT fix the code. Copy the full output into the report and stop.
 4. Never run two builds at once. Never use `sleep` longer than 60 seconds. Never poll in a loop.
-5. Commit only the files the card names. Commit message = one line of what you did, then these two lines:
+5. Commit LOCALLY (git add the named files, git commit). NEVER git push; Tom pushes. Do not ask whether to commit: the card says to. Commit only the files the card names. Commit message = one line of what you did, then these two lines:
    `Architecture: Tom Dyer. Coding: ChatGPT / Claude. Writer: <your model name>.`
    `Co-Authored-By: <your model name> <noreply@anthropic.com>`
 6. Write reports with the file-writing tool, never with chained echo commands. The report is a file `tasks/results/<card>.md` with: what you ran, the last 20 lines of each command output, PASS or FAIL.
