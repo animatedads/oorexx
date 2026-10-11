@@ -2,9 +2,19 @@
 #define RX_PARSE_TEMPLATE_HPP
 // Included inside rx after Value. This is a language implementation, not BIF.
 // All positions are ooRexx's 1-based positions. Parsing is binary-safe.
-inline std::vector<Value> parseBlankTemplate(const Value &source, std::size_t count) {
+// PARSE works on the string value of its source: an object is asked MAKESTRING, then STRING (the interpreter's
+// REQUEST('STRING') order, verified against ooRexx 5.3.0: toString is ignored). USE ARG keeps the object itself.
+inline Value parseSourceString(const Value &source) {
+    if (!source.isObject()) return source;
+    MessageResult r;
+    try { r = source.object->sendMessage("MAKESTRING", {}); }
+    catch (const std::exception &) { r = source.object->sendMessage("STRING", {}); }
+    if (!r || r->isObject()) throw std::runtime_error("PARSE source: string conversion did not return a string");
+    return *r;
+}
+inline std::vector<Value> parseBlankTemplate(const Value &sourceIn, std::size_t count) {
     if (count == 0) throw std::runtime_error("empty PARSE template");
-    if (source.isObject()) throw std::runtime_error("PARSE object coercion not supported");
+    const Value source = parseSourceString(sourceIn);
     std::vector<Value> parts;
     parts.reserve(count);
     const std::string &s = source.bytes;
@@ -39,8 +49,8 @@ struct ParseOp {
     }
 };
 
-inline std::vector<Value> parseTemplate(const Value &source, const std::vector<ParseOp> &ops) {
-    if (source.isObject()) throw std::runtime_error("PARSE object coercion unsupported");
+inline std::vector<Value> parseTemplate(const Value &sourceIn, const std::vector<ParseOp> &ops) {
+    const Value source = parseSourceString(sourceIn);
     if (ops.empty() || ops.size() > 64) throw std::runtime_error("invalid PARSE template size");
     const std::string &s = source.bytes;
     std::vector<Value> values;
