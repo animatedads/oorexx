@@ -1,0 +1,14 @@
+dev19 MVS unwind host-side cfront micro-probe — 2026-10-11
+Source: oorexx-mvs/runtime/MvsUnwind.cpp
+Source SHA-256: f9da0ea60a1a190a13776031ce081a0da8677c64a906d3db9cc219475a6b6af1
+Translator: dev18/cfront-patched from supplied dev18 full delivery
+Translator SHA-256: 7c44dd6e4ce4d2abfdc9ec104b9faaf528a6683466f9a62c54f45ae883078783
+Cfront size profile: oorexx-mvs/mvs370.size
+Cfront exit status: 0
+Generated C byte count: 2047
+Generated C SHA-256: e899cc91c8faf1153dcd4f397be4ae31339c6c49fbf018eca398d623fad4d769
+Host C syntax check: gcc (Debian 14.2.0-19) 14.2.0, -std=gnu89 -fsyntax-only, RC 0
+Probe: tests/run-dev19-unwind-cfront.sh
+LIMIT: This is one supplementary runtime unit only; it is not any of the nine
+remaining permitted-core translation units. No cc370 -S or MVS link/JES
+execution was available or performed. Core frontier remains 190/199 (dev16).
