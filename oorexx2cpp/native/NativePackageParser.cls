@@ -96,7 +96,10 @@
     /* A superclass must already exist in this same native package.
        Requiring parent-first order makes the class scope graph unambiguous. */
     if unit~parentName \== '' then do
-      if \names~hasIndex(unit~parentName) then
+      /* An interpreter class (STREAM, ARRAY, ...) is allowed as the parent of a native root class. */
+      if \names~hasIndex(unit~parentName) & wordpos(unit~parentName~upper, 'STREAM ARRAY LIST QUEUE DIRECTORY STEM SET BAG TABLE RELATION IDENTITYTABLE MUTABLEBUFFER OBJECT') > 0 then
+        unit~useExternalParent
+      else if \names~hasIndex(unit~parentName) then
         self~reject(start, 'unknown or forward parent ' || unit~parentName)
       if unit~methods~items == 0 then
         self~reject(start, 'subclass with no native methods')

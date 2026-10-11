@@ -36,6 +36,7 @@
       source = source || '::class ' || name || ' public'
       if unit~isMixin then source = source || ' mixinclass ' || unit~parentName
       else if \isRoot then source = source || ' subclass ' || unit~parentName
+      else if unit~externalParent \== '' then source = source || ' subclass ' || unit~externalParent
       if unit~mixinNames~items > 0 then do
         source = source || ' inherit'
         do mixin over unit~mixinNames
@@ -45,6 +46,21 @@
       source = source || '0a'x
     end
     countInit = 0
+    /* SELF~selector:SUPER(...) from compiled code: the interpreter performs the super dispatch (start scope = the parent of
+       this class) through this helper; its first argument is the selector, the rest are the call's arguments (omitted ones stay omitted). */
+    if \classSide & (unit~parentName \== '' | unit~externalParent \== '') then do
+      source = source || '::method RX2CPP_SUPER' || '0a'x
+      source = source || '  use arg selector' || '0a'x
+      source = source || '  args = arg(1, "A")~section(2)' || '0a'x
+      source = source || '  msg = .Message~new(self, .array~of(selector, .' || name || '~superClass), "A", args)' || '0a'x
+      source = source || '  msg~send' || '0a'x
+      source = source || '  if msg~hasResult then return msg~result' || '0a'x
+      source = source || '::method RX2CPP_SUPERA' || '0a'x
+      source = source || '  use arg selector, args' || '0a'x
+      source = source || '  msg = .Message~new(self, .array~of(selector, .' || name || '~superClass), "A", args)' || '0a'x
+      source = source || '  msg~send' || '0a'x
+      source = source || '  if msg~hasResult then return msg~result' || '0a'x
+    end
     do method over unit~methods
       selector = method~selector
       classOption = ''
@@ -52,7 +68,13 @@
       isSetter = selector~right(1) == '='
       selectorBase = selector
       if isSetter then selectorBase = selector~left(selector~length - 1)
-      if selectorBase == '[]' then selectorSymbol = 'index_get'
+      isOperator = .RxOperatorSelectors~symbol(selector) \== ''
+      if isOperator then do
+        selectorBase = selector
+        isSetter = .false
+        selectorSymbol = 'op_' || .RxOperatorSelectors~symbol(selector)
+      end
+      else if selectorBase == '[]' then selectorSymbol = 'index_get'
       else do
         self~identifier(selectorBase, 'method selector')
         selectorSymbol = selectorBase~lower
@@ -61,7 +83,7 @@
         raise syntax 40.1 array('rx2cpp: reserved native method ' || selector)
       if method~isAbstract then do
         abstractName = selector
-        if selector == '[]' | selector~right(1) == '=' then abstractName = '"' || selector || '"'
+        if isOperator | selector == '[]' | selector~right(1) == '=' then abstractName = '"' || selector || '"'
         /* The interpreter owns abstract methods: declared, never implemented natively. */
         source = source || '::method ' || abstractName || classOption || ' ' || method~declaration || ' abstract' || '0a'x
         iterate
@@ -75,7 +97,7 @@
       entries = entries || '    REXX_METHOD(' || symbol || ', ' || symbol || '),' || '0a'x
       guardOption = ' ' || method~declaration
       declared = selector
-      if isSetter | selector == '[]' then declared = '"' || selector || '"'
+      if isOperator | isSetter | selector == '[]' then declared = '"' || selector || '"'
       source = source || '::method ' || declared || classOption || guardOption || ' external "LIBRARY ' || packageName || ' ' || symbol || '"' || '0a'x
     end
     /* ::CONSTANT creates a getter on the class and instance. Delegate its
@@ -89,11 +111,12 @@
     else if isRoot then do
       if countInit \= 1 then raise syntax 40.1 array('rx2cpp: root class ' || name || ' requires exactly one INIT')
       /* Only root owns token/lifetime; the inherited UNINIT releases all scopes. */
+      source = source || '::method RX2CPP_NATIVE_SETTOKEN' || '0a'x || '  expose RX2CPP_NATIVE_ID' || '0a'x || '  use arg RX2CPP_NATIVE_ID' || '0a'x
       source = source || '::method RX2CPP_NATIVE_TOKEN external "LIBRARY ' || packageName || ' rx_native_token"' || '0a'x
       source = source || '::method UNINIT external "LIBRARY ' || packageName || ' rx_native_uninit"' || '0a'x
       source = source || '::method COPY external "LIBRARY ' || packageName || ' rx_native_copy_reject"' || '0a'x
     end
-    else if countInit \= 0 then raise syntax 40.1 array('rx2cpp: derived INIT is unsupported')
+    else if countInit > 1 then raise syntax 40.1 array('rx2cpp: class ' || name || ' declares more than one INIT')
   end
   if countClasses == 0 then raise syntax 40.1 array('rx2cpp: empty class package')
   routineDefs = ''
@@ -161,6 +184,7 @@
   use arg value, kind
   allowed = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_'
   letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
-  if value == '' | verify(value, allowed) > 0 | verify(value~substr(1,1), letters) > 0 then
+  if value == '' | verify(value, allowed) > 0 | verify(value~substr(1,1), letters || '_') > 0 then
     raise syntax 40.1 array('rx2cpp: unsafe native ' || kind || ' identifier: ' || value)
 ::requires 'core/RxQuote.cls'
+::requires 'hybrid/rules/HybridMethodDirective.cls'

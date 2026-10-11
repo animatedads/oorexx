@@ -16,6 +16,7 @@
 ::attribute current get
 ::attribute className get
 ::attribute parentName get
+::attribute externalParent get
 ::attribute isMixin get
 ::attribute mixinNames get
 ::attribute allowInheritance get
@@ -23,11 +24,12 @@
 ::attribute classMethods get
 ::attribute constants get
 ::method init
-  expose stream atomExpr builtinExpr localRoutines messageExpr unaryExpr mulExpr addExpr compareExpr logicalExpr rules current className methods classMethods constants parentName allowInheritance isMixin mixinNames controlDepth scopes
+  expose stream atomExpr builtinExpr localRoutines messageExpr unaryExpr mulExpr addExpr compareExpr logicalExpr rules current className methods classMethods constants parentName externalParent allowInheritance isMixin mixinNames controlDepth scopes
   use arg source, allowInheritance, localRoutines = .nil
   if localRoutines == .nil then localRoutines = .array~new
   if arg(2, 'O') then allowInheritance = .false
   parentName = ''
+  externalParent = ''
   isMixin = .false
   mixinNames = .array~new
   scopes = .RxWhenDealingWith~new
@@ -52,6 +54,19 @@
   use arg name
   if \allowInheritance then self~stream~fail('inheritance requires the native package compiler')
   parentName = name
+/* A parent that is an interpreter class outside this package: the class is a native root whose stub subclasses it. */
+::method useExternalParent
+  expose parentName externalParent
+  externalParent = parentName
+  parentName = ''
+  self~ensureInit
+/* The interpreter's default INIT (accepts and ignores its arguments) for a native root class that declares none. */
+::method ensureInit
+  expose methods
+  do method over methods
+    if method~selector == 'INIT' then return
+  end
+  methods~append(.RxHybridMethod~new('INIT'))
 ::method setMixinParentName
   expose isMixin
   use arg name
@@ -93,7 +108,7 @@
     if arg(3, 'E') then setter~setOptions(options)
     setter~markAttributeSetter
     setter~setParameter('VALUE')
-    setter~addInstruction('rx::set(fields_, ' || .RxQuote~cpp(name) || ', rx::Value::string(arguments.size() > 0 && arguments[0] ? *arguments[0] : std::string()));')
+    setter~addInstruction('rx::set(fields_, ' || .RxQuote~cpp(name) || ', (arguments.size() > 0 && arguments[0] ? *arguments[0] : rx::Value::string(std::string())));')
     setter~returnValue('rx::Value::string("")')
     target~append(setter)
   end
@@ -191,7 +206,7 @@
 ::method hostedEnabled
   return .false
 ::method parse
-  expose stream className methods classMethods constants current rules scopes
+  expose stream className methods classMethods constants current rules scopes isMixin parentName
   s = stream
   s~skipSeparators
   className = .RxHybridClassDirective~new~parse(self)
@@ -201,6 +216,16 @@
   do while s~peek~kind \= 'EOF'
     if s~lookAheadText(1) == 'ATTRIBUTE' then do
       .RxHybridAttributeDirective~new~parse(self)
+      s~skipSeparators
+      iterate
+    end
+    /* ::METHOD name ATTRIBUTE is the method-directive spelling of ::ATTRIBUTE name (getter and setter). */
+    if s~lookAheadText(1) == 'METHOD' & s~lookAheadText(3) == 'ATTRIBUTE' then do
+      s~expect('::'); s~expect('METHOD')
+      attributeName = s~next~text
+      s~expect('ATTRIBUTE')
+      s~separator
+      self~addAttribute(attributeName, 'BOTH', .RxHybridMethodOptions~new)
       s~skipSeparators
       iterate
     end
@@ -237,6 +262,7 @@
     scopes~endScope
   end
   if methods~items == 0 & classMethods~items == 0 & constants~items == 0 then s~fail('class contains no methods or constants')
+  if className \= 'RX2CPP_ROUTINE_IMPL' & parentName == '' & \isMixin then self~ensureInit
   if className \= 'RX2CPP_ROUTINE_IMPL' then scopes~endScope
   return self
 ::requires 'core/RxStream.cls'
@@ -279,6 +305,8 @@
 ::method constants
   return .array~new
 ::method parentName
+  return ''
+::method externalParent
   return ''
 ::method isMixin
   return .false

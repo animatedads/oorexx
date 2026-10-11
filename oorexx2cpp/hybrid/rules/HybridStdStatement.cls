@@ -28,3 +28,4 @@
 ::requires 'rules/StmtCall.cls'
 ::requires 'rules/StmtExit.cls'
 ::requires 'rules/StmtNop.cls'
+::requires 'rules/StmtAssign.cls'

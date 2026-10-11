@@ -26,10 +26,17 @@
   lines~append('public:')
   /* One entry point: the ooRexx ARGLIST, any length. invoke0/invoke/invoke2 are thin adapters for
      host code that still calls them; they carry no arity logic. */
-  lines~append('  std::string invokeArgs(const std::string &selector, const std::vector<std::optional<std::string>> &arguments) override {')
+  lines~append('  rx::Value invokeValues(const std::string &selector, const std::vector<std::optional<rx::Value>> &arguments) override {')
   lines~append('    (void)arguments;')
   self~dispatch(lines, unit, options)
   lines~append('    throw std::runtime_error("unsupported native selector: " + selector);')
+  lines~append('  }')
+  lines~append('  std::string invokeArgs(const std::string &selector, const std::vector<std::optional<std::string>> &arguments) override {')
+  lines~append('    std::vector<std::optional<rx::Value>> values;')
+  lines~append('    for (const auto &a : arguments) { if (a) values.emplace_back(rx::Value::string(*a)); else values.emplace_back(std::nullopt); }')
+  lines~append('    rx::Value result = invokeValues(selector, values);')
+  lines~append('    if (result.isObject()) throw std::runtime_error("non-scalar return requires interpreter proxy");')
+  lines~append('    return result.bytes;')
   lines~append('  }')
   lines~append('  std::string invoke0(const std::string &selector) override { return invokeArgs(selector, {}); }')
   lines~append('  std::string invoke(const std::string &selector, const std::string &argument) override { return invokeArgs(selector, {argument}); }')
@@ -60,9 +67,18 @@
   use arg lines, unit, options
   do method over unit~methods
     lines~append('    if (selector == ' || .RxQuote~cpp(method~selector) || ') {')
-    lines~append('      rx::Variables vars;')
+    /* EXPOSEd names (and stems) alias the object's fields: every writer (assignment, PARSE, USE ARG, +=, stem tails) lands there. */
+    if method~exposed~items > 0 then do
+      names = ''
+      do field over method~exposed
+        if names \== '' then names = names || ', '
+        names = names || .RxQuote~cpp(field)
+      end
+      lines~append('      rx::Variables vars(fields_, {' || names || '});')
+    end
+    else lines~append('      rx::Variables vars;')
     lines~append('      std::vector<rx::Value> _rxProgramArgs;')
-    lines~append('      for (const auto &_a : arguments) _rxProgramArgs.push_back(rx::Value::string(_a ? *_a : std::string()));')
+    lines~append('      for (const auto &_a : arguments) _rxProgramArgs.push_back(_a ? *_a : rx::Value::string(std::string()));')
     lines~append('      (void)_rxProgramArgs;')
     hasOptions = .false
     if arg(3, 'E') then hasOptions = options~present
@@ -72,13 +88,11 @@
       if options~form == 'ENGINEERING' then
         lines~append('      vars.numeric.engineering = true;')
     end
-    do field over method~exposed
-      lines~append('      rx::set(vars, ' || .RxQuote~cpp(field) || ', rx::get(fields_, ' || .RxQuote~cpp(field) || '));')
-    end
+    lines~append('      rx::NumericScope _rxNumericScope(vars.numeric);')
     do position = 1 to method~parameters~items
       name = method~parameters[position]
       lines~append('      if (arguments.size() > ' || (position - 1) || ' && arguments[' || (position - 1) || ']) {')
-      lines~append('        rx::set(vars, ' || .RxQuote~cpp(name) || ', rx::Value::string(*arguments[' || (position - 1) || ']));')
+      lines~append('        rx::set(vars, ' || .RxQuote~cpp(name) || ', *arguments[' || (position - 1) || ']);')
       if method~exposed~hasItem(name) then
         lines~append('        rx::set(fields_, ' || .RxQuote~cpp(name) || ', rx::get(vars, ' || .RxQuote~cpp(name) || '));')
       lines~append('      }')
@@ -86,7 +100,7 @@
     do statement over method~instructions
       lines~append('      ' || statement)
     end
-    if method~selector == 'INIT' then lines~append('      return "";')
+    if method~selector == 'INIT' then lines~append('      return rx::Value::string(std::string());')
     lines~append('    }')
   end
 /* Vector invocation belongs only to synthetic package-routine classes.
@@ -113,9 +127,15 @@
       lines~append('      if (arguments.size() > ' || (position - 1) || ' && arguments[' || (position - 1) || '])')
       lines~append('        rx::set(vars, ' || .RxQuote~cpp(name) || ', rx::Value::string(*arguments[' || (position - 1) || ']));')
     end
+    /* The shared method body returns an rx::Value; a package routine's ABI is a scalar string. */
+    lines~append('      auto _rxBody = [&]() -> rx::Value {')
     do statement over method~instructions
       lines~append('      ' || statement)
     end
+    lines~append('      };')
+    lines~append('      rx::Value _rxResult = _rxBody();')
+    lines~append('      if (_rxResult.isObject()) throw std::runtime_error("non-scalar return requires interpreter proxy");')
+    lines~append('      return _rxResult.bytes;')
     lines~append('    }')
   end
 ::requires 'core/RxQuote.cls'

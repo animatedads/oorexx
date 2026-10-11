@@ -194,6 +194,14 @@ struct ActivationNumeric {
     std::size_t fuzz = 0;
     bool engineering = false;
 };
+// The NUMERIC settings of the innermost running compiled method on this thread (null outside one). Messages that go to the
+// interpreter (String methods such as C2D) run under the caller's settings, so the bridge reads them from here.
+inline thread_local const ActivationNumeric *currentNumeric = nullptr;
+struct NumericScope {
+    const ActivationNumeric *previous;
+    explicit NumericScope(const ActivationNumeric &n) : previous(currentNumeric) { currentNumeric = &n; }
+    ~NumericScope() { currentNumeric = previous; }
+};
 struct Variables : std::unordered_map<std::string, Value> {
     ActivationNumeric numeric;
     Variables *outer = nullptr;
@@ -577,9 +585,19 @@ inline Value sendBinary(const Value &lhs, const std::string &selector, const Val
 // called method returns no value. In expressions, no result is an error.
 // Cascade (~~) is always the receiver object, even for a no-result method.
 // The caller's local variables own RESULT; no global interpreter state.
+// With a host interpreter (library mode) a string message the native subset does not cover goes to the interpreter's own String class.
+using StringMessageFallback = MessageResult (*)(const Value &, const std::string &, const std::vector<Value> &);
+inline StringMessageFallback &stringMessageFallback() { static StringMessageFallback f = nullptr; return f; }
+inline MessageResult sendStringBuiltin(const Value &receiver, const std::string &selector, const std::vector<Value> &args);
 inline MessageResult sendMessage(const Value &receiver, const std::string &selector,
                                  const std::vector<Value> &args) {
     if (receiver.isObject()) return receiver.object->sendMessage(selector, args);
+    if (!stringMessageFallback()) return sendStringBuiltin(receiver, selector, args);
+    try { return sendStringBuiltin(receiver, selector, args); }
+    catch (const std::runtime_error &) { return stringMessageFallback()(receiver, selector, args); }
+}
+inline MessageResult sendStringBuiltin(const Value &receiver, const std::string &selector,
+                                       const std::vector<Value> &args) {
     const std::string &s = receiver.bytes;
     if (args.size() == 1 &&
         (selector == "+" || selector == "-" || selector == "*" || selector == "/" ||

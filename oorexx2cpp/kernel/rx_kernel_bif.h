@@ -13,7 +13,7 @@ bool call(const std::string &upperName, const std::vector<std::string> &args, co
 void *findClass(const std::string &name);       // retained handle to the class (.ARRAY, .DIRECTORY, ...), or nullptr
 void *retain(void *handle);                      // another reference to the same object
 void release(void *handle);
-struct Arg { void *obj = nullptr; std::string bytes; };          // obj == nullptr: a string argument
+struct Arg { void *obj = nullptr; std::string bytes; bool omitted = false; };          // obj == nullptr: a string argument
 struct Result { int kind = 0; std::string bytes; void *obj = nullptr; };   // kind 0 none, 1 string, 2 object (retained handle)
 bool send(void *target, const std::string &selector, const std::vector<Arg> &args, Result &out,
           std::string &rxCode, std::string &rxText);

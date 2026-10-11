@@ -11,6 +11,8 @@
 #include <vector>
 #include <optional>
 #include <stdexcept>
+#include "minirexx_runtime.hpp"
+#include <stdexcept>
 
 namespace rx2cpp {
 /* Recursive lock whose whole recursion depth can be released while the native
@@ -51,6 +53,11 @@ struct SelfSender {
     virtual ~SelfSender() = default;
     virtual std::string send(const std::string &selector, const std::vector<std::string> &args) = 0;
     virtual std::string forward(const std::string &selector) = 0;
+    /* Object-capable send (host-API libraries): arguments/result are interpreter objects or strings, omitted arguments
+       are rx::omittedArgument(); nullopt = the method returned no value. The scope lock is released around the send. */
+    virtual std::optional<rx::Value> sendValues(const std::string &selector, const std::vector<rx::Value> &) {
+        throw std::runtime_error("object-capable SELF send needs the host-API native lane: " + selector);
+    }
 };
 namespace detail { inline thread_local SelfSender *currentSender = nullptr; }
 inline std::string selfSend(const std::string &selector, const std::vector<std::string> &args) {
@@ -64,6 +71,16 @@ inline std::string forwardMessage(const std::string &selector) {
     if (!detail::currentSender)
         throw std::runtime_error("FORWARD outside an interpreter-invoked native method");
     return detail::currentSender->forward(selector);
+}
+inline std::optional<rx::Value> selfSendValues(const std::string &selector, const std::vector<rx::Value> &args) {
+    if (!detail::currentSender)
+        throw std::runtime_error("SELF send outside an interpreter-invoked native method");
+    return detail::currentSender->sendValues(selector, args);
+}
+inline rx::Value selfSendValue(const std::string &selector, const std::vector<rx::Value> &args) {
+    auto r = selfSendValues(selector, args);
+    if (!r) throw std::runtime_error("SELF~" + selector + " returned no value");
+    return *r;
 }
 struct CompiledObject {
     /* One lock per class scope. It protects the compiled C++ state against
@@ -89,6 +106,19 @@ struct CompiledObject {
         if (arguments.size() == 1) return invoke(selector, at(0));
         if (arguments.size() == 2) return invoke2(selector, at(0), at(1));
         throw std::runtime_error("selector does not accept " + std::to_string(arguments.size()) + " arguments: " + selector);
+    }
+    /* Interpreter-object-capable entry: arguments and result are rx::Value (strings or interpreter objects, omitted = nullopt).
+       Generated classes override this; invokeArgs above is then only the string adapter. The default bridges the other way, so
+       hand-written string-only objects keep working (they cannot receive objects). */
+    virtual rx::Value invokeValues(const std::string &selector, const std::vector<std::optional<rx::Value>> &arguments) {
+        std::vector<std::optional<std::string>> strings;
+        strings.reserve(arguments.size());
+        for (const auto &a : arguments) {
+            if (!a) strings.emplace_back(std::nullopt);
+            else if (a->isObject()) throw std::runtime_error("object argument not supported by native selector: " + selector);
+            else strings.emplace_back(a->bytes);
+        }
+        return rx::Value::string(invokeArgs(selector, strings));
     }
     /* Native package routine ABI receives the ooRexx ARGLIST as sparse,
        positional values; omitted and missing arguments stay unbound. */

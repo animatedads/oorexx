@@ -82,15 +82,13 @@
   use arg expression
   if hasReturn then raise syntax 40.1 array('rx2cpp: RETURN after terminal RETURN')
   instructions~append('{ const rx::Value result = ' || expression || ';')
-  instructions~append('if (result.isObject()) throw std::runtime_error("non-scalar return requires interpreter proxy");')
-  instructions~append('return result.bytes; }')
+  instructions~append('return result; }')
   seenStatement = .true
 ::method returnValue
   expose instructions seenStatement hasReturn
   use arg expression
   if hasReturn then raise syntax 40.1 array('rx2cpp: duplicate RETURN')
   instructions~append('const rx::Value result = ' || expression || ';')
-  instructions~append('if (result.isObject()) throw std::runtime_error("non-scalar return requires interpreter proxy");')
-  instructions~append('return result.bytes;')
+  instructions~append('return result;')
   seenStatement = .true
   hasReturn = .true

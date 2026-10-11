@@ -1,5 +1,42 @@
 /* One ::METHOD selector directive; method bodies use separately loaded
    statement-rule classes and an independent expression precedence pipeline. */
+::class RxOperatorSelectors public
+/* ooRexx operator method names -> identifier-safe symbol part ('' when not an operator). */
+::method symbol class
+  use arg name
+  names = .directory~new
+  names['+'] = 'plus'
+  names['-'] = 'minus'
+  names['*'] = 'times'
+  names['/'] = 'divide'
+  names['%'] = 'intdiv'
+  names['//'] = 'remainder'
+  names['**'] = 'power'
+  names['||'] = 'concat'
+  names['|'] = 'or'
+  names['&'] = 'and'
+  names['&&'] = 'xor'
+  names['='] = 'eq'
+  names['=='] = 'seq'
+  names['\='] = 'ne'
+  names['\=='] = 'sne'
+  names['<>'] = 'ltgt'
+  names['><'] = 'gtlt'
+  names['<'] = 'lt'
+  names['>'] = 'gt'
+  names['<='] = 'le'
+  names['>='] = 'ge'
+  names['<<'] = 'slt'
+  names['>>'] = 'sgt'
+  names['<<='] = 'sle'
+  names['>>='] = 'sge'
+  names['\<'] = 'nlt'
+  names['\>'] = 'ngt'
+  names['\<<'] = 'nslt'
+  names['\>>'] = 'nsgt'
+  names['\'] = 'not'
+  if names~hasIndex(name) then return names[name]
+  return ''
 ::class RxHybridMethodDirective public
 ::method parse
   use arg ctx
@@ -7,7 +44,7 @@
   s~expect('::'); s~expect('METHOD')
   if s~peek~kind \= 'IDENT' & s~peek~kind \= 'STRING' then s~fail('expected method selector')
   name = s~next~text
-  if name == '[]' | name == '[]=' then nop
+  if name == '[]' | name == '[]=' | .RxOperatorSelectors~symbol(name) \== '' then nop
   else if verify(name, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_') > 0 then
     s~fail('unsupported native method selector')
   if wordpos(name, 'UNKNOWN UNINIT') > 0 then s~fail('reserved lifecycle method')

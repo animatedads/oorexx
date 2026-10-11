@@ -6,6 +6,10 @@
   use arg ctx, name
   s = ctx~stream
   local = ctx~className == 'RX2CPP_ROUTINE_IMPL' & ctx~localRoutines~hasItem(name)
+  if \local & ctx~className \= 'RX2CPP_ROUTINE_IMPL' & .local~rx2cpp.localroutines~isA(.array) then
+    do routineName over .local~rx2cpp.localroutines
+      if routineName~upper == name~upper then local = .true
+    end
   builtin = .RxBuiltinRules~isBuiltinName(name)
   /* An ooRexx built-in has priority over a same-named ::ROUTINE. This lane cannot compile that
      path, so reject rather than invoke the wrong local routine. */

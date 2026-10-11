@@ -25,7 +25,7 @@ grep -q 'native COPY requires per-scope independent state' "$OUT/copy.err"
 echo 'PASS native COPY fails closed until per-scope deep-copy exists'
 ! readelf -d "$OUT/librx2cpp_inherit.so" | grep -E 'NEEDED.*(librexx|foreign|alchemy)'
 echo 'PASS no Foreign Runtime or librexx dynamic linkage'
-for fixture in inheritance_unknown_parent inheritance_derived_init inheritance_reserved_accessor; do
+for fixture in inheritance_unknown_parent inheritance_reserved_accessor; do
   if CXX="$CXX" "$ROOT/native/build.sh" "$ROOT/native/fixtures/$fixture.cls" "$OUT/bad-$fixture" "bad_$fixture" > "$OUT/bad-$fixture.log" 2>&1; then
     echo "FAIL accepted unsupported source $fixture" >&2; exit 1
   fi

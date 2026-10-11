@@ -96,6 +96,22 @@ public:
             throw std::runtime_error("FORWARD returned no scalar result");
         return stringValue(ctx_, result);
     }
+#ifdef RX2CPP_HOST_API
+    std::optional<rx::Value> sendValues(const std::string &selector, const std::vector<rx::Value> &args) override {
+        std::vector<rxobj::Arg> in; rx::EnvObject::convert(args, in);
+        RexxArrayObject arr = ctx_->NewArray(in.size());
+        for (std::size_t i = 0; i < in.size(); i++) {
+            if (in[i].omitted) continue;
+            ctx_->ArrayPut(arr, in[i].obj ? (RexxObjectPtr)in[i].obj : (RexxObjectPtr)ctx_->NewString(in[i].bytes.data(), in[i].bytes.size()), i + 1);
+        }
+        RexxObjectPtr result;
+        { ReleaseAndReacquire released(lock_); result = ctx_->SendMessage(self_, selector.c_str(), arr); }
+        if (ctx_->CheckCondition()) throw PendingCondition();
+        if (result == NULLOBJECT) return std::nullopt;
+        if (ctx_->IsString(result) || ctx_->IsOfType(result, "STRING")) return rx::Value::string(stringValue(ctx_, result));
+        return rx::Value::fromObject(std::make_shared<rx::EnvObject>((void *)ctx_->threadContext->RequestGlobalReference(result)));
+    }
+#endif
     std::string send(const std::string &selector, const std::vector<std::string> &args) override {
         RexxArrayObject arr = ctx_->NewArray(args.size());
         for (const auto &a : args) ctx_->ArrayAppendString(arr, a.data(), a.size());
@@ -119,13 +135,36 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
         std::shared_ptr<CompiledObject> object;
         std::string token;
         if (initializer) {
-            if (ctx->GetObjectVariable("RX2CPP_NATIVE_ID") != NULLOBJECT)
-                throw std::runtime_error("native object already initialized");
-            object = create(className);
-            // Register before the body runs: INIT may send messages (SELF~attr = ...) that arrive in this object.
-            token = Registry::instance().add(object);
-            ctx->SetObjectVariable("RX2CPP_NATIVE_ID", ctx->String(token.c_str()));
-            failedInitToken = token;
+            RexxObjectPtr existing = ctx->GetObjectVariable("RX2CPP_NATIVE_ID");
+            if (!isRoot) {
+                // A derived INIT starts the object: the root state is created (its own INIT runs only if this INIT sends
+                // INIT:SUPER, exactly as in the interpreter), then this class's own state runs the body. Object variables are
+                // per class scope, so the token is read and written through the root class's own accessors.
+                auto definingRoot = ctx->FindClass(rootClass.c_str());
+                if (definingRoot == NULLOBJECT) throw std::runtime_error("compiled superclass missing: " + rootClass);
+                RexxObjectPtr rootToken = ctx->ForwardMessage(ctx->GetSelf(), "RX2CPP_NATIVE_TOKEN", definingRoot, ctx->NewArray(0));
+                if (ctx->CheckCondition()) throw PendingCondition();
+                if (rootToken != NULLOBJECT) throw std::runtime_error("native object already initialized");
+                auto rootObject = create(rootClass);
+                token = Registry::instance().add(rootObject);
+                failedInitToken = token;
+                RexxArrayObject tokenArgs = ctx->NewArray(1);
+                ctx->ArrayAppend(tokenArgs, ctx->String(token.c_str()));
+                ctx->ForwardMessage(ctx->GetSelf(), "RX2CPP_NATIVE_SETTOKEN", definingRoot, tokenArgs);
+                if (ctx->CheckCondition()) throw PendingCondition();
+                object = ScopeRegistry::instance().at(token, scopeIndex, className);
+            } else if (existing != NULLOBJECT) {
+                // INIT:SUPER from a derived INIT: the root state was registered by the derived class.
+                token = stringValue(ctx, existing);
+                object = Registry::instance().find(token);
+                if (!object) throw std::runtime_error("expired native object handle");
+            } else {
+                object = create(className);
+                // Register before the body runs: INIT may send messages (SELF~attr = ...) that arrive in this object.
+                token = Registry::instance().add(object);
+                ctx->SetObjectVariable("RX2CPP_NATIVE_ID", ctx->String(token.c_str()));
+                failedInitToken = token;
+            }
         } else {
             // The root class owns the single lifetime token. A derived method
             // asks the root method for it; normal ooRexx dispatch chooses that
@@ -155,17 +194,22 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
             }
             if (!object) throw std::runtime_error("expired native object handle");
         }
-        std::string output;
         std::lock_guard<ScopeLock> scopeHold(object->scope_lock);
         Frame frame(ctx, selfObj, object->scope_lock);
-        std::vector<std::optional<std::string>> positional;
+        std::vector<std::optional<rx::Value>> positional;
         positional.reserve(count);
         for (size_t i = 1; i <= count; ++i) {
             RexxObjectPtr item = ctx->ArrayAt(args, i);
-            if (item == NULLOBJECT) positional.emplace_back(std::nullopt);
-            else positional.emplace_back(stringValue(ctx, item));
+            if (item == NULLOBJECT) { positional.emplace_back(std::nullopt); continue; }
+#ifdef RX2CPP_HOST_API
+            // Strings stay scalar values; every other interpreter object is passed as itself (no marshalling).
+            if (!ctx->IsString(item) && !ctx->IsOfType(item, "STRING"))
+                positional.emplace_back(rx::Value::fromObject(std::make_shared<rx::EnvObject>((void *)ctx->threadContext->RequestGlobalReference(item))));
+            else
+#endif
+            positional.emplace_back(rx::Value::string(stringValue(ctx, item)));
         }
-        output = object->invokeArgs(selector, positional);
+        rx::Value outcome = object->invokeValues(selector, positional);
         // Generated ::ATTRIBUTE setters have no result; ordinary methods with
         // selectors ending in = (including []=) may explicitly RETURN a value.
         if (attributeSetter) return NULLOBJECT;
@@ -173,7 +217,14 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
             failedInitToken.clear();
             return NULLOBJECT; // ooRexx INIT must not return an ordinary value
         }
-        return ctx->NewString(output.data(), output.size());
+        if (outcome.isObject()) {
+#ifdef RX2CPP_HOST_API
+            if (auto *env = dynamic_cast<rx::EnvObject *>(outcome.object.get())) return (RexxObjectPtr)env->handle;
+            if (dynamic_cast<rx::NilObject *>(outcome.object.get())) return ctx->Nil();
+#endif
+            throw std::runtime_error("native method returned an object that the interpreter cannot receive");
+        }
+        return ctx->NewString(outcome.bytes.data(), outcome.bytes.size());
     } catch (const PendingCondition &) {
         if (!failedInitToken.empty()) Registry::instance().remove(failedInitToken);
         return NULLOBJECT;

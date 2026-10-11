@@ -214,7 +214,29 @@
     end
   end
   self~emit('EOF', '<eof>', line, col)
-  return out
+  /* LOOP is DO's synonym when it starts a clause (a lone LOOP loops forever); elsewhere it is an ordinary symbol. */
+  fixed = .array~new
+  do i = 1 to out~items
+    tok = out[i]
+    if tok~kind == 'IDENT' & tok~text == 'LOOP' then do
+      atStart = (i == 1)
+      if \atStart then do
+        prev = out[i - 1]
+        atStart = prev~kind == 'SEP' | (prev~kind == 'IDENT' & wordpos(prev~text, 'THEN ELSE OTHERWISE') > 0)
+      end
+      following = out[i + 1]
+      isVariable = following~kind == 'OP' & pos(following~text, '=~(,)') > 0
+      if following~kind == 'STRING' | following~kind == 'EOF' & .false then isVariable = isVariable
+      if atStart & \isVariable then do
+        fixed~append(.RxToken~new('IDENT', 'DO', tok~line, tok~col, tok~endLine, tok~endCol))
+        if following~kind == 'SEP' | following~kind == 'EOF' then
+          fixed~append(.RxToken~new('IDENT', 'FOREVER', tok~line, tok~col, tok~endLine, tok~endCol))
+        iterate
+      end
+    end
+    fixed~append(tok)
+  end
+  return fixed
 /* After a , or - has been consumed: if only blanks/comments remain before the newline , swallow them and
    the newline and answer true (line continuation); otherwise leave the position untouched and answer false. */
 ::method continued

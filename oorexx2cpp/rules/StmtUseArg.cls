@@ -34,9 +34,17 @@
     name = s~next~text
     if pos('.', name) > 0 then s~fail('USE STRICT ARG compound variable targets not yet implemented')
     if s~accept('=') then do
-      t = s~next
-      if t~kind \= 'STRING' & t~kind \= 'NUMBER' then s~fail('USE STRICT ARG default must be a string or number constant')
-      specs = specs || '{' || .RxQuote~cpp(name) || ', false, ' || .RxQuote~cpp(t~text) || '}, '
+      if s~accept('.') then do
+        if s~peek~kind \= 'IDENT' | wordpos(s~peek~text~upper, 'TRUE FALSE') == 0 then s~fail('USE STRICT ARG default must be a string, number, .TRUE or .FALSE')
+        defaultText = (s~next~text~upper == 'TRUE')~string
+      end
+      else do
+        t = s~next
+        if t~kind == 'DOTIDENT' & wordpos(t~text~upper, 'TRUE FALSE') > 0 then defaultText = (t~text~upper == 'TRUE')~string
+        else if t~kind \= 'STRING' & t~kind \= 'NUMBER' & t~kind \= 'INT' then s~fail('USE STRICT ARG default must be a string, number, .TRUE or .FALSE')
+        else defaultText = t~text
+      end
+      specs = specs || '{' || .RxQuote~cpp(name) || ', false, ' || .RxQuote~cpp(defaultText) || '}, '
       sawOptional = .true
     end
     else do

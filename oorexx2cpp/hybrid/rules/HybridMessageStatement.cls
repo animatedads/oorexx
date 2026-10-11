@@ -9,7 +9,15 @@
 ::method emit
   use arg ctx
   s = ctx~stream
+  if s~peek~text == 'SELF' & s~lookAheadText(3) == ':' then do
+    /* SELF~selector:SUPER(...) statement: same send as the expression form, result discarded. */
+    code = .RxHybridExprNoMessage~new~parse(ctx, .true)
+    ctx~current~addInstruction('(void)' || code || ';')
+    s~separator
+    return
+  end
   code = .RxExprMessage~new~parse(ctx, .true)
   ctx~current~addInstruction(code || ';')
   s~separator
 ::requires 'rules/ExprMessage.cls'
+::requires 'hybrid/rules/HybridExprNoMessage.cls'

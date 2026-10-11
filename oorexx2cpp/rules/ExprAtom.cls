@@ -43,7 +43,7 @@
       return 'rx::selfObject()'
     end
     when t~kind == 'IDENT' then do
-      if wordpos(t~text, 'THEN TO BY DO UNTIL ELSE END IF EXIT') > 0 then s~fail('reserved word in expression')
+      if wordpos(t~text, 'THEN DO UNTIL ELSE END IF EXIT') > 0 then s~fail('reserved word in expression')
       s~next
       /* Rexx function invocation requires abuttal: F(3) differs from F (3). */
       if s~is('(') & s~peek~line == t~endLine & s~peek~col == t~endCol then -

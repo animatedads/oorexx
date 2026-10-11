@@ -1,6 +1,8 @@
 ::class Parent public
 ::method init
   return
+::method m
+  return 1
 ::class Child public subclass Parent
-::method init
-  return
+::method m
+  forward class (super)

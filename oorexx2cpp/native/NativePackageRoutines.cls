@@ -131,6 +131,7 @@
     implementation = .nil
     return self
   end
+  .local~put(names, 'RX2CPP.LOCALROUTINES')
   implementation = .RxHybridCompiler~new(routineSource, .true, names)~parse
   if implementation~methods~items \= names~items then self~reject(1, 'native routine method count mismatch')
   do method over implementation~methods

@@ -5,10 +5,10 @@
    Independent loadable rule; arbitrary interpreter methods not supported. */
 ::class RxExprMessage public
 ::method parse
-  use arg ctx, asInstruction
+  use arg ctx, asInstruction, receiver
   if arg(2, 'O') then asInstruction = .false
   s = ctx~stream
-  receiver = ctx~atomExpr~parse(ctx)
+  if arg(3, 'O') then receiver = ctx~atomExpr~parse(ctx)
   if \s~is('~') & \s~is('~~') & \s~is('[') then do
     if asInstruction then s~fail('message instruction requires a message selector')
     return receiver
