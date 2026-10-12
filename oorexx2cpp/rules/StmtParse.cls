@@ -62,7 +62,10 @@
     inputExpr = source
     if uppercase then inputExpr = 'rx::parseUpper(' || source || ')'
     if lowercase then inputExpr = 'rx::parseLower(' || source || ')'
-    ctx~line(depth + 1, 'const rx::Value _parseInput' || suffix || ' = ' || inputExpr || ';')
+    /* Read a plain variable source by reference: no copy of a long string per PARSE. */
+    if \uppercase & \lowercase & inputExpr~left(8) == 'RX_VGET(' & inputExpr~right(1) == ')' & inputExpr~countStr('(') = 1 then
+      inputExpr = 'RX_VREF(' || inputExpr~substr(9)
+    ctx~line(depth + 1, 'const rx::Value &_parseInput' || suffix || ' = ' || inputExpr || ';')
     /* A template with only constant positions/literals is built once, not per execution. */
     if elements~pos('Value(') = 0 then planDecl = 'static const std::vector<rx::ParseOp> _parsePlan'
     else planDecl = 'const std::vector<rx::ParseOp> _parsePlan'
