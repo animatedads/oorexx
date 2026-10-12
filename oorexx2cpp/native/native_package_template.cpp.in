@@ -52,6 +52,25 @@ struct PendingCondition : std::runtime_error {
     PendingCondition() : std::runtime_error("ooRexx condition pending") {}
 };
 struct MethodInfo { const char *definingClass; bool isPublic; bool noResult; };
+/* Selector and class names are case-insensitive in ooRexx; the tables hold the upper-case spelling and are searched without
+   making an upper-case copy of the incoming name. */
+struct CiHash {
+    std::size_t operator()(const std::string &s) const {
+        std::size_t h = 1469598103934665603ULL;
+        for (unsigned char c : s) { h ^= (unsigned char)std::toupper(c); h *= 1099511628211ULL; }
+        return h;
+    }
+};
+struct CiEq {
+    bool operator()(const std::string &a, const std::string &b) const {
+        if (a.size() != b.size()) return false;
+        for (std::size_t i = 0; i < a.size(); i++)
+            if (std::toupper((unsigned char)a[i]) != std::toupper((unsigned char)b[i])) return false;
+        return true;
+    }
+};
+typedef std::unordered_map<std::string, MethodInfo, CiHash, CiEq> MethodTable;
+typedef std::unordered_map<std::string, MethodTable, CiHash, CiEq> ClassMethodTable;
 %DIRECT_TABLES%
 [[maybe_unused]] static std::string upperOf(std::string s) {
     for (char &c : s) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
@@ -64,16 +83,15 @@ struct InstanceState : std::enable_shared_from_this<InstanceState> {
     std::string dynamicClass;        // the class the instance was created from (upper case)
     bool exact = false;              // the dynamic class is a class of this package, so direct dispatch is faithful
     std::mutex gate;
-    std::unordered_map<std::string, std::shared_ptr<CompiledObject>> objects;
     void *handle = nullptr;          // interpreter object, valid while alive
     bool alive = false;
     std::string token;
+    std::vector<std::pair<std::string, std::shared_ptr<CompiledObject>>> scopes;   // instances have a handful of scopes: a scan beats hashing
     std::shared_ptr<CompiledObject> at(const std::string &cls) {
         std::lock_guard<std::mutex> lock(gate);
-        auto it = objects.find(cls);
-        if (it != objects.end()) return it->second;
+        for (const auto &entry : scopes) if (entry.first == cls) return entry.second;
         auto created = create(cls);
-        objects.emplace(cls, created);
+        scopes.emplace_back(cls, created);
         return created;
     }
 };
@@ -128,12 +146,14 @@ std::vector<std::optional<rx::Value>> optionalsOf(const std::vector<rx::Value> &
     for (const auto &a : args) out.push_back(optionalOf(a));
     return out;
 }
-const MethodInfo *lookupMethod(const std::string &cls, const std::string &upperSelector) {
+/* The table entry for (class, selector): first = the canonical upper-case selector, second = how to dispatch it. */
+typedef const MethodTable::value_type Resolved;
+Resolved *lookupMethod(const std::string &cls, const std::string &selector) {
     const auto &all = directMethodTable();
     auto it = all.find(cls);
     if (it == all.end()) return nullptr;
-    auto jt = it->second.find(upperSelector);
-    return jt == it->second.end() ? nullptr : &jt->second;
+    auto jt = it->second.find(selector);
+    return jt == it->second.end() ? nullptr : &*jt;
 }
 /* An interpreter object for a native state: a new instance of the class whose first INIT adopts the state. */
 void *materializeState(const std::shared_ptr<InstanceState> &st) {
@@ -162,29 +182,28 @@ std::optional<rx::Value> interpreterSend(const std::shared_ptr<InstanceState> &s
     if (r.kind == 0) return std::nullopt;
     return rx::EnvObject::wrap(r);
 }
-std::optional<rx::Value> runNative(const std::shared_ptr<InstanceState> &st, const MethodInfo &info,
-                                   const std::string &upperSelector, const std::vector<std::optional<rx::Value>> &args);
+std::optional<rx::Value> runNative(const std::shared_ptr<InstanceState> &st, Resolved &method,
+                                   const std::vector<std::optional<rx::Value>> &args);
 /* SELF~selector(args) from compiled code in an exact instance: dispatch inside the library when the method is compiled. */
 bool nativeSelfSend(const std::shared_ptr<InstanceState> &st, const std::string &definingClass, const std::string &selector,
                     const std::vector<rx::Value> &args, std::optional<rx::Value> &out) {
-    const std::string up = upperOf(selector);
-    if (up == "RX2CPP_SUPERA") return false;
-    if (up == "RX2CPP_SUPER") {
+    static const CiEq same;
+    if (same(selector, "RX2CPP_SUPERA")) return false;
+    if (same(selector, "RX2CPP_SUPER")) {
         if (args.empty() || args[0].isObject()) return false;
         const auto &parents = parentTable();
         auto pit = parents.find(definingClass);
         if (pit == parents.end() || pit->second.empty()) return false;
-        const std::string target = upperOf(args[0].bytes);
-        const MethodInfo *info = lookupMethod(pit->second, target);
-        if (!info) return false;
+        Resolved *method = lookupMethod(pit->second, args[0].bytes);
+        if (!method) return false;
         std::vector<std::optional<rx::Value>> rest;
         for (std::size_t i = 1; i < args.size(); i++) rest.push_back(optionalOf(args[i]));
-        out = runNative(st, *info, target, rest);
+        out = runNative(st, *method, rest);
         return true;
     }
-    const MethodInfo *info = lookupMethod(st->dynamicClass, up);
-    if (!info) return false;
-    out = runNative(st, *info, up, optionalsOf(args));
+    Resolved *method = lookupMethod(st->dynamicClass, selector);
+    if (!method) return false;
+    out = runNative(st, *method, optionalsOf(args));
     return true;
 }
 class NativeInstanceRef final : public rx::NativeRefBase {
@@ -193,9 +212,8 @@ public:
     explicit NativeInstanceRef(std::shared_ptr<InstanceState> st) : st_(std::move(st)) {}
     void *materialize() override { return materializeState(st_); }
     rx::MessageResult sendMessage(const std::string &selector, const std::vector<rx::Value> &args) override {
-        const std::string up = upperOf(selector);
-        if (const MethodInfo *info = lookupMethod(st_->dynamicClass, up))
-            if (info->isPublic) return runNative(st_, *info, up, optionalsOf(args));
+        if (Resolved *method = lookupMethod(st_->dynamicClass, selector))
+            if (method->second.isPublic) return runNative(st_, *method, optionalsOf(args));
         return interpreterSend(st_, selector, args);
     }
     rx::Value sendBinary(const std::string &selector, const rx::Value &rhs) override {
@@ -243,13 +261,14 @@ public:
         return r->bytes;
     }
 };
-std::optional<rx::Value> runNative(const std::shared_ptr<InstanceState> &st, const MethodInfo &info,
-                                   const std::string &upperSelector, const std::vector<std::optional<rx::Value>> &args) {
+std::optional<rx::Value> runNative(const std::shared_ptr<InstanceState> &st, Resolved &method,
+                                   const std::vector<std::optional<rx::Value>> &args) {
+    const MethodInfo &info = method.second;
     auto obj = st->at(info.definingClass);
     std::lock_guard<ScopeLock> hold(obj->scope_lock);
     NativeFrame frame(st, info.definingClass, args);
     StateScope current(st.get());
-    rx::Value result = obj->invokeValues(upperSelector, args);
+    rx::Value result = obj->invokeValues(method.first, args);
     if (info.noResult) return std::nullopt;
     return result;
 }
@@ -267,13 +286,14 @@ class NativeClassObj final : public rx::ObjectDispatch {
 public:
     explicit NativeClassObj(std::string n) : name_(std::move(n)) {}
     rx::MessageResult sendMessage(const std::string &selector, const std::vector<rx::Value> &args) override {
-        if (upperOf(selector) == "NEW") {
+        static const CiEq same;
+        if (same(selector, "NEW")) {
             auto st = std::make_shared<InstanceState>();
             st->dynamicClass = name_;
             st->exact = true;
-            const MethodInfo *init = lookupMethod(name_, "INIT");
+            Resolved *init = lookupMethod(name_, "INIT");
             if (!init) throw std::runtime_error("native class without INIT: " + name_);
-            runNative(st, *init, "INIT", optionalsOf(args));
+            runNative(st, *init, optionalsOf(args));
             return rx::Value::fromObject(std::make_shared<NativeInstanceRef>(st));
         }
         return iclass().sendMessage(selector, args);

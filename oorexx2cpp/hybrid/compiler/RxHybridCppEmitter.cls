@@ -77,9 +77,15 @@
       lines~append('      rx::Variables vars(fields_, {' || names || '});')
     end
     else lines~append('      rx::Variables vars;')
-    lines~append('      std::vector<rx::Value> _rxProgramArgs;')
-    lines~append('      for (const auto &_a : arguments) _rxProgramArgs.push_back(_a ? *_a : rx::Value::string(std::string()));')
-    lines~append('      (void)_rxProgramArgs;')
+    /* The ARG()/PARSE ARG copy of the argument list costs a string copy per argument per call: build it only when the body reads it. */
+    usesProgramArgs = .false
+    do statement over method~instructions
+      if statement~pos('_rxProgramArgs') > 0 then usesProgramArgs = .true
+    end
+    if usesProgramArgs then do
+      lines~append('      std::vector<rx::Value> _rxProgramArgs;')
+      lines~append('      for (const auto &_a : arguments) _rxProgramArgs.push_back(_a ? *_a : rx::Value::string(std::string()));')
+    end
     hasOptions = .false
     if arg(3, 'E') then hasOptions = options~present
     if hasOptions then do

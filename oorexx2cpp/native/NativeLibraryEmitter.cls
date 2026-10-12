@@ -203,8 +203,8 @@
     end
   end
   if arg(5, 'E') then source = source || extras
-  direct = '[[maybe_unused]] static const std::unordered_map<std::string, std::unordered_map<std::string, MethodInfo>> &directMethodTable() {' || '0a'x
-  direct = direct || '  static const std::unordered_map<std::string, std::unordered_map<std::string, MethodInfo>> table = {' || '0a'x
+  direct = '[[maybe_unused]] static const ClassMethodTable &directMethodTable() {' || '0a'x
+  direct = direct || '  static const ClassMethodTable table = {' || '0a'x
   do cn over tableOrder
     direct = direct || '    {' || .RxQuote~cpp(cn) || ', {' || '0a'x
     t = tables[cn]

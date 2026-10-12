@@ -271,6 +271,63 @@ namespace rx {
    engine under the caller's NUMERIC settings; anything the native subset does not cover goes on to the interpreter. */
 struct NotNativeBif {};
 inline StringMessageFallback &hostStringBifPrevious() { static StringMessageFallback f = nullptr; return f; }
+// The hot byte-string methods, done in place: no name lookup, no argument slots. Each follows ooRexx exactly for the shapes accepted
+// (plain digit arguments, no pad character); every other shape returns nullopt and takes the general engine.
+inline bool plainCount(const Value &v, std::size_t &out) {
+    if (v.isObject() || v.bytes.empty() || v.bytes.size() > 9 || v.bytes.find_first_not_of("0123456789") != std::string::npos) return false;
+    out = static_cast<std::size_t>(std::stoul(v.bytes));
+    return true;
+}
+inline std::optional<std::string> quickStringBif(const std::string &name, const Value &receiver, const std::vector<Value> &args) {
+    const std::string &s = receiver.bytes;
+    switch (name.size()) {
+    case 6:
+        if (name == "LENGTH" && args.empty()) return std::to_string(s.size());
+        if (name == "BITXOR" || name == "BITAND") {
+            if (args.size() != 1 || args[0].isObject()) return std::nullopt;
+            const std::string &t = args[0].bytes;
+            const std::string &longer = s.size() >= t.size() ? s : t;
+            const std::size_t m = s.size() < t.size() ? s.size() : t.size();
+            std::string r = longer;                       // BITXOR keeps the longer operand's tail; BITAND likewise (no pad)
+            if (name == "BITXOR") for (std::size_t i = 0; i < m; i++) r[i] = static_cast<char>(s[i] ^ t[i]);
+            else for (std::size_t i = 0; i < m; i++) r[i] = static_cast<char>(s[i] & t[i]);
+            return r;
+        }
+        return std::nullopt;
+    default: break;
+    }
+    if (name == "BITOR" && args.size() == 1 && !args[0].isObject()) {
+        const std::string &t = args[0].bytes;
+        const std::string &longer = s.size() >= t.size() ? s : t;
+        const std::size_t m = s.size() < t.size() ? s.size() : t.size();
+        std::string r = longer;
+        for (std::size_t i = 0; i < m; i++) r[i] = static_cast<char>(s[i] | t[i]);
+        return r;
+    }
+    if (name == "REVERSE" && args.empty()) return std::string(s.rbegin(), s.rend());
+    if (name == "SUBSTR" && (args.size() == 1 || args.size() == 2)) {
+        std::size_t n, len = 0;
+        if (!plainCount(args[0], n) || n < 1) return std::nullopt;
+        const std::size_t start = n - 1, avail = start < s.size() ? s.size() - start : 0;
+        if (args.size() == 1) return s.substr(start < s.size() ? start : s.size());
+        if (!plainCount(args[1], len)) return std::nullopt;
+        const std::size_t take = len < avail ? len : avail;
+        return (avail ? s.substr(start, take) : std::string()) + std::string(len - take, ' ');
+    }
+    if ((name == "LEFT" || name == "RIGHT") && args.size() == 1) {
+        std::size_t len;
+        if (!plainCount(args[0], len)) return std::nullopt;
+        if (name == "LEFT") return len <= s.size() ? s.substr(0, len) : s + std::string(len - s.size(), ' ');
+        return len <= s.size() ? s.substr(s.size() - len) : std::string(len - s.size(), ' ') + s;
+    }
+    if (name == "C2X" && args.empty()) {
+        static const char hex[] = "0123456789ABCDEF";
+        std::string r; r.reserve(s.size() * 2);
+        for (unsigned char c : s) { r.push_back(hex[c >> 4]); r.push_back(hex[c & 15]); }
+        return r;
+    }
+    return std::nullopt;
+}
 inline MessageResult hostStringBif(const Value &receiver, const std::string &selector, const std::vector<Value> &args) {
     static const std::unordered_set<std::string> mirrored{
         "C2D","C2X","X2C","X2D","D2C","D2X","B2X","X2B","LENGTH","SUBSTR","LEFT","RIGHT","CENTER","CENTRE","REVERSE","TRANSLATE",
@@ -284,6 +341,7 @@ inline MessageResult hostStringBif(const Value &receiver, const std::string &sel
         const ActivationNumeric &n0 = currentNumeric ? *currentNumeric : def0;
         if (auto fast = fastRadix(name, receiver, args, n0.digits)) return MessageResult(Value::string(*fast));
     }
+    if (auto quick = quickStringBif(name, receiver, args)) return MessageResult(Value::string(*quick));
     if (name == "SUBCHAR" && args.size() == 1 && !args[0].isObject() && !args[0].bytes.empty() && args[0].bytes.size() < 10 &&
         args[0].bytes.find_first_not_of("0123456789") == std::string::npos) {
         const unsigned long n = std::stoul(args[0].bytes);   // SUBCHAR(n): the n-th character, "" beyond the end
