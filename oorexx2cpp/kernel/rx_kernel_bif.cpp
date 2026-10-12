@@ -111,29 +111,51 @@ void *findClass(const std::string &name) {
 void *retain(void *h) { return h ? (void *)thread->RequestGlobalReference((RexxObjectPtr)h) : nullptr; }
 void release(void *h) { if (h && thread) thread->ReleaseGlobalReference((RexxObjectPtr)h); }
 bool sameObject(void *a, void *b) { return a == b; }
+void *nil() { if (!start()) return nullptr; if (!session) session.reset(new ApiContext(thread)); return (void *)thread->Nil(); }
+// The kernel's own send: method lookup in the receiver's behaviour, then the real C++ entry (ArrayClass::putRexx, ...). No
+// public-API argument array, no Message object.
 bool send(void *target, const std::string &selector, const std::vector<Arg> &args, Result &out,
           std::string &rxCode, std::string &rxText) {
     if (!start()) { rxCode = "98.1"; rxText = "kernel unavailable"; return false; }
-    if (!session) session.reset(new ApiContext(thread));
-    RexxArrayObject arr = thread->NewArray(args.size());
-    for (size_t i = 0; i < args.size(); i++) {
-        RexxObjectPtr o = args[i].obj ? (RexxObjectPtr)args[i].obj
-                                      : (RexxObjectPtr)thread->NewString(args[i].bytes.data(), args[i].bytes.size());
-        thread->ArrayAppend(arr, o);
+    ApiContext entered(thread);   // the kernel lock and current activity for this call (API calls elsewhere release them)
+    const size_t n = args.size();
+    ProtectedObject guards[8];   // keeps the argument strings alive; more than 8 arguments use the slower array
+    ArrayClass *held = nullptr; ProtectedObject keep;
+    if (n > 8) { held = new_array(n); keep = held; }
+    RexxObject *argv[16]; std::vector<RexxObject *> big;
+    RexxObject **a = argv;
+    if (n > 16) { big.resize(n); a = big.data(); }
+    for (size_t i = 0; i < n; i++) {
+        if (args[i].omitted) { a[i] = OREF_NULL; continue; }
+        if (args[i].obj) { a[i] = (RexxObject *)args[i].obj; continue; }
+        RexxString *s = new_string(args[i].bytes.data(), args[i].bytes.size());
+        if (i < 8) guards[i] = s; else held->put(s, i + 1);
+        a[i] = s;
     }
-    RexxObjectPtr r = thread->SendMessage((RexxObjectPtr)target, selector.c_str(), arr);
-    if (thread->CheckCondition()) {
+    RexxObject *r = OREF_NULL;
+    bool failed = false;
+    try {
+        ProtectedObject result;
+        std::string up = selector;
+        for (char &c : up) c = (char)toupper((unsigned char)c);
+        RexxString *msg = new_string(up.data(), up.size());
+        ProtectedObject keepName(msg);
+        ((RexxObject *)target)->messageSend(msg, a, n, result);
+        r = (RexxObject *)result;
+        if (r != OREF_NULL) {
+            if (isString(r) || r->isInstanceOf(TheStringClass)) {
+                RexxString *rs = r->stringValue();   // Integer and NumberString are String-like
+                out.kind = 1; out.bytes.assign(rs->getStringData(), rs->getLength());
+            } else { out.kind = 2; out.obj = (void *)thread->RequestGlobalReference((RexxObjectPtr)r); }
+        } else out.kind = 0;
+    } catch (NativeActivation *) { failed = true; }
+    if (failed || thread->CheckCondition()) {
         RexxCondition cd; thread->DecodeConditionInfo(thread->GetConditionInfo(), &cd);
         rxCode = std::to_string(cd.code / 1000) + "." + std::to_string(cd.code % 1000);
         rxText = cd.message ? thread->ObjectToStringValue(cd.message) : "error in message " + selector;
         thread->ClearCondition();
         return false;
     }
-    if (r == NULLOBJECT) { out.kind = 0; return true; }
-    if (thread->IsString(r) || thread->IsOfType(r, "STRING")) {
-        RexxStringObject str = thread->ObjectToString(r);
-        out.kind = 1; out.bytes.assign(thread->StringData(str), thread->StringLength(str));
-    } else { out.kind = 2; out.obj = (void *)thread->RequestGlobalReference(r); }
     return true;
 }
 }

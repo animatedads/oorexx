@@ -17,5 +17,6 @@ struct Arg { void *obj = nullptr; std::string bytes; bool omitted = false; };   
 struct Result { int kind = 0; std::string bytes; void *obj = nullptr; };   // kind 0 none, 1 string, 2 object (retained handle)
 bool send(void *target, const std::string &selector, const std::vector<Arg> &args, Result &out,
           std::string &rxCode, std::string &rxText);
+void *nil();                                       // .NIL
 bool sameObject(void *a, void *b);
 }

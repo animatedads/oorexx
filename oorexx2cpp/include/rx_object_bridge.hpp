@@ -13,7 +13,7 @@ using Arg = rxkernel::Arg; using Result = rxkernel::Result;
 inline void *findClass(const std::string &n) { return rxkernel::findClass(n); }
 inline void release(void *h) { rxkernel::release(h); }
 inline void *selfHandle() { return nullptr; }   // the kernel backend has no receiver
-inline void *nilObject() { return nullptr; }     // not supported by the kernel backend
+inline void *nilObject() { return rxkernel::nil(); }
 inline void *stringHandle(const std::string &) { throw std::runtime_error("interpreter String fallback is not available in kernel mode"); }
 inline bool send(void *t, const std::string &s, const std::vector<Arg> &a, Result &r, std::string &c, std::string &x) {
     return rxkernel::send(t, s, a, r, c, x);
