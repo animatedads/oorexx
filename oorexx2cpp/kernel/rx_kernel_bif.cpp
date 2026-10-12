@@ -111,12 +111,29 @@ void *findClass(const std::string &name) {
 void *retain(void *h) { return h ? (void *)thread->RequestGlobalReference((RexxObjectPtr)h) : nullptr; }
 void release(void *h) { if (h && thread) thread->ReleaseGlobalReference((RexxObjectPtr)h); }
 bool sameObject(void *a, void *b) { return a == b; }
+namespace {
+// Message names are rooted once per distinct spelling (global reference), so a send allocates no name string.
+// Done in a context of its own: the API call that roots the name leaves the kernel when it returns.
+RexxString *messageName(const std::string &selector) {
+    static std::unordered_map<std::string, RexxString *> names;
+    auto it = names.find(selector);
+    if (it != names.end()) return it->second;
+    ApiContext entered(thread);
+    std::string up = selector;
+    for (char &c : up) c = (char)toupper((unsigned char)c);
+    RexxString *s = new_string(up.data(), up.size());
+    thread->RequestGlobalReference((RexxObjectPtr)s);
+    names.emplace(selector, s);
+    return s;
+}
+}
 void *nil() { if (!start()) return nullptr; if (!session) session.reset(new ApiContext(thread)); return (void *)thread->Nil(); }
 // The kernel's own send: method lookup in the receiver's behaviour, then the real C++ entry (ArrayClass::putRexx, ...). No
 // public-API argument array, no Message object.
 bool send(void *target, const std::string &selector, const std::vector<Arg> &args, Result &out,
           std::string &rxCode, std::string &rxText) {
     if (!start()) { rxCode = "98.1"; rxText = "kernel unavailable"; return false; }
+    RexxString *msg = messageName(selector);
     ApiContext entered(thread);   // the kernel lock and current activity for this call (API calls elsewhere release them)
     const size_t n = args.size();
     ProtectedObject guards[8];   // keeps the argument strings alive; more than 8 arguments use the slower array
@@ -128,6 +145,11 @@ bool send(void *target, const std::string &selector, const std::vector<Arg> &arg
     for (size_t i = 0; i < n; i++) {
         if (args[i].omitted) { a[i] = OREF_NULL; continue; }
         if (args[i].obj) { a[i] = (RexxObject *)args[i].obj; continue; }
+        // the same bytes twice in one call (a~put(i, i)): one kernel string
+        bool shared = false;
+        for (size_t j = 0; j < i && !shared; j++)
+            if (!args[j].omitted && !args[j].obj && args[j].bytes == args[i].bytes) { a[i] = a[j]; shared = true; }
+        if (shared) continue;
         RexxString *s = new_string(args[i].bytes.data(), args[i].bytes.size());
         if (i < 8) guards[i] = s; else held->put(s, i + 1);
         a[i] = s;
@@ -136,10 +158,6 @@ bool send(void *target, const std::string &selector, const std::vector<Arg> &arg
     bool failed = false;
     try {
         ProtectedObject result;
-        std::string up = selector;
-        for (char &c : up) c = (char)toupper((unsigned char)c);
-        RexxString *msg = new_string(up.data(), up.size());
-        ProtectedObject keepName(msg);
         ((RexxObject *)target)->messageSend(msg, a, n, result);
         r = (RexxObject *)result;
         if (r != OREF_NULL) {

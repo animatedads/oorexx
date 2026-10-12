@@ -22,9 +22,17 @@ inline cpp_int decimalPow10(int n) {
     }
     return out;
 }
-// Fast path: plain integers of at most 9 digits under DIGITS >= 18 are exact in int64.
+// Fast path: plain integers of at most 9 digits (and at most DIGITS digits) are exact in int64; a result that still fits in DIGITS
+// digits needs no rounding (see fitsDigits), anything else takes the full decimal path.
+inline bool fitsDigits(std::int64_t r, const ActivationNumeric &ctx) {
+    if (ctx.digits >= 19) return true;
+    static const std::int64_t pow10[19] = {1LL,10LL,100LL,1000LL,10000LL,100000LL,1000000LL,10000000LL,100000000LL,1000000000LL,
+        10000000000LL,100000000000LL,1000000000000LL,10000000000000LL,100000000000000LL,1000000000000000LL,
+        10000000000000000LL,100000000000000000LL,1000000000000000000LL};
+    return (r < 0 ? -r : r) < pow10[ctx.digits];
+}
 inline bool smallInteger(const Value &v, const ActivationNumeric &ctx, std::int64_t &out) {
-    if (v.isObject() || ctx.digits < 18) return false;
+    if (v.isObject() || ctx.digits < 1 || ctx.fuzz != 0) return false;   // NUMERIC FUZZ changes comparisons: full path
     const std::string &s = v.bytes;
     std::size_t i = 0, n = s.size();
     if (n == 0 || n > 10) return false;
@@ -35,7 +43,7 @@ inline bool smallInteger(const Value &v, const ActivationNumeric &ctx, std::int6
     for (; i < n; ++i) { if (s[i] < '0' || s[i] > '9') return false; r = r * 10 + (s[i] - '0'); }
     if (r > 999999999) return false;
     out = neg ? -r : r;
-    return true;
+    return fitsDigits(out, ctx);
 }
 inline int decimalDigits(const cpp_int &c) {
     const cpp_int n = c < 0 ? -c : c;
@@ -153,7 +161,7 @@ inline Value numberResult(RexxDecimal n, const ActivationNumeric &ctx) {
     return Value::number(formatRexxDecimal(n, ctx));
 }
 inline Value numericAdd(const Value &a, const Value &b, const ActivationNumeric &ctx) {
-    { std::int64_t p, q; if (smallInteger(a, ctx, p) && smallInteger(b, ctx, q)) return Value::number(std::to_string(p + q)); }
+    { std::int64_t p, q; if (smallInteger(a, ctx, p) && smallInteger(b, ctx, q) && fitsDigits(p + q, ctx)) return Value::number(std::to_string(p + q)); }
     RexxDecimal x = parseRexxDecimal(a), y = parseRexxDecimal(b);
     // Rexx addition normalizes operands to the current significant-digit
     // context, unlike multiplication, which carries additional guard digits.
@@ -217,7 +225,7 @@ inline Value numericAdd(const Value &a, const Value &b, const ActivationNumeric 
     return Value::number(formatRexxDecimal(rounded, ctx));
 }
 inline Value numericSub(const Value &a, const Value &b, const ActivationNumeric &ctx) {
-    { std::int64_t p, q; if (smallInteger(a, ctx, p) && smallInteger(b, ctx, q)) return Value::number(std::to_string(p - q)); }
+    { std::int64_t p, q; if (smallInteger(a, ctx, p) && smallInteger(b, ctx, q) && fitsDigits(p - q, ctx)) return Value::number(std::to_string(p - q)); }
     RexxDecimal y = parseRexxDecimal(b);
     y.coefficient = -y.coefficient;
     return numericAdd(a, Value::number(formatRexxDecimal(y, ctx)), ctx);
@@ -230,7 +238,7 @@ inline void truncateGuardDigits(RexxDecimal &v, const ActivationNumeric &ctx) {
     }
 }
 inline Value numericMul(const Value &a, const Value &b, const ActivationNumeric &ctx) {
-    { std::int64_t p, q; if (smallInteger(a, ctx, p) && smallInteger(b, ctx, q)) return Value::number(std::to_string(p * q)); }
+    { std::int64_t p, q; if (smallInteger(a, ctx, p) && smallInteger(b, ctx, q) && fitsDigits(p * q, ctx)) return Value::number(std::to_string(p * q)); }
     RexxDecimal x = parseRexxDecimal(a), y = parseRexxDecimal(b);
     // ooRexx uses one guard digit of operand precision in multiplication.
     truncateGuardDigits(x, ctx); truncateGuardDigits(y, ctx);
