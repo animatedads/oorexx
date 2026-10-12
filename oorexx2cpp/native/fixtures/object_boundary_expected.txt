@@ -1,0 +1,18 @@
+class method visible: 1
+declared method inventory: 1
+array identity: 1
+directory identity: 1
+list identity: 1
+nil identity: 1
+self identity: 1
+stored identity: 1
+shared nested identity: 1
+identity table roundtrip: kept
+returned array: created Array
+default missing: default
+explicit nil: 1
+replace identity: 1 two
+interpreted callback identity: 1
+nested compiled-interpreted-compiled identity: 1
+object as argument identity: 1
+reference replacement 2400: 0
