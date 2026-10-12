@@ -251,9 +251,15 @@ inline Value selfObject() {
 }
 // .NAME environment symbols resolve to the interpreter's own classes (.ARRAY, .DIRECTORY, .LIST, ...).
 inline Value envClass(const std::string &name) {
+    // Class objects live as long as the interpreter instance: resolve each name once per thread (FindClass is a full lookup).
+    static thread_local std::unordered_map<std::string, std::shared_ptr<EnvObject>> cache;
+    auto it = cache.find(name);
+    if (it != cache.end()) return Value::fromObject(it->second);
     void *h = rxobj::findClass(name);
     if (!h) throw std::runtime_error("unknown environment class ." + name);
-    return Value::fromObject(std::make_shared<EnvObject>(h));
+    auto obj = std::make_shared<EnvObject>(h);
+    cache.emplace(name, obj);
+    return Value::fromObject(obj);
 }
 }
 #endif
