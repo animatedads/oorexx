@@ -1,0 +1,6 @@
+# interpreted table for interp_table.cls
+prefer_interpreted   Counter describe
+requires_interpreted Counter where
+prefer_interpreted   Counter peek
+prefer_interpreted   Counter make CLASS
+requires_interpreted Shape

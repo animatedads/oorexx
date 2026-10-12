@@ -6,6 +6,11 @@
 #include "generated.hpp"
 #include "rx_object_bridge.hpp"
 #include <string>
+#include <cctype>
+#include <dlfcn.h>
+#include <fstream>
+#include <map>
+#include <sstream>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
@@ -58,7 +63,7 @@ static void raiseSyntaxIn(RexxThreadContext *t, const rx::SyntaxCondition &e) {
             if (auto *env = dynamic_cast<rx::EnvObject *>(v.object.get())) { t->ArrayPut(subs, (RexxObjectPtr)env->handle, i + 1); continue; }
         }
 #endif
-        const std::string text = v.isObject() ? v.object->display() : v.bytes;
+        const std::string text = v.isObject() ? v.object->display() : v.bytes.str();
         t->ArrayPut(subs, t->NewString(text.data(), text.size()), i + 1);
     }
     t->RaiseException(number, subs);
@@ -673,7 +678,69 @@ static RexxMethodEntry nativeMethods[] = {
     REXX_LAST_METHOD()
 };
 
+%DECLARATION_FORM%
+#ifdef RX2CPP_INTERPRETED_FILE
+// interpreted_form file: the interpreted parts of this library live in an editable source file next to the library,
+// read every time the library loads. A marker line "/* #REXX2CPP METHODS class */" or "/* #REXX2CPP CLASSES */"
+// starts a section of that file; the same marker in the declaration says where the section goes.
+static std::string rx2cppMarker(const std::string &line) {
+    const std::size_t a = line.find_first_not_of(" \t\r");
+    if (a == std::string::npos) return std::string();
+    const std::size_t b = line.find_last_not_of(" \t\r");
+    const std::string t = line.substr(a, b - a + 1);
+    if (t.size() < 16 || t.compare(0, 3, "/* ") != 0 || t.compare(t.size() - 2, 2, "*/") != 0) return std::string();
+    std::istringstream words(t.substr(2, t.size() - 4));
+    std::string w, key;
+    while (words >> w) {
+        for (char &c : w) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        key += (key.empty() ? "" : " ") + w;
+    }
+    return key.compare(0, 10, "#REXX2CPP ") == 0 ? key : std::string();
+}
+static bool rx2cppInterpretedSource(const char *decl, std::size_t n, std::string &out, std::string &error) {
+    Dl_info info{};
+    std::string dir = ".";
+    if (dladdr(reinterpret_cast<void *>(&rx2cppMarker), &info) && info.dli_fname) {
+        const std::string so = info.dli_fname;
+        const std::size_t slash = so.rfind('/');
+        if (slash != std::string::npos) dir = so.substr(0, slash);
+    }
+    const std::string path = dir + "/" + RX2CPP_INTERPRETED_FILE;
+    std::ifstream file(path, std::ios::binary);
+    if (!file) { error = "interpreted source file not found: " + path; return false; }
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    std::map<std::string, std::string> sections;
+    std::string current, line;
+    std::istringstream text(buffer.str());
+    while (std::getline(text, line)) {
+        const std::string key = rx2cppMarker(line);
+        if (!key.empty()) {
+            if (sections.count(key)) { error = path + ": duplicate marker " + key; return false; }
+            current = key;
+            sections[key];
+        } else if (!current.empty()) sections[current] += line + "\n";
+    }
+    out.clear();
+    std::istringstream declaration(std::string(decl, n));
+    while (std::getline(declaration, line)) {
+        const std::string key = rx2cppMarker(line);
+        if (key.empty()) { out += line + "\n"; continue; }
+        auto found = sections.find(key);
+        if (found == sections.end()) { error = path + ": missing section " + key; return false; }
+        out += line + "\n" + found->second;
+        sections.erase(found);
+    }
+    if (!sections.empty()) { error = path + ": section with no place in the library: " + sections.begin()->first; return false; }
+    return true;
+}
+#endif
+
 static void RexxEntry loadPackage(RexxThreadContext *ctx) {
+    // The build tokenizes the declaration with rexxc, which loads this library only to resolve its EXTERNAL methods
+    // and routines. Loading the declaration package here would put live objects into the image, and run user code
+    // (the prolog) at build time: do nothing.
+    if (std::getenv("RX2CPP_TOKENIZING") != nullptr) return;
     // A native package normally only contributes routines/methods. We build
     // its PUBLIC class once and publish it to the ooRexx global environment.
     static const char declaration[] = %CLASS_SOURCE%;
@@ -687,7 +754,19 @@ static void RexxEntry loadPackage(RexxThreadContext *ctx) {
             return;
         }
     }
-    auto pkg = ctx->LoadPackageFromData(%INTERNAL_NAME%, declaration, sizeof(declaration)-1);
+    const char *declarationData = declaration;
+    std::size_t declarationSize = sizeof(declaration) - 1;
+#ifdef RX2CPP_INTERPRETED_FILE
+    static std::string spliced;
+    std::string spliceError;
+    if (!rx2cppInterpretedSource(declaration, declarationSize, spliced, spliceError)) {
+        ctx->RaiseException1(Rexx_Error_Execution_user_defined, ctx->String(("rx2cpp: " + spliceError).c_str()));
+        return;
+    }
+    declarationData = spliced.data();
+    declarationSize = spliced.size();
+#endif
+    auto pkg = ctx->LoadPackageFromData(%INTERNAL_NAME%, declarationData, declarationSize);
     if (pkg == NULLOBJECT || ctx->CheckCondition()) return;
 #ifdef RX2CPP_HOST_API
     rxobj::libraryPackage() = ctx->RequestGlobalReference((RexxObjectPtr)pkg);

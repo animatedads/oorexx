@@ -100,7 +100,7 @@ struct StemObject final : ObjectDispatch {
         if (remote) return remote->display();
         std::lock_guard<std::mutex> g(lock);
         if (!dflt) return name;
-        return dflt->isObject() ? dflt->object->display() : dflt->bytes;
+        return dflt->isObject() ? dflt->object->display() : dflt->bytes.str();
     }
 };
 inline std::atomic<bool> &stemObjectsInUse() { static std::atomic<bool> used{false}; return used; }
@@ -136,7 +136,7 @@ struct StemClassObject final : ObjectDispatch {
         if (selector == "NEW" && args.size() <= 1) {
             if (!args.empty() && args[0].isObject()) throw std::runtime_error(".STEM~NEW name must be a string");
             stemObjectsInUse().store(true, std::memory_order_relaxed);
-            return Value::fromObject(std::make_shared<StemObject>(args.empty() ? std::string() : args[0].bytes));
+            return Value::fromObject(std::make_shared<StemObject>(args.empty() ? std::string() : args[0].bytes.str()));
         }
         return ObjectDispatch::sendMessage(selector, args);
     }

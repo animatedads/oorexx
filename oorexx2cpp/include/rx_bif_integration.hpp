@@ -41,7 +41,7 @@ struct BifRuntime {
             std::vector<std::pair<bool, std::string>> in;
             for (const auto& slot : args) {
                 if (slot && slot->isObject()) throw std::runtime_error("BIF " + name + ": object arguments need the interpreter");
-                in.emplace_back(static_cast<bool>(slot), slot ? slot->bytes : std::string());
+                in.emplace_back(static_cast<bool>(slot), slot ? slot->bytes.str() : std::string());
             }
             return Value::string(rxobj::callBif(name, in, numeric.digits, numeric.fuzz,
                                                 numeric.form == rxbif_breadth::NumericForm::Engineering));
@@ -532,7 +532,7 @@ inline Value dispatchBif(BifRuntime& bif, Variables& vars, const std::string& na
         std::vector<std::string> raw; std::vector<bool> present;
         for(const auto& slot:slots) {
             if(slot && slot->isObject()) { crossable=false; break; }
-            raw.push_back(slot ? slot->bytes : std::string()); present.push_back(static_cast<bool>(slot));
+            raw.push_back(slot ? slot->bytes.str() : std::string()); present.push_back(static_cast<bool>(slot));
         }
         if(crossable) {
             std::string out,code,text;
@@ -728,7 +728,7 @@ inline std::optional<MessageResult> quickStringMethod(const std::string &name, c
     if (name == "VERIFY" && !args.empty() && args.size() <= 4) {
         for (const Value &a : args) if (a.isObject() && !(dynamic_cast<EnvObject *>(a.object.get()) && static_cast<EnvObject *>(a.object.get())->handle == nullptr)) return std::nullopt;
         auto omitted = [&](std::size_t i) { return i >= args.size() || (args[i].isObject()); };
-        const std::string &ref = args[0].isObject() ? std::string() : args[0].bytes;
+        static const std::string rxEmptyRef; const std::string &ref = args[0].isObject() ? rxEmptyRef : args[0].bytes.str();
         if (args[0].isObject()) return std::nullopt;
         bool match = false;
         if (!omitted(1)) {

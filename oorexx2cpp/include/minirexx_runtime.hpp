@@ -35,8 +35,90 @@ namespace rx {
 // operator an independently overridable virtual message. The prototype
 // does not yet compile ::class or method declarations.
 struct ObjectDispatch;
+// ooRexx strings are immutable objects passed by reference. RxStr gives Value the same cost model: a string longer
+// than the inline limit lives in one shared buffer, so copying a Value (BIF argument, assignment, PARSE source,
+// message argument) copies a pointer, not the bytes. A writer that finds the buffer shared takes its own copy first.
+// Short strings stay inline (no allocation), as std::string's small-string storage did before.
+class RxStr {
+public:
+    static constexpr std::size_t inlineLimit = 64;
+    using size_type = std::string::size_type;
+    static constexpr size_type npos = std::string::npos;
+    RxStr() = default;
+    RxStr(const std::string &v) { put(std::string(v)); }
+    RxStr(std::string &&v) { put(std::move(v)); }
+    RxStr(const char *v) { put(std::string(v)); }
+    RxStr &operator=(const std::string &v) { big_.reset(); put(std::string(v)); return *this; }
+    RxStr &operator=(std::string &&v) { big_.reset(); put(std::move(v)); return *this; }
+    RxStr &operator=(const char *v) { big_.reset(); put(std::string(v)); return *this; }
+    const std::string &str() const { return big_ ? *big_ : small_; }
+    operator const std::string &() const { return str(); }
+    // Write access: unshare first.
+    std::string &mut() {
+        if (big_) {
+            if (big_.use_count() != 1) big_ = std::make_shared<std::string>(*big_);
+            return *big_;
+        }
+        return small_;
+    }
+    bool shared() const { return big_ && big_.use_count() > 1; }
+    size_type size() const { return str().size(); }
+    size_type length() const { return str().size(); }
+    bool empty() const { return str().empty(); }
+    const char *data() const { return str().data(); }
+    const char *c_str() const { return str().c_str(); }
+    char operator[](size_type i) const { return str()[i]; }
+    char front() const { return str().front(); }
+    char back() const { return str().back(); }
+    std::string::const_iterator begin() const { return str().begin(); }
+    std::string::const_iterator end() const { return str().end(); }
+    std::string substr(size_type pos = 0, size_type n = npos) const { return str().substr(pos, n); }
+    template <class... A> size_type find(A &&...a) const { return str().find(std::forward<A>(a)...); }
+    template <class... A> size_type rfind(A &&...a) const { return str().rfind(std::forward<A>(a)...); }
+    template <class... A> size_type find_first_of(A &&...a) const { return str().find_first_of(std::forward<A>(a)...); }
+    template <class... A> size_type find_last_of(A &&...a) const { return str().find_last_of(std::forward<A>(a)...); }
+    template <class... A> size_type find_first_not_of(A &&...a) const { return str().find_first_not_of(std::forward<A>(a)...); }
+    template <class... A> size_type find_last_not_of(A &&...a) const { return str().find_last_not_of(std::forward<A>(a)...); }
+    template <class... A> int compare(A &&...a) const { return str().compare(std::forward<A>(a)...); }
+    template <class... A> RxStr &assign(A &&...a) { std::string t; t.assign(std::forward<A>(a)...); return *this = std::move(t); }
+    template <class... A> RxStr &append(A &&...a) { mut().append(std::forward<A>(a)...); return *this; }
+    template <class... A> RxStr &insert(A &&...a) { mut().insert(std::forward<A>(a)...); return *this; }
+    template <class T> RxStr &operator+=(const T &t) { mut() += t; return *this; }
+    void push_back(char c) { mut().push_back(c); }
+    void clear() { big_.reset(); small_.clear(); }
+    void reserve(size_type n) { mut().reserve(n); }
+    void resize(size_type n, char c = '\0') { mut().resize(n, c); }
+private:
+    void put(std::string &&v) {
+        if (v.size() > inlineLimit) { small_.clear(); big_ = std::make_shared<std::string>(std::move(v)); }
+        else small_ = std::move(v);
+    }
+    std::string small_;
+    std::shared_ptr<std::string> big_;
+};
+inline bool operator==(const RxStr &a, const RxStr &b) {
+    return (a.size() == b.size()) && (a.data() == b.data() || a.str() == b.str());
+}
+inline bool operator==(const RxStr &a, const std::string &b) { return a.str() == b; }
+inline bool operator==(const std::string &a, const RxStr &b) { return a == b.str(); }
+inline bool operator==(const RxStr &a, const char *b) { return a.str() == b; }
+inline bool operator!=(const RxStr &a, const RxStr &b) { return !(a == b); }
+inline bool operator!=(const RxStr &a, const std::string &b) { return a.str() != b; }
+inline bool operator!=(const std::string &a, const RxStr &b) { return a != b.str(); }
+inline bool operator!=(const RxStr &a, const char *b) { return a.str() != b; }
+inline bool operator<(const RxStr &a, const RxStr &b) { return a.str() < b.str(); }
+inline bool operator>(const RxStr &a, const RxStr &b) { return a.str() > b.str(); }
+inline bool operator<=(const RxStr &a, const RxStr &b) { return a.str() <= b.str(); }
+inline bool operator>=(const RxStr &a, const RxStr &b) { return a.str() >= b.str(); }
+inline std::string operator+(const RxStr &a, const std::string &b) { return a.str() + b; }
+inline std::string operator+(const std::string &a, const RxStr &b) { return a + b.str(); }
+inline std::string operator+(const RxStr &a, const char *b) { return a.str() + b; }
+inline std::string operator+(const char *a, const RxStr &b) { return a + b.str(); }
+inline std::string operator+(const RxStr &a, char b) { return a.str() + b; }
+inline std::string operator+(const RxStr &a, const RxStr &b) { return a.str() + b.str(); }
+inline std::ostream &operator<<(std::ostream &o, const RxStr &a) { return o << a.str(); }
 struct Value {
-    std::string bytes;
+    RxStr bytes;
     std::shared_ptr<ObjectDispatch> object;
     explicit Value(std::string v) : bytes(std::move(v)) {}
     explicit Value(std::shared_ptr<ObjectDispatch> target) : object(std::move(target)) {
@@ -999,7 +1081,7 @@ inline void say(const std::vector<Value> &items) {
     for (const auto &item : items) {
         if (!first) std::cout << ' ';
         first = false;
-        std::cout << (item.isObject() ? item.object->display() : item.bytes);
+        std::cout << (item.isObject() ? item.object->display() : item.bytes.str());
     }
     std::cout << '\n';
 }

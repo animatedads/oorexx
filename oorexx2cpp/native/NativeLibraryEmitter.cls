@@ -6,6 +6,15 @@
   /* Compatibility entrypoint for single class compiler users. */
   use arg unit, packageName, template
   return self~emitPackage(.array~of(unit), packageName, template)
+::attribute interpretedMethods
+::attribute interpretedPublic
+::attribute form              /* tokenized | source | file (interpreted table, default tokenized) */
+::attribute workPrefix        /* build directory prefix for the tokenizer's files */
+::method init
+  self~interpretedMethods = .directory~new
+  self~interpretedPublic = .array~new
+  self~form = 'tokenized'
+  self~workPrefix = ''
 ::method emitPackage
   use arg units, packageName, template, options, extras, routines
   userUninit = .false
@@ -158,6 +167,11 @@
     if \classSide then do
       tables[name] = resolved
       tableOrder~append(name)
+      /* Methods the interpreted table moved out of the compiled class: declared here with their own source. */
+      if self~interpretedMethods~hasIndex(name~upper) then do
+        if self~form == 'file' then source = source || '/* #REXX2CPP METHODS ' || name~upper || ' */' || '0a'x
+        else source = source || self~interpretedMethods[name~upper]
+      end
     end
     if classSide then nop
     else if isRoot then do
@@ -238,13 +252,34 @@
   output = output~changeStr('%METHOD_ENTRIES%', entries)
   output = output~changeStr('%ROUTINE_DEFINITIONS%', routineDefs)
   output = output~changeStr('%ROUTINE_ENTRIES%', routineEntries)
-  output = output~changeStr('%CLASS_SOURCE%', .RxQuote~cpp(source))
+  if self~form == 'tokenized' then output = output~changeStr('%CLASS_SOURCE%', self~tokenized(source))
+  else output = output~changeStr('%CLASS_SOURCE%', .RxQuote~cpp(source))
+  formDefine = ''
+  if self~form == 'file' then
+    formDefine = '#define RX2CPP_INTERPRETED_FILE ' || .RxQuote~cpp(packageName || '_interpreted.cls')
+  output = output~changeStr('%DECLARATION_FORM%', formDefine)
   output = output~changeStr('%CLASS_COUNT%', countClasses)
+  /* PUBLIC classes the interpreted table keeps interpreted are published with the compiled ones. */
+  do interpretedName over self~interpretedPublic
+    classes = classes || '    ' || .RxQuote~cpp(interpretedName) || ',' || '0a'x
+  end
   output = output~changeStr('%CLASS_NAMES%', classes)
   output = output~changeStr('%FACTORY_DISPATCH%', factories)
   output = output~changeStr('%INTERNAL_NAME%', .RxQuote~cpp('rx2cpp-generated-' || packageName))
   output = output~changeStr('%PACKAGE_NAME%', .RxQuote~cpp(packageName))
   return output
+/* interpreted_form tokenized: the declaration package is embedded as source between markers and written to
+   <prefix>_declaration.cls. native/build.sh then builds the library, runs rexxc on that file (rexxc resolves the
+   EXTERNAL methods, so the library must exist), and swaps the marked literal for the image's bytes
+   (LoadPackageFromData accepts a rexxc image as well as source). */
+::method tokenized private
+  use arg source
+  if self~workPrefix == '' then raise syntax 40.1 array('rx2cpp: tokenizing needs a build directory')
+  file = self~workPrefix || '_declaration.cls'
+  call stream file, 'C', 'OPEN WRITE REPLACE'
+  call charout file, source
+  call stream file, 'C', 'CLOSE'
+  return '/*RX2CPP_DECLARATION_BEGIN*/ ' || .RxQuote~cpp(source) || ' /*RX2CPP_DECLARATION_END*/'
 ::method cppBool private
   use arg v
   if v == 1 then return 'true'

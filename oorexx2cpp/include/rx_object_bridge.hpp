@@ -96,14 +96,26 @@ inline void *environmentEntry(const std::string &name) {
     if (o == NULLOBJECT) return nullptr;
     return (void *)t->RequestGlobalReference(o);
 }
-inline void release(void *h) { if (h && current) current->ReleaseGlobalReference((RexxObjectPtr)h); }
+// RX2CPP_REF_STATS=1: global references taken by sends, released, and dropped without a context (leaked); printed at exit.
+struct RefStats {
+    std::atomic<unsigned long> taken{0}, released{0}, dropped{0};
+    bool on = std::getenv("RX2CPP_REF_STATS") != nullptr;
+    ~RefStats() { if (on) std::fprintf(stderr, "rx2cpp refs: taken %lu released %lu dropped %lu\n", taken.load(), released.load(), dropped.load()); }
+};
+inline RefStats &refStats() { static RefStats s; return s; }
+inline void release(void *h) {
+    if (!h) return;
+    if (current) { current->ReleaseGlobalReference((RexxObjectPtr)h); if (refStats().on) ++refStats().released; }
+    else if (refStats().on) ++refStats().dropped;
+}
 // A value that crosses as a plain string: a .String (or the interpreter's internal integer/number forms of it). An instance of
 // a String SUBCLASS (json.cls JsonString, ...) is an object and keeps its class.
 inline bool isPlainString(RexxThreadContext *t, RexxObjectPtr o) {
     if (t->IsString(o)) return true;
-    if (!t->IsOfType(o, "STRING")) return false;
     static thread_local RexxObjectPtr stringClass = NULLOBJECT;
     if (stringClass == NULLOBJECT) stringClass = t->RequestGlobalReference((RexxObjectPtr)t->FindClass("STRING"));
+    // Instance test against the cached class object, not a by-name class lookup per result.
+    if (!t->IsInstanceOf(o, (RexxClassObject)stringClass)) return false;
     RexxObjectPtr cls = t->SendMessage0(o, "CLASS");
     if (t->CheckCondition()) { t->ClearCondition(); return true; }
     return cls == stringClass;
@@ -122,18 +134,35 @@ inline void captureAdditional(RexxThreadContext *t, RexxDirectoryObject info) {
         lastAdditional().push_back(o == NULLOBJECT ? std::string() : std::string(t->ObjectToStringValue(o)));
     }
 }
+inline void bifStat(const std::string &name);
 inline bool send(void *target, const std::string &selector, const std::vector<Arg> &args, Result &out,
                  std::string &code, std::string &text) {
     RexxThreadContext *t = need();
+    static const bool sendStats = std::getenv("RX2CPP_BIF_STATS") != nullptr;
+    if (sendStats) bifStat("~" + selector + " to " + std::string(t->ObjectToStringValue(t->SendMessage0((RexxObjectPtr)target, "CLASS"))));
     LocalRefs temps(t);
-    RexxArrayObject arr = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(args.size()));
-    // Omitted arguments stay holes at their positions (an array hole is an omitted ARG).
-    for (std::size_t i = 0; i < args.size(); i++) {
-        const Arg &a = args[i];
-        if (a.omitted) continue;
-        t->ArrayPut(arr, a.obj ? (RexxObjectPtr)a.obj : temps((RexxObjectPtr)t->NewString(a.bytes.data(), a.bytes.size())), i + 1);
+    auto argObj = [&](const Arg &a) -> RexxObjectPtr {
+        return a.obj ? (RexxObjectPtr)a.obj : temps((RexxObjectPtr)t->NewString(a.bytes.data(), a.bytes.size()));
+    };
+    bool holes = false;
+    for (const Arg &a : args) holes = holes || a.omitted;
+    RexxObjectPtr r;
+    // Up to two arguments and no omitted ones: no argument array is built.
+    if (!holes && args.empty()) r = temps(t->SendMessage0((RexxObjectPtr)target, selector.c_str()));
+    else if (!holes && args.size() == 1) r = temps(t->SendMessage1((RexxObjectPtr)target, selector.c_str(), argObj(args[0])));
+    else if (!holes && args.size() == 2) {
+        RexxObjectPtr a1 = argObj(args[0]), a2 = argObj(args[1]);
+        r = temps(t->SendMessage2((RexxObjectPtr)target, selector.c_str(), a1, a2));
+    } else {
+        RexxArrayObject arr = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(args.size()));
+        // Omitted arguments stay holes at their positions (an array hole is an omitted ARG).
+        for (std::size_t i = 0; i < args.size(); i++) {
+            const Arg &a = args[i];
+            if (a.omitted) continue;
+            t->ArrayPut(arr, argObj(a), i + 1);
+        }
+        r = temps(t->SendMessage((RexxObjectPtr)target, selector.c_str(), arr));
     }
-    RexxObjectPtr r = temps(t->SendMessage((RexxObjectPtr)target, selector.c_str(), arr));
     if (t->CheckCondition()) {
         RexxDirectoryObject info = t->GetConditionInfo();
         RexxCondition cd; t->DecodeConditionInfo(info, &cd);
@@ -147,7 +176,7 @@ inline bool send(void *target, const std::string &selector, const std::vector<Ar
     if (isPlainString(t, r)) {
         RexxStringObject str = (RexxStringObject)temps((RexxObjectPtr)t->ObjectToString(r));
         out.kind = 1; out.bytes.assign(t->StringData(str), t->StringLength(str));
-    } else { out.kind = 2; out.obj = (void *)t->RequestGlobalReference(r); }
+    } else { out.kind = 2; out.obj = (void *)t->RequestGlobalReference(r); if (refStats().on) ++refStats().taken; }
     return true;
 }
 // RX2CPP_BIF_STATS=1: count the BIFs/String methods that went to the interpreter (printed at exit): the next native candidates.
@@ -202,7 +231,7 @@ inline bool sendStringNumeric(const std::string &receiver, const std::string &se
     if (isPlainString(t, r)) {
         RexxStringObject str = (RexxStringObject)temps((RexxObjectPtr)t->ObjectToString(r));
         out.kind = 1; out.bytes.assign(t->StringData(str), t->StringLength(str));
-    } else { out.kind = 2; out.obj = (void *)t->RequestGlobalReference(r); }
+    } else { out.kind = 2; out.obj = (void *)t->RequestGlobalReference(r); if (refStats().on) ++refStats().taken; }
     return true;
 }
 inline std::string callBif(const std::string &name, const std::vector<std::pair<bool, std::string>> &args,
@@ -428,7 +457,7 @@ inline std::optional<Value> streamBif(const std::string &name, const std::vector
            static_cast<EnvObject *>(rest.back().object.get())->handle == nullptr) rest.pop_back();
     std::string selector = name;
     if (name == "STREAM") {
-        std::string op = rest.empty() || rest[0].isObject() ? std::string("S") : rest[0].bytes;
+        std::string op = rest.empty() || rest[0].isObject() ? std::string("S") : rest[0].bytes.str();
         const char o = op.empty() ? 'S' : static_cast<char>(std::toupper(static_cast<unsigned char>(op[0])));
         std::vector<Value> args;
         if (o == 'C') {

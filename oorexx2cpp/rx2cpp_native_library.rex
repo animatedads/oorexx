@@ -15,7 +15,10 @@ routines = .RxNativePackageRoutines~new~parse(source)
 source = routines~sanitized
 gateOK = .RxNativeSourceGate~new~validate(source)
 parser = .RxNativePackageParser~new
-units = parser~parse(source)
+/* Interpreted table (RX2CPP_TABLE, set by native/build.sh): classes / methods the interpreter runs. */
+table = .RxNativeInterpretedTable~new(value('RX2CPP_TABLE', , 'ENVIRONMENT'))
+units = parser~parse(source, table)
+table~report
 extras~validate(units)
 if routines~implementation \= .nil then do
   do unit over units
@@ -26,7 +29,22 @@ end
 options = parser~options
 template = readSource('native/native_package_template.cpp.in')
 emitter = .RxNativeLibraryEmitter~new
-suffix = extras~suffix
+emitter~interpretedMethods = parser~interpretedMethods
+emitter~interpretedPublic = parser~interpretedPublic
+emitter~form = table~form
+emitter~workPrefix = prefix
+if table~form == 'file' then do
+  /* The interpreted parts go to an editable file read when the library loads; the declaration keeps marker lines. */
+  suffix = extras~suffix
+  if parser~interpretedSource \== '' then suffix = suffix || '/* #REXX2CPP CLASSES */' || '0a'x
+  editable = '/* Interpreted parts of native library' packageName'. Read every time the library loads: edit freely,' || '0a'x || ,
+             '   but keep the /* #REXX2CPP ... */ marker lines; each says where the code below it belongs. */' || '0a'x
+  do className over parser~interpretedMethods~allIndexes~sortWith(.CaselessComparator~new)
+    editable = editable || '/* #REXX2CPP METHODS' className '*/' || '0a'x || parser~interpretedMethods[className]
+  end
+  if parser~interpretedSource \== '' then editable = editable || '/* #REXX2CPP CLASSES */' || '0a'x || parser~interpretedSource
+end
+else suffix = extras~suffix || parser~interpretedSource
 /* The package prolog runs once, interpreted, when the library is loaded (see loadPackage in the template). */
 if parser~prolog \== '' then suffix = suffix || '::routine RX2CPP_PACKAGE_PROLOG' || '0a'x || parser~prolog
 nativeSource = emitter~emitPackage(units, packageName, template, options, suffix, routines)
@@ -52,6 +70,7 @@ header = header || '}' || '0a'x || '#endif' || '0a'x
 call writeOutput prefix || '.hpp', header
 call writeOutput prefix || '.cpp', cpp
 call writeOutput prefix || '_package.cpp', nativeSource
+if table~form == 'file' then call writeOutput prefix || '_interpreted.cls', editable
 say 'rx2cpp native package compiled' names~strip 'classes='units~items
 exit 0
 readSource:
@@ -76,3 +95,4 @@ compilerError:
 ::requires 'native/NativeSourceGate.cls'
 ::requires 'native/NativePackageExtras.cls'
 ::requires 'native/NativePackageRoutines.cls'
+::requires 'native/NativeInterpretedTable.cls'
