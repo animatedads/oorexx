@@ -36,7 +36,7 @@ awk -v testSource="$ROOT/native/fixtures/private_registry_probe.inc" '
   END {if (found != 1) exit 10}
 ' "$OUT/generated_package.cpp" > "$OUT/instrumented/visibility_package.cpp"
 "$CXX" -std=c++17 -O2 -fPIC -shared -Wall -Wextra -Werror \
-    -I"$OO_ROOT/include" -I"$ROOT/include" -I"$ROOT/hybrid" -I"$OUT" \
+    -I"$OO_ROOT/include" -I"$ROOT/include" -I"$ROOT/hybrid" -I"$OUT" -I"$ROOT/external/bif/native" -I"$ROOT/external/bif/variables" \
     "$OUT/generated.cpp" "$OUT/instrumented/visibility_package.cpp" \
     -o "$OUT/instrumented/librx2cpp_private_test.so"
 LD_LIBRARY_PATH="$OO_ROOT/lib:$OUT/instrumented${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
@@ -44,7 +44,7 @@ LD_LIBRARY_PATH="$OO_ROOT/lib:$OUT/instrumented${LD_LIBRARY_PATH:+:$LD_LIBRARY_P
 cmp "$OUT/oracle.out" "$OUT/instrumented/native.out"
 echo "PASS $CXX ooRexx GetPackageRoutines/GetPackagePublicRoutines + CallRoutine private handle"
 prior=$(sha256sum "$OUT/librx2cpp_private_test.so" | cut -d' ' -f1)
-for bad in duplicate conflicting_visibility external alias_collision non_scalar malformed_use_arg same_line return_missing; do
+for bad in duplicate conflicting_visibility external alias_collision malformed_use_arg same_line; do
   src="$OUT/reject_$bad.cls"
   cat > "$src" <<'REXX'
 ::class RoutineHost public

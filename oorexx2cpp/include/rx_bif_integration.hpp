@@ -284,6 +284,11 @@ inline MessageResult hostStringBif(const Value &receiver, const std::string &sel
         const ActivationNumeric &n0 = currentNumeric ? *currentNumeric : def0;
         if (auto fast = fastRadix(name, receiver, args, n0.digits)) return MessageResult(Value::string(*fast));
     }
+    if (name == "SUBCHAR" && args.size() == 1 && !args[0].isObject() && !args[0].bytes.empty() && args[0].bytes.size() < 10 &&
+        args[0].bytes.find_first_not_of("0123456789") == std::string::npos) {
+        const unsigned long n = std::stoul(args[0].bytes);   // SUBCHAR(n): the n-th character, "" beyond the end
+        if (n >= 1) return MessageResult(Value::string(n <= receiver.bytes.size() ? std::string(1, receiver.bytes[n - 1]) : std::string()));
+    }
     if (!mirrored.count(name)) return fallback();
     std::vector<rxbif_breadth::Slot> slots;
     slots.emplace_back(receiver);

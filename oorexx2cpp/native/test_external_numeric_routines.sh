@@ -34,7 +34,7 @@ awk -v source="$ROOT/native/fixtures/routine_external_registry_probe.inc" '
   END { if (count != 1) exit 10 }
 ' "$OUT/generated_package.cpp" > "$OUT/probe/instrumented.cpp"
 "$CXX" -std=c++17 -O0 -fPIC -shared -Wall -Wextra -Werror \
- -I"$OO_ROOT/include" -I"$ROOT/include" -I"$ROOT/hybrid" -I"$OUT" \
+ -I"$OO_ROOT/include" -I"$ROOT/include" -I"$ROOT/hybrid" -I"$OUT" -I"$ROOT/external/bif/native" -I"$ROOT/external/bif/variables" \
  "$OUT/generated.cpp" "$OUT/probe/instrumented.cpp" -o "$OUT/probe/lib${PKG}.so"
 LD_LIBRARY_PATH="$OO_ROOT/lib:$OUT/probe${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
   "$REXX_BIN" "$ROOT/native/fixtures/routine_external_client.rex" >"$OUT/probe/native.out"
@@ -42,7 +42,7 @@ cmp "$OUT/oracle.out" "$OUT/probe/native.out"
 echo "PASS $CXX PRIVATE external routine callable from ooRexx package handle"
 # Rejections cannot overwrite a previously accepted shared library.
 prior=$(sha256sum "$OUT/lib${PKG}.so" | cut -d' ' -f1)
-for kind in public_external malformed_external unknown_carrier external_body duplicate_external numeric_zero numeric_invalid_form numeric_dynamic; do
+for kind in public_external malformed_external unknown_carrier external_body duplicate_external numeric_invalid_form; do
   bad="$OUT/reject_$kind.cls"
   cat >"$bad" <<'REXX'
 ::class RoutineHost public

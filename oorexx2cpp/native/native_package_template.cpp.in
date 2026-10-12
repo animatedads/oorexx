@@ -9,6 +9,10 @@
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
+#include <optional>
+#include <vector>
+#include <cctype>
 #include <stdexcept>
 
 namespace rx2cpp {
@@ -29,24 +33,6 @@ std::shared_ptr<CompiledObject> Registry::find(const std::string &token) {
     const auto it = objects_.find(token);
     return it == objects_.end() ? nullptr : it->second;
 }
-// One native object may have several class-owned state slots. A stable
-// slot index belongs to a class occurrence in the resolved inheritance
-// graph, not the depth of the current C++/ooRexx activation call stack.
-class ScopeRegistry {
-    std::mutex gate_;
-    std::unordered_map<std::string, std::unordered_map<int, std::shared_ptr<CompiledObject>>> scopes_;
-public:
-    std::shared_ptr<CompiledObject> at(const std::string &token, int slot,
-                                        const std::string &className);
-    void release(const std::string &token) {
-        std::lock_guard<std::mutex> lock(gate_);
-        scopes_.erase(token);
-    }
-    static ScopeRegistry &instance() {
-        static ScopeRegistry registry;
-        return registry;
-    }
-};
 static std::string stringValue(RexxMethodContext *ctx, RexxObjectPtr object) {
     if (object == NULLOBJECT || !(ctx->IsString(object) || ctx->IsOfType(object, "STRING")))
         throw std::runtime_error("only ooRexx String scalar values are supported");
@@ -60,20 +46,58 @@ static std::shared_ptr<CompiledObject> create(const std::string &className) {
 %FACTORY_DISPATCH%
     throw std::runtime_error("unsupported native class: " + className);
 }
-std::shared_ptr<CompiledObject> ScopeRegistry::at(const std::string &token, int slot,
-                                                    const std::string &className) {
-    std::lock_guard<std::mutex> lock(gate_);
-    auto &slots = scopes_[token];
-    auto it = slots.find(slot);
-    if (it != slots.end()) return it->second;
-    auto created = create(className);
-    slots.emplace(slot, created);
-    return created;
-}
 /* The interpreter already holds a condition for this activity (for example the
    callee raised an error). Return to ooRexx without raising a second one. */
 struct PendingCondition : std::runtime_error {
     PendingCondition() : std::runtime_error("ooRexx condition pending") {}
+};
+struct MethodInfo { const char *definingClass; bool isPublic; bool noResult; };
+%DIRECT_TABLES%
+[[maybe_unused]] static std::string upperOf(std::string s) {
+    for (char &c : s) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    return s;
+}
+/* Dual representation: one native instance = one InstanceState. The state owns the compiled per-class scopes. It is
+   reachable from compiled code directly (NativeInstanceRef) and, once an interpreter object exists for it, through the
+   token stored in that object. */
+struct InstanceState : std::enable_shared_from_this<InstanceState> {
+    std::string dynamicClass;        // the class the instance was created from (upper case)
+    bool exact = false;              // the dynamic class is a class of this package, so direct dispatch is faithful
+    std::mutex gate;
+    std::unordered_map<std::string, std::shared_ptr<CompiledObject>> objects;
+    void *handle = nullptr;          // interpreter object, valid while alive
+    bool alive = false;
+    std::string token;
+    std::shared_ptr<CompiledObject> at(const std::string &cls) {
+        std::lock_guard<std::mutex> lock(gate);
+        auto it = objects.find(cls);
+        if (it != objects.end()) return it->second;
+        auto created = create(cls);
+        objects.emplace(cls, created);
+        return created;
+    }
+};
+class InstanceTable {
+    std::mutex gate_;
+    std::unordered_map<std::string, std::shared_ptr<InstanceState>> states_;
+    unsigned long long next_ = 0;
+public:
+    static InstanceTable &instance() { static InstanceTable table; return table; }
+    std::string add(const std::shared_ptr<InstanceState> &state) {
+        std::lock_guard<std::mutex> lock(gate_);
+        auto token = std::string("instance-") + std::to_string(++next_);
+        states_.emplace(token, state);
+        return token;
+    }
+    std::shared_ptr<InstanceState> find(const std::string &token) {
+        std::lock_guard<std::mutex> lock(gate_);
+        auto it = states_.find(token);
+        return it == states_.end() ? nullptr : it->second;
+    }
+    void remove(const std::string &token) {
+        std::lock_guard<std::mutex> lock(gate_);
+        states_.erase(token);
+    }
 };
 namespace {
 struct ReleaseAndReacquire {
@@ -81,11 +105,208 @@ struct ReleaseAndReacquire {
     explicit ReleaseAndReacquire(ScopeLock &l) : lock(l), depth(l.release_all()) {}
     ~ReleaseAndReacquire() { lock.reacquire(depth); }
 };
+}
+#ifdef RX2CPP_HOST_API
+namespace {
+thread_local InstanceState *currentState = nullptr;           // exact instance whose compiled method is running
+thread_local std::shared_ptr<InstanceState> pendingAdopt;      // set while an interpreter object is made for a native state
+struct StateScope {
+    InstanceState *previous;
+    explicit StateScope(InstanceState *s) : previous(currentState) { currentState = s; }
+    ~StateScope() { currentState = previous; }
+};
+std::optional<rx::Value> optionalOf(const rx::Value &v) {
+    if (v.isObject()) {
+        auto *e = dynamic_cast<rx::EnvObject *>(v.object.get());
+        if (e && !e->handle) return std::nullopt;       // an omitted argument slot
+    }
+    return v;
+}
+std::vector<std::optional<rx::Value>> optionalsOf(const std::vector<rx::Value> &args) {
+    std::vector<std::optional<rx::Value>> out;
+    out.reserve(args.size());
+    for (const auto &a : args) out.push_back(optionalOf(a));
+    return out;
+}
+const MethodInfo *lookupMethod(const std::string &cls, const std::string &upperSelector) {
+    const auto &all = directMethodTable();
+    auto it = all.find(cls);
+    if (it == all.end()) return nullptr;
+    auto jt = it->second.find(upperSelector);
+    return jt == it->second.end() ? nullptr : &jt->second;
+}
+/* An interpreter object for a native state: a new instance of the class whose first INIT adopts the state. */
+void *materializeState(const std::shared_ptr<InstanceState> &st) {
+    if (st->alive && st->handle) return st->handle;
+    void *cls = rxobj::findClass(st->dynamicClass);
+    if (!cls) throw std::runtime_error("native class is not registered: " + st->dynamicClass);
+    pendingAdopt = st;
+    std::vector<rxobj::Arg> none; rxobj::Result r; std::string code, text;
+    const bool ok = rxobj::send(cls, "NEW", none, r, code, text);
+    pendingAdopt.reset();
+    rxobj::release(cls);
+    if (!ok) throw rx::SyntaxCondition(code, text, false);
+    if (r.kind == 2) rxobj::release(r.obj);
+    if (!st->alive) throw std::runtime_error("cannot create the interpreter object for a native instance");
+    return st->handle;
+}
+std::optional<rx::Value> interpreterSend(const std::shared_ptr<InstanceState> &st, const std::string &selector,
+                                         const std::vector<rx::Value> &args) {
+    void *h = materializeState(st);
+    std::vector<rxobj::Arg> in; rx::EnvObject::convert(args, in);
+    rxobj::Result r; std::string code, text;
+    if (!rxobj::send(h, selector, in, r, code, text)) {
+        if (code == "97.1") throw rx::NoMethod(text);
+        throw rx::SyntaxCondition(code, text, false);
+    }
+    if (r.kind == 0) return std::nullopt;
+    return rx::EnvObject::wrap(r);
+}
+std::optional<rx::Value> runNative(const std::shared_ptr<InstanceState> &st, const MethodInfo &info,
+                                   const std::string &upperSelector, const std::vector<std::optional<rx::Value>> &args);
+/* SELF~selector(args) from compiled code in an exact instance: dispatch inside the library when the method is compiled. */
+bool nativeSelfSend(const std::shared_ptr<InstanceState> &st, const std::string &definingClass, const std::string &selector,
+                    const std::vector<rx::Value> &args, std::optional<rx::Value> &out) {
+    const std::string up = upperOf(selector);
+    if (up == "RX2CPP_SUPERA") return false;
+    if (up == "RX2CPP_SUPER") {
+        if (args.empty() || args[0].isObject()) return false;
+        const auto &parents = parentTable();
+        auto pit = parents.find(definingClass);
+        if (pit == parents.end() || pit->second.empty()) return false;
+        const std::string target = upperOf(args[0].bytes);
+        const MethodInfo *info = lookupMethod(pit->second, target);
+        if (!info) return false;
+        std::vector<std::optional<rx::Value>> rest;
+        for (std::size_t i = 1; i < args.size(); i++) rest.push_back(optionalOf(args[i]));
+        out = runNative(st, *info, target, rest);
+        return true;
+    }
+    const MethodInfo *info = lookupMethod(st->dynamicClass, up);
+    if (!info) return false;
+    out = runNative(st, *info, up, optionalsOf(args));
+    return true;
+}
+class NativeInstanceRef final : public rx::NativeRefBase {
+    std::shared_ptr<InstanceState> st_;
+public:
+    explicit NativeInstanceRef(std::shared_ptr<InstanceState> st) : st_(std::move(st)) {}
+    void *materialize() override { return materializeState(st_); }
+    rx::MessageResult sendMessage(const std::string &selector, const std::vector<rx::Value> &args) override {
+        const std::string up = upperOf(selector);
+        if (const MethodInfo *info = lookupMethod(st_->dynamicClass, up))
+            if (info->isPublic) return runNative(st_, *info, up, optionalsOf(args));
+        return interpreterSend(st_, selector, args);
+    }
+    rx::Value sendBinary(const std::string &selector, const rx::Value &rhs) override {
+        auto r = sendMessage(selector, {rhs});
+        if (!r) throw std::runtime_error("operator message returned no value: " + selector);
+        return *r;
+    }
+    rx::Value sendUnary(const std::string &selector) override {
+        auto r = sendMessage(selector, {});
+        if (!r) throw std::runtime_error("operator message returned no value: " + selector);
+        return *r;
+    }
+    std::string display() const override {
+        auto r = const_cast<NativeInstanceRef *>(this)->sendMessage("STRING", {});
+        if (!r || r->isObject()) throw std::runtime_error("object has no string value");
+        return r->bytes;
+    }
+};
+class NativeFrame final : public SelfSender {
+    std::shared_ptr<InstanceState> st_; std::string definingClass_;
+    const std::vector<std::optional<rx::Value>> &args_; SelfSender *previous_;
+public:
+    NativeFrame(std::shared_ptr<InstanceState> st, std::string cls, const std::vector<std::optional<rx::Value>> &args)
+        : st_(std::move(st)), definingClass_(std::move(cls)), args_(args), previous_(detail::currentSender) { detail::currentSender = this; }
+    ~NativeFrame() override { detail::currentSender = previous_; }
+    std::optional<rx::Value> sendValues(const std::string &selector, const std::vector<rx::Value> &args) override {
+        std::optional<rx::Value> out;
+        if (nativeSelfSend(st_, definingClass_, selector, args, out)) return out;
+        return interpreterSend(st_, selector, args);
+    }
+    std::string send(const std::string &selector, const std::vector<std::string> &args) override {
+        std::vector<rx::Value> values;
+        for (const auto &a : args) values.push_back(rx::Value::string(a));
+        auto r = sendValues(selector, values);
+        if (!r) throw std::runtime_error("SELF~" + selector + " returned no value");
+        if (r->isObject()) return r->object->display();
+        return r->bytes;
+    }
+    std::string forward(const std::string &selector) override {
+        std::vector<rx::Value> values;
+        for (const auto &a : args_) values.push_back(a ? *a : rx::omittedArgument());
+        auto r = sendValues(selector, values);
+        if (!r) throw std::runtime_error("FORWARD returned no scalar result");
+        if (r->isObject()) return r->object->display();
+        return r->bytes;
+    }
+};
+std::optional<rx::Value> runNative(const std::shared_ptr<InstanceState> &st, const MethodInfo &info,
+                                   const std::string &upperSelector, const std::vector<std::optional<rx::Value>> &args) {
+    auto obj = st->at(info.definingClass);
+    std::lock_guard<ScopeLock> hold(obj->scope_lock);
+    NativeFrame frame(st, info.definingClass, args);
+    StateScope current(st.get());
+    rx::Value result = obj->invokeValues(upperSelector, args);
+    if (info.noResult) return std::nullopt;
+    return result;
+}
+class NativeClassObj final : public rx::ObjectDispatch {
+    std::string name_;
+    std::shared_ptr<rx::EnvObject> interpreterClass_;
+    rx::EnvObject &iclass() {
+        if (!interpreterClass_) {
+            void *h = rxobj::findClass(name_);
+            if (!h) throw std::runtime_error("unknown class ." + name_);
+            interpreterClass_ = std::make_shared<rx::EnvObject>(h);
+        }
+        return *interpreterClass_;
+    }
+public:
+    explicit NativeClassObj(std::string n) : name_(std::move(n)) {}
+    rx::MessageResult sendMessage(const std::string &selector, const std::vector<rx::Value> &args) override {
+        if (upperOf(selector) == "NEW") {
+            auto st = std::make_shared<InstanceState>();
+            st->dynamicClass = name_;
+            st->exact = true;
+            const MethodInfo *init = lookupMethod(name_, "INIT");
+            if (!init) throw std::runtime_error("native class without INIT: " + name_);
+            runNative(st, *init, "INIT", optionalsOf(args));
+            return rx::Value::fromObject(std::make_shared<NativeInstanceRef>(st));
+        }
+        return iclass().sendMessage(selector, args);
+    }
+    rx::Value sendBinary(const std::string &selector, const rx::Value &rhs) override { return iclass().sendBinary(selector, rhs); }
+    rx::Value sendUnary(const std::string &selector) override { return iclass().sendUnary(selector); }
+    std::string display() const override { return const_cast<NativeClassObj *>(this)->iclass().display(); }
+};
+std::optional<rx::Value> packageClassImpl(const std::string &name) {
+    const std::string up = upperOf(name);
+    if (!directNewTable().count(up)) return std::nullopt;
+    return rx::Value::fromObject(std::make_shared<NativeClassObj>(up));
+}
+std::optional<rx::Value> selfObjectImpl() {
+    if (!currentState) return std::nullopt;
+    return rx::Value::fromObject(std::make_shared<NativeInstanceRef>(currentState->shared_from_this()));
+}
+std::string dynamicClassOf(RexxMethodContext *ctx, RexxObjectPtr self) {
+    RexxObjectPtr cls = ctx->SendMessage0(self, "CLASS");
+    RexxObjectPtr id = cls == NULLOBJECT ? NULLOBJECT : ctx->SendMessage0(cls, "ID");
+    if (id == NULLOBJECT) return std::string();
+    return upperOf(ctx->ObjectToStringValue(id));
+}
+[[maybe_unused]] const bool hooksInstalled = (rx::packageClassHook = &packageClassImpl, rx::selfObjectHook = &selfObjectImpl, true);
+}
+#endif
+namespace {
 class Frame final : public SelfSender {
     RexxMethodContext *ctx_; RexxObjectPtr self_; ScopeLock &lock_; SelfSender *previous_;
+    std::shared_ptr<InstanceState> state_; std::string className_;
 public:
-    Frame(RexxMethodContext *c, RexxObjectPtr s, ScopeLock &l)
-        : ctx_(c), self_(s), lock_(l), previous_(detail::currentSender) { detail::currentSender = this; }
+    Frame(RexxMethodContext *c, RexxObjectPtr s, ScopeLock &l, std::shared_ptr<InstanceState> st, std::string cls)
+        : ctx_(c), self_(s), lock_(l), previous_(detail::currentSender), state_(std::move(st)), className_(std::move(cls)) { detail::currentSender = this; }
     ~Frame() override { detail::currentSender = previous_; }
     std::string forward(const std::string &selector) override {
         RexxObjectPtr result;
@@ -98,6 +319,10 @@ public:
     }
 #ifdef RX2CPP_HOST_API
     std::optional<rx::Value> sendValues(const std::string &selector, const std::vector<rx::Value> &args) override {
+        if (state_ && state_->exact) {
+            std::optional<rx::Value> out;
+            if (nativeSelfSend(state_, className_, selector, args, out)) return out;
+        }
         std::vector<rxobj::Arg> in; rx::EnvObject::convert(args, in);
         RexxArrayObject arr = ctx_->NewArray(in.size());
         for (std::size_t i = 0; i < in.size(); i++) {
@@ -126,76 +351,105 @@ public:
 static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObjectPtr selfObj,
                           const std::string &className, const std::string &selector,
                           bool initializer, bool attributeSetter, int scopeIndex, bool isRoot, const std::string &rootClass, bool classSide) {
+    (void)scopeIndex;
     std::string failedInitToken;   // an INIT that throws must not leave its object registered
     try {
 #ifdef RX2CPP_HOST_API
         rxobj::Scope hostScope(ctx->threadContext, selfObj);
 #endif
         const size_t count = ctx->ArraySize(args);
-        std::shared_ptr<CompiledObject> object;
+        std::shared_ptr<InstanceState> state;
         std::string token;
+        auto setRootToken = [&](const std::string &value) {
+            if (isRoot) { ctx->SetObjectVariable("RX2CPP_NATIVE_ID", ctx->String(value.c_str())); return; }
+            auto definingRoot = ctx->FindClass(rootClass.c_str());
+            if (definingRoot == NULLOBJECT) throw std::runtime_error("compiled superclass missing: " + rootClass);
+            RexxArrayObject tokenArgs = ctx->NewArray(1);
+            ctx->ArrayAppend(tokenArgs, ctx->String(value.c_str()));
+            ctx->ForwardMessage(ctx->GetSelf(), "RX2CPP_NATIVE_SETTOKEN", definingRoot, tokenArgs);
+            if (ctx->CheckCondition()) throw PendingCondition();
+        };
         if (initializer) {
+#ifdef RX2CPP_HOST_API
+            if (pendingAdopt) {
+                // An interpreter object is being made for a native state: adopt it; the INIT body already ran natively.
+                state = std::move(pendingAdopt);
+                pendingAdopt.reset();
+                token = InstanceTable::instance().add(state);
+                failedInitToken = token;
+                state->token = token;
+                state->handle = (void *)selfObj;
+                state->alive = true;
+                setRootToken(token);
+                failedInitToken.clear();
+                return NULLOBJECT;
+            }
+#endif
             RexxObjectPtr existing = ctx->GetObjectVariable("RX2CPP_NATIVE_ID");
             if (!isRoot) {
-                // A derived INIT starts the object: the root state is created (its own INIT runs only if this INIT sends
-                // INIT:SUPER, exactly as in the interpreter), then this class's own state runs the body. Object variables are
-                // per class scope, so the token is read and written through the root class's own accessors.
+                // A derived INIT starts the object: the state is created (the root scope's own INIT runs only if this INIT
+                // sends INIT:SUPER, exactly as in the interpreter), then this class's scope runs the body. Object variables
+                // are per class scope, so the token is read and written through the root class's own accessors.
                 auto definingRoot = ctx->FindClass(rootClass.c_str());
                 if (definingRoot == NULLOBJECT) throw std::runtime_error("compiled superclass missing: " + rootClass);
                 RexxObjectPtr rootToken = ctx->ForwardMessage(ctx->GetSelf(), "RX2CPP_NATIVE_TOKEN", definingRoot, ctx->NewArray(0));
                 if (ctx->CheckCondition()) throw PendingCondition();
                 if (rootToken != NULLOBJECT) throw std::runtime_error("native object already initialized");
-                auto rootObject = create(rootClass);
-                token = Registry::instance().add(rootObject);
-                failedInitToken = token;
-                RexxArrayObject tokenArgs = ctx->NewArray(1);
-                ctx->ArrayAppend(tokenArgs, ctx->String(token.c_str()));
-                ctx->ForwardMessage(ctx->GetSelf(), "RX2CPP_NATIVE_SETTOKEN", definingRoot, tokenArgs);
-                if (ctx->CheckCondition()) throw PendingCondition();
-                object = ScopeRegistry::instance().at(token, scopeIndex, className);
             } else if (existing != NULLOBJECT) {
-                // INIT:SUPER from a derived INIT: the root state was registered by the derived class.
+                // INIT:SUPER from a derived INIT: the state was registered by the derived class.
                 token = stringValue(ctx, existing);
-                object = Registry::instance().find(token);
-                if (!object) throw std::runtime_error("expired native object handle");
-            } else {
-                object = create(className);
+                state = InstanceTable::instance().find(token);
+                if (!state) throw std::runtime_error("expired native object handle");
+            }
+            if (!state) {
+                state = std::make_shared<InstanceState>();
+#ifdef RX2CPP_HOST_API
+                state->dynamicClass = classSide ? className : dynamicClassOf(ctx, selfObj);
+                state->exact = !classSide && directMethodTable().count(state->dynamicClass) > 0;
+#endif
+                state->handle = (void *)selfObj;
+                state->alive = true;
                 // Register before the body runs: INIT may send messages (SELF~attr = ...) that arrive in this object.
-                token = Registry::instance().add(object);
-                ctx->SetObjectVariable("RX2CPP_NATIVE_ID", ctx->String(token.c_str()));
+                token = InstanceTable::instance().add(state);
+                state->token = token;
                 failedInitToken = token;
+                setRootToken(token);
             }
         } else {
-            // The root class owns the single lifetime token. A derived method
-            // asks the root method for it; normal ooRexx dispatch chooses that
-            // root implementation, and the derived method uses its own slot.
+            // The root class owns the single lifetime token. A derived method asks the root method for it; normal ooRexx
+            // dispatch chooses that root implementation, and the derived method uses its own scope.
             RexxObjectPtr old = NULLOBJECT;
             if (isRoot) old = ctx->GetObjectVariable("RX2CPP_NATIVE_ID");
             else {
                 auto definingRoot = ctx->FindClass(rootClass.c_str());
                 if (definingRoot == NULLOBJECT)
                     throw std::runtime_error("compiled superclass missing: " + rootClass);
-                // Explicit scope-directed message dispatch, bypassing a
-                // possible subclass override of the internal accessor.
-                old = ctx->ForwardMessage(ctx->GetSelf(), "RX2CPP_NATIVE_TOKEN",
-                                          definingRoot, ctx->NewArray(0));
+                // Explicit scope-directed message dispatch, bypassing a possible subclass override of the internal accessor.
+                old = ctx->ForwardMessage(ctx->GetSelf(), "RX2CPP_NATIVE_TOKEN", definingRoot, ctx->NewArray(0));
             }
             if (old == NULLOBJECT && classSide && isRoot) {
                 // The class object has no native state until its first CLASS method runs (no INIT CLASS declared).
-                object = create(className);
-                token = Registry::instance().add(object);
+                state = std::make_shared<InstanceState>();
+                state->dynamicClass = className;
+                state->handle = (void *)selfObj;
+                state->alive = true;
+                token = InstanceTable::instance().add(state);
+                state->token = token;
                 ctx->SetObjectVariable("RX2CPP_NATIVE_ID", ctx->String(token.c_str()));
             } else {
-            if (old == NULLOBJECT || ctx->CheckCondition())
-                throw std::runtime_error("native object not initialized or root token inaccessible");
-            token = stringValue(ctx, old);
-            object = isRoot ? Registry::instance().find(token)
-                            : ScopeRegistry::instance().at(token, scopeIndex, className);
+                if (old == NULLOBJECT || ctx->CheckCondition())
+                    throw std::runtime_error("native object not initialized or root token inaccessible");
+                token = stringValue(ctx, old);
+                state = InstanceTable::instance().find(token);
             }
-            if (!object) throw std::runtime_error("expired native object handle");
+            if (!state) throw std::runtime_error("expired native object handle");
         }
+        std::shared_ptr<CompiledObject> object = state->at(className);
         std::lock_guard<ScopeLock> scopeHold(object->scope_lock);
-        Frame frame(ctx, selfObj, object->scope_lock);
+        Frame frame(ctx, selfObj, object->scope_lock, state, className);
+#ifdef RX2CPP_HOST_API
+        StateScope currentScope(state->exact ? state.get() : nullptr);
+#endif
         std::vector<std::optional<rx::Value>> positional;
         positional.reserve(count);
         for (size_t i = 1; i <= count; ++i) {
@@ -221,15 +475,16 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
 #ifdef RX2CPP_HOST_API
             if (auto *env = dynamic_cast<rx::EnvObject *>(outcome.object.get())) return (RexxObjectPtr)env->handle;
             if (dynamic_cast<rx::NilObject *>(outcome.object.get())) return ctx->Nil();
+            if (auto *ref = dynamic_cast<rx::NativeRefBase *>(outcome.object.get())) return (RexxObjectPtr)ref->materialize();
 #endif
             throw std::runtime_error("native method returned an object that the interpreter cannot receive");
         }
         return ctx->NewString(outcome.bytes.data(), outcome.bytes.size());
     } catch (const PendingCondition &) {
-        if (!failedInitToken.empty()) Registry::instance().remove(failedInitToken);
+        if (!failedInitToken.empty()) InstanceTable::instance().remove(failedInitToken);
         return NULLOBJECT;
     } catch (const std::exception &e) {
-        if (!failedInitToken.empty()) Registry::instance().remove(failedInitToken);
+        if (!failedInitToken.empty()) InstanceTable::instance().remove(failedInitToken);
         report(ctx, e.what());
         return NULLOBJECT;
     }
@@ -268,8 +523,8 @@ RexxMethod1(RexxObjectPtr, rx_native_uninit, OSELF, self)
     if (value != NULLOBJECT) {
         const auto s = context->ObjectToString(value);
         auto token = std::string(context->StringData(s), context->StringLength(s));
-        rx2cpp::ScopeRegistry::instance().release(token);
-        rx2cpp::Registry::instance().remove(token);
+        if (auto st = rx2cpp::InstanceTable::instance().find(token)) { st->alive = false; st->handle = nullptr; }
+        rx2cpp::InstanceTable::instance().remove(token);
         context->DropObjectVariable("RX2CPP_NATIVE_ID");
     }
     return NULLOBJECT;

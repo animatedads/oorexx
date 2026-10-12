@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdio>
 // Real interpreter objects as rx::Value. One wrapper, two backends:
 //  RX2CPP_KERNEL   : the interpreter compiled into the program (rx_kernel_bif.cpp)
 //  RX2CPP_HOST_API : the interpreter that loaded this library (public oorexxapi.h, current thread context)
@@ -32,6 +33,14 @@ struct Scope {
         : previous(current), previousSelf(currentSelf) { current = c; currentSelf = self; }
     ~Scope() { current = previous; currentSelf = previousSelf; }
 };
+// Every object an API call returns stays referenced until the native method returns. A long-running compiled method makes
+// millions of temporaries, so each is dropped as soon as it has been used.
+struct LocalRefs {
+    RexxThreadContext *t; std::vector<RexxObjectPtr> objs;
+    explicit LocalRefs(RexxThreadContext *c) : t(c) {}
+    RexxObjectPtr operator()(RexxObjectPtr o) { objs.push_back(o); return o; }
+    ~LocalRefs() { for (RexxObjectPtr o : objs) if (o != NULLOBJECT) t->ReleaseLocalReference(o); }
+};
 inline void *selfHandle() {
     if (!current || currentSelf == NULLOBJECT) return nullptr;
     return (void *)current->RequestGlobalReference(currentSelf);
@@ -39,7 +48,10 @@ inline void *selfHandle() {
 inline void *stringHandle(const std::string &bytes) {
     RexxThreadContext *t = current;
     if (!t) throw std::runtime_error("interpreter object used outside a native entry");
-    return (void *)t->RequestGlobalReference((RexxObjectPtr)t->NewString(bytes.data(), bytes.size()));
+    RexxStringObject str = t->NewString(bytes.data(), bytes.size());
+    void *h = (void *)t->RequestGlobalReference((RexxObjectPtr)str);
+    t->ReleaseLocalReference((RexxObjectPtr)str);
+    return h;
 }
 inline void *nilObject() { return current ? (void *)current->Nil() : nullptr; }
 inline RexxThreadContext *need() {
@@ -56,14 +68,15 @@ inline void release(void *h) { if (h && current) current->ReleaseGlobalReference
 inline bool send(void *target, const std::string &selector, const std::vector<Arg> &args, Result &out,
                  std::string &code, std::string &text) {
     RexxThreadContext *t = need();
-    RexxArrayObject arr = t->NewArray(args.size());
+    LocalRefs temps(t);
+    RexxArrayObject arr = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(args.size()));
     // Omitted arguments stay holes at their positions (an array hole is an omitted ARG).
     for (std::size_t i = 0; i < args.size(); i++) {
         const Arg &a = args[i];
         if (a.omitted) continue;
-        t->ArrayPut(arr, a.obj ? (RexxObjectPtr)a.obj : (RexxObjectPtr)t->NewString(a.bytes.data(), a.bytes.size()), i + 1);
+        t->ArrayPut(arr, a.obj ? (RexxObjectPtr)a.obj : temps((RexxObjectPtr)t->NewString(a.bytes.data(), a.bytes.size())), i + 1);
     }
-    RexxObjectPtr r = t->SendMessage((RexxObjectPtr)target, selector.c_str(), arr);
+    RexxObjectPtr r = temps(t->SendMessage((RexxObjectPtr)target, selector.c_str(), arr));
     if (t->CheckCondition()) {
         RexxCondition cd; t->DecodeConditionInfo(t->GetConditionInfo(), &cd);
         code = std::to_string(cd.code / 1000) + "." + std::to_string(cd.code % 1000);
@@ -73,7 +86,7 @@ inline bool send(void *target, const std::string &selector, const std::vector<Ar
     }
     if (r == NULLOBJECT) { out.kind = 0; return true; }
     if (t->IsString(r) || t->IsOfType(r, "STRING")) {
-        RexxStringObject str = t->ObjectToString(r);
+        RexxStringObject str = (RexxStringObject)temps((RexxObjectPtr)t->ObjectToString(r));
         out.kind = 1; out.bytes.assign(t->StringData(str), t->StringLength(str));
     } else { out.kind = 2; out.obj = (void *)t->RequestGlobalReference(r); }
     return true;
@@ -84,6 +97,7 @@ inline bool sendStringNumeric(const std::string &receiver, const std::string &se
                               std::size_t digits, std::size_t fuzz, bool engineering, Result &out,
                               std::string &code, std::string &text) {
     RexxThreadContext *t = need();
+    LocalRefs temps(t);
     static thread_local std::unordered_map<std::string, RexxRoutineObject> cache;
     std::string source = "numeric digits " + std::to_string(digits) + "; numeric fuzz " + std::to_string(fuzz) +
                          "; numeric form " + (engineering ? "engineering" : "scientific") + "; return arg(1)~" + selector + "(";
@@ -100,13 +114,13 @@ inline bool sendStringNumeric(const std::string &receiver, const std::string &se
         t->RequestGlobalReference((RexxObjectPtr)routine);
         cache.emplace(source, routine);
     } else routine = it->second;
-    RexxArrayObject arr = t->NewArray(args.size() + 1);
-    t->ArrayPut(arr, (RexxObjectPtr)t->NewString(receiver.data(), receiver.size()), 1);
+    RexxArrayObject arr = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(args.size() + 1));
+    t->ArrayPut(arr, temps((RexxObjectPtr)t->NewString(receiver.data(), receiver.size())), 1);
     for (std::size_t i = 0; i < args.size(); i++) {
         if (args[i].omitted) continue;
-        t->ArrayPut(arr, args[i].obj ? (RexxObjectPtr)args[i].obj : (RexxObjectPtr)t->NewString(args[i].bytes.data(), args[i].bytes.size()), i + 2);
+        t->ArrayPut(arr, args[i].obj ? (RexxObjectPtr)args[i].obj : temps((RexxObjectPtr)t->NewString(args[i].bytes.data(), args[i].bytes.size())), i + 2);
     }
-    RexxObjectPtr r = t->CallRoutine(routine, arr);
+    RexxObjectPtr r = temps(t->CallRoutine(routine, arr));
     if (t->CheckCondition()) {
         RexxCondition cd; t->DecodeConditionInfo(t->GetConditionInfo(), &cd);
         code = std::to_string(cd.code / 1000) + "." + std::to_string(cd.code % 1000);
@@ -116,7 +130,7 @@ inline bool sendStringNumeric(const std::string &receiver, const std::string &se
     }
     if (r == NULLOBJECT) { out.kind = 0; return true; }
     if (t->IsString(r) || t->IsOfType(r, "STRING")) {
-        RexxStringObject str = t->ObjectToString(r);
+        RexxStringObject str = (RexxStringObject)temps((RexxObjectPtr)t->ObjectToString(r));
         out.kind = 1; out.bytes.assign(t->StringData(str), t->StringLength(str));
     } else { out.kind = 2; out.obj = (void *)t->RequestGlobalReference(r); }
     return true;
@@ -124,6 +138,7 @@ inline bool sendStringNumeric(const std::string &receiver, const std::string &se
 inline std::string callBif(const std::string &name, const std::vector<std::pair<bool, std::string>> &args,
                            std::size_t digits, std::size_t fuzz, bool engineering, const std::string &directives = std::string()) {
     RexxThreadContext *t = need();
+    LocalRefs temps(t);
     static thread_local std::unordered_map<std::string, RexxRoutineObject> cache;
     std::string source = "numeric digits " + std::to_string(digits) + "; numeric fuzz " + std::to_string(fuzz) +
                          "; numeric form " + (engineering ? "engineering" : "scientific") + "; return " + name + "(";
@@ -141,12 +156,12 @@ inline std::string callBif(const std::string &name, const std::vector<std::pair<
         t->RequestGlobalReference((RexxObjectPtr)routine);
         cache.emplace(source, routine);
     } else routine = it->second;
-    RexxArrayObject arr = t->NewArray(args.size());
+    RexxArrayObject arr = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(args.size()));
     for (const auto &a : args) {
-        if (a.first) t->ArrayAppend(arr, (RexxObjectPtr)t->NewString(a.second.data(), a.second.size()));
+        if (a.first) t->ArrayAppend(arr, temps((RexxObjectPtr)t->NewString(a.second.data(), a.second.size())));
         else t->ArrayAppend(arr, (RexxObjectPtr)t->Nil());
     }
-    RexxObjectPtr r = t->CallRoutine(routine, arr);
+    RexxObjectPtr r = temps(t->CallRoutine(routine, arr));
     if (t->CheckCondition()) {
         RexxCondition cd; t->DecodeConditionInfo(t->GetConditionInfo(), &cd);
         std::string code = std::to_string(cd.code / 1000) + "." + std::to_string(cd.code % 1000);
@@ -155,12 +170,19 @@ inline std::string callBif(const std::string &name, const std::vector<std::pair<
         throw rx::SyntaxCondition(code, text, false);
     }
     if (r == NULLOBJECT) return std::string();
-    RexxStringObject str = t->ObjectToString(r);
+    RexxStringObject str = (RexxStringObject)temps((RexxObjectPtr)t->ObjectToString(r));
     return std::string(t->StringData(str), t->StringLength(str));
 }
 }
 #endif
 namespace rx {
+// A compiled instance that has no interpreter object yet (dual representation). Handing it to the interpreter creates one.
+struct NativeRefBase : ObjectDispatch {
+    virtual void *materialize() = 0;   // the interpreter object (valid for the current native call)
+};
+// Hooks installed by a generated library: package classes created natively, and SELF of a natively dispatched method.
+inline std::optional<Value> (*packageClassHook)(const std::string &) = nullptr;
+inline std::optional<Value> (*selfObjectHook)() = nullptr;
 struct EnvObject final : ObjectDispatch {
     void *handle;
     explicit EnvObject(void *h) : handle(h) {}
@@ -180,7 +202,14 @@ struct EnvObject final : ObjectDispatch {
                     out.push_back(std::move(a));
                     continue;
                 }
-                if (!k) throw std::runtime_error("only interpreter objects can be passed to interpreter messages");
+                if (!k) {
+                    if (auto *n = dynamic_cast<NativeRefBase *>(v.object.get())) {
+                        a.obj = n->materialize();
+                        out.push_back(std::move(a));
+                        continue;
+                    }
+                    throw std::runtime_error("only interpreter objects can be passed to interpreter messages");
+                }
                 if (k->handle == nullptr) a.omitted = true;   // rx::omittedArgument()
                 else a.obj = k->handle;
             } else a.bytes = v.bytes;
@@ -224,6 +253,13 @@ inline MessageResult hostStringMessage(const Value &receiver, const std::string 
         "+","-","*","/","%","//","**","=","\\=","<",">","<=",">=","<>","><","==","\\==","COMPARE","ISINTEGER","ISWHOLE"};
     std::string upperSelector = selector;
     for (char &c : upperSelector) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    // RX2CPP_STRING_FALLBACK_STATS=1 prints, at exit, which String messages still reach the interpreter (the next BIFs to mirror).
+    struct Stats {
+        std::unordered_map<std::string, unsigned long> counts; bool on = std::getenv("RX2CPP_STRING_FALLBACK_STATS") != nullptr;
+        ~Stats() { if (on) for (auto &kv : counts) std::fprintf(stderr, "string fallback %s %lu\n", kv.first.c_str(), kv.second); }
+    };
+    static Stats stats;
+    if (stats.on) stats.counts[upperSelector]++;
     if (!numericSensitive.count(upperSelector)) {
         EnvObject str(rxobj::stringHandle(receiver.bytes));
         return str.sendMessage(selector, args);
@@ -245,6 +281,7 @@ inline const bool hostStringFallbackInstalled = (stringMessageFallback() = &host
 inline Value omittedArgument() { return Value::fromObject(std::make_shared<EnvObject>(nullptr)); }
 // SELF inside a native method is the receiver, as the interpreter sees it.
 inline Value selfObject() {
+    if (selfObjectHook) if (auto v = selfObjectHook()) return *v;
     void *h = rxobj::selfHandle();
     if (!h) throw std::runtime_error("SELF is not available here");
     return Value::fromObject(std::make_shared<EnvObject>(h));
@@ -252,14 +289,16 @@ inline Value selfObject() {
 // .NAME environment symbols resolve to the interpreter's own classes (.ARRAY, .DIRECTORY, .LIST, ...).
 inline Value envClass(const std::string &name) {
     // Class objects live as long as the interpreter instance: resolve each name once per thread (FindClass is a full lookup).
-    static thread_local std::unordered_map<std::string, std::shared_ptr<EnvObject>> cache;
+    static thread_local std::unordered_map<std::string, Value> cache;
     auto it = cache.find(name);
-    if (it != cache.end()) return Value::fromObject(it->second);
+    if (it != cache.end()) return it->second;
+    if (packageClassHook) if (auto v = packageClassHook(name)) { cache.emplace(name, *v); return *v; }
     void *h = rxobj::findClass(name);
     if (!h) throw std::runtime_error("unknown environment class ." + name);
     auto obj = std::make_shared<EnvObject>(h);
-    cache.emplace(name, obj);
-    return Value::fromObject(obj);
+    Value value = Value::fromObject(obj);
+    cache.emplace(name, value);
+    return value;
 }
 }
 #endif

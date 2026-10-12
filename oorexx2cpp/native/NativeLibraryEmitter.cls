@@ -20,6 +20,10 @@
   countClasses = 0
   slotIndex = 0
   rootOf = .directory~new
+  tables = .directory~new       /* class -> resolved selector table (definingClass pub noResult) */
+  tableOrder = .array~new
+  parentOf = .directory~new
+  newOk = .directory~new        /* class can be instantiated by compiled code without an interpreter object */
   do unit over units
     name = unit~className
     classSide = unit~isClassSide
@@ -33,6 +37,20 @@
     if \classSide then classes = classes || '    ' || .RxQuote~cpp(name) || ',' || '0a'x
     factories = factories || '    if (className == ' || .RxQuote~cpp(name) || ') return makeGeneratedObject_' || name || '();' || '0a'x
     if \classSide then do
+      resolved = .directory~new
+      if unit~parentName \== '' then do
+        inherited = tables[unit~parentName]
+        do key over inherited~allIndexes
+          resolved[key] = inherited[key]
+        end
+      end
+      parentOf[name] = unit~parentName
+      ok = (unit~externalParent == '' & \unit~isMixin & unit~mixinNames~items == 0)
+      if unit~parentName \== '' then ok = ok & newOk[unit~parentName]
+      do cm over unit~classMethods
+        if cm~selector~upper == 'NEW' then ok = .false
+      end
+      newOk[name] = ok
       source = source || '::class ' || name || ' public'
       if unit~isMixin then source = source || ' mixinclass ' || unit~parentName
       else if \isRoot then source = source || ' subclass ' || unit~parentName
@@ -81,6 +99,18 @@
       end
       if selector == 'RX2CPP_NATIVE_TOKEN' | selector == 'COPY' then
         raise syntax 40.1 array('rx2cpp: reserved native method ' || selector)
+      if \classSide then do
+        key = selector~upper
+        if method~isAbstract then resolved~remove(key)
+        else do
+          decl = ' ' || method~declaration~upper || ' '
+          pub = 1
+          if decl~pos(' PRIVATE ') > 0 | decl~pos(' PROTECTED ') > 0 then pub = 0
+          noRes = 0
+          if selector == 'INIT' | method~attributeSetter then noRes = 1
+          resolved[key] = name pub noRes
+        end
+      end
       if method~isAbstract then do
         abstractName = selector
         if isOperator | selector == '[]' | selector~right(1) == '=' then abstractName = '"' || selector || '"'
@@ -106,6 +136,10 @@
       source = source || '::constant ' || constant[1]
       if constant[2] \== '' then source = source || ' ' || constant[2]
       source = source || '0a'x
+    end
+    if \classSide then do
+      tables[name] = resolved
+      tableOrder~append(name)
     end
     if classSide then nop
     else if isRoot then do
@@ -169,7 +203,32 @@
     end
   end
   if arg(5, 'E') then source = source || extras
-  output = template~changeStr('%METHOD_DEFINITIONS%', cpp)
+  direct = '[[maybe_unused]] static const std::unordered_map<std::string, std::unordered_map<std::string, MethodInfo>> &directMethodTable() {' || '0a'x
+  direct = direct || '  static const std::unordered_map<std::string, std::unordered_map<std::string, MethodInfo>> table = {' || '0a'x
+  do cn over tableOrder
+    direct = direct || '    {' || .RxQuote~cpp(cn) || ', {' || '0a'x
+    t = tables[cn]
+    do key over t~allIndexes
+      parts = t[key]
+      direct = direct || '      {' || .RxQuote~cpp(key) || ', {' || .RxQuote~cpp(parts~word(1)) || ', ' || self~cppBool(parts~word(2)) || ', ' || self~cppBool(parts~word(3)) || '}},' || '0a'x
+    end
+    direct = direct || '    }},' || '0a'x
+  end
+  direct = direct || '  };' || '0a'x || '  return table;' || '0a'x || '}' || '0a'x
+  direct = direct || '[[maybe_unused]] static const std::unordered_map<std::string, std::string> &parentTable() {' || '0a'x
+  direct = direct || '  static const std::unordered_map<std::string, std::string> table = {' || '0a'x
+  do cn over tableOrder
+    direct = direct || '    {' || .RxQuote~cpp(cn) || ', ' || .RxQuote~cpp(parentOf[cn]) || '},' || '0a'x
+  end
+  direct = direct || '  };' || '0a'x || '  return table;' || '0a'x || '}' || '0a'x
+  direct = direct || '[[maybe_unused]] static const std::unordered_set<std::string> &directNewTable() {' || '0a'x
+  direct = direct || '  static const std::unordered_set<std::string> table = {' || '0a'x
+  do cn over tableOrder
+    if newOk[cn] then direct = direct || '    ' || .RxQuote~cpp(cn) || ',' || '0a'x
+  end
+  direct = direct || '  };' || '0a'x || '  return table;' || '0a'x || '}' || '0a'x
+  output = template~changeStr('%DIRECT_TABLES%', direct)
+  output = output~changeStr('%METHOD_DEFINITIONS%', cpp)
   output = output~changeStr('%METHOD_ENTRIES%', entries)
   output = output~changeStr('%ROUTINE_DEFINITIONS%', routineDefs)
   output = output~changeStr('%ROUTINE_ENTRIES%', routineEntries)
@@ -180,6 +239,10 @@
   output = output~changeStr('%INTERNAL_NAME%', .RxQuote~cpp('rx2cpp-generated-' || packageName))
   output = output~changeStr('%PACKAGE_NAME%', .RxQuote~cpp(packageName))
   return output
+::method cppBool private
+  use arg v
+  if v == 1 then return 'true'
+  return 'false'
 ::method identifier private
   use arg value, kind
   allowed = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_'
