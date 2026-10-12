@@ -9,6 +9,7 @@
 #include <cerrno>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <iomanip>
 #include <sstream>
 #include <cstdint>
@@ -202,21 +203,42 @@ struct NumericScope {
     explicit NumericScope(const ActivationNumeric &n) : previous(currentNumeric) { currentNumeric = &n; }
     ~NumericScope() { currentNumeric = previous; }
 };
+// The names a method EXPOSEs. A method has a handful, written as string literals: they are kept as pointers (no allocation per call);
+// names that are not literals go to an overflow vector.
+struct ExposedNames {
+    static constexpr unsigned inlineMax = 6;
+    const char *lit[inlineMax]; std::size_t litLen[inlineMax]; unsigned n = 0;
+    std::vector<std::string> extra;
+    bool empty() const { return n == 0 && extra.empty(); }
+    void add(const char *name) {
+        if (n < inlineMax) { lit[n] = name; litLen[n] = std::strlen(name); ++n; } else extra.emplace_back(name);
+    }
+    void add(const std::string &name) { extra.push_back(name); }
+    template <typename F> bool any(F &&test) const {
+        for (unsigned i = 0; i < n; i++) if (test(lit[i], litLen[i])) return true;
+        for (const auto &e : extra) if (test(e.c_str(), e.size())) return true;
+        return false;
+    }
+};
 struct Variables : std::unordered_map<std::string, Value> {
     ActivationNumeric numeric;
     Variables *outer = nullptr;
-    std::unordered_set<std::string> exposed;
+    ExposedNames exposed;
     Variables() = default;
-    Variables(Variables &caller, std::vector<std::string> names)
-        : numeric(caller.numeric), outer(&caller), exposed(names.begin(), names.end()) {}
+    Variables(Variables &caller, std::vector<std::string> names) : numeric(caller.numeric), outer(&caller) {
+        for (auto &n : names) exposed.add(n);
+    }
+    Variables(Variables &caller, std::initializer_list<const char *> names) : numeric(caller.numeric), outer(&caller) {
+        for (const char *n : names) exposed.add(n);
+    }
     bool isExposed(const std::string &name) const {
-        if (exposed.count(name)) return true;
-        for (const auto &alias : exposed) {
-            if (!alias.empty() && alias.back() == '.' &&
-                name.size() > alias.size() && name.compare(0, alias.size(), alias) == 0)
-                return true;
-        }
-        return false;
+        const std::size_t len = name.size();
+        const char *text = name.data();
+        return exposed.any([&](const char *e, std::size_t elen) {
+            if (elen == len && std::memcmp(e, text, len) == 0) return true;
+            // a stem exposed as "STEM." exposes every compound symbol under it
+            return elen > 0 && e[elen - 1] == '.' && len > elen && std::memcmp(text, e, elen) == 0;
+        });
     }
 };
 // Standalone native class subset. Each object owns a variable scope, while

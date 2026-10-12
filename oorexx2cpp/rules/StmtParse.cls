@@ -5,15 +5,27 @@
 ::class RxStmtParse public
 ::method accepts
   use arg ctx
-  return ctx~stream~is('PARSE')
+  /* The ARG instruction is PARSE UPPER ARG (not when it is the target of an assignment: arg = 1). */
+  return ctx~stream~is('PARSE') | (ctx~stream~is('ARG') & ctx~stream~lookAheadText(1) \== '=')
 ::method emit
   use arg ctx, depth
   s = ctx~stream
-  s~expect('PARSE')
-  uppercase = s~accept('UPPER')
+  bare = s~is('ARG')
+  if bare then do
+    s~expect('ARG')
+    uppercase = .true
+  end
+  else do
+    s~expect('PARSE')
+    uppercase = s~accept('UPPER')
+  end
   lowercase = .false
   if \uppercase then lowercase = s~accept('LOWER')
   select
+    when bare then do
+      mode = 'ARG'
+      source = ''
+    end
     when s~accept('VAR') then do
       mode = 'VAR'
       if s~peek~kind \= 'IDENT' then s~fail('PARSE VAR requires a source symbol')
