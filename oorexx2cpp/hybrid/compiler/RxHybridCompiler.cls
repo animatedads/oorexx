@@ -205,6 +205,9 @@
   return .false
 ::method hostedEnabled
   return .false
+/* A native package is never a hosted unit. */
+::method hasHostUnit
+  return .false
 ::method parse
   expose stream className methods classMethods constants current rules scopes isMixin parentName
   s = stream

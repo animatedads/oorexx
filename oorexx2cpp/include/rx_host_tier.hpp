@@ -43,6 +43,10 @@ private:
             throw SyntaxCondition("98.926", "hosted tier: cannot create an interpreter instance", false);
         mainThread_ = std::this_thread::get_id();
     }
+    // Program end: like the rexx command, wait for activities still running in the interpreter (methods that
+    // REPLYed, START-ed messages) before the instance goes away. Static destruction runs after main's locals are gone;
+    // every static that holds an interpreter reference was constructed after this Session, so it is released first.
+    ~Session() { if (inst_) inst_->Terminate(); }
     RexxInstance *inst_ = nullptr;
     RexxThreadContext *mainCtx_ = nullptr;
     std::thread::id mainThread_;
@@ -73,10 +77,24 @@ struct HostObject final : ObjectDispatch {
         if (!v.isObject()) return c->String(v.bytes.data(), v.bytes.size());
         if (auto h = std::dynamic_pointer_cast<HostObject>(v.object)) return h->handle;
         if (std::dynamic_pointer_cast<NilObject>(v.object)) return c->Nil();
-        if (auto st = std::dynamic_pointer_cast<StemSnapshot>(v.object)) {
+        if (auto st = std::dynamic_pointer_cast<StemObject>(v.object)) {
+            // A compiled stem object crosses once: it becomes an interpreter stem holding its contents, and the native
+            // object forwards to that stem from then on, so both sides keep sharing one stem.
+            std::lock_guard<std::mutex> g(st->lock);
+            if (st->remote) {
+                if (auto h = std::dynamic_pointer_cast<HostObject>(st->remote)) return h->handle;
+                throw std::runtime_error("stem object is bound to a non-interpreter object");
+            }
             RexxStemObject stem = c->NewStem(st->name.c_str());
-            if (st->dflt) c->SetStemElement(stem, "", toRexx(c, *st->dflt));
+            auto host = std::make_shared<HostObject>(stem);
+            if (st->dflt) {
+                RexxArrayObject one = c->ArrayOfOne(toRexx(c, *st->dflt));
+                c->SendMessage(stem, "[]=", one);
+                if (c->CheckCondition()) raisePending(c);
+            }
             for (const auto &t : st->tails) c->SetStemElement(stem, t.first.c_str(), toRexx(c, t.second));
+            st->tails.clear(); st->dflt.reset();
+            st->remote = host;
             return stem;
         }
         throw std::runtime_error("native object cannot be passed to the hosted interpreter (not implemented)");
@@ -132,6 +150,24 @@ inline void loadUnit(const std::string &name, const std::string &source) {
     cachedPackageRoutines().reset();
     if (unitPackage()) c->ReleaseGlobalReference(unitPackage());
     unitPackage() = p;
+}
+
+// .CONTEXT in compiled main code. The compiled activation is not an interpreter activation, so only what is
+// defined without one is answered: PACKAGE is the program's own package (the hosted unit, loaded under the
+// program's path). Every other RexxContext method fails loudly rather than inventing activation state.
+struct ContextObject final : ObjectDispatch {
+    MessageResult sendMessage(const std::string &selector, const std::vector<Value> &args) override {
+        if (selector == "PACKAGE" && args.empty()) {
+            if (!unitPackage()) throw std::runtime_error(".CONTEXT~PACKAGE: the program has no hosted package");
+            return wrap(Session::get().ctx(), unitPackage());
+        }
+        throw SyntaxCondition("98.926", ".CONTEXT~" + selector + " is not implemented for compiled code", false);
+    }
+    std::string display() const override { return "a RexxContext"; }
+};
+inline Value contextObject() {
+    static const Value ctx = Value::fromObject(std::make_shared<ContextObject>());
+    return ctx;
 }
 
 // .OUTPUT belongs to the thread's local environment, not to the class registry.
@@ -263,6 +299,7 @@ inline void interpret(Variables &vars, const Value &code) {
     }
     for (auto it = vars.begin(); it != vars.end();)
         if (!after.count(it->first)) it = vars.erase(it); else ++it;
+    variablesErased();
     for (auto &kv : after) {
         if (kv.first == "_RX_D") vars.numeric.digits = std::stoul(kv.second.bytes);
         else if (kv.first == "_RX_F") vars.numeric.fuzz = std::stoul(kv.second.bytes);

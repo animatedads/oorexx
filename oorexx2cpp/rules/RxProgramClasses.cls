@@ -63,7 +63,9 @@
       end
       when directive[2] == 'METHOD' then do
         if current == .nil then self~reject(start, '::METHOD requires ::CLASS')
-        body = ''
+        /* Pad so a method body reports the program's own line numbers (a rejection inside the directive section
+           then hosts that section instead of being taken for a main-code rejection). */
+        body = copies('0a'x, start)
         do j = start + 1 to finish
           body = body || lines[j] || '0a'x
         end

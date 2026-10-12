@@ -58,6 +58,8 @@ struct SelfSender {
     virtual std::optional<rx::Value> sendValues(const std::string &selector, const std::vector<rx::Value> &) {
         throw std::runtime_error("object-capable SELF send needs the host-API native lane: " + selector);
     }
+    /* Object-capable FORWARD MESSAGE: the original arguments, any result (object or string); nullopt = no result. */
+    virtual std::optional<rx::Value> forwardValues(const std::string &selector) { return rx::Value::string(forward(selector)); }
 };
 namespace detail { inline thread_local SelfSender *currentSender = nullptr; }
 inline std::string selfSend(const std::string &selector, const std::vector<std::string> &args) {
@@ -71,6 +73,13 @@ inline std::string forwardMessage(const std::string &selector) {
     if (!detail::currentSender)
         throw std::runtime_error("FORWARD outside an interpreter-invoked native method");
     return detail::currentSender->forward(selector);
+}
+inline rx::Value forwardMessageValue(const std::string &selector) {
+    if (!detail::currentSender)
+        throw std::runtime_error("FORWARD outside an interpreter-invoked native method");
+    auto r = detail::currentSender->forwardValues(selector);
+    if (!r) throw std::runtime_error("FORWARD " + selector + " returned no result");
+    return *r;
 }
 inline std::optional<rx::Value> selfSendValues(const std::string &selector, const std::vector<rx::Value> &args) {
     if (!detail::currentSender)

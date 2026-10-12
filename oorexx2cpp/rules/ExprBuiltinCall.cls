@@ -27,7 +27,11 @@
   var = '_fnargs' || serial
   if internal | external | hosted | \.RxBuiltinRules~externalEnabled then type = 'rx::Value'
   else type = 'rxbif_breadth::Slot'
-  code = '([&]() -> rx::Value { std::vector<' || type || '> ' || var || '; '
+  code = '([&]() -> rx::Value { std::vector<' || type || '> ' || var || '; ' || var || '.reserve(' || args~items || '); '
+  do i = 1 to args~items
+    /* A built-in function receives a stem's string value (its default), not the stem object. */
+    if \internal & \external & \hosted & args[i]~left(12) == 'rx::stemArg(' then args[i] = 'rx::stemValue(' || args[i]~substr(13)
+  end
   do argExpr over args
     if argExpr == 'RX2CPP_OMITTED' then code = code || var || '.push_back(std::nullopt); '
     else code = code || var || '.push_back(' || argExpr || '); '

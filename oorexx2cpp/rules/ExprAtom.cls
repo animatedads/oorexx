@@ -17,6 +17,10 @@
       s~next
       /* .NIL is a singleton, never a string or absent method result. */
       if t~text == 'NIL' then return 'rx::nil()'
+      if t~text == 'CONTEXT' & ctx~hasHostUnit & ctx~hostedEnabled then do
+        ctx~markHosted('.CONTEXT')
+        return 'rx::host::contextObject()'
+      end
       if t~text == 'OUTPUT' | t~text == 'ROUTINES' then do
         if \ctx~hostedEnabled then s~fail('.' || t~text || ' requires RX2CPP_HOSTED=1')
         ctx~markHosted('.' || t~text)
@@ -33,6 +37,8 @@
         return 'rx::host::findClass("ARRAY")'
       end
       if t~text == 'ARRAY' then return 'rx::Value::fromObject(std::make_shared<rx::ArrayClass>())'
+      /* .STEM~new gives a native StemObject; it becomes an interpreter stem only if it crosses to the hosted tier. */
+      if t~text == 'STEM' then return 'rx::stemClass()'
       /* .TRUE/.FALSE are the strings 1 and 0 */
       if t~text == 'TRUE' then return 'rx::Value::string("1")'
       if t~text == 'FALSE' then return 'rx::Value::string("0")'
@@ -53,8 +59,8 @@
       /* Rexx function invocation requires abuttal: F(3) differs from F (3). */
       if s~is('(') & s~peek~line == t~endLine & s~peek~col == t~endCol then -
         return ctx~builtinExpr~parse(ctx, t~text)
-      /* Bare stem as an argument of a program that has a hosted unit: pass its tails to the interpreter. */
-      if ctx~hasHostUnit & ctx~hostedEnabled & right(t~text, 1) == '.' & pos('.', t~text) == length(t~text) & (s~is(',') | s~is(')')) then
+      /* A bare stem as an argument (or a whole clause value) is passed as the stem object (shared, not copied): see StemObject. */
+      if right(t~text, 1) == '.' & pos('.', t~text) == length(t~text) & (s~is(',') | s~is(')') | s~peek~kind == 'SEP' | s~peek~kind == 'EOF') then
         return 'rx::stemArg(vars, ' || .RxQuote~cpp(t~text) || ')'
       return .RxCompoundSymbols~load(t~text)
     end

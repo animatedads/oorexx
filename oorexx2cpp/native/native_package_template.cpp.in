@@ -206,6 +206,26 @@ bool nativeSelfSend(const std::shared_ptr<InstanceState> &st, const std::string 
     out = runNative(st, *method, optionalsOf(args));
     return true;
 }
+/* ooRexx RexxObject::checkPrivate: a private method runs when the sender is the receiver itself, or an instance of the
+   class that defined the method (its scope). The sender here is the instance whose compiled method is running on this
+   thread; anything else (a class-side or interpreter sender) is left to the interpreter's own check. */
+static bool instanceOfScope(const std::string &cls, const char *scope) {
+    static const CiEq same;
+    const auto &parents = parentTable();
+    std::string c = cls;
+    for (int guard = 0; guard < 64 && !c.empty(); guard++) {
+        if (same(c, scope)) return true;
+        auto it = parents.find(c);
+        if (it == parents.end()) return false;
+        c = it->second;
+    }
+    return false;
+}
+static bool privateAllowedFor(const InstanceState *receiver, const MethodInfo &info) {
+    if (!currentState) return false;
+    if (currentState == receiver) return true;
+    return instanceOfScope(currentState->dynamicClass, info.definingClass);
+}
 class NativeInstanceRef final : public rx::NativeRefBase {
     std::shared_ptr<InstanceState> st_;
 public:
@@ -213,7 +233,7 @@ public:
     void *materialize() override { return materializeState(st_); }
     rx::MessageResult sendMessage(const std::string &selector, const std::vector<rx::Value> &args) override {
         if (Resolved *method = lookupMethod(st_->dynamicClass, selector))
-            if (method->second.isPublic) return runNative(st_, *method, optionalsOf(args));
+            if (method->second.isPublic || privateAllowedFor(st_.get(), method->second)) return runNative(st_, *method, optionalsOf(args));
         return interpreterSend(st_, selector, args);
     }
     rx::Value sendBinary(const std::string &selector, const rx::Value &rhs) override {
@@ -251,6 +271,11 @@ public:
         if (!r) throw std::runtime_error("SELF~" + selector + " returned no value");
         if (r->isObject()) return r->object->display();
         return r->bytes;
+    }
+    std::optional<rx::Value> forwardValues(const std::string &selector) override {
+        std::vector<rx::Value> values;
+        for (const auto &a : args_) values.push_back(a ? *a : rx::omittedArgument());
+        return sendValues(selector, values);
     }
     std::string forward(const std::string &selector) override {
         std::vector<rx::Value> values;
@@ -338,6 +363,15 @@ public:
         return stringValue(ctx_, result);
     }
 #ifdef RX2CPP_HOST_API
+    std::optional<rx::Value> forwardValues(const std::string &selector) override {
+        RexxObjectPtr result;
+        { ReleaseAndReacquire released(lock_);
+          result = ctx_->ForwardMessage(self_, selector.c_str(), NULLOBJECT, ctx_->GetArguments()); }
+        if (ctx_->CheckCondition()) throw PendingCondition();
+        if (result == NULLOBJECT) return std::nullopt;
+        if (ctx_->IsString(result) || ctx_->IsOfType(result, "STRING")) return rx::Value::string(stringValue(ctx_, result));
+        return rx::Value::fromObject(std::make_shared<rx::EnvObject>((void *)ctx_->threadContext->RequestGlobalReference(result)));
+    }
     std::optional<rx::Value> sendValues(const std::string &selector, const std::vector<rx::Value> &args) override {
         if (state_ && state_->exact) {
             std::optional<rx::Value> out;

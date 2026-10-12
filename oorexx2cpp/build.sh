@@ -61,9 +61,9 @@ if [[ -n "${RX2CPP_KERNEL:-}" ]]; then
     for item in "${extra[@]}"; do
         case "$item" in -I*|-D*) cflags+=( "$item" );; esac
     done
-    "${CXX:-g++}" -std=c++17 -O2 -Wall -Wextra -Werror -I"$ROOT/include" "${cflags[@]}" -c "$cpp" -o "$gobj"
-    "${CXX:-g++}" -std=c++17 -O2 -w -I"$ROOT/include" "$gobj" "${extra[@]}" -o "$native"
+    "${CXX:-g++}" -std=c++17 -O2 ${RX2CPP_CXXFLAGS:-} -Wall -Wextra -Werror -I"$ROOT/include" "${cflags[@]}" -c "$cpp" -o "$gobj"
+    "${CXX:-g++}" -std=c++17 -O2 ${RX2CPP_CXXFLAGS:-} -w -I"$ROOT/include" "$gobj" "${extra[@]}" -o "$native"
 else
-    "${CXX:-g++}" -std=c++17 -O2 -Wall -Wextra -Werror -I"$ROOT/include" "$cpp" "${extra[@]}" -o "$native"
+    "${CXX:-g++}" -std=c++17 -O2 ${RX2CPP_CXXFLAGS:-} -Wall -Wextra -Werror -I"$ROOT/include" "$cpp" "${extra[@]}" -o "$native"
 fi
 printf 'Native executable: %s (generated C++: %s)\n' "$native" "$cpp"

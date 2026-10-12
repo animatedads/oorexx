@@ -12,25 +12,29 @@ inline Value parseSourceString(const Value &source) {
     if (!r || r->isObject()) throw std::runtime_error("PARSE source: string conversion did not return a string");
     return *r;
 }
-inline std::vector<Value> parseBlankTemplate(const Value &sourceIn, std::size_t count) {
-    if (count == 0) throw std::runtime_error("empty PARSE template");
-    const Value source = parseSourceString(sourceIn);
-    std::vector<Value> parts;
-    parts.reserve(count);
-    const std::string &s = source.bytes;
+// Word-split one segment into `count` targets, appending to `parts` (no intermediate copies).
+inline void parseBlankSegment(const char *s, std::size_t size, std::size_t count, std::vector<Value> &parts) {
     std::size_t cursor = 0;
     auto blank = [](char c) { return c == ' ' || c == '\t'; };
     for (std::size_t i = 0; i < count; ++i) {
         if (i + 1 == count) {
-            parts.emplace_back(Value::string(s.substr(cursor)));
+            parts.emplace_back(std::string(s + cursor, size - cursor));
             break;
         }
-        while (cursor < s.size() && blank(s[cursor])) ++cursor;
+        while (cursor < size && blank(s[cursor])) ++cursor;
         const std::size_t first = cursor;
-        while (cursor < s.size() && !blank(s[cursor])) ++cursor;
-        parts.emplace_back(Value::string(s.substr(first, cursor - first)));
-        if (cursor < s.size()) ++cursor;
+        while (cursor < size && !blank(s[cursor])) ++cursor;
+        parts.emplace_back(std::string(s + first, cursor - first));
+        if (cursor < size) ++cursor;
     }
+}
+inline std::vector<Value> parseBlankTemplate(const Value &sourceIn, std::size_t count) {
+    if (count == 0) throw std::runtime_error("empty PARSE template");
+    std::vector<Value> parts;
+    parts.reserve(count);
+    if (!sourceIn.isObject()) { parseBlankSegment(sourceIn.bytes.data(), sourceIn.bytes.size(), count, parts); return parts; }
+    const Value source = parseSourceString(sourceIn);
+    parseBlankSegment(source.bytes.data(), source.bytes.size(), count, parts);
     return parts;
 }
 
@@ -58,10 +62,12 @@ struct ParseOp {
 };
 
 inline std::vector<Value> parseTemplate(const Value &sourceIn, const std::vector<ParseOp> &ops) {
-    const Value source = parseSourceString(sourceIn);
+    std::optional<Value> converted;
+    if (sourceIn.isObject()) converted = parseSourceString(sourceIn);
+    const std::string &s = converted ? converted->bytes : sourceIn.bytes;
     if (ops.empty() || ops.size() > 64) throw std::runtime_error("invalid PARSE template size");
-    const std::string &s = source.bytes;
     std::vector<Value> values;
+    values.reserve(ops.size());
     std::size_t cursor = 0;
     std::size_t pending = 0;
     // Saturated 1-based ooRexx position, clipped to [1, len+1].
@@ -71,10 +77,9 @@ inline std::vector<Value> parseTemplate(const Value &sourceIn, const std::vector
         const auto n = static_cast<std::uint64_t>(p - 1);
         return n > bound ? s.size() : static_cast<std::size_t>(n);
     };
-    auto flush = [&](const std::string &segment) {
+    auto flush = [&](std::size_t from, std::size_t len) {
         if (!pending) return;
-        auto parts = parseBlankTemplate(Value::string(segment), pending);
-        values.insert(values.end(), parts.begin(), parts.end());
+        parseBlankSegment(s.data() + from, len, pending, values);
         pending = 0;
     };
     for (const ParseOp &op : ops) {
@@ -100,10 +105,10 @@ inline std::vector<Value> parseTemplate(const Value &sourceIn, const std::vector
         }
         // An anchor behind the cursor gives the preceding target the remaining
         // source; the next target starts at the newly selected backward anchor.
-        flush(boundary <= cursor ? s.substr(cursor) : s.substr(cursor, boundary - cursor));
+        flush(cursor, boundary <= cursor ? s.size() - cursor : boundary - cursor);
         cursor = next;
     }
-    flush(s.substr(cursor));
+    flush(cursor, s.size() - cursor);
     if (values.empty()) throw std::runtime_error("PARSE requires a target");
     return values;
 }

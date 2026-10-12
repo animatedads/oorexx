@@ -180,6 +180,31 @@ inline Value argBif(const std::vector<Value>& args, const Vec& a) {
     if(o=='O') return Value::string(exists?"0":"1");
     throw std::runtime_error("BIF ARG: option must be E or O");
 }
+// ARG over an argument list with omitted slots (native package methods and routines): ARG() is the position of the
+// last argument given, ARG(n) of an omitted slot is the null string, and E/O test whether slot n was given.
+inline Value argSlotValue(const std::optional<Value>& v) { return *v; }
+inline Value argSlotValue(const std::optional<std::string>& v) { return Value::string(*v); }
+template <class Slot>
+inline Value argBifSlots(const std::vector<Slot>& args, const std::vector<BifSlot>& a) {
+    std::size_t count=args.size();
+    while(count>0 && !args[count-1]) --count;
+    if(a.empty()) return Value::string(std::to_string(count));
+    const Value* nv=slotPtr(a[0]);
+    if(!nv || nv->isObject()) throw std::runtime_error("BIF ARG: argument 1 must be a positive whole number");
+    const std::string& ns=nv->bytes;
+    if(ns.empty()||ns.find_first_not_of("0123456789")!=std::string::npos||ns.find_first_not_of('0')==std::string::npos)
+        throw std::runtime_error("BIF ARG: argument 1 must be a positive whole number");
+    const std::size_t n=std::stoul(ns);
+    const bool exists=n<=args.size() && args[n-1];
+    const Value* ov=a.size()>1?slotPtr(a[1]):nullptr;
+    if(!ov || ov->bytes.empty()) return exists?argSlotValue(args[n-1]):Value::string("");
+    if(ov->isObject()) throw std::runtime_error("BIF ARG: option must be E or O");
+    const char o=static_cast<char>(std::toupper(static_cast<unsigned char>(ov->bytes[0])));
+    if(o=='E') return Value::string(exists?"1":"0");
+    if(o=='O') return Value::string(exists?"0":"1");
+    if(o=='A') throw std::runtime_error("BIF ARG: option A is not implemented in compiled code");
+    throw std::runtime_error("BIF ARG: option must be A, E or O");
+}
 // FORMAT(number[,before[,after]]) in fixed notation; exponent forms are not implemented here (fail closed).
 inline Value formatBifFixed(const std::vector<BifSlot>& a, const ActivationNumeric& num) {
     auto intArg=[&](std::size_t i, long dflt, bool& given)->long {
@@ -230,8 +255,87 @@ inline Value formatBifFixed(const std::vector<BifSlot>& a, const ActivationNumer
     }
     return Value::string(out);
 }
+// Exact native paths for the commonest pure string BIFs. Only the plain, unambiguous form is taken (all arguments present and
+// strings, counts written as plain digits, no whitespace other than blanks for the word functions); anything else returns
+// nullopt and goes the full catalogue route, which owns validation and error text.
+inline bool quickCount(const BifSlot &slot, std::size_t &out, bool positive) {
+    if (!slot || slot->isObject()) return false;
+    const std::string &t = slot->bytes;
+    if (t.empty() || t.size() > 9) return false;
+    std::size_t v = 0;
+    for (char c : t) { if (c < '0' || c > '9') return false; v = v * 10 + static_cast<std::size_t>(c - '0'); }
+    if (positive && v == 0) return false;
+    out = v; return true;
+}
+inline bool quickText(const BifSlot &slot) { return slot && !slot->isObject(); }
+inline bool quickPad(const std::vector<BifSlot> &a, std::size_t i, char &pad) {
+    pad = ' ';
+    if (a.size() <= i) return true;
+    if (!quickText(a[i]) || a[i]->bytes.size() != 1) return false;
+    pad = a[i]->bytes[0]; return true;
+}
+inline bool quickBlanksOnly(const std::string &s) {
+    for (char c : s) if (c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f') return false;
+    return true;
+}
+inline std::optional<Value> quickBif(const std::string &name, const std::vector<BifSlot> &a) {
+    if (name.empty() || a.empty() || !quickText(a[0])) return std::nullopt;
+    const std::string &s = a[0]->bytes;
+    switch (name[0]) {
+    case 'L':
+        if (name == "LENGTH" && a.size() == 1) return fromInteger(static_cast<std::int64_t>(s.size()));
+        if (name == "LEFT" && (a.size() == 2 || a.size() == 3)) {
+            std::size_t n; char pad;
+            if (!quickCount(a[1], n, false) || !quickPad(a, 2, pad)) return std::nullopt;
+            std::string out = s.substr(0, std::min(n, s.size()));
+            out.resize(n, pad);
+            return Value(std::move(out));
+        }
+        break;
+    case 'R':
+        if (name == "RIGHT" && (a.size() == 2 || a.size() == 3)) {
+            std::size_t n; char pad;
+            if (!quickCount(a[1], n, false) || !quickPad(a, 2, pad)) return std::nullopt;
+            if (n <= s.size()) return Value(s.substr(s.size() - n));
+            return Value(std::string(n - s.size(), pad) + s);
+        }
+        break;
+    case 'S':
+        if (name == "SUBSTR" && a.size() >= 2 && a.size() <= 4) {
+            std::size_t start, len; char pad;
+            if (!quickCount(a[1], start, true) || !quickPad(a, 3, pad)) return std::nullopt;
+            const std::size_t from = start - 1;
+            if (a.size() == 2) return Value(from < s.size() ? s.substr(from) : std::string());
+            if (!quickCount(a[2], len, false)) return std::nullopt;
+            std::string out = from < s.size() ? s.substr(from, len) : std::string();
+            out.resize(len, pad);
+            return Value(std::move(out));
+        }
+        break;
+    case 'W':
+        if ((name == "WORD" && a.size() == 2) || (name == "WORDS" && a.size() == 1)) {
+            if (!quickBlanksOnly(s)) return std::nullopt;
+            std::size_t want = 0;
+            if (a.size() == 2 && !quickCount(a[1], want, true)) return std::nullopt;
+            std::size_t i = 0, count = 0;
+            while (true) {
+                while (i < s.size() && s[i] == ' ') ++i;
+                if (i >= s.size()) break;
+                const std::size_t b = i;
+                while (i < s.size() && s[i] != ' ') ++i;
+                if (++count == want) return Value(s.substr(b, i - b));
+            }
+            if (a.size() == 1) return fromInteger(static_cast<std::int64_t>(count));
+            return Value(std::string());
+        }
+        break;
+    default: break;
+    }
+    return std::nullopt;
+}
 inline Value dispatchBif(BifRuntime& bif, Variables& vars, const std::string& name,
                          const std::vector<BifSlot>& slots) {
+    if(auto quick=quickBif(name,slots)) return std::move(*quick);
     if(name=="TRACE" || name=="ADDRESS") {   // language state owned by the compiled program, not by a BIF
         if(slots.size()>1 || (slots.size()==1 && (!slots[0] || slots[0]->isObject())))
             throw std::runtime_error("BIF "+name+": invalid arguments");

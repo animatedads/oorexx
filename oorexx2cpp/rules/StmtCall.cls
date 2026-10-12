@@ -45,7 +45,7 @@
   ctx~line(depth, '{')
   if internal | external | hosted | \.RxBuiltinRules~externalEnabled then type = 'rx::Value'
   else type = 'rxbif_breadth::Slot'
-  ctx~line(depth + 1, 'std::vector<' || type || '> ' || var || ';')
+  ctx~line(depth + 1, 'std::vector<' || type || '> ' || var || '; ' || var || '.reserve(' || args~items || ');')
   do argExpr over args
     if argExpr == 'RX2CPP_OMITTED' then ctx~line(depth + 1, var || '.push_back(std::nullopt);')
     else ctx~line(depth + 1, var || '.push_back(' || argExpr || ');')

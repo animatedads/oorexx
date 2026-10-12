@@ -19,8 +19,13 @@
   do forever
     if s~peek~kind \= 'IDENT' then s~fail('USE ARG requires simple variable names')
     name = s~next~text
-    if pos('.', name) > 0 then s~fail('USE ARG compound variable targets not yet implemented')
-    ctx~line(depth, 'rx::useArgument(vars, _rxProgramArgs, ' || .RxQuote~cpp(name) || ', ' || index || ');')
+    /* USE ARG S. shares the argument stem object (element changes are seen by the caller). */
+    if pos('.', name) = length(name) then
+      ctx~line(depth, 'rx::useStemArgument(vars, _rxProgramArgs, ' || .RxQuote~cpp(name) || ', ' || index || ');')
+    else do
+      if pos('.', name) > 0 then s~fail('USE ARG compound variable targets not yet implemented')
+      ctx~line(depth, 'rx::useArgument(vars, _rxProgramArgs, ' || .RxQuote~cpp(name) || ', ' || index || ');')
+    end
     index = index + 1
     if \s~accept(',') then leave
   end

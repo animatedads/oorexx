@@ -63,7 +63,10 @@
     if uppercase then inputExpr = 'rx::parseUpper(' || source || ')'
     if lowercase then inputExpr = 'rx::parseLower(' || source || ')'
     ctx~line(depth + 1, 'const rx::Value _parseInput' || suffix || ' = ' || inputExpr || ';')
-    ctx~line(depth + 1, 'const std::vector<rx::ParseOp> _parsePlan' || suffix || ' = {' || elements || '};')
+    /* A template with only constant positions/literals is built once, not per execution. */
+    if elements~pos('Value(') = 0 then planDecl = 'static const std::vector<rx::ParseOp> _parsePlan'
+    else planDecl = 'const std::vector<rx::ParseOp> _parsePlan'
+    ctx~line(depth + 1, planDecl || suffix || ' = {' || elements || '};')
     ctx~line(depth + 1, 'const auto _parseParts' || suffix || ' = rx::parseTemplate(_parseInput' || suffix || ', _parsePlan' || suffix || ');')
     do i = 1 to targets~items
       name = targets[i]

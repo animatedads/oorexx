@@ -1,5 +1,5 @@
 /* Function calls resolve to package-local compiled ::ROUTINEs or to the shared BIF dispatcher. All arguments use positional slots (including omitted slots),
-   following the ARGLIST model; the native scalar bridge rejects object values.
+   following the ARGLIST model; package routines take and return values (objects included).
    No external routine or class method is silently substituted. */
 ::class RxHybridFunctionCall public
 ::method parse
@@ -33,17 +33,15 @@
   s~expect(')')
   /* A new compiled activation for each invocation: no caller variable pool
      escapes into the callee. The receiver is a package routine, not SELF. */
-  code = '([&]() -> rx::Value { std::vector<std::optional<std::string>> _rxArgList; '
+  /* Values (objects included) go through the ARGLIST value entry point, so a package routine receives and returns
+     objects exactly as an interpreted ::ROUTINE does. */
+  code = '([&]() -> rx::Value { std::vector<std::optional<rx::Value>> _rxArgList; '
   do expression over positions
     if expression == 'RX2CPP_MISSING_ARGUMENT' then code = code || '_rxArgList.emplace_back(std::nullopt); '
-    else do
-      code = code || '{ const rx::Value _rxArgValue = ' || expression || '; '
-      code = code || 'if (_rxArgValue.isObject()) throw std::runtime_error("package routine scalar ABI cannot marshal object arguments"); '
-      code = code || '_rxArgList.emplace_back(_rxArgValue.bytes); } '
-    end
+    else code = code || '_rxArgList.emplace_back(' || expression || '); '
   end
-  code = code || 'return rx::Value::string(rx2cpp::makeGeneratedObject_RX2CPP_ROUTINE_IMPL()->invokeMany('
-  return code || .RxQuote~cpp(name) || ', _rxArgList)); }())'
+  code = code || 'return rx2cpp::makeGeneratedObject_RX2CPP_ROUTINE_IMPL()->invokeValues('
+  return code || .RxQuote~cpp(name) || ', _rxArgList); }())'
 /* EXTERNAL library routines declared in the package run through the host interpreter (declaration carried into the helper routine source). */
 ::method parseExternal
   use arg ctx, name
@@ -85,6 +83,8 @@
     if argExpr == 'RX2CPP_OMITTED' then code = code || '_rxSlots.push_back(std::nullopt); '
     else code = code || '_rxSlots.push_back(' || argExpr || '); '
   end
+  /* ARG reads this activation's own argument slots (omitted slots stay omitted). */
+  if name == 'ARG' then return code || 'return rx::argBifSlots(arguments, _rxSlots); }())'
   return code || 'return rx::dispatchBif(rx2cppBif(), vars, ' || .RxQuote~cpp(name) || ', _rxSlots); }())'
 ::requires 'core/RxQuote.cls'
 ::requires 'rules/RxBuiltinRules.cls'

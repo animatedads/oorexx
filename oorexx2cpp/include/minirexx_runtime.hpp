@@ -18,12 +18,15 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <atomic>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
+#include <deque>
 
 namespace rx {
 // The interpreter implements operators as messages to the LEFT operand.
@@ -220,7 +223,21 @@ struct ExposedNames {
         return false;
     }
 };
+// Every variable pool has a process-unique id, never copied: a compiled variable slot (VarSlot) remembers which pool it
+// resolved against, so a pool freed and reallocated at the same address can never satisfy a stale slot.
+inline std::atomic<std::uint64_t> &variablePoolCounter() { static std::atomic<std::uint64_t> c{1}; return c; }
+struct PoolId {
+    std::uint64_t value = variablePoolCounter().fetch_add(1, std::memory_order_relaxed);
+    PoolId() = default;
+    PoolId(const PoolId &) : PoolId() {}
+    PoolId &operator=(const PoolId &) { value = variablePoolCounter().fetch_add(1, std::memory_order_relaxed); return *this; }
+};
+// Bumped by every erase of a simple variable from any pool (DROP, INTERPRET sync): a slot holding a pointer to a map
+// node is valid only while the generation it saw is current. Insertions and rehash keep node addresses, so they need no bump.
+inline std::atomic<std::uint64_t> &variableEraseGeneration() { static std::atomic<std::uint64_t> g{1}; return g; }
+inline void variablesErased() { variableEraseGeneration().fetch_add(1, std::memory_order_release); }
 struct Variables : std::unordered_map<std::string, Value> {
+    PoolId poolId;
     ActivationNumeric numeric;
     Variables *outer = nullptr;
     ExposedNames exposed;
@@ -405,9 +422,11 @@ inline void set(Variables &vars, const std::string &name, Value value) {
     variableOwner(vars, name).insert_or_assign(name, std::move(value));
 }
 inline void drop(Variables &vars, const std::string &name) {
-    variableOwner(vars, name).erase(name);
+    // Slots cache simple variables only: erasing a compound/stem entry cannot invalidate one.
+    if (variableOwner(vars, name).erase(name) && name.find('.') == std::string::npos) variablesErased();
 }
 inline void resetStem(Variables &vars, const std::string &stem) {
+    // Only compound entries (names containing '.') are erased here, and slots never cache those: no generation bump.
     auto &owner = variableOwner(vars, stem);
     for (auto it = owner.begin(); it != owner.end();) {
         if (it->first.size() > stem.size() &&
@@ -415,6 +434,44 @@ inline void resetStem(Variables &vars, const std::string &stem) {
         else ++it;
     }
 }
+// A compiled access site for one simple (non-compound) variable name. The compiler gives each site its own thread-local
+// cache: the map node is found once per (pool, erase generation) and then read/written directly. Every miss goes the
+// ordinary name-keyed way (EXPOSE aliasing, NOVALUE), so semantics are those of get()/set().
+struct VarSlot {
+    std::uint64_t pool;
+    std::uint64_t gen;
+    Value *node;
+    Value *resolve(const Variables &vars) {
+        if (node && pool == vars.poolId.value && gen == variableEraseGeneration().load(std::memory_order_acquire)) return node;
+        return nullptr;
+    }
+    void remember(const Variables &vars, std::uint64_t g, Value *p) { pool = vars.poolId.value; gen = g; node = p; }
+    Value get(const Variables &vars, const char *name) {
+        if (Value *p = resolve(vars)) return *p;
+        const std::uint64_t g = variableEraseGeneration().load(std::memory_order_acquire);
+        const std::string key(name);
+        const Variables &owner = variableOwner(vars, key);
+        auto found = owner.find(key);
+        if (found == owner.end()) {
+            if (novalueArmed && *novalueArmed) throw NoValueCondition(name);
+            return Value::string(name);
+        }
+        remember(vars, g, const_cast<Value *>(&found->second));
+        return found->second;
+    }
+    void set(Variables &vars, const char *name, Value value) {
+        if (Value *p = resolve(vars)) { *p = std::move(value); return; }
+        const std::uint64_t g = variableEraseGeneration().load(std::memory_order_acquire);
+        std::string key(name);
+        Variables &owner = variableOwner(vars, key);
+        auto r = owner.insert_or_assign(std::move(key), std::move(value));
+        remember(vars, g, &r.first->second);
+    }
+};
+// One slot per compiled access site and thread; the slot is zero-initialised (trivial), so no guard is needed.
+#define RX_VGET(N) ([&]() -> ::rx::Value { static thread_local ::rx::VarSlot _rxSlot; return _rxSlot.get(vars, N); }())
+#define RX_VSET(N, ...) ([&]() { static thread_local ::rx::VarSlot _rxSlot; _rxSlot.set(vars, N, __VA_ARGS__); }())
+
 
 // USE ARG drops an omitted target instead of assigning the empty string;
 // PARSE ARG deliberately has different missing-argument semantics.
@@ -756,42 +813,66 @@ inline Value logicalOr(const Value &lhs, const Value &rhs) {
     const bool right = condition(rhs);
     return fromInteger(left || right ? 1 : 0);
 }
+// Operator dispatch on the selector bytes (switch on the first character), no string temporaries.
+inline Value sendBinaryOp(const Value &lhs, const char *sel, std::size_t n, const Value &rhs,
+                          const ActivationNumeric &numeric) {
+    if (lhs.isObject()) return lhs.object->sendBinary(std::string(sel, n), rhs);
+    const char c0 = n ? sel[0] : '\0', c1 = n > 1 ? sel[1] : '\0';
+    switch (c0) {
+    case ' ':
+        if (n == 1) {
+            // Blank concatenation: exactly one blank between the operands.
+            if (rhs.isObject()) throw std::runtime_error("object operand in blank concatenation is not implemented");
+            std::string out; out.reserve(lhs.bytes.size() + 1 + rhs.bytes.size());
+            out += lhs.bytes; out += ' '; out += rhs.bytes;
+            return Value(std::move(out));
+        }
+        break;
+    case '|':
+        if (n == 1) return logicalOr(lhs, rhs);
+        if (n == 2 && c1 == '|') {
+            // Rexx concatenation joins the exact character strings, with no numeric normalisation.
+            if (rhs.isObject()) throw std::runtime_error("object operand in || is not implemented");
+            std::string out; out.reserve(lhs.bytes.size() + rhs.bytes.size());
+            out += lhs.bytes; out += rhs.bytes;
+            return Value(std::move(out));
+        }
+        break;
+    case '&':
+        if (n == 1 || (n == 2 && c1 == '&')) {
+            // Both operands were already evaluated (Rexx never short-circuits) and must be exactly 0 or 1.
+            if (rhs.isObject()) throw std::runtime_error("object operand in logical operator is not implemented");
+            const bool l = condition(lhs), r = condition(rhs);
+            return Value::string((n == 1 ? (l && r) : (l != r)) ? "1" : "0");
+        }
+        break;
+    case '+': if (n == 1) return numericAdd(lhs, rhs, numeric); break;
+    case '-': if (n == 1) return numericSub(lhs, rhs, numeric); break;
+    case '*':
+        if (n == 1) return numericMul(lhs, rhs, numeric);
+        if (n == 2 && c1 == '*') return numericPower(lhs, rhs, numeric);
+        break;
+    case '/':
+        if (n == 1) return numericDiv(lhs, rhs, numeric);
+        if (n == 2 && c1 == '/') return numericRemainder(lhs, rhs, numeric);
+        break;
+    case '%': if (n == 1) return numericWholeDivide(lhs, rhs, numeric); break;
+    default: {
+        const CmpOp op = cmpOpOf(sel, n);
+        if (op != CmpOp::None) return numericCompare(lhs, op, rhs, numeric);
+    }
+    }
+    throw std::runtime_error("unknown binary operator message: " + std::string(sel, n));
+}
 inline Value sendBinary(const Value &lhs, const std::string &selector, const Value &rhs,
                         const ActivationNumeric &numeric) {
-    if (lhs.isObject()) return lhs.object->sendBinary(selector, rhs);
-    if (selector == "|") return logicalOr(lhs, rhs);
-    if (selector == "&" || selector == "&&") {
-        // Both operands were already evaluated (Rexx never short-circuits) and must be exactly 0 or 1.
-        if (rhs.isObject()) throw std::runtime_error("object operand in logical operator is not implemented");
-        const bool l = condition(lhs), r = condition(rhs);
-        const bool out = selector == "&" ? (l && r) : (l != r);
-        return Value::string(out ? "1" : "0");
-    }
-    if (selector == "||") {
-        // Rexx concatenation joins the exact character strings, with no numeric normalisation.
-        if (rhs.isObject()) throw std::runtime_error("object operand in || is not implemented");
-        return Value::string(lhs.bytes + rhs.bytes);
-    }
-    if (selector == " ") {
-        // Blank concatenation: exactly one blank between the operands.
-        if (rhs.isObject()) throw std::runtime_error("object operand in blank concatenation is not implemented");
-        return Value::string(lhs.bytes + " " + rhs.bytes);
-    }
-    if (selector == "+") return numericAdd(lhs, rhs, numeric);
-    if (selector == "-") return numericSub(lhs, rhs, numeric);
-    if (selector == "*") return numericMul(lhs, rhs, numeric);
-    if (selector == "/") return numericDiv(lhs, rhs, numeric);
-    if (selector == "%") return numericWholeDivide(lhs, rhs, numeric);
-    if (selector == "//") return numericRemainder(lhs, rhs, numeric);
-    if (selector == "**") return numericPower(lhs, rhs, numeric);
-    if (selector == "=" || selector == "\\=" || selector == "==" || selector == "\\==" ||
-        selector == "<>" || selector == "><" || selector == "<" || selector == "<=" ||
-        selector == ">" || selector == ">=")
-        return numericCompare(lhs, selector, rhs, numeric);
-    throw std::runtime_error("unknown binary operator message: " + selector);
+    return sendBinaryOp(lhs, selector.data(), selector.size(), rhs, numeric);
+}
+inline Value sendBinary(const Value &lhs, const char *selector, const Value &rhs, const ActivationNumeric &numeric) {
+    return sendBinaryOp(lhs, selector, std::strlen(selector), rhs, numeric);
 }
 inline Value sendBinary(const Value &lhs, const std::string &selector, const Value &rhs) {
-    return sendBinary(lhs, selector, rhs, ActivationNumeric{});
+    return sendBinary(lhs, selector, rhs, currentNumeric ? *currentNumeric : ActivationNumeric{});
 }
 inline Value sendUnary(const std::string &selector, const Value &operand, const ActivationNumeric &numeric) {
     if (operand.isObject()) return operand.object->sendUnary(selector);
@@ -805,7 +886,7 @@ inline Value sendUnary(const std::string &selector, const Value &operand, const 
     throw std::runtime_error("unknown unary operator message: " + selector);
 }
 inline Value sendUnary(const std::string &selector, const Value &operand) {
-    return sendUnary(selector, operand, ActivationNumeric{});
+    return sendUnary(selector, operand, currentNumeric ? *currentNumeric : ActivationNumeric{});
 }
 inline bool condition(const Value &v) {
     // Rexx logical conditions must be exactly 0 or 1, not generic C++ truthiness.

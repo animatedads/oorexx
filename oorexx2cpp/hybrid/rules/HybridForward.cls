@@ -47,7 +47,8 @@
   if arrayExpr == '' then do
     if toSuper then s~fail('FORWARD CLASS (SUPER) without ARRAY is not supported')
     if selector == '' then s~fail('FORWARD MESSAGE selector is empty')
-    value = 'rx::Value::string(rx2cpp::forwardMessage(' || .RxQuote~cpp(selector) || '))'
+    if value('RX2CPP_HOST_API', , 'ENVIRONMENT') \== '' then value = 'rx2cpp::forwardMessageValue(' || .RxQuote~cpp(selector) || ')'
+    else value = 'rx::Value::string(rx2cpp::forwardMessage(' || .RxQuote~cpp(selector) || '))'
   end
   else do
     if selector == '' then selector = ctx~current~selector

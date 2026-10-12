@@ -42,17 +42,27 @@
     ctx~line(depth + 1, 'const rx::Value _end' || suffix || ' = ' || last || ';')
     ctx~line(depth + 1, 'const rx::Value _step' || suffix || ' = ' || step || ';')
   end
-  ctx~line(depth + 1, 'rx::set(vars, ' || .RxQuote~cpp(name) || ', ' || first || ');')
+  /* A simple control variable uses a variable slot (see CompoundSymbols.cls). */
+  if pos('.', name) = 0 then do
+    getCtl = .RxCompoundSymbols~load(name)
+    setCtl = .RxCompoundSymbols~store(name, '_rxCtlNext')
+  end
+  else do
+    getCtl = 'rx::get(vars, ' || .RxQuote~cpp(name) || ')'
+    setCtl = 'rx::set(vars, ' || .RxQuote~cpp(name) || ', _rxCtlNext);'
+  end
+  ctx~line(depth + 1, setCtl~changeStr('_rxCtlNext', first))
   ctx~line(depth + 1, 'if (false) { goto ' || iterLabel || '; goto ' || exitLabel || '; }')
-  ctx~line(depth + 1, 'while (rx::withinNumeric(rx::get(vars, ' || .RxQuote~cpp(name) || '), _end' || suffix || ', _step' || suffix || ', vars.numeric)) {')
+  ctx~line(depth + 1, 'while (rx::withinNumeric(' || getCtl || ', _end' || suffix || ', _step' || suffix || ', vars.numeric)) {')
   ctx~line(depth + 2, '{')
   ctx~pushLoop(name, iterLabel, exitLabel)
   ctx~block(depth + 3, .true, name)
   ctx~popLoop
   ctx~line(depth + 2, '}')
   ctx~line(depth + 2, iterLabel || ':;')
-  ctx~line(depth + 2, 'rx::set(vars, ' || .RxQuote~cpp(name) || ', rx::numericAdd(rx::get(vars, ' || .RxQuote~cpp(name) || '), _step' || suffix || ', vars.numeric));')
+  ctx~line(depth + 2, setCtl~changeStr('_rxCtlNext', 'rx::numericAdd(' || getCtl || ', _step' || suffix || ', vars.numeric)'))
   ctx~line(depth + 1, '}')
   ctx~line(depth + 1, exitLabel || ':;')
   ctx~line(depth, '}')
 ::requires 'core/RxQuote.cls'
+::requires 'rules/CompoundSymbols.cls'
