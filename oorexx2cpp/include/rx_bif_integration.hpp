@@ -154,6 +154,82 @@ inline rxbif_variables::Reply frameVariableReply(Variables& vars,
     }
     return {SymbolKind::Assignable,previous!=nullptr,BifSlot{prior}};
 }
+inline const Value* slotPtr(const Value& v){ return &v; }
+inline const Value* slotPtr(const std::optional<Value>& v){ return v?&*v:nullptr; }
+// ARG([n[,option]]) over the activation's argument list (compiled-in; no interpreter activation needed).
+template <class Vec>
+inline Value argBif(const std::vector<Value>& args, const Vec& a) {
+    auto text=[&](std::size_t i)->std::string {
+        if(i>=a.size()) return std::string();
+        const Value* v=slotPtr(a[i]);
+        if(!v) return std::string();
+        if(v->isObject()) throw std::runtime_error("BIF ARG: invalid arguments");
+        return v->bytes;
+    };
+    std::size_t count=args.size();
+    if(a.empty()) return Value::string(std::to_string(count));
+    const std::string ns=text(0);
+    if(ns.empty()||ns.find_first_not_of("0123456789")!=std::string::npos||ns=="0"||ns.find_first_not_of('0')==std::string::npos)
+        throw std::runtime_error("BIF ARG: argument 1 must be a positive whole number");
+    const std::size_t n=std::stoul(ns);
+    std::string opt=a.size()>1?text(1):std::string();
+    if(opt.empty()) return n<=count?args[n-1]:Value::string("");
+    const char o=static_cast<char>(std::toupper(static_cast<unsigned char>(opt[0])));
+    const bool exists=n<=count;
+    if(o=='E') return Value::string(exists?"1":"0");
+    if(o=='O') return Value::string(exists?"0":"1");
+    throw std::runtime_error("BIF ARG: option must be E or O");
+}
+// FORMAT(number[,before[,after]]) in fixed notation; exponent forms are not implemented here (fail closed).
+inline Value formatBifFixed(const std::vector<BifSlot>& a, const ActivationNumeric& num) {
+    auto intArg=[&](std::size_t i, long dflt, bool& given)->long {
+        given = i<a.size() && a[i];
+        if(!given) return dflt;
+        if(a[i]->isObject()) throw std::runtime_error("BIF FORMAT: invalid arguments");
+        const std::string& t=a[i]->bytes; std::size_t k=0; long v=0;
+        if(t.empty()) throw std::runtime_error("BIF FORMAT: argument must be a whole number");
+        for(;k<t.size();++k){ if(t[k]<'0'||t[k]>'9') throw std::runtime_error("BIF FORMAT: argument must be a whole number"); v=v*10+(t[k]-'0'); }
+        return v;
+    };
+    if(a.empty() || a.size()>5 || !a[0] || a[0]->isObject()) throw std::runtime_error("BIF FORMAT: invalid arguments");
+    bool gb=false, ga=false, ge=false, gt=false;
+    const long before=intArg(1,0,gb), after=intArg(2,0,ga);
+    intArg(3,0,ge); intArg(4,0,gt);
+    if(ge||gt) throw std::runtime_error("BIF FORMAT: exponent arguments are not implemented");
+    RexxDecimal d=parseRexxDecimal(*a[0]);
+    roundRexx(d,num);
+    if(!gb && !ga) return numberResult(d,num);
+    if(ga) {
+        const int want=-static_cast<int>(after);
+        if(d.exponent<want) {                       // round off excess decimals, half up
+            const cpp_int p=decimalPow10(want-d.exponent);
+            const bool neg=d.coefficient<0; cpp_int n=neg?-d.coefficient:d.coefficient;
+            cpp_int q=n/p; if((n%p)*2>=p) ++q;
+            d.coefficient=neg?-q:q; d.exponent=want;
+        }
+    }
+    const bool neg=d.coefficient<0;
+    std::string digits=(neg?-d.coefficient:d.coefficient).convert_to<std::string>();
+    if(d.coefficient==0) digits="0";
+    std::string ip, fp;
+    if(d.exponent>=0) { ip=(digits=="0")?"0":digits+std::string(d.exponent,'0'); }
+    else {
+        const std::size_t f=static_cast<std::size_t>(-d.exponent);
+        if(digits.size()<=f) digits=std::string(f-digits.size()+1,'0')+digits;
+        ip=digits.substr(0,digits.size()-f); fp=digits.substr(digits.size()-f);
+    }
+    if(ga) { if(fp.size()<static_cast<std::size_t>(after)) fp+=std::string(after-fp.size(),'0'); }
+    else { while(!fp.empty()&&fp.back()=='0') fp.pop_back(); }
+    bool zero=true; for(char c:ip+fp) if(c!='0') zero=false;
+    std::string out=(neg&&!zero?"-":"")+ip;
+    if(!fp.empty()) out+="."+fp;
+    if(gb) {
+        const std::size_t lead=out.find('.')==std::string::npos?out.size():out.find('.');
+        if(lead>static_cast<std::size_t>(before)) throw std::runtime_error("BIF FORMAT: number does not fit in BEFORE digits");
+        out=std::string(before-lead,' ')+out;
+    }
+    return Value::string(out);
+}
 inline Value dispatchBif(BifRuntime& bif, Variables& vars, const std::string& name,
                          const std::vector<BifSlot>& slots) {
     if(name=="TRACE" || name=="ADDRESS") {   // language state owned by the compiled program, not by a BIF
@@ -171,6 +247,9 @@ inline Value dispatchBif(BifRuntime& bif, Variables& vars, const std::string& na
             });
         return router.invoke(name,slots);
     }
+#ifndef RX2CPP_KERNEL
+    if(name=="FORMAT") return formatBifFixed(slots, vars.numeric);
+#endif
 #ifdef RX2CPP_KERNEL
     // The compiled-in ooRexx kernel runs the REAL handler: validation, defaults, omitted arguments and error text included.
     if(rxkernel::handles(name)) {

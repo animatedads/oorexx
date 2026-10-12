@@ -32,6 +32,7 @@
     if argExpr == 'RX2CPP_OMITTED' then code = code || var || '.push_back(std::nullopt); '
     else code = code || var || '.push_back(' || argExpr || '); '
   end
+  if name == 'ARG' & \internal & \external & \hosted then return code || 'return rx::argBif(_rxProgramArgs, ' || var || '); }())'
   if hosted then return code || 'return rx::host::callValue(' || .RxQuote~cpp(name) || ', ' || var || '); }())'
   if external then return code || 'return rx::ext::callValue(vars, ' || .RxQuote~cpp(name) || ', ' || var || '); }())'
   if internal then return code || 'return rx::internalRoutineValue(vars, _rxRoutines, ' || .RxQuote~cpp(name) || ', ' || var || '); }())'

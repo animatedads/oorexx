@@ -11,7 +11,7 @@ if [[ $(($(wc -l < "$RX2CPP_BIF_ROOT/catalog/bifs.tsv") - 1)) -ne 81 ]]; then ec
 # Compiler admission for each of the 81 catalogue names, without executing
 # functions whose activation semantics have not yet been implemented.
 "$ROOT/run-compiler.sh" "$ROOT/tests/bif_all_81_compile.rex" "$TMP/all81.cpp"
-[[ "$(grep -c 'rx::dispatchBif(' "$TMP/all81.cpp")" -eq 81 ]]
+[[ "$(grep -c 'rx::dispatchBif(\|rx::argBif(' "$TMP/all81.cpp")" -eq 81 ]]
 cat > "$TMP/native.rex" <<'EOF'
 s = 'abcdef'
 say substr(s,2,3)
@@ -34,7 +34,7 @@ say format('12.345',,2)
 exit 0
 EOF
 cat > "$TMP/host.rex" <<'EOF'
-say arg()
+say random(1,5)
 exit 0
 EOF
 cat > "$TMP/missing.rex" <<'EOF'
@@ -68,7 +68,7 @@ CXX="$CXX" "$ROOT/build.sh" "$TMP/host.rex" "$TMP/host" "$TMP/host.cpp" >/dev/nu
 if "$TMP/host" > "$TMP/host.out" 2> "$TMP/host.err"; then
     echo 'HOST_ACTIVATION BIF succeeded without a host' >&2; exit 1
 fi
-grep -q 'BIF ARG:' "$TMP/host.err"
+grep -q 'BIF RANDOM:' "$TMP/host.err"
 # An unknown function must not overwrite the existing C++ target.
 printf 'protected\n' > "$TMP/rejected.cpp"
 if "$ROOT/run-compiler.sh" "$TMP/missing.rex" "$TMP/rejected.cpp" > "$TMP/missing.out" 2>&1; then
