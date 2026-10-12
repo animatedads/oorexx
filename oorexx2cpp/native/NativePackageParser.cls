@@ -97,7 +97,7 @@
        Requiring parent-first order makes the class scope graph unambiguous. */
     if unit~parentName \== '' then do
       /* An interpreter class (STREAM, ARRAY, ...) is allowed as the parent of a native root class. */
-      if \names~hasIndex(unit~parentName) & wordpos(unit~parentName~upper, 'STREAM ARRAY LIST QUEUE DIRECTORY STEM SET BAG TABLE RELATION IDENTITYTABLE MUTABLEBUFFER OBJECT') > 0 then
+      if \names~hasIndex(unit~parentName) & wordpos(unit~parentName~upper, 'STREAM ARRAY LIST QUEUE DIRECTORY STEM SET BAG TABLE RELATION IDENTITYTABLE MUTABLEBUFFER STRING OBJECT') > 0 then
         unit~useExternalParent
       else if \names~hasIndex(unit~parentName) then
         self~reject(start, 'unknown or forward parent ' || unit~parentName)
