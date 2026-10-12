@@ -284,12 +284,35 @@ inline std::optional<Value> quickBif(const std::string &name, const std::vector<
     switch (name[0]) {
     case 'L':
         if (name == "LENGTH" && a.size() == 1) return fromInteger(static_cast<std::int64_t>(s.size()));
+        if (name == "LASTPOS" && (a.size() == 2 || a.size() == 3)) {
+            if (!quickText(a[1])) return std::nullopt;
+            const std::string &hay = a[1]->bytes;
+            std::size_t start = hay.size();
+            if (a.size() == 3 && !quickCount(a[2], start, true)) return std::nullopt;
+            if (s.empty() || s.size() > hay.size()) return fromInteger(0);
+            // The match must END at or before position start.
+            const std::size_t lastStart = std::min(start, hay.size()) >= s.size() ? std::min(start, hay.size()) - s.size() : std::string::npos;
+            if (lastStart == std::string::npos) return fromInteger(0);
+            const auto at = hay.rfind(s, lastStart);
+            return fromInteger(at == std::string::npos ? 0 : static_cast<std::int64_t>(at + 1));
+        }
         if (name == "LEFT" && (a.size() == 2 || a.size() == 3)) {
             std::size_t n; char pad;
             if (!quickCount(a[1], n, false) || !quickPad(a, 2, pad)) return std::nullopt;
             std::string out = s.substr(0, std::min(n, s.size()));
             out.resize(n, pad);
             return Value(std::move(out));
+        }
+        break;
+    case 'P':
+        if (name == "POS" && (a.size() == 2 || a.size() == 3)) {
+            if (!quickText(a[1])) return std::nullopt;
+            const std::string &hay = a[1]->bytes;
+            std::size_t start = 1;
+            if (a.size() == 3 && !quickCount(a[2], start, true)) return std::nullopt;
+            if (s.empty() || start > hay.size()) return fromInteger(0);
+            const auto at = hay.find(s, start - 1);
+            return fromInteger(at == std::string::npos ? 0 : static_cast<std::int64_t>(at + 1));
         }
         break;
     case 'R':
@@ -333,9 +356,157 @@ inline std::optional<Value> quickBif(const std::string &name, const std::vector<
     }
     return std::nullopt;
 }
+// DATATYPE (A L M N U W and the one-argument form), MAX, MIN, ABS under the caller's NUMERIC settings, exactly as the
+// interpreter computes them; anything else (B, X, 9, ..., objects, omitted arguments) returns nullopt for the full route.
+inline std::optional<Value> numericBif(const std::string &name, const std::vector<BifSlot> &a, const ActivationNumeric &num) {
+    for (const auto &x : a) if (!x || x->isObject()) return std::nullopt;
+    if (num.digits < 1 || num.digits > 100000 || num.fuzz >= num.digits) return std::nullopt;
+    if (name == "DATATYPE" && (a.size() == 1 || a.size() == 2)) {
+        const std::string &v = a[0]->bytes;
+        RexxDecimal d; const char *err = nullptr;
+        if (a.size() == 1) return Value::string(tryParseRexxDecimal(*a[0], d, err) ? "NUM" : "CHAR");
+        const std::string &t = a[1]->bytes;
+        if (t.empty()) return std::nullopt;
+        const char type = static_cast<char>(std::toupper(static_cast<unsigned char>(t[0])));
+        auto all = [&](auto pred) { if (v.empty()) return false; for (unsigned char c : v) if (!pred(c)) return false; return true; };
+        auto lower = [](unsigned char c) { return c >= 'a' && c <= 'z'; };
+        auto upper = [](unsigned char c) { return c >= 'A' && c <= 'Z'; };
+        auto digit = [](unsigned char c) { return c >= '0' && c <= '9'; };
+        switch (type) {
+        case 'A': return Value::string(all([&](unsigned char c) { return lower(c) || upper(c) || digit(c); }) ? "1" : "0");
+        case 'L': return Value::string(all(lower) ? "1" : "0");
+        case 'U': return Value::string(all(upper) ? "1" : "0");
+        case 'M': return Value::string(all([&](unsigned char c) { return lower(c) || upper(c); }) ? "1" : "0");
+        case 'N': return Value::string(tryParseRexxDecimal(*a[0], d, err) ? "1" : "0");
+        case 'W': {
+            if (!tryParseRexxDecimal(*a[0], d, err)) return Value::string("0");
+            roundRexx(d, num);
+            if (d.coefficient == 0) return Value::string("1");
+            // A whole number must also be expressible without exponent under DIGITS (12345678901 is not, at DIGITS 9).
+            if (d.exponent + decimalDigits(d.coefficient) - 1 >= static_cast<int>(num.digits)) return Value::string("0");
+            if (d.exponent >= 0) return Value::string("1");
+            const cpp_int &p = decimalPow10Ref(-d.exponent);
+            return Value::string((d.coefficient % p) == 0 ? "1" : "0");
+        }
+        default: return std::nullopt;
+        }
+    }
+    if ((name == "MAX" || name == "MIN") && !a.empty()) {
+        std::vector<RexxDecimal> ds(a.size());
+        const char *err = nullptr;
+        for (std::size_t i = 0; i < a.size(); ++i) if (!tryParseRexxDecimal(*a[i], ds[i], err)) return std::nullopt;
+        std::size_t best = 0;
+        for (std::size_t i = 1; i < ds.size(); ++i) {
+            const int rel = numericRelationDecimal(ds[i], ds[best], num);
+            if (name == "MAX" ? rel > 0 : rel < 0) best = i;
+        }
+        return numberResult(ds[best], num);
+    }
+    // Radix conversions (C2D D2C X2D D2X), exact for any size within DIGITS; two's complement when a length is given.
+    auto wholeOf = [&](const Value &v, cpp_int &out) -> bool {
+        RexxDecimal d; const char *err = nullptr;
+        if (!tryParseRexxDecimal(v, d, err)) return false;
+        roundRexx(d, num);
+        if (d.exponent >= 0) { out = d.coefficient * decimalPow10Ref(d.exponent); return true; }
+        const cpp_int &p = decimalPow10Ref(-d.exponent);
+        if (d.coefficient % p != 0) return false;
+        out = d.coefficient / p;
+        return true;
+    };
+    auto lengthOf = [&](std::size_t i, std::size_t &out) -> bool {
+        const std::string &t = a[i]->bytes;
+        if (t.empty() || t.size() > 9 || t.find_first_not_of("0123456789") != std::string::npos) return false;
+        out = std::stoul(t); return true;
+    };
+    auto fits = [&](const cpp_int &v) { return decimalDigits(v < 0 ? cpp_int(-v) : v) <= static_cast<int>(num.digits); };
+    auto unsignedOf = [](const std::string &bytes) { cpp_int v = 0; for (unsigned char c : bytes) { v <<= 8; v += c; } return v; };
+    auto hexBytes = [](const std::string &hex, std::string &bytes) -> bool {
+        std::string h;
+        for (char c : hex) { if (std::isxdigit(static_cast<unsigned char>(c))) h += c; else return false; }
+        if (h.size() % 2) h.insert(h.begin(), '0');
+        bytes.clear();
+        for (std::size_t i = 0; i < h.size(); i += 2) bytes += static_cast<char>(std::stoi(h.substr(i, 2), nullptr, 16));
+        return true;
+    };
+    auto signedOf = [&](std::string bytes, std::size_t n) -> cpp_int {   // rightmost n bytes, two's complement
+        if (bytes.size() > n) bytes = bytes.substr(bytes.size() - n);
+        else bytes.insert(0, n - bytes.size(), '\0');
+        cpp_int v = unsignedOf(bytes);
+        if (n && (static_cast<unsigned char>(bytes[0]) & 0x80)) v -= cpp_int(1) << (8 * n);
+        return v;
+    };
+    auto bytesOf = [](cpp_int v, std::size_t n, bool fixed) -> std::string {   // big-endian; fixed: n bytes two's complement
+        std::string out;
+        if (fixed) {
+            if (v < 0) v += cpp_int(1) << (8 * n);
+            for (std::size_t i = 0; i < n; ++i) { out.insert(out.begin(), static_cast<char>(static_cast<unsigned>(v & 0xFF))); v >>= 8; }
+            return out;
+        }
+        if (v == 0) return std::string(1, '\0');
+        while (v > 0) { out.insert(out.begin(), static_cast<char>(static_cast<unsigned>(v & 0xFF))); v >>= 8; }
+        return out;
+    };
+    if (name == "C2D" && (a.size() == 1 || a.size() == 2)) {
+        cpp_int v;
+        if (a.size() == 1) v = unsignedOf(a[0]->bytes);
+        else { std::size_t n; if (!lengthOf(1, n)) return std::nullopt; v = n ? signedOf(a[0]->bytes, n) : cpp_int(0); }
+        if (!fits(v)) return std::nullopt;
+        return Value::string(v.convert_to<std::string>());
+    }
+    if (name == "X2D" && (a.size() == 1 || a.size() == 2)) {
+        std::string hex = a[0]->bytes, bytes;
+        if (hex.find_first_of(" \t") != std::string::npos) return std::nullopt;
+        cpp_int v;
+        if (a.size() == 1) { if (!hexBytes(hex, bytes)) return std::nullopt; v = unsignedOf(bytes); }
+        else {
+            std::size_t n; if (!lengthOf(1, n)) return std::nullopt;
+            for (char c : hex) if (!std::isxdigit(static_cast<unsigned char>(c))) return std::nullopt;
+            if (n == 0) v = 0;
+            else {
+                if (hex.size() > n) hex = hex.substr(hex.size() - n); else hex.insert(0, n - hex.size(), '0');
+                v = 0; for (char c : hex) { v <<= 4; v += std::stoi(std::string(1, c), nullptr, 16); }
+                if (std::stoi(std::string(1, hex[0]), nullptr, 16) & 0x8) v -= cpp_int(1) << (4 * n);
+            }
+        }
+        if (!fits(v)) return std::nullopt;
+        return Value::string(v.convert_to<std::string>());
+    }
+    if (name == "D2C" && (a.size() == 1 || a.size() == 2)) {
+        cpp_int v; if (!wholeOf(*a[0], v)) return std::nullopt;
+        if (a.size() == 1) { if (v < 0) return std::nullopt; return Value(bytesOf(v, 0, false)); }
+        std::size_t n; if (!lengthOf(1, n)) return std::nullopt;
+        return Value(bytesOf(v, n, true));
+    }
+    if (name == "D2X" && (a.size() == 1 || a.size() == 2)) {
+        cpp_int v; if (!wholeOf(*a[0], v)) return std::nullopt;
+        static const char *hexd = "0123456789ABCDEF";
+        std::string out;
+        if (a.size() == 1) {
+            if (v < 0) return std::nullopt;
+            if (v == 0) return Value::string("0");
+            while (v > 0) { out.insert(out.begin(), hexd[static_cast<unsigned>(v & 0xF)]); v >>= 4; }
+            return Value(std::move(out));
+        }
+        std::size_t n; if (!lengthOf(1, n)) return std::nullopt;
+        if (v < 0) v += cpp_int(1) << (4 * n);
+        for (std::size_t i = 0; i < n; ++i) { out.insert(out.begin(), hexd[static_cast<unsigned>(v & 0xF)]); v >>= 4; }
+        return Value(std::move(out));
+    }
+    if (name == "ABS" && a.size() == 1) {
+        RexxDecimal d; const char *err = nullptr;
+        if (!tryParseRexxDecimal(*a[0], d, err)) return std::nullopt;
+        if (d.coefficient < 0) d.coefficient = -d.coefficient;
+        return numberResult(d, num);
+    }
+    return std::nullopt;
+}
 inline Value dispatchBif(BifRuntime& bif, Variables& vars, const std::string& name,
                          const std::vector<BifSlot>& slots) {
     if(auto quick=quickBif(name,slots)) return std::move(*quick);
+    if(auto numeric=numericBif(name,slots,vars.numeric)) return std::move(*numeric);
+#ifdef RX2CPP_HOST_API
+    if(auto streamed=streamBif(name,slots)) return std::move(*streamed);
+#endif
     if(name=="TRACE" || name=="ADDRESS") {   // language state owned by the compiled program, not by a BIF
         if(slots.size()>1 || (slots.size()==1 && (!slots[0] || slots[0]->isObject())))
             throw std::runtime_error("BIF "+name+": invalid arguments");
@@ -376,6 +547,35 @@ inline Value dispatchBif(BifRuntime& bif, Variables& vars, const std::string& na
                                     std::nullopt,[&vars]{return frameNumeric(vars);});
     return rxbif_breadth::invoke(name,slots,current);
 }
+// String methods that are the BIF of the same name: receiver first (s~left(3) = LEFT(s, 3)) or receiver second
+// (s~pos(n) = POS(n, s)). Runs under the caller's NUMERIC settings. nullopt for any other selector.
+inline std::optional<MessageResult> stringMethodViaBif(const Value &receiver, const std::string &selector, const std::vector<Value> &args) {
+    static const char *first[] = {"LEFT","RIGHT","SUBSTR","STRIP","WORD","WORDS","SUBWORD","DELSTR","DELWORD","CENTER","CENTRE",
+        "COPIES","REVERSE","C2X","X2C","C2D","D2C","X2D","D2X","B2X","X2B","TRANSLATE","VERIFY","SPACE","TRUNC","FORMAT","ABS",
+        "SIGN","MAX","MIN","DATATYPE","BITAND","BITOR","BITXOR","LENGTH","ABBREV","COMPARE","UPPER","LOWER","WORDINDEX",
+        "WORDLENGTH", nullptr};
+    static const char *second[] = {"POS","LASTPOS","COUNTSTR","CHANGESTR","WORDPOS","INSERT","OVERLAY", nullptr};
+    std::string up = selector;
+    for (char &c : up) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    int where = 0;
+    for (const char **n = first; *n && !where; ++n) if (up == *n) where = 1;
+    for (const char **n = second; *n && !where; ++n) if (up == *n) where = 2;
+    if (!where) return std::nullopt;
+    for (const Value &a : args) if (a.isObject()) return std::nullopt;
+    std::vector<BifSlot> slots;
+    slots.reserve(args.size() + 1);
+    if (where == 1) slots.emplace_back(receiver);
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        if (where == 2 && i == 1) slots.emplace_back(receiver);
+        slots.emplace_back(args[i]);
+    }
+    if (where == 2 && args.size() < 2) slots.emplace_back(receiver);
+    static thread_local BifRuntime runtime;
+    Variables vars;
+    if (currentNumeric) vars.numeric = *currentNumeric;
+    return MessageResult(dispatchBif(runtime, vars, up, slots));
+}
+inline const bool stringMethodViaBifInstalled = (stringBifExtension() = &stringMethodViaBif, true);
 inline void dispatchBifInstruction(Variables& vars, BifRuntime& bif,
                                    const std::string& name,
                                    const std::vector<BifSlot>& args) {
@@ -511,6 +711,52 @@ inline std::optional<std::string> quickStringBif(const std::string &name, const 
     }
     return std::nullopt;
 }
+inline std::unordered_map<void *, bool> &stringIsACache() { static thread_local std::unordered_map<void *, bool> m; return m; }
+// String methods that are hot in parsers (json.cls): [] (no padding), VERIFY with options, ISA of a class object.
+inline std::optional<MessageResult> quickStringMethod(const std::string &name, const Value &receiver, const std::vector<Value> &args) {
+    const std::string &s = receiver.bytes;
+    auto count = [](const Value &v, std::size_t &out, bool positive) {
+        if (v.isObject() || v.bytes.empty() || v.bytes.size() > 9 || v.bytes.find_first_not_of("0123456789") != std::string::npos) return false;
+        out = std::stoul(v.bytes); return !(positive && out == 0);
+    };
+    if (name == "[]" && (args.size() == 1 || args.size() == 2)) {
+        std::size_t n, len = 1;
+        if (!count(args[0], n, true) || (args.size() == 2 && !count(args[1], len, false))) return std::nullopt;
+        if (n > s.size()) return MessageResult(Value::string(std::string()));
+        return MessageResult(Value::string(s.substr(n - 1, len)));
+    }
+    if (name == "VERIFY" && !args.empty() && args.size() <= 4) {
+        for (const Value &a : args) if (a.isObject() && !(dynamic_cast<EnvObject *>(a.object.get()) && static_cast<EnvObject *>(a.object.get())->handle == nullptr)) return std::nullopt;
+        auto omitted = [&](std::size_t i) { return i >= args.size() || (args[i].isObject()); };
+        const std::string &ref = args[0].isObject() ? std::string() : args[0].bytes;
+        if (args[0].isObject()) return std::nullopt;
+        bool match = false;
+        if (!omitted(1)) {
+            if (args[1].bytes.empty()) return std::nullopt;
+            const char o = static_cast<char>(std::toupper(static_cast<unsigned char>(args[1].bytes[0])));
+            if (o == 'M') match = true; else if (o != 'N') return std::nullopt;
+        }
+        std::size_t start = 1, len = std::string::npos;
+        if (!omitted(2) && !count(args[2], start, true)) return std::nullopt;
+        if (!omitted(3) && !count(args[3], len, false)) return std::nullopt;
+        if (start > s.size()) return MessageResult(Value::string("0"));
+        bool in[256] = {false};
+        for (unsigned char c : ref) in[c] = true;
+        const std::size_t end = len == std::string::npos ? s.size() : std::min(s.size(), start - 1 + len);
+        for (std::size_t i = start - 1; i < end; ++i)
+            if (in[static_cast<unsigned char>(s[i])] == match) return MessageResult(Value::string(std::to_string(i + 1)));
+        return MessageResult(Value::string("0"));
+    }
+    if (name == "ISA" && args.size() == 1 && args[0].isObject()) {
+        auto *cls = dynamic_cast<EnvObject *>(args[0].object.get());
+        if (!cls || !cls->handle) return std::nullopt;
+        // Every plain string has class String: the answer depends only on the class object asked about.
+        auto it = stringIsACache().find(cls->handle);
+        if (it != stringIsACache().end()) return MessageResult(Value::string(it->second ? "1" : "0"));
+        return std::nullopt;
+    }
+    return std::nullopt;
+}
 inline MessageResult hostStringBif(const Value &receiver, const std::string &selector, const std::vector<Value> &args) {
     static const std::unordered_set<std::string> mirrored{
         "C2D","C2X","X2C","X2D","D2C","D2X","B2X","X2B","LENGTH","SUBSTR","LEFT","RIGHT","CENTER","CENTRE","REVERSE","TRANSLATE",
@@ -525,10 +771,26 @@ inline MessageResult hostStringBif(const Value &receiver, const std::string &sel
         if (auto fast = fastRadix(name, receiver, args, n0.digits)) return MessageResult(Value::string(*fast));
     }
     if (auto quick = quickStringBif(name, receiver, args)) return MessageResult(Value::string(*quick));
+    if (auto quick = quickStringMethod(name, receiver, args)) return std::move(*quick);
+    if (name == "ISA" && args.size() == 1 && args[0].isObject())
+        if (auto *cls = dynamic_cast<EnvObject *>(args[0].object.get()); cls && cls->handle) {
+            MessageResult r = fallback();   // the interpreter answers once per class object; plain strings all share class String
+            if (r && !r->isObject()) stringIsACache()[cls->handle] = r->bytes == "1";
+            return r;
+        }
     if (name == "SUBCHAR" && args.size() == 1 && !args[0].isObject() && !args[0].bytes.empty() && args[0].bytes.size() < 10 &&
         args[0].bytes.find_first_not_of("0123456789") == std::string::npos) {
         const unsigned long n = std::stoul(args[0].bytes);   // SUBCHAR(n): the n-th character, "" beyond the end
         if (n >= 1) return MessageResult(Value::string(n <= receiver.bytes.size() ? std::string(1, receiver.bytes[n - 1]) : std::string()));
+    }
+    if (name == "DATATYPE" || name == "ABS" || name == "MAX" || name == "MIN" || name == "C2D" || name == "D2C" || name == "X2D" || name == "D2X") {
+        std::vector<BifSlot> ns; ns.emplace_back(receiver);
+        bool plain = true;
+        for (const Value &a : args) { if (a.isObject()) { plain = false; break; } ns.emplace_back(a); }
+        if (plain) {
+            const ActivationNumeric defN;
+            if (auto r = numericBif(name, ns, currentNumeric ? *currentNumeric : defN)) return MessageResult(std::move(*r));
+        }
     }
     if (!mirrored.count(name)) return fallback();
     std::vector<rxbif_breadth::Slot> slots;

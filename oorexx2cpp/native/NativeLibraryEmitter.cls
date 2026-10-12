@@ -8,6 +8,12 @@
   return self~emitPackage(.array~of(unit), packageName, template)
 ::method emitPackage
   use arg units, packageName, template, options, extras, routines
+  userUninit = .false
+  do u over units
+    do m over u~methods
+      if m~selector == 'RX2CPP_USER_UNINIT' then userUninit = .true
+    end
+  end
   self~identifier(packageName, 'package')
   cpp = ''
   entries = ''
@@ -51,7 +57,9 @@
         if cm~selector~upper == 'NEW' then ok = .false
       end
       newOk[name] = ok
-      source = source || '::class ' || name || ' public'
+      declared = name
+      if unit~hasMethod('DECLAREDNAME') then if unit~declaredName \== '' then declared = '"' || unit~declaredName || '"'
+      source = source || '::class ' || declared || ' public'
       if unit~isMixin then source = source || ' mixinclass ' || unit~parentName
       else if \isRoot then source = source || ' subclass ' || unit~parentName
       else if unit~externalParent \== '' then source = source || ' subclass ' || unit~externalParent
@@ -66,6 +74,16 @@
     countInit = 0
     /* SELF~selector:SUPER(...) from compiled code: the interpreter performs the super dispatch (start scope = the parent of
        this class) through this helper; its first argument is the selector, the rest are the call's arguments (omitted ones stay omitted). */
+    /* Class side: FORWARD CLASS (SUPER) / ~m:super from a class method. The helper lives in the same class scope, so its
+       own FORWARD CLASS (SUPER) starts exactly where the compiled method's would. */
+    if classSide then do
+      source = source || '::method RX2CPP_SUPERA class' || '0a'x
+      source = source || '  use arg selector, args' || '0a'x
+      source = source || '  forward message (selector) arguments (args) class (super)' || '0a'x
+      source = source || '::method RX2CPP_SUPER class' || '0a'x
+      source = source || '  use arg selector' || '0a'x
+      source = source || '  forward message (selector) arguments (arg(1, "A")~section(2)) class (super)' || '0a'x
+    end
     if \classSide & (unit~parentName \== '' | unit~externalParent \== '') then do
       source = source || '::method RX2CPP_SUPER' || '0a'x
       source = source || '  use arg selector' || '0a'x
@@ -147,7 +165,13 @@
       /* Only root owns token/lifetime; the inherited UNINIT releases all scopes. */
       source = source || '::method RX2CPP_NATIVE_SETTOKEN' || '0a'x || '  expose RX2CPP_NATIVE_ID' || '0a'x || '  use arg RX2CPP_NATIVE_ID' || '0a'x
       source = source || '::method RX2CPP_NATIVE_TOKEN external "LIBRARY ' || packageName || ' rx_native_token"' || '0a'x
-      source = source || '::method UNINIT external "LIBRARY ' || packageName || ' rx_native_uninit"' || '0a'x
+      if userUninit then do
+        source = source || '::method UNINIT' || '0a'x
+        source = source || '  if self~hasMethod("RX2CPP_USER_UNINIT") then self~rx2cpp_user_uninit' || '0a'x
+        source = source || '  self~rx2cpp_native_release' || '0a'x
+        source = source || '::method RX2CPP_NATIVE_RELEASE external "LIBRARY ' || packageName || ' rx_native_uninit"' || '0a'x
+      end
+      else source = source || '::method UNINIT external "LIBRARY ' || packageName || ' rx_native_uninit"' || '0a'x
       source = source || '::method COPY external "LIBRARY ' || packageName || ' rx_native_copy_reject"' || '0a'x
     end
     else if countInit > 1 then raise syntax 40.1 array('rx2cpp: class ' || name || ' declares more than one INIT')
@@ -172,28 +196,10 @@
                   packageName || ' ' || entryName || '"' || '0a'x
       end
       symbol = 'rx_native_routine_' || routineName~lower
+      if routineDefs == '' then routineDefs = '#define RX2CPP_HAS_ROUTINES 1' || '0a'x || ,
+        'static RexxObjectPtr rx2cpp_routine_entry(RexxCallContext *context, RexxArrayObject args, const char *name);' || '0a'x
       routineDefs = routineDefs || 'RexxRoutine1(RexxObjectPtr, ' || symbol || ', ARGLIST, args)' || '0a'x
-      routineDefs = routineDefs || '{' || '0a'x
-      routineDefs = routineDefs || '  try {' || '0a'x
-      routineDefs = routineDefs || '#ifdef RX2CPP_HOST_API' || '0a'x
-      routineDefs = routineDefs || '    rxobj::Scope hostScope(context->threadContext);' || '0a'x
-      routineDefs = routineDefs || '#endif' || '0a'x
-      routineDefs = routineDefs || '    auto obj = rx2cpp::makeGeneratedObject_RX2CPP_ROUTINE_IMPL();' || '0a'x
-      routineDefs = routineDefs || '    const size_t count = context->ArraySize(args);' || '0a'x
-      routineDefs = routineDefs || '    std::vector<std::optional<std::string>> positional;' || '0a'x
-      routineDefs = routineDefs || '    positional.reserve(count);' || '0a'x
-      routineDefs = routineDefs || '    for (size_t i = 1; i <= count; ++i) {' || '0a'x
-      routineDefs = routineDefs || '      RexxObjectPtr item = context->ArrayAt(args, i);' || '0a'x
-      routineDefs = routineDefs || '      if (item == NULLOBJECT) positional.emplace_back(std::nullopt);' || '0a'x
-      routineDefs = routineDefs || '      else positional.emplace_back(rx2cpp_routine_string(context, item));' || '0a'x
-      routineDefs = routineDefs || '    }' || '0a'x
-      routineDefs = routineDefs || '    const std::string value = obj->invokeMany(' || .RxQuote~cpp(routineName) || ', positional);' || '0a'x
-      routineDefs = routineDefs || '    return context->NewString(value.data(), value.size());' || '0a'x
-      routineDefs = routineDefs || '  } catch (const std::exception &e) {' || '0a'x
-      routineDefs = routineDefs || '    context->RaiseException1(Rexx_Error_Execution_user_defined, context->String(e.what()));' || '0a'x
-      routineDefs = routineDefs || '    return NULLOBJECT;' || '0a'x
-      routineDefs = routineDefs || '  }' || '0a'x
-      routineDefs = routineDefs || '}' || '0a'x
+      routineDefs = routineDefs || '{ return rx2cpp_routine_entry(context, args, ' || .RxQuote~cpp(routineName) || '); }' || '0a'x
       routineEntries = routineEntries || '    REXX_TYPED_ROUTINE(' || entryName || ', ' || symbol || '),' || '0a'x
     end
   end

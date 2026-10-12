@@ -21,12 +21,19 @@
         ctx~markHosted('.CONTEXT')
         return 'rx::host::contextObject()'
       end
+      /* .LOCAL / .ENVIRONMENT are the interpreter's own directories (shared with every package it runs). */
+      if (t~text == 'LOCAL' | t~text == 'ENVIRONMENT') & ctx~hostedEnabled & value('RX2CPP_KERNEL', , 'ENVIRONMENT') == '' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') == '' then do
+        ctx~markHosted('.' || t~text)
+        return 'rx::host::environmentDirectory(' || .RxQuote~cpp(t~text) || ')'
+      end
       if t~text == 'OUTPUT' | t~text == 'ROUTINES' then do
         if \ctx~hostedEnabled then s~fail('.' || t~text || ' requires RX2CPP_HOSTED=1')
         ctx~markHosted('.' || t~text)
         if t~text == 'OUTPUT' then return 'rx::host::localSymbol("OUTPUT")'
         return 'rx::host::packageRoutines()'
       end
+      /* Native library (host API): .CONTEXT answers PACKAGE with the library's own package. */
+      if t~text == 'CONTEXT' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' then return 'rx::libraryContext()'
       /* Kernel / host-API mode: environment classes are the interpreter's own objects, not reimplementations. */
       if (value('RX2CPP_KERNEL', , 'ENVIRONMENT') \= '' | value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '') & wordpos(t~text, 'TRUE FALSE NIL') = 0 & \ctx~hasProgramClass(t~text) then -
         return 'rx::envClass(' || .RxQuote~cpp(t~text) || ')'
@@ -36,7 +43,7 @@
         ctx~markHosted('.ARRAY')
         return 'rx::host::findClass("ARRAY")'
       end
-      if t~text == 'ARRAY' then return 'rx::Value::fromObject(std::make_shared<rx::ArrayClass>())'
+      if t~text == 'ARRAY' then return 'rx::arrayClass()'
       /* .STEM~new gives a native StemObject; it becomes an interpreter stem only if it crosses to the hosted tier. */
       if t~text == 'STEM' then return 'rx::stemClass()'
       /* .TRUE/.FALSE are the strings 1 and 0 */

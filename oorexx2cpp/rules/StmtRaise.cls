@@ -24,7 +24,22 @@
     end
     s~expect(')')
   end
+  else if s~peek~kind == 'IDENT' & s~peek~text == 'ADDITIONAL' then do
+    /* ADDITIONAL (expr): one substitution value (93.900's "&1"), as the interpreter uses it for SYNTAX. */
+    s~next
+    s~expect('(')
+    additional = ctx~logicalExpr~parse(ctx)
+    s~expect(')')
+  end
   else if \(s~peek~kind == 'SEP' | s~peek~kind == 'EOF' | s~is('RETURN') | s~is('EXIT')) then s~fail('RAISE SYNTAX supports only ARRAY(...) additional information')
+  if var('ADDITIONAL') then do
+    local = 'false'
+    if s~accept('RETURN') then local = 'true'
+    else if s~accept('EXIT') then local = 'false'
+    ctx~line(depth, 'rx::raiseSyntax(' || .RxQuote~cpp(t~text) || ', rx::additionalItems(' || additional || '), ' || local || ');')
+    s~separator
+    return
+  end
   local = 'false'
   if s~accept('RETURN') then local = 'true'
   else if s~accept('EXIT') then local = 'false'

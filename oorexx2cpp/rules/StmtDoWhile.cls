@@ -11,12 +11,12 @@
   s = ctx~stream
   s~expect('DO')
   s~expect('WHILE')
-  condition = ctx~logicalExpr~parse(ctx)
+  condition = .RxConditionList~parse(ctx)
   s~separator
   suffix = ctx~label
   iterLabel = '_rx_iter_' || suffix
   exitLabel = '_rx_exit_' || suffix
-  ctx~line(depth, 'while (rx::condition(' || condition || ')) {')
+  ctx~line(depth, 'while (' || condition || ') {')
   ctx~line(depth + 1, 'if (false) { goto ' || iterLabel || '; goto ' || exitLabel || '; }')
   ctx~line(depth + 1, '{')
   ctx~pushLoop('', iterLabel, exitLabel)
@@ -26,3 +26,4 @@
   ctx~line(depth + 1, iterLabel || ':;')
   ctx~line(depth, '}')
   ctx~line(depth, exitLabel || ':;')
+::requires 'rules/ConditionList.cls'

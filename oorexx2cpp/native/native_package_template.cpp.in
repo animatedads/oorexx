@@ -39,6 +39,30 @@ static std::string stringValue(RexxMethodContext *ctx, RexxObjectPtr object) {
     auto s = ctx->ObjectToString(object);
     return std::string(ctx->StringData(s), ctx->StringLength(s));
 }
+// A SYNTAX condition raised by compiled code (RAISE SYNTAX n.m ARRAY/ADDITIONAL, or a runtime error with a code)
+// becomes the same interpreter condition, so CONDITION('O') and the error message are the interpreter's own.
+static void raiseSyntaxIn(RexxThreadContext *t, const rx::SyntaxCondition &e) {
+    const std::string &c = e.code;
+    const auto dot = c.find('.');
+    const bool numeric = !c.empty() && c.find_first_not_of("0123456789.") == std::string::npos && dot != std::string::npos;
+    if (!numeric || e.substitutions.empty()) {
+        t->RaiseException1(Rexx_Error_Execution_user_defined, t->String(e.what()));
+        return;
+    }
+    const size_t number = std::stoul(c.substr(0, dot)) * 1000 + std::stoul(c.substr(dot + 1));
+    RexxArrayObject subs = t->NewArray(e.substitutions.size());
+    for (size_t i = 0; i < e.substitutions.size(); ++i) {
+        const rx::Value &v = e.substitutions[i];
+#ifdef RX2CPP_HOST_API
+        if (v.isObject()) {
+            if (auto *env = dynamic_cast<rx::EnvObject *>(v.object.get())) { t->ArrayPut(subs, (RexxObjectPtr)env->handle, i + 1); continue; }
+        }
+#endif
+        const std::string text = v.isObject() ? v.object->display() : v.bytes;
+        t->ArrayPut(subs, t->NewString(text.data(), text.size()), i + 1);
+    }
+    t->RaiseException(number, subs);
+}
 static void report(RexxMethodContext *ctx, const char *message) {
     ctx->RaiseException1(Rexx_Error_Execution_user_defined, ctx->String(message));
 }
@@ -297,7 +321,7 @@ std::optional<rx::Value> runNative(const std::shared_ptr<InstanceState> &st, Res
     if (info.noResult) return std::nullopt;
     return result;
 }
-class NativeClassObj final : public rx::ObjectDispatch {
+class NativeClassObj final : public rx::NativeRefBase {
     std::string name_;
     std::shared_ptr<rx::EnvObject> interpreterClass_;
     rx::EnvObject &iclass() {
@@ -310,6 +334,8 @@ class NativeClassObj final : public rx::ObjectDispatch {
     }
 public:
     explicit NativeClassObj(std::string n) : name_(std::move(n)) {}
+    // As an argument to an interpreter message (x~isA(.Cls)) the class is the interpreter's class object.
+    void *materialize() override { return iclass().handle; }
     rx::MessageResult sendMessage(const std::string &selector, const std::vector<rx::Value> &args) override {
         static const CiEq same;
         if (same(selector, "NEW")) {
@@ -369,7 +395,7 @@ public:
           result = ctx_->ForwardMessage(self_, selector.c_str(), NULLOBJECT, ctx_->GetArguments()); }
         if (ctx_->CheckCondition()) throw PendingCondition();
         if (result == NULLOBJECT) return std::nullopt;
-        if (ctx_->IsString(result) || ctx_->IsOfType(result, "STRING")) return rx::Value::string(stringValue(ctx_, result));
+        if (rxobj::isPlainString(ctx_->threadContext, result)) return rx::Value::string(stringValue(ctx_, result));
         return rx::Value::fromObject(std::make_shared<rx::EnvObject>((void *)ctx_->threadContext->RequestGlobalReference(result)));
     }
     std::optional<rx::Value> sendValues(const std::string &selector, const std::vector<rx::Value> &args) override {
@@ -387,7 +413,7 @@ public:
         { ReleaseAndReacquire released(lock_); result = ctx_->SendMessage(self_, selector.c_str(), arr); }
         if (ctx_->CheckCondition()) throw PendingCondition();
         if (result == NULLOBJECT) return std::nullopt;
-        if (ctx_->IsString(result) || ctx_->IsOfType(result, "STRING")) return rx::Value::string(stringValue(ctx_, result));
+        if (rxobj::isPlainString(ctx_->threadContext, result)) return rx::Value::string(stringValue(ctx_, result));
         return rx::Value::fromObject(std::make_shared<rx::EnvObject>((void *)ctx_->threadContext->RequestGlobalReference(result)));
     }
 #endif
@@ -511,7 +537,7 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
             if (item == NULLOBJECT) { positional.emplace_back(std::nullopt); continue; }
 #ifdef RX2CPP_HOST_API
             // Strings stay scalar values; every other interpreter object is passed as itself (no marshalling).
-            if (!ctx->IsString(item) && !ctx->IsOfType(item, "STRING"))
+            if (!rxobj::isPlainString(ctx->threadContext, item))
                 positional.emplace_back(rx::Value::fromObject(std::make_shared<rx::EnvObject>((void *)ctx->threadContext->RequestGlobalReference(item))));
             else
 #endif
@@ -537,6 +563,10 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
     } catch (const PendingCondition &) {
         if (!failedInitToken.empty()) InstanceTable::instance().remove(failedInitToken);
         return NULLOBJECT;
+    } catch (const rx::SyntaxCondition &e) {
+        if (!failedInitToken.empty()) InstanceTable::instance().remove(failedInitToken);
+        raiseSyntaxIn(ctx->threadContext, e);
+        return NULLOBJECT;
     } catch (const std::exception &e) {
         if (!failedInitToken.empty()) InstanceTable::instance().remove(failedInitToken);
         report(ctx, e.what());
@@ -552,6 +582,57 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
     return std::string(ctx->StringData(s), ctx->StringLength(s));
 }
 %ROUTINE_DEFINITIONS%
+#ifdef RX2CPP_HAS_ROUTINES
+// A package ::ROUTINE called by the interpreter. With the host API, arguments and result are values (objects included:
+// interpreter objects, native instances, .nil); otherwise the scalar string ABI.
+static RexxObjectPtr rx2cpp_routine_entry(RexxCallContext *context, RexxArrayObject args, const char *name) {
+    try {
+#ifdef RX2CPP_HOST_API
+        rxobj::Scope hostScope(context->threadContext);
+        auto obj = rx2cpp::makeGeneratedObject_RX2CPP_ROUTINE_IMPL();
+        const size_t count = context->ArraySize(args);
+        std::vector<std::optional<rx::Value>> positional;
+        positional.reserve(count);
+        for (size_t i = 1; i <= count; ++i) {
+            RexxObjectPtr item = context->ArrayAt(args, i);
+            if (item == NULLOBJECT) positional.emplace_back(std::nullopt);
+            else if (rxobj::isPlainString(context->threadContext, item)) positional.emplace_back(rx::Value::string(rx2cpp_routine_string(context, item)));
+            else if (item == context->Nil()) positional.emplace_back(rx::nil());
+            else positional.emplace_back(rx::Value::fromObject(std::make_shared<rx::EnvObject>((void *)context->threadContext->RequestGlobalReference(item))));
+        }
+        rx::Value outcome = obj->invokeValues(name, positional);
+        if (outcome.isObject()) {
+            if (auto *env = dynamic_cast<rx::EnvObject *>(outcome.object.get())) return (RexxObjectPtr)env->handle;
+            if (dynamic_cast<rx::NilObject *>(outcome.object.get())) return context->Nil();
+            if (auto *ref = dynamic_cast<rx::NativeRefBase *>(outcome.object.get())) return (RexxObjectPtr)ref->materialize();
+            throw std::runtime_error("native routine returned an object that the interpreter cannot receive");
+        }
+        return context->NewString(outcome.bytes.data(), outcome.bytes.size());
+#else
+        auto obj = rx2cpp::makeGeneratedObject_RX2CPP_ROUTINE_IMPL();
+        const size_t count = context->ArraySize(args);
+        std::vector<std::optional<std::string>> positional;
+        positional.reserve(count);
+        for (size_t i = 1; i <= count; ++i) {
+            RexxObjectPtr item = context->ArrayAt(args, i);
+            if (item == NULLOBJECT) positional.emplace_back(std::nullopt);
+            else positional.emplace_back(rx2cpp_routine_string(context, item));
+        }
+        const std::string value = obj->invokeMany(name, positional);
+        return context->NewString(value.data(), value.size());
+#endif
+    } catch (const rx2cpp::PendingCondition &) {
+        return NULLOBJECT;
+    } catch (const rx::SyntaxCondition &e) {
+        rx2cpp::raiseSyntaxIn(context->threadContext, e);
+        return NULLOBJECT;
+    } catch (const std::exception &e) {
+        context->RaiseException1(Rexx_Error_Execution_user_defined, context->String(e.what()));
+        return NULLOBJECT;
+    }
+}
+#endif
+
 %METHOD_DEFINITIONS%
 
 // Called in the defining root's method scope, including for subclass objects.
@@ -608,6 +689,9 @@ static void RexxEntry loadPackage(RexxThreadContext *ctx) {
     }
     auto pkg = ctx->LoadPackageFromData(%INTERNAL_NAME%, declaration, sizeof(declaration)-1);
     if (pkg == NULLOBJECT || ctx->CheckCondition()) return;
+#ifdef RX2CPP_HOST_API
+    rxobj::libraryPackage() = ctx->RequestGlobalReference((RexxObjectPtr)pkg);
+#endif
     auto classes = ctx->GetPackagePublicClasses(pkg);
     // Verify that all declared classes exist before publishing any.
     for (const char *className : classNames) {
@@ -620,6 +704,12 @@ static void RexxEntry loadPackage(RexxThreadContext *ctx) {
     for (const char *className : classNames) {
         auto cls = ctx->DirectoryAt(classes, className);
         ctx->DirectoryPut(ctx->GetGlobalEnvironment(), cls, className);
+    }
+    // The source package's prolog (code before its first ::CLASS), carried as a routine of the declaration.
+    auto routines = ctx->GetPackageRoutines(pkg);
+    if (routines != NULLOBJECT) {
+        auto prolog = ctx->DirectoryAt(routines, "RX2CPP_PACKAGE_PROLOG");
+        if (prolog != NULLOBJECT) ctx->CallRoutine((RexxRoutineObject)prolog, ctx->NewArray(0));
     }
 }
 

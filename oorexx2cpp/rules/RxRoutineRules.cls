@@ -48,14 +48,14 @@
       registered = labelName || '#duplicate' || dupCount   /* never called: first label wins */
     end
     emitted[labelName] = .true
-    self~emitBody(ctx, labelName, registered, 'LABEL')
+    self~emitBody(ctx, labelName, registered, 'LABEL', emitted, dupCount)
   end
   if s~peek~kind \= 'EOF' & \s~atDirective then s~fail('unexpected tokens after internal routine definitions')
 /* One routine body.  LABEL routines share or PROCEDURE-isolate the caller scope and must end in an
    explicit RETURN/EXIT; ROUTINE (directive) code units always start with an empty variable pool and
    default NUMERIC settings, cannot see the main program's labels, and may simply fall off the end. */
 ::method emitBody class
-  use arg ctx, labelName, registered, kind
+  use arg ctx, labelName, registered, kind, emitted = (.directory~new), dupCount = 0
   s = ctx~stream
   ctx~beginRoutine(labelName~translate, kind)
   ctx~line(2, '_rxRoutines[' || .RxQuote~cpp(registered) || '] = [&](rx::Variables& _rxCallerVars, const std::vector<rx::Value>& _rxProgramArgs) -> rx::MessageResult {')
@@ -85,8 +85,16 @@
   atEnd = s~peek~kind == 'EOF'
   if scope~needsExplicitReturn & last \= 'RETURN' & last \= 'EXIT' then do
     /* Running off the END OF THE PROGRAM ends the program (implicit EXIT), whether reached by CALL or by a trap. */
-    if \atEnd then s~fail('a label that falls into another label is not implemented: ' || labelName)
-    ctx~line(3, 'throw rx::ProgramExit{0};')
+    if \atEnd then do
+      /* Execution runs on into the next label's code, in the same activation (same variables). The next label's
+         body is its own registered unit; a duplicate label's body is registered under its #duplicate name. */
+      if \s~atLabel then s~fail('a label that falls into a directive is not implemented: ' || labelName)
+      nextName = s~peek~text
+      nextRegistered = nextName
+      if emitted~hasIndex(nextName) then nextRegistered = nextName || '#duplicate' || (dupCount + 1)
+      ctx~line(3, 'return rx::invokeInternal(vars, _rxRoutines, ' || .RxQuote~cpp(nextRegistered) || ', _rxProgramArgs);')
+    end
+    else ctx~line(3, 'throw rx::ProgramExit{0};')
   end
   ctx~line(3, 'return std::nullopt;')
   if trapped then do

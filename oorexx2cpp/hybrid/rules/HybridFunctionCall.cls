@@ -11,13 +11,15 @@
       if routineName~upper == name~upper then local = .true
     end
   builtin = .RxBuiltinRules~isBuiltinName(name)
-  /* An ooRexx built-in has priority over a same-named ::ROUTINE. This lane cannot compile that
-     path, so reject rather than invoke the wrong local routine. */
-  if local & builtin then -
-    s~fail('built-in precedence over native package routine is not implemented: ' || name)
+  /* An ooRexx built-in has priority over a same-named ::ROUTINE (ooRexx search order: internal label,
+     built-in, then ::ROUTINE): MAX(...) is the BIF even in a package that defines ::ROUTINE MAX. */
+  if local & builtin & .RxBuiltinRules~externalEnabled then local = .false
   external = .false
   if .local~rx2cpp.externals~isA(.directory) then external = .local~rx2cpp.externals~hasIndex(name~upper)
   if external & \local & \builtin then return self~parseExternal(ctx, name)
+  /* Any other function (rexxutil SysXxx, external routines on the path) is resolved by the interpreter at run time,
+     exactly as an interpreted package would resolve it (error 43 if it does not exist). */
+  if \local & \builtin & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \== '' then return self~parseExternal(ctx, name, '')
   if \local & \(builtin & .RxBuiltinRules~externalEnabled) then -
     s~fail('native package routine/function invocation is not yet supported: ' || name)
   if \local then return self~parseBuiltin(ctx, name)
@@ -44,7 +46,7 @@
   return code || .RxQuote~cpp(name) || ', _rxArgList); }())'
 /* EXTERNAL library routines declared in the package run through the host interpreter (declaration carried into the helper routine source). */
 ::method parseExternal
-  use arg ctx, name
+  use arg ctx, name, decl = (.local~rx2cpp.externals[name~upper])
   s = ctx~stream
   s~expect('(')
   args = .array~new
@@ -61,7 +63,6 @@
     if argExpr == 'RX2CPP_OMITTED' then code = code || '_rxA.emplace_back(false, std::string()); '
     else code = code || '_rxA.emplace_back(true, (' || argExpr || ').bytes); '
   end
-  decl = .local~rx2cpp.externals[name~upper]
   return code || 'return rx::Value::string(rxobj::callBif(' || .RxQuote~cpp(name) || ', _rxA, vars.numeric.digits, vars.numeric.fuzz, vars.numeric.engineering, ' || .RxQuote~cpp(decl) || ')); }())'
 /* Built-ins use the SAME dispatch as standalone programs (rx::dispatchBif): one function-resolution path. */
 ::method parseBuiltin
@@ -78,7 +79,7 @@
   end
   .RxBuiltinRules~validate(s, name, args~items)
   s~expect(')')
-  code = '([&]() -> rx::Value { std::vector<rxbif_breadth::Slot> _rxSlots; '
+  code = '([&]() -> rx::Value { std::vector<rxbif_breadth::Slot> _rxSlots; _rxSlots.reserve(' || args~items || '); '
   do argExpr over args
     if argExpr == 'RX2CPP_OMITTED' then code = code || '_rxSlots.push_back(std::nullopt); '
     else code = code || '_rxSlots.push_back(' || argExpr || '); '

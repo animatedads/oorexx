@@ -8,8 +8,17 @@
   use arg ctx
   s = ctx~stream
   s~expect('::'); s~expect('CLASS')
-  if s~peek~kind \= 'IDENT' then s~fail('expected class identifier')
-  name = s~next~text
+  /* ::CLASS "MixedCase": the class id keeps that spelling; lookups (.MIXEDCASE) are case-insensitive. */
+  if s~peek~kind == 'STRING' then do
+    declared = s~next~text
+    name = declared~upper
+    if verify(name, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_!?') > 0 | name == '' then s~fail('quoted class name must be a symbol: ' || declared)
+    if declared \== name then ctx~setDeclaredName(declared)
+  end
+  else do
+    if s~peek~kind \= 'IDENT' then s~fail('expected class identifier')
+    name = s~next~text
+  end
   publicSeen = .false
   parentSeen = .false
   inheritSeen = .false

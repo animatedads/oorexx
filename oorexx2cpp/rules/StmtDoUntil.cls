@@ -9,7 +9,7 @@
   s = ctx~stream
   s~expect('DO')
   s~expect('UNTIL')
-  condition = ctx~logicalExpr~parse(ctx)
+  condition = .RxConditionList~parse(ctx)
   s~separator
   suffix = ctx~label
   iterLabel = '_rx_iter_' || suffix
@@ -22,5 +22,6 @@
   ctx~popLoop
   ctx~line(depth + 1, '}')
   ctx~line(depth + 1, iterLabel || ':;')
-  ctx~line(depth, '} while (!rx::condition(' || condition || '));')
+  ctx~line(depth, '} while (!' || condition || ');')
   ctx~line(depth, exitLabel || ':;')
+::requires 'rules/ConditionList.cls'

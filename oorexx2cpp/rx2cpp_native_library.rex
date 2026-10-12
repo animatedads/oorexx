@@ -26,7 +26,10 @@ end
 options = parser~options
 template = readSource('native/native_package_template.cpp.in')
 emitter = .RxNativeLibraryEmitter~new
-nativeSource = emitter~emitPackage(units, packageName, template, options, extras~suffix, routines)
+suffix = extras~suffix
+/* The package prolog runs once, interpreted, when the library is loaded (see loadPackage in the template). */
+if parser~prolog \== '' then suffix = suffix || '::routine RX2CPP_PACKAGE_PROLOG' || '0a'x || parser~prolog
+nativeSource = emitter~emitPackage(units, packageName, template, options, suffix, routines)
 cpp = ''
 header = '#ifndef RX2CPP_GENERATED_HPP' || '0a'x || ,
          '#define RX2CPP_GENERATED_HPP' || '0a'x || ,

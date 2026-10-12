@@ -170,6 +170,15 @@ inline Value contextObject() {
     return ctx;
 }
 
+// .LOCAL and .ENVIRONMENT: the interpreter's local and global environment directories.
+inline Value environmentDirectory(const std::string &which) {
+    RexxThreadContext *c = Session::get().ctx();
+    RexxDirectoryObject d = which == "LOCAL" ? c->GetLocalEnvironment() : c->GetGlobalEnvironment();
+    if (c->CheckCondition()) raisePending(c);
+    if (!d) throw std::runtime_error("hosted tier: environment directory unavailable");
+    return wrap(c, d);
+}
+
 // .OUTPUT belongs to the thread's local environment, not to the class registry.
 inline Value localSymbol(const std::string &name) {
     RexxThreadContext *c = Session::get().ctx();
@@ -196,6 +205,32 @@ inline Value packageRoutines() {
     return Value::fromObject(pinned);
 }
 
+// Packages of class libraries required by the compiled program (::REQUIRES "x" LIBRARY with native classes).
+inline std::vector<RexxPackageObject> &libraryPackages() { static std::vector<RexxPackageObject> v; return v; }
+inline bool requireClassLibrary(const std::string &name) {
+    RexxThreadContext *c = Session::get().ctx();
+    const std::string src = "::requires \"" + name + "\" library\n";
+    RexxPackageObject p = c->LoadPackageFromData(("rx2cpp-library-" + name).c_str(), src.c_str(), src.size());
+    if (c->CheckCondition()) raisePending(c);
+    if (!p) throw std::runtime_error("hosted tier: cannot load library " + name);
+    c->RequestGlobalReference(p);
+    libraryPackages().push_back(p);
+    return true;
+}
+inline const bool classLibraryLoaderInstalled = (classLibraryLoader() = &requireClassLibrary, true);
+// A string message the native subset and the BIFs do not cover goes to the interpreter's String class.
+inline std::optional<MessageResult> hostStringMessage(const Value &receiver, const std::string &selector, const std::vector<Value> &args) {
+    RexxThreadContext *c = Session::get().ctx();
+    RexxObjectPtr str = c->String(receiver.bytes.data(), receiver.bytes.size());
+    RexxArrayObject list = c->NewArray(args.size());
+    for (std::size_t i = 0; i < args.size(); ++i) c->ArrayPut(list, HostObject::toRexx(c, args[i]), i + 1);
+    RexxObjectPtr result = c->SendMessage(str, selector.c_str(), list);
+    if (c->CheckCondition()) raisePending(c);
+    if (!result) return MessageResult(std::nullopt);
+    return MessageResult(wrap(c, result));
+}
+inline const bool hostStringMessageInstalled = (stringHostExtension() = &hostStringMessage, true);
+
 // .NAME environment symbols that name a class: the loaded unit's classes first, then the interpreter's.
 inline Value findClass(const std::string &name) {
     RexxThreadContext *c = Session::get().ctx();
@@ -204,11 +239,18 @@ inline Value findClass(const std::string &name) {
         if (c->CheckCondition()) c->ClearCondition();
         if (own) return Value::fromObject(std::make_shared<HostObject>(static_cast<RexxObjectPtr>(own)));
     }
+    for (RexxPackageObject lib : libraryPackages()) {
+        RexxClassObject own = c->FindPackageClass(lib, name.c_str());
+        if (c->CheckCondition()) c->ClearCondition();
+        if (own) return Value::fromObject(std::make_shared<HostObject>(static_cast<RexxObjectPtr>(own)));
+    }
     RexxClassObject cls = c->FindClass(name.c_str());
     if (c->CheckCondition()) c->ClearCondition();
     if (!cls) throw SyntaxCondition("98.926", "hosted tier: no interpreter class named ." + name, false);
     return Value::fromObject(std::make_shared<HostObject>(static_cast<RexxObjectPtr>(cls)));
 }
+
+inline const bool hostedClassLookupInstalled = (hostedClassLookup() = &findClass, true);
 
 // CALL/function invocation of a ::ROUTINE that lives in the loaded unit (private routines included).
 inline MessageResult callRoutine(const std::string &name, const std::vector<Value> &args) {

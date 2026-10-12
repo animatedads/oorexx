@@ -8,7 +8,14 @@
   use arg ctx, depth
   s = ctx~stream
   s~expect('DO')
-  if s~peek~kind == 'SEP' then s~fail('bare DO groups require a containing control instruction')
+  if s~peek~kind == 'SEP' then do
+    /* A simple DO group: not a loop (LEAVE/ITERATE inside it address the enclosing loop). */
+    s~separator
+    ctx~line(depth, '{')
+    ctx~block(depth + 1, .true)
+    ctx~line(depth, '}')
+    return
+  end
   if wordpos(s~peek~text, 'WHILE UNTIL FOREVER OVER WITH') > 0 then s~fail('unsupported DO control form')
   count = ctx~logicalExpr~parse(ctx)
   s~separator

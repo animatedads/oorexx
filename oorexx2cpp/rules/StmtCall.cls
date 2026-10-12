@@ -32,6 +32,31 @@
       if \s~accept(',') then leave
     end
   end
+  /* Native package lane: CALL of a package ::ROUTINE runs the compiled routine; RESULT receives its value. */
+  if ctx~hasMethod('ISPACKAGEROUTINE') then if ctx~isPackageRoutine(name) then do
+    code = '{ std::vector<std::optional<rx::Value>> _rxCallArgs; '
+    do argExpr over args
+      if argExpr == 'RX2CPP_OMITTED' then code = code || '_rxCallArgs.emplace_back(std::nullopt); '
+      else code = code || '_rxCallArgs.emplace_back(' || argExpr || '); '
+    end
+    code = code || 'rx::set(vars, "RESULT", rx2cpp::makeGeneratedObject_RX2CPP_ROUTINE_IMPL()->invokeValues(' || .RxQuote~cpp(name) || ', _rxCallArgs)); }'
+    ctx~line(depth, code)
+    s~separator
+    return
+  end
+  /* Native package lane: any other routine (rexxutil, external .rex) is resolved and run by the interpreter. */
+  if ctx~hasMethod('ISPACKAGEROUTINE') & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \== '' & \.RxBuiltinRules~isBuiltinName(name) then do
+    code = '{ std::vector<std::optional<rx::Value>> _rxCallArgs; '
+    do argExpr over args
+      if argExpr == 'RX2CPP_OMITTED' then code = code || '_rxCallArgs.emplace_back(std::nullopt); '
+      else code = code || '_rxCallArgs.emplace_back(' || argExpr || '); '
+    end
+    code = code || 'auto _rxR = rx::interpreterCall(vars, ' || .RxQuote~cpp(name) || ', _rxCallArgs); '
+    code = code || 'if (_rxR) rx::set(vars, "RESULT", *_rxR); else rx::drop(vars, "RESULT"); }'
+    ctx~line(depth, code)
+    s~separator
+    return
+  end
   internal = ctx~hasRoutine(name)
   hosted = \internal & ctx~hasHostRoutine(name)
   external = \internal & \hosted & ctx~hasLibraries & \.RxBuiltinRules~isBuiltinName(name)
@@ -53,7 +78,11 @@
   if hosted then code = 'rx::host::callInstruction(vars, ' || .RxQuote~cpp(name) || ', ' || var || ');'
   else if external then code = 'rx::ext::callInstruction(vars, ' || .RxQuote~cpp(name) || ', ' || var || ');'
   else if internal then code = 'rx::callInternalInstruction(vars, _rxRoutines, ' || .RxQuote~cpp(name) || ', ' || var || ');'
-  else if .RxBuiltinRules~externalEnabled then code = 'rx::dispatchBifInstruction(vars, _rxBifRuntime, ' || .RxQuote~cpp(name) || ', ' || var || ');'
+  else if .RxBuiltinRules~externalEnabled then do
+    runtime = '_rxBifRuntime'
+    if ctx~hasMethod('ISPACKAGEROUTINE') then runtime = 'rx2cppBif()'   /* native package lane: per-library BIF runtime */
+    code = 'rx::dispatchBifInstruction(vars, ' || runtime || ', ' || .RxQuote~cpp(name) || ', ' || var || ');'
+  end
   else code = 'rx::callInstruction(vars, ' || .RxQuote~cpp(name) || ', ' || var || ');'
   ctx~line(depth + 1, code)
   ctx~line(depth, '}')

@@ -43,6 +43,11 @@ if [[ -n "${RX2CPP_BIF_ROOT:-}" ]]; then
     bifflags=( -I"$bif/native" -I"$bif/variables" )
     bifsrc=( "$bif/native/rxbif.cpp" "$bif/native/rxbif_breadth.cpp" "$bif/variables/rxbif_variables.cpp" )
 fi
+# A package spread over several .cls files (::REQUIRES 'other.cls') is combined into one source first.
+if grep -qiE "^[[:space:]]*::requires[[:space:]]+['\"][^'\"]+\.cls['\"][[:space:]]*$" "$SOURCE"; then
+    (cd "$(dirname -- "$SOURCE")" && "$REXX_BIN" "$ROOT/native/combine_package.rex" "$SOURCE" "$TMP/combined.cls" >/dev/null)
+    SOURCE="$TMP/combined.cls"
+fi
 (cd "$ROOT" && "$REXX_BIN" rx2cpp_native_library.rex "$SOURCE" "$TMP/generated" "$PACKAGE")
 "$CXX" -std=c++17 -O2 -fPIC -shared -Wl,-Bsymbolic -Wall -Wextra -Werror \
     -I"$OO_INCLUDE" -I"$ROOT/include" -I"$ROOT/hybrid" -I"$TMP" -DRX2CPP_HOST_API "${bifflags[@]}" \

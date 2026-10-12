@@ -14,11 +14,25 @@
   s~expect('USE'); s~expect('ARG')
   if ctx~current~seenStatement | ctx~current~parameter \== '' then s~fail('USE ARG may occur only once before statements')
   if s~peek~kind \= 'IDENT' then s~fail('USE ARG requires one simple variable')
-  ctx~current~setParameter(s~next~text)
+  name = s~next~text
+  ctx~current~setParameter(name)
+  index = 0
+  self~defaultFor(ctx, name, index)
   /* Arguments are an array: bind names to positions 1..N, any N. */
   do while s~accept(',')
     if s~peek~kind \= 'IDENT' then s~fail('USE ARG parameter must be a simple variable')
-    ctx~current~addParameter(s~next~text)
+    name = s~next~text
+    ctx~current~addParameter(name)
+    index = index + 1
+    self~defaultFor(ctx, name, index)
   end
   s~separator
+/* USE ARG name = expression: the expression is evaluated only when that argument is omitted. */
+::method defaultFor private
+  use arg ctx, name, index
+  s = ctx~stream
+  if \s~accept('=') then return
+  expr = ctx~compareExpr~parse(ctx)
+  ctx~current~addInstruction('if (!(arguments.size() > ' || index || ' && arguments[' || index || '])) ' || .RxCompoundSymbols~store(name, expr))
 ::requires 'rules/StmtUseArg.cls'
+::requires 'rules/CompoundSymbols.cls'

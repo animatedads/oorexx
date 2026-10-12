@@ -173,12 +173,35 @@ struct ArrayClass final : ObjectDispatch {
         throw std::runtime_error("unsupported .ARRAY class constructor");
     }
 };
+// When the hosted interpreter is linked, collections are the interpreter's own (they cross freely into hosted code);
+// otherwise the native subset.
+using HostedClassLookup = Value (*)(const std::string &);
+inline HostedClassLookup &hostedClassLookup() { static HostedClassLookup f = nullptr; return f; }
+inline Value arrayClass() {
+    if (hostedClassLookup()) return hostedClassLookup()("ARRAY");
+    static const Value native = Value::fromObject(std::make_shared<ArrayClass>());
+    return native;
+}
 // LOOP value OVER .Array iterates in index order; sparse/other collections
 // fail closed until their own ITERATOR semantics are implemented.
 inline std::vector<Value> arrayItems(const Value &collection) {
     if (!collection.isObject()) throw std::runtime_error("LOOP OVER requires a collection object");
     auto array = std::dynamic_pointer_cast<ArrayObject>(collection.object);
-    if (!array) throw std::runtime_error("LOOP OVER non-Array iterable unsupported");
+    if (!array) {
+        // Any other collection (interpreter objects included): DO ... OVER iterates its MAKEARRAY, as ooRexx does.
+        MessageResult made = collection.object->sendMessage("MAKEARRAY", {});
+        if (!made || !made->isObject()) throw std::runtime_error("LOOP OVER: MAKEARRAY did not return an array");
+        if (auto native = std::dynamic_pointer_cast<ArrayObject>(made->object)) return arrayItems(*made);
+        MessageResult count = made->object->sendMessage("ITEMS", {});
+        if (!count || count->isObject()) throw std::runtime_error("LOOP OVER: ITEMS did not return a number");
+        std::vector<Value> items;
+        const std::int64_t n = std::stoll(count->bytes);
+        for (std::int64_t i = 1; i <= n; ++i) {
+            MessageResult item = made->object->sendMessage("[]", {Value::string(std::to_string(i))});
+            items.push_back(item ? *item : nil());
+        }
+        return items;
+    }
     std::vector<Value> items;
     for (std::size_t i = 1; i <= array->last; ++i) {
         const auto it = array->elements.find(i);
@@ -459,6 +482,17 @@ struct VarSlot {
         remember(vars, g, const_cast<Value *>(&found->second));
         return found->second;
     }
+    // The variable's value in place (nullptr when it has none): the caller reads it without a copy.
+    const Value *find(const Variables &vars, const char *name) {
+        if (Value *p = resolve(vars)) return p;
+        const std::uint64_t g = variableEraseGeneration().load(std::memory_order_acquire);
+        const std::string key(name);
+        const Variables &owner = variableOwner(vars, key);
+        auto found = owner.find(key);
+        if (found == owner.end()) return nullptr;
+        remember(vars, g, const_cast<Value *>(&found->second));
+        return &found->second;
+    }
     void set(Variables &vars, const char *name, Value value) {
         if (Value *p = resolve(vars)) { *p = std::move(value); return; }
         const std::uint64_t g = variableEraseGeneration().load(std::memory_order_acquire);
@@ -470,6 +504,8 @@ struct VarSlot {
 };
 // One slot per compiled access site and thread; the slot is zero-initialised (trivial), so no guard is needed.
 #define RX_VGET(N) ([&]() -> ::rx::Value { static thread_local ::rx::VarSlot _rxSlot; return _rxSlot.get(vars, N); }())
+// A variable's value by reference (message receivers); an unset variable yields its name (NOVALUE rules of get()).
+#define RX_VREF(N) ([&]() -> const ::rx::Value & { static thread_local ::rx::VarSlot _rxSlot; if (const ::rx::Value *_rxP = _rxSlot.find(vars, N)) return *_rxP; static thread_local ::rx::Value _rxUnset = ::rx::Value::string(std::string()); _rxUnset = _rxSlot.get(vars, N); return _rxUnset; }())
 #define RX_VSET(N, ...) ([&]() { static thread_local ::rx::VarSlot _rxSlot; _rxSlot.set(vars, N, __VA_ARGS__); }())
 
 
@@ -487,6 +523,7 @@ inline void useArgument(Variables &vars, const std::vector<Value> &args,
 struct SyntaxCondition : std::runtime_error {
     std::string code;
     bool skipInternalTraps;
+    std::vector<Value> substitutions;   // RAISE SYNTAX ... ARRAY/ADDITIONAL values, kept for the interpreter's message
     SyntaxCondition(std::string c, const std::string &text, bool skip)
         : std::runtime_error("Error " + c + ": " + text), code(std::move(c)), skipInternalTraps(skip) {}
 };
@@ -500,10 +537,41 @@ inline int uncaughtStatus(const std::string &what) {
     }
     return 2;
 }           // EXIT executed inside an internal routine
+// RAISE ... ADDITIONAL(value): an array's items, or a string's lines (the interpreter applies MAKEARRAY).
+inline std::vector<Value> additionalItems(const Value &v) {
+    std::vector<Value> out;
+    if (v.isObject()) {
+        MessageResult items = v.object->sendMessage("MAKEARRAY", {});
+        if (items && items->isObject()) {
+            MessageResult n = items->object->sendMessage("ITEMS", {});
+            const long count = n && !n->isObject() ? std::stol(n->bytes) : 0;
+            for (long i = 1; i <= count; ++i) {
+                MessageResult item = items->object->sendMessage("[]", {Value::string(std::to_string(i))});
+                out.push_back(item ? *item : Value::string(""));
+            }
+            return out;
+        }
+        out.push_back(v);
+        return out;
+    }
+    const std::string &s = v.bytes;
+    std::size_t start = 0;
+    while (start <= s.size()) {
+        std::size_t nl = s.find('\n', start);
+        std::string line = s.substr(start, nl == std::string::npos ? std::string::npos : nl - start);
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (nl == std::string::npos) { if (!line.empty() || out.empty()) out.push_back(Value::string(line)); break; }
+        out.push_back(Value::string(line));
+        start = nl + 1;
+    }
+    return out;
+}
 [[noreturn]] inline void raiseSyntax(const std::string &code, const std::vector<Value> &args, bool localTrap) {
     std::string text;
     for (std::size_t i = 0; i < args.size(); ++i) { if (i) text += ' '; text += args[i].bytes; }
-    throw SyntaxCondition(code, text, !localTrap);
+    SyntaxCondition condition(code, text, !localTrap);
+    condition.substitutions = args;
+    throw condition;
 }
 struct TrapState {
     bool syntaxOn = false;
@@ -668,6 +736,12 @@ inline Value sendBinary(const Value &lhs, const std::string &selector, const Val
 using StringMessageFallback = MessageResult (*)(const Value &, const std::string &, const std::vector<Value> &);
 inline StringMessageFallback &stringMessageFallback() { static StringMessageFallback f = nullptr; return f; }
 inline MessageResult sendStringBuiltin(const Value &receiver, const std::string &selector, const std::vector<Value> &args);
+using StringMessageExtension = std::optional<MessageResult> (*)(const Value &, const std::string &, const std::vector<Value> &);
+inline StringMessageExtension &stringBifExtension() { static StringMessageExtension f = nullptr; return f; }
+inline StringMessageExtension &stringHostExtension() { static StringMessageExtension f = nullptr; return f; }
+// ::REQUIRES "x" LIBRARY for a library that declares native classes: loaded by the hosted interpreter when it is linked.
+using ClassLibraryLoader = bool (*)(const std::string &);
+inline ClassLibraryLoader &classLibraryLoader() { static ClassLibraryLoader f = nullptr; return f; }
 inline MessageResult sendMessage(const Value &receiver, const std::string &selector,
                                  const std::vector<Value> &args) {
     if (receiver.isObject()) return receiver.object->sendMessage(selector, args);
@@ -730,6 +804,12 @@ inline MessageResult sendStringBuiltin(const Value &receiver, const std::string 
             throw std::runtime_error("SUBSTR padding semantics not implemented");
         return Value::string(s.substr(offset, static_cast<std::size_t>(count)));
     }
+    // String methods the native subset lacks: the BIF of the same name (when linked), then the hosted interpreter's
+    // own String class (when linked). Each returns nullopt when it does not handle the message.
+    if (stringBifExtension())
+        if (auto r = stringBifExtension()(receiver, selector, args)) return std::move(*r);
+    if (stringHostExtension())
+        if (auto r = stringHostExtension()(receiver, selector, args)) return std::move(*r);
     throw std::runtime_error("unsupported string message: " + selector);
 }
 inline Value messageValue(const Value &receiver, const std::string &selector,
@@ -814,9 +894,22 @@ inline Value logicalOr(const Value &lhs, const Value &rhs) {
     return fromInteger(left || right ? 1 : 0);
 }
 // Operator dispatch on the selector bytes (switch on the first character), no string temporaries.
+// ooRexx REQUEST('STRING'): an object used where a string is needed answers MAKESTRING, else its STRING method.
+inline Value requestString(const Value &v) {
+    if (!v.isObject()) return v;
+    MessageResult r;
+    try { r = v.object->sendMessage("MAKESTRING", {}); }
+    catch (const NoMethod &) { r = v.object->sendMessage("STRING", {}); }
+    if (!r) throw std::runtime_error("object has no string value");
+    if (r->isObject()) return Value::string(r->object->display());
+    return *r;
+}
 inline Value sendBinaryOp(const Value &lhs, const char *sel, std::size_t n, const Value &rhs,
                           const ActivationNumeric &numeric) {
     if (lhs.isObject()) return lhs.object->sendBinary(std::string(sel, n), rhs);
+    // A string receiver with an object argument (s = obj, s || obj, 1 + obj): the String method requests the
+    // argument's string value, as the interpreter's String class does.
+    if (rhs.isObject()) return sendBinaryOp(lhs, sel, n, requestString(rhs), numeric);
     const char c0 = n ? sel[0] : '\0', c1 = n > 1 ? sel[1] : '\0';
     switch (c0) {
     case ' ':

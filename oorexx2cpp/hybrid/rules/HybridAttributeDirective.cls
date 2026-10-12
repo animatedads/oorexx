@@ -20,5 +20,13 @@
     else opts~add(s, word)
   end
   s~separator
+  /* ::ATTRIBUTE x GET|SET followed by code: that code is the accessor method's body (compiled as a method). */
+  s~skipSeparators
+  if s~peek~kind \= 'EOF' & \s~is('::') then do
+    if mode == 'BOTH' then s~fail('an ATTRIBUTE with a body needs GET or SET')
+    if mode == 'SET' then name = name || '='
+    return .array~of(name, opts)
+  end
   ctx~addAttribute(name, mode, opts)
+  return .nil
 ::requires 'hybrid/rules/HybridMethodDirective.cls'

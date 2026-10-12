@@ -35,7 +35,12 @@
   t = s~peek
   select
     when t~kind == 'STRING' | t~kind == 'NUMBER' | t~kind == 'INT' | t~kind == 'DOTIDENT' then return .true
-    when t~kind == 'IDENT' then return wordpos(t~text, 'THEN TO BY FOR UNTIL WHILE OVER WITH ELSE END DO WHEN OTHERWISE IF NAME ARRAY ADDITIONAL DESCRIPTION RETURN EXIT') = 0
+    when t~kind == 'IDENT' then do
+      if wordpos(t~text, 'THEN TO BY FOR UNTIL WHILE OVER WITH ELSE END DO WHEN OTHERWISE IF NAME ARRAY ADDITIONAL DESCRIPTION RETURN EXIT') = 0 then return .true
+      /* A sub-keyword abutted to the previous term ('x['name) is a symbol in abuttal, not a keyword. */
+      prev = s~previous
+      return t~line == prev~endLine & t~col == prev~endCol
+    end
     when t~kind == 'OP' & t~text == '(' then return .true
     otherwise return .false
   end

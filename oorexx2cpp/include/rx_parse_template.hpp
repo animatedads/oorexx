@@ -54,6 +54,18 @@ struct ParseOp {
             throw std::runtime_error("PARSE position must be a whole number");
         return absolute(std::stoll(t));
     }
+    // +(expr) / -(expr): a relative position computed at run time (a whole number).
+    static ParseOp relativeValue(const Value &v, bool negative) {
+        if (v.isObject()) throw std::runtime_error("PARSE position must be a whole number");
+        std::size_t b = v.bytes.find_first_not_of(' '), e = v.bytes.find_last_not_of(' ');
+        std::string t = b == std::string::npos ? std::string() : v.bytes.substr(b, e - b + 1);
+        bool neg = negative;
+        if (!t.empty() && (t[0] == '-' || t[0] == '+')) { if (t[0] == '-') neg = !neg; t.erase(0, 1); }
+        if (t.empty() || t.size() > 18 || t.find_first_not_of("0123456789") != std::string::npos)
+            throw std::runtime_error("PARSE position must be a whole number");
+        const std::int64_t n = std::stoll(t);
+        return relative(neg ? -n : n);
+    }
     static ParseOp literalValue(const Value &v) {
         if (v.isObject()) throw std::runtime_error("PARSE object delimiter conversion unsupported");
         if (v.bytes.empty()) throw std::runtime_error("empty dynamic PARSE delimiter unsupported");
@@ -69,6 +81,9 @@ inline std::vector<Value> parseTemplate(const Value &sourceIn, const std::vector
     std::vector<Value> values;
     values.reserve(ops.size());
     std::size_t cursor = 0;
+    // A relative position counts from where the previous pattern matched: the START of a string pattern's match
+    // (parse value 'abcdef' with 'c' x +2 y: x = 'cd'), otherwise the previous position.
+    std::size_t anchor = 0;
     std::size_t pending = 0;
     // Saturated 1-based ooRexx position, clipped to [1, len+1].
     auto clip = [&s](std::int64_t p) -> std::size_t {
@@ -88,13 +103,15 @@ inline std::vector<Value> parseTemplate(const Value &sourceIn, const std::vector
         if (op.kind == ParseOp::Kind::Absolute) {
             boundary = next = clip(op.position);
         } else if (op.kind == ParseOp::Kind::Relative) {
+            // After a string pattern, the data before a relative position starts at the start of that string's match.
+            cursor = anchor;
             // Clamp without signed overflow for a (bounded) source string.
             if (op.position < 0) {
                 const auto n = static_cast<std::uint64_t>(-(op.position + 1)) + 1;
-                next = n >= cursor ? 0 : cursor - static_cast<std::size_t>(n);
+                next = n >= anchor ? 0 : anchor - static_cast<std::size_t>(n);
             } else {
                 const auto n = static_cast<std::uint64_t>(op.position);
-                next = n >= s.size() - cursor ? s.size() : cursor + static_cast<std::size_t>(n);
+                next = n >= s.size() - anchor ? s.size() : anchor + static_cast<std::size_t>(n);
             }
             boundary = next;
         } else {
@@ -103,10 +120,12 @@ inline std::vector<Value> parseTemplate(const Value &sourceIn, const std::vector
             boundary = found == std::string::npos ? s.size() : found;
             next = found == std::string::npos ? s.size() : found + op.delimiter.size();
         }
+        const std::size_t matchStart = boundary;
         // An anchor behind the cursor gives the preceding target the remaining
         // source; the next target starts at the newly selected backward anchor.
         flush(cursor, boundary <= cursor ? s.size() - cursor : boundary - cursor);
         cursor = next;
+        anchor = op.kind == ParseOp::Kind::Literal ? matchStart : next;
     }
     flush(cursor, s.size() - cursor);
     if (values.empty()) throw std::runtime_error("PARSE requires a target");

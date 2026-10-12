@@ -5,9 +5,12 @@
    comments cannot accidentally be treated as class boundaries. */
 ::class RxNativePackageParser public
 ::attribute options get
+/* Executable code before the first ::CLASS (the package prolog): run by the interpreter when the library loads. */
+::attribute prolog get
 ::method parse
-  expose options
+  expose options prolog
   use arg source
+  prolog = ''
   options = .RxNativePackageOptions~new~parse(source)
   tokens = .RxLexer~new(source)~scan
   positions = .array~new
@@ -70,7 +73,12 @@
         end
         iterate
       end
-      self~reject(token~line, 'top-level executable code is unsupported')
+      /* Prolog code: kept as source (comments included), ::OPTIONS lines removed. */
+      do j2 = 1 to first - 1
+        if optionsLines~hasIndex(j2) then prolog = prolog || '0a'x
+        else prolog = prolog || lines[j2] || '0a'x
+      end
+      leave
     end
   end
   units = .array~new
@@ -101,8 +109,7 @@
         unit~useExternalParent
       else if \names~hasIndex(unit~parentName) then
         self~reject(start, 'unknown or forward parent ' || unit~parentName)
-      if unit~methods~items == 0 then
-        self~reject(start, 'subclass with no native methods')
+      /* An empty subclass only inherits: valid Rexx, it gets no native methods of its own. */
     end
     graphRules~validate(unit, names, definitions, roots, scopes)
     names[name] = .true

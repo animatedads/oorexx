@@ -180,6 +180,17 @@
         self~move
         self~emit('OP', ':', markLine, markCol)
       end
+      /* Strict comparisons << >> <<= >>= and the negated forms \< \> \<< \>> */
+      when (c == '<' | c == '>') & self~char(1) == c then do
+        op = self~move || self~move
+        if self~char == '=' then op = op || self~move
+        self~emit('OP', op, markLine, markCol)
+      end
+      when c == '\' & (self~char(1) == '<' | self~char(1) == '>') then do
+        op = self~move || self~move
+        if self~char == right(op, 1) then op = op || self~move
+        self~emit('OP', op, markLine, markCol)
+      end
       when c == '\' & self~char(1) == '=' then do
         self~move; self~move
         op = '\='

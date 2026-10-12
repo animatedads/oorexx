@@ -34,30 +34,46 @@
   use arg ctx, depth
   s = ctx~stream
   specs = ''; sawOptional = .false
+  /* Defaults that are not literals (context=.nil, n=x+1, ...) are expressions, evaluated only when the argument is
+     absent, after the earlier targets are set (ooRexx order). */
+  later = .array~new
+  index = 0
+  /* USE STRICT ARG with no names: the method takes no arguments. */
+  if s~peek~kind == 'SEP' | s~peek~kind == 'EOF' then do
+    ctx~line(depth, 'rx::useStrictArguments(vars, _rxProgramArgs, ' || .RxQuote~cpp(ctx~routineName) || ', {});')
+    s~separator
+    return
+  end
   do forever
     if s~peek~kind \= 'IDENT' then s~fail('USE STRICT ARG requires simple variable names')
     name = s~next~text
     if pos('.', name) > 0 then s~fail('USE STRICT ARG compound variable targets not yet implemented')
     if s~accept('=') then do
-      if s~accept('.') then do
-        if s~peek~kind \= 'IDENT' | wordpos(s~peek~text~upper, 'TRUE FALSE') == 0 then s~fail('USE STRICT ARG default must be a string, number, .TRUE or .FALSE')
-        defaultText = (s~next~text~upper == 'TRUE')~string
+      t = s~peek
+      nextT = s~lookAheadText(1)
+      literal = (t~kind == 'STRING' | t~kind == 'NUMBER' | t~kind == 'INT') & (nextT == ',' | s~lookAheadKind(1) == 'SEP' | s~lookAheadKind(1) == 'EOF')
+      if literal then do
+        s~next
+        specs = specs || '{' || .RxQuote~cpp(name) || ', false, ' || .RxQuote~cpp(t~text) || '}, '
       end
       else do
-        t = s~next
-        if t~kind == 'DOTIDENT' & wordpos(t~text~upper, 'TRUE FALSE') > 0 then defaultText = (t~text~upper == 'TRUE')~string
-        else if t~kind \= 'STRING' & t~kind \= 'NUMBER' & t~kind \= 'INT' then s~fail('USE STRICT ARG default must be a string, number, .TRUE or .FALSE')
-        else defaultText = t~text
+        expr = ctx~logicalExpr~parse(ctx)
+        specs = specs || '{' || .RxQuote~cpp(name) || ', false, ""}, '
+        later~append(.array~of(index, name, expr))
       end
-      specs = specs || '{' || .RxQuote~cpp(name) || ', false, ' || .RxQuote~cpp(defaultText) || '}, '
       sawOptional = .true
     end
     else do
       if sawOptional then s~fail('USE STRICT ARG required argument after an optional one')
       specs = specs || '{' || .RxQuote~cpp(name) || ', true, ""}, '
     end
+    index = index + 1
     if \s~accept(',') then leave
   end
   ctx~line(depth, 'rx::useStrictArguments(vars, _rxProgramArgs, ' || .RxQuote~cpp(ctx~routineName) || ', {' || specs~strip('T', ' ')~strip('T', ',') || '});')
+  do item over later
+    ctx~line(depth, 'if (_rxProgramArgs.size() <= ' || item[1] || ') ' || .RxCompoundSymbols~store(item[2], item[3]))
+  end
   s~separator
 ::requires 'core/RxQuote.cls'
+::requires 'rules/CompoundSymbols.cls'

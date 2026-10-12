@@ -47,7 +47,9 @@
   if name == '[]' | name == '[]=' | .RxOperatorSelectors~symbol(name) \== '' then nop
   else if verify(name, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_') > 0 then
     s~fail('unsupported native method selector')
-  if wordpos(name, 'UNKNOWN UNINIT') > 0 then s~fail('reserved lifecycle method')
+  /* UNKNOWN is an ordinary method to compile: the interpreter invokes it for messages no method answers. */
+  /* A user UNINIT is compiled under its own name; the generated UNINIT runs it, then releases the native state. */
+  if name == 'UNINIT' then name = 'RX2CPP_USER_UNINIT'
   /* Options as the interpreter's directive parser defines them (any order, no duplicates):
      PUBLIC | PRIVATE, PROTECTED, GUARDED | UNGUARDED, CLASS, ABSTRACT. They are carried verbatim to the
      generated class declaration, where the interpreter itself applies them. ATTRIBUTE, EXTERNAL and

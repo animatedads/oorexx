@@ -25,6 +25,8 @@
     if seenMixins~hasIndex(mixin) then self~reject('duplicate inherited mixin ' || mixin)
     seenMixins[mixin] = .true
     if mixin == className then self~reject('recursive INHERIT ' || mixin)
+    /* An interpreter mixin (COMPARABLE, ORDERABLE, ...) is inherited by the declared class; it has no native scope. */
+    if \names~hasIndex(mixin) & wordpos(mixin~upper, 'COMPARABLE ORDERABLE COLLECTION MAPCOLLECTION SETCOLLECTION ORDEREDCOLLECTION INDEXEDCOLLECTION') > 0 then iterate
     if \names~hasIndex(mixin) then self~reject('unknown or forward mixin ' || mixin)
     if \definitions[mixin]~isMixin then self~reject('INHERIT target is not a MIXINCLASS: ' || mixin)
     if roots[mixin] \== root then self~reject('mixin uses a different native root: ' || mixin)

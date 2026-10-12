@@ -49,6 +49,13 @@
   methods = .array~new
   classMethods = .array~new
   constants = .array~new
+::method setDeclaredName
+  expose declaredName
+  use arg declaredName
+::method declaredName
+  expose declaredName
+  if var('DECLAREDNAME') then return declaredName
+  return ''
 ::method setParentName
   expose parentName allowInheritance
   use arg name
@@ -81,11 +88,12 @@
   return .false
 ::method checkName private
   expose methods classMethods constants
-  use arg name
+  use arg name, mode = 'BOTH'
   if name == 'INIT' | name == 'UNINIT' | name == 'COPY' | name == 'RX2CPP_NATIVE_TOKEN' then
     self~stream~fail('reserved class selector ' || name)
+  /* ::ATTRIBUTE x GET and ::ATTRIBUTE x SET declare the two halves separately. */
   do m over methods
-    if m~selector == name | m~selector == name || '=' then
+    if (mode \== 'SET' & m~selector == name) | (mode \== 'GET' & m~selector == name || '=') then
       self~stream~fail('duplicate class selector ' || name)
   end
   do entry over constants
@@ -94,7 +102,7 @@
 ::method addAttribute
   expose methods classMethods
   use arg name, mode, options
-  self~checkName(name)
+  self~checkName(name, mode)
   target = methods
   if arg(3, 'E') then if options~isClass then target = classMethods
   if mode == 'BOTH' | mode == 'GET' then do
@@ -205,6 +213,23 @@
   return .false
 ::method hostedEnabled
   return .false
+/* CALL in a native package: package ::ROUTINEs resolve like function calls (HybridFunctionCall). */
+::method isPackageRoutine
+  use arg name
+  if \.RxBuiltinRules~isBuiltinName(name) | \.RxBuiltinRules~externalEnabled then do
+    if self~className == 'RX2CPP_ROUTINE_IMPL' & self~localRoutines~hasItem(name) then return .true
+    if self~className \= 'RX2CPP_ROUTINE_IMPL' & .local~rx2cpp.localroutines~isA(.array) then
+      do routineName over .local~rx2cpp.localroutines
+        if routineName~upper == name~upper then return .true
+      end
+  end
+  return .false
+::method hasRoutine
+  return .false
+::method hasHostRoutine
+  return .false
+::method hasLibraries
+  return .false
 /* A native package is never a hosted unit. */
 ::method hasHostUnit
   return .false
@@ -217,10 +242,13 @@
   if className \= 'RX2CPP_ROUTINE_IMPL' then scopes~setScope('::class ' || className, 'CLASS')
   s~skipSeparators
   do while s~peek~kind \= 'EOF'
+    bodied = .nil
     if s~lookAheadText(1) == 'ATTRIBUTE' then do
-      .RxHybridAttributeDirective~new~parse(self)
-      s~skipSeparators
-      iterate
+      bodied = .RxHybridAttributeDirective~new~parse(self)
+      if bodied == .nil then do
+        s~skipSeparators
+        iterate
+      end
     end
     /* ::METHOD name ATTRIBUTE is the method-directive spelling of ::ATTRIBUTE name (getter and setter). */
     if s~lookAheadText(1) == 'METHOD' & s~lookAheadText(3) == 'ATTRIBUTE' then do
@@ -237,7 +265,8 @@
       s~skipSeparators
       iterate
     end
-    directive = .RxHybridMethodDirective~new~parse(self)
+    if bodied \== .nil then directive = .array~of(bodied[1], '', bodied[2])
+    else directive = .RxHybridMethodDirective~new~parse(self)
     methodName = directive[1]
     do entry over constants
       if entry[1] == methodName then s~fail('duplicate method and constant ' || methodName)
@@ -264,7 +293,7 @@
     else methods~append(current)
     scopes~endScope
   end
-  if methods~items == 0 & classMethods~items == 0 & constants~items == 0 then s~fail('class contains no methods or constants')
+  /* An empty class (::class X subclass Y) is valid Rexx: it only inherits. */
   if className \= 'RX2CPP_ROUTINE_IMPL' & parentName == '' & \isMixin then self~ensureInit
   if className \= 'RX2CPP_ROUTINE_IMPL' then scopes~endScope
   return self
@@ -319,3 +348,4 @@
   return .true
 ::method classMethods
   return .array~new
+::requires 'rules/RxBuiltinRules.cls'

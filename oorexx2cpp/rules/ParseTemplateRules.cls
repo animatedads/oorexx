@@ -31,10 +31,9 @@
       end
       when s~accept('=') then do
         if s~accept('(') then do
-          if s~peek~kind \= 'IDENT' then s~fail('PARSE variable position requires a symbol')
-          name = s~next~text
+          expr = ctx~logicalExpr~parse(ctx)
           s~expect(')')
-          operations~append('rx::ParseOp::absoluteValue(' || .RxCompoundSymbols~load(name) || ')')
+          operations~append('rx::ParseOp::absoluteValue(' || expr || ')')
         end
         else if self~integerPosition(s~peek) then do
           position = s~next~text
@@ -42,6 +41,20 @@
           operations~append('rx::ParseOp::absolute(' || position || ')')
         end
         else s~fail('PARSE = pattern requires an integer or (variable)')
+        patterns = patterns + 1
+      end
+      when s~is('+') & s~lookAheadText(1) == '(' then do
+        s~next; s~next
+        expr = ctx~logicalExpr~parse(ctx)
+        s~expect(')')
+        operations~append('rx::ParseOp::relativeValue(' || expr || ', false)')
+        patterns = patterns + 1
+      end
+      when s~is('-') & s~lookAheadText(1) == '(' then do
+        s~next; s~next
+        expr = ctx~logicalExpr~parse(ctx)
+        s~expect(')')
+        operations~append('rx::ParseOp::relativeValue(' || expr || ', true)')
         patterns = patterns + 1
       end
       when s~accept('+') then do
@@ -65,10 +78,9 @@
         patterns = patterns + 1
       end
       when s~accept('(') then do
-        if s~peek~kind \= 'IDENT' then s~fail('PARSE variable pattern requires a symbol')
-        name = s~next~text
+        expr = ctx~logicalExpr~parse(ctx)
         s~expect(')')
-        operations~append('rx::ParseOp::literalValue(' || .RxCompoundSymbols~load(name) || ')')
+        operations~append('rx::ParseOp::literalValue(' || expr || ')')
         patterns = patterns + 1
       end
       otherwise s~fail('unsupported PARSE template component')

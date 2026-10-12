@@ -18,7 +18,16 @@
   code = '([&]()'
   if asInstruction then code = code || ' { '
   else code = code || ' -> rx::Value { '
-  code = code || 'rx::Value ' || current || ' = ' || receiver || '; '
+  /* A plain variable receiver is not copied for the first send (a large string read many times by a parser): the
+     variable's own value is used by reference; an object receiver is still held by a copy for the duration of the send. */
+  recv = current
+  if receiver~left(8) == 'RX_VGET(' then do
+    code = code || 'const rx::Value& _ref' || tag || ' = RX_VREF(' || receiver~substr(9) || '; '
+    code = code || 'const rx::Value _keep' || tag || ' = _ref' || tag || '.isObject() ? _ref' || tag || ' : rx::Value::string(std::string()); '
+    code = code || 'rx::Value ' || current || ' = rx::Value::string(std::string()); '
+    recv = '(_ref' || tag || '.isObject() ? _keep' || tag || ' : _ref' || tag || ')'
+  end
+  else code = code || 'rx::Value ' || current || ' = ' || receiver || '; '
   attrAssign = .false
   do while s~is('~') | s~is('~~') | s~is('[')
     indexed = s~is('[')
@@ -27,8 +36,38 @@
       s~next
       selector = '[]'
       args = .array~new
-      args~append(ctx~logicalExpr~parse(ctx))
+      /* a[i, j]: every index is an argument of [] (multi-dimensional arrays, stems, tables). */
+      do forever
+        args~append(ctx~logicalExpr~parse(ctx))
+        if \s~accept(',') then leave
+      end
       s~expect(']')
+      /* receiver[i, j] = value  sends  []=(value, i, j)  and is an assignment (also at the end of a chain). */
+      if asInstruction & s~is('=') then do
+        s~next
+        selector = '[]='
+        indexes = args
+        args = .array~of(ctx~logicalExpr~parse(ctx))
+        do ix over indexes; args~append(ix); end
+        attrAssign = .true
+      end
+      /* receiver[i] += value: the indexes are evaluated once, then []=(receiver[i] op value, i). */
+      else if asInstruction & .RxCompoundAssignmentOps~isSupported(s~peek~text) then do
+        op = .RxCompoundAssignmentOps~selector(s~next~text)
+        t = ctx~label
+        code = code || 'std::vector<rx::Value> _ix' || t || '; '
+        do ix over args
+          code = code || '_ix' || t || '.push_back(' || ix || '); '
+        end
+        code = code || 'rx::Value _old' || t || ' = rx::messageValue(' || recv || ', "[]", _ix' || t || ', false); '
+        code = code || 'rx::Value _rhs' || t || ' = ' || ctx~logicalExpr~parse(ctx) || '; '
+        selector = '[]='
+        args = .array~of('rx::sendBinary(_old' || t || ', ' || .RxQuote~cpp(op) || ', _rhs' || t || ', vars.numeric)')
+        do k = 1 to code~countStr('_ix' || t || '.push_back(')
+          args~append('_ix' || t || '[' || (k - 1) || ']')
+        end
+        attrAssign = .true
+      end
     end
     else do
       cascade = s~next~text == '~~'
@@ -53,7 +92,9 @@
     if hasArgs then do
       s~next
       if \s~is(')') then do forever
-        args~append(ctx~logicalExpr~parse(ctx))
+        /* obj~m(a, , c): an omitted argument stays omitted (interpreter objects, host API lane). */
+        if (s~is(',') | s~is(')')) & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \== '' then args~append('rx::omittedArgument()')
+        else args~append(ctx~logicalExpr~parse(ctx))
         if \s~accept(',') then leave
       end
       s~expect(')')
@@ -65,14 +106,16 @@
     end
     cascading = 'false'
     if cascade then cascading = 'true'
-    callExpr = current || ', ' || .RxQuote~cpp(selector) || ', ' || argVar || ', ' || cascading
+    callExpr = recv || ', ' || .RxQuote~cpp(selector) || ', ' || argVar || ', ' || cascading
     if attrAssign then
-      code = code || 'rx::sendMessage(' || current || ', ' || .RxQuote~cpp(selector) || ', ' || argVar || '); '
+      code = code || 'rx::sendMessage(' || recv || ', ' || .RxQuote~cpp(selector) || ', ' || argVar || '); '
     else if asInstruction & \s~is('~') & \s~is('~~') & \s~is('[') then
       code = code || 'rx::messageInstruction(vars, ' || callExpr || '); '
     else
       code = code || current || ' = rx::messageValue(' || callExpr || '); '
+    recv = current
   end
   if \asInstruction then code = code || 'return ' || current || '; '
   return code || '}())'
 ::requires 'core/RxQuote.cls'
+::requires 'rules/CompoundAssignmentOps.cls'

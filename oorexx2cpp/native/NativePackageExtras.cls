@@ -159,6 +159,8 @@
   if target \= 'PACKAGE' then annotationTargets~append(.array~of(target, tokens[start+1]~text, lineNo))
 ::method dependency private
   use arg tokens, start, finish, lineNo
+  /* ::REQUIRES 'name' LIBRARY: another native library this one needs; the interpreter loads it with this package. */
+  if finish == start + 2 & tokens[start]~kind == 'STRING' & tokens[start+1]~text == 'LIBRARY' then return
   if finish \= start + 3 | tokens[start]~kind \= 'STRING' | ,
       tokens[start+1]~text \= 'NAMESPACE' | tokens[start+2]~kind \= 'IDENT' then
     self~reject(lineNo, 'only ::REQUIRES literal NAMESPACE symbol is supported')

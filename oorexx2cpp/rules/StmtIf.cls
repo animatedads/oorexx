@@ -9,10 +9,11 @@
   use arg ctx, depth
   s = ctx~stream
   s~expect('IF')
-  cond = ctx~logicalExpr~parse(ctx)
+  cond = .RxConditionList~parse(ctx)
+  s~skipSeparators   /* THEN may start the next line (IF x <newline> THEN ...) */
   s~expect('THEN')
   s~skipSeparators   /* THEN may be followed by a line break before its instruction */
-  ctx~line(depth, 'if (rx::condition(' || cond || ')) {')
+  ctx~line(depth, 'if (' || cond || ') {')
   self~branch(ctx, depth + 1)
   ctx~line(depth, '}')
   if s~accept('ELSE') then do
@@ -32,3 +33,4 @@
     ctx~block(depth, .true)
   end
   else ctx~statement(depth)
+::requires 'rules/ConditionList.cls'

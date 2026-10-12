@@ -71,6 +71,10 @@
   expose n
   use arg ctx, selector, argExprs, super, asInstruction
   s = ctx~stream
+  /* SELF~m~next, SELF~m[i]: the rest of the chain continues on this send's result (shared message rule). */
+  chain = s~is('~') | s~is('~~') | s~is('[')
+  outerInstruction = asInstruction
+  if chain then asInstruction = .false
   n += 1
   tag = n
   code = '([&]() -> rx::Value { std::vector<rx::Value> _sa' || tag || '; '
@@ -88,7 +92,7 @@
     code = code || 'rx::set(vars, ' || .RxQuote~cpp(field) || ', rx::get(fields_, ' || .RxQuote~cpp(field) || ')); '
   end
   code = code || 'return _r' || tag || '; }())'
-  if s~is('~') | s~is('~~') then return .RxExprMessage~new~parse(ctx, .false, code)
+  if chain then return .RxExprMessage~new~parse(ctx, outerInstruction, code)
   return code
 ::requires 'core/RxQuote.cls'
 ::requires 'rules/ExprMessage.cls'

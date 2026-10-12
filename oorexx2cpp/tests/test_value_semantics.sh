@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 OO_ROOT=${OO_ROOT:-/usr/local}; REXX_BIN=${REXX_BIN:-$OO_ROOT/bin/rexx}
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
-for name in decimal_exactness compound_tails stem_object_method stem_object_sharing stem_object_hosted bignum_modmul; do
+for name in decimal_exactness compound_tails stem_object_method stem_object_sharing stem_object_hosted bignum_modmul do_counted_forms parse_relative_after_literal strict_compare_ops select_case loop_over_counter bif_datatype_max_pos bif_radix indexed_augmented_assign keyword_as_variable abuttal_keywords environment_indexed_assign; do
   F="$ROOT/tests/fixtures/$name.rex"
   "$REXX_BIN" "$F" > "$T/$name.ref" 2>&1
   "$ROOT/build.sh" "$F" "$T/$name.bin" >/dev/null 2>&1 || { echo "FAIL $name: build"; exit 1; }

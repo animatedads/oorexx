@@ -64,7 +64,11 @@ inline void bind(rxext::Host &h) {
 inline void require(const std::string &name) {
     rxext::Host &h = host();
     try { bind(h); h.load(name); }
-    catch (const rxext::Error &e) { throw std::runtime_error("Error " + e.code + ": " + e.what()); }
+    catch (const rxext::Error &e) {
+        // A class library (native ::CLASS methods) needs the interpreter's object model: the hosted tier loads it.
+        if (std::string(e.what()).find("declares native classes") != std::string::npos && classLibraryLoader() && classLibraryLoader()(name)) return;
+        throw std::runtime_error("Error " + e.code + ": " + e.what());
+    }
 }
 inline MessageResult call(Variables &vars, const std::string &name, const std::vector<Value> &args) {
     rxext::Host &h = host(); bind(h);
