@@ -42,7 +42,9 @@ static std::string stringValue(RexxMethodContext *ctx, RexxObjectPtr object) {
     if (object == NULLOBJECT || !(ctx->IsString(object) || ctx->IsOfType(object, "STRING")))
         throw std::runtime_error("only ooRexx String scalar values are supported");
     auto s = ctx->ObjectToString(object);
-    return std::string(ctx->StringData(s), ctx->StringLength(s));
+    std::string out(ctx->StringData(s), ctx->StringLength(s));
+    if ((RexxObjectPtr)s != object) ctx->ReleaseLocalReference((RexxObjectPtr)s);
+    return out;
 }
 // A SYNTAX condition raised by compiled code (RAISE SYNTAX n.m ARRAY/ADDITIONAL, or a runtime error with a code)
 // becomes the same interpreter condition, so CONDITION('O') and the error message are the interpreter's own.
@@ -409,15 +411,18 @@ public:
             if (nativeSelfSend(state_, className_, selector, args, out)) return out;
         }
         std::vector<rxobj::Arg> in; rx::EnvObject::convert(args, in);
-        RexxArrayObject arr = ctx_->NewArray(in.size());
+        // A self send can run many times inside one native call: release every local reference it makes.
+        rxobj::LocalRefs temps(ctx_->threadContext);
+        RexxArrayObject arr = (RexxArrayObject)temps((RexxObjectPtr)ctx_->NewArray(in.size()));
         for (std::size_t i = 0; i < in.size(); i++) {
             if (in[i].omitted) continue;
-            ctx_->ArrayPut(arr, in[i].obj ? (RexxObjectPtr)in[i].obj : (RexxObjectPtr)ctx_->NewString(in[i].bytes.data(), in[i].bytes.size()), i + 1);
+            ctx_->ArrayPut(arr, in[i].obj ? (RexxObjectPtr)in[i].obj : temps((RexxObjectPtr)ctx_->NewString(in[i].bytes.data(), in[i].bytes.size())), i + 1);
         }
         RexxObjectPtr result;
         { ReleaseAndReacquire released(lock_); result = ctx_->SendMessage(self_, selector.c_str(), arr); }
         if (ctx_->CheckCondition()) throw PendingCondition();
         if (result == NULLOBJECT) return std::nullopt;
+        temps(result);
         if (rxobj::isPlainString(ctx_->threadContext, result)) return rx::Value::string(stringValue(ctx_, result));
         return rx::Value::fromObject(std::make_shared<rx::EnvObject>((void *)ctx_->threadContext->RequestGlobalReference(result)));
     }

@@ -67,7 +67,9 @@ inline void *findClass(const std::string &name) {
     RexxThreadContext *t = need();
     RexxClassObject c = t->FindClass(name.c_str());
     if (c == NULLOBJECT) { t->ClearCondition(); return nullptr; }
-    return (void *)t->RequestGlobalReference((RexxObjectPtr)c);
+    void *h = (void *)t->RequestGlobalReference((RexxObjectPtr)c);
+    t->ReleaseLocalReference((RexxObjectPtr)c);   // a long native call keeps every unreleased local reference
+    return h;
 }
 // .LOCAL / .ENVIRONMENT are environment directories, not classes.
 inline void *environmentObject(const std::string &name) {
@@ -83,15 +85,17 @@ inline RexxObjectPtr &libraryPackage() { static RexxObjectPtr p = NULLOBJECT; re
 // An environment symbol that is not a class: the package's LOCAL directory, then .local, then .environment.
 inline void *environmentEntry(const std::string &name) {
     RexxThreadContext *t = need();
+    // Every local reference made here is released: inside one long native call they would pile up in its table.
+    LocalRefs temps(t);
     RexxObjectPtr o = NULLOBJECT;
     if (libraryPackage() != NULLOBJECT) {
-        RexxObjectPtr local = t->SendMessage0(libraryPackage(), "LOCAL");
+        RexxObjectPtr local = temps(t->SendMessage0(libraryPackage(), "LOCAL"));
         if (t->CheckCondition()) t->ClearCondition();
-        else if (local != NULLOBJECT) o = t->SendMessage1(local, "[]", t->String(name.c_str()));
+        else if (local != NULLOBJECT) o = temps(t->SendMessage1(local, "[]", temps((RexxObjectPtr)t->String(name.c_str()))));
         if (o == t->Nil()) o = NULLOBJECT;
     }
-    if (o == NULLOBJECT) o = t->DirectoryAt(t->GetLocalEnvironment(), name.c_str());
-    if (o == NULLOBJECT) o = t->DirectoryAt(t->GetGlobalEnvironment(), name.c_str());
+    if (o == NULLOBJECT) o = temps(t->DirectoryAt((RexxDirectoryObject)temps((RexxObjectPtr)t->GetLocalEnvironment()), name.c_str()));
+    if (o == NULLOBJECT) o = temps(t->DirectoryAt((RexxDirectoryObject)temps((RexxObjectPtr)t->GetGlobalEnvironment()), name.c_str()));
     if (t->CheckCondition()) t->ClearCondition();
     if (o == NULLOBJECT) return nullptr;
     return (void *)t->RequestGlobalReference(o);
@@ -118,6 +122,7 @@ inline bool isPlainString(RexxThreadContext *t, RexxObjectPtr o) {
     if (!t->IsInstanceOf(o, (RexxClassObject)stringClass)) return false;
     RexxObjectPtr cls = t->SendMessage0(o, "CLASS");
     if (t->CheckCondition()) { t->ClearCondition(); return true; }
+    if (cls != NULLOBJECT) t->ReleaseLocalReference(cls);
     return cls == stringClass;
 }
 // The substitution values (ADDITIONAL) of the last interpreter condition a send turned into a C++ exception, so the
@@ -431,6 +436,90 @@ inline Value envClass(const std::string &name) {
     cache.emplace(name, value);
     return value;
 }
+#ifdef RX2CPP_HOST_API
+// .MUTABLEBUFFER in compiled library code. A buffer built and read by compiled code (json.cls: one APPEND per token)
+// stays native: APPEND of plain strings, STRING, MAKESTRING and LENGTH run here without crossing to the interpreter.
+// Any other message, or handing the buffer to the interpreter, creates the interpreter's own MutableBuffer with the
+// same content; from then on this object forwards everything to it, so there is one object with one identity.
+struct NativeMutableBuffer final : NativeRefBase, std::enable_shared_from_this<NativeMutableBuffer> {
+    std::string data;
+    std::optional<Value> real;   // the interpreter MutableBuffer, once created
+    explicit NativeMutableBuffer(std::string initial) : data(std::move(initial)) {}
+    Value &promote() {
+        if (!real) {
+            MessageResult made = envClass("MUTABLEBUFFER").object->sendMessage("NEW", {Value::string(data)});
+            if (!made || !made->isObject()) throw std::runtime_error(".MutableBuffer~new returned no object");
+            real = *made;
+            std::string().swap(data);
+        }
+        return *real;
+    }
+    void *materialize() override {
+        auto *env = dynamic_cast<EnvObject *>(promote().object.get());
+        if (!env) throw std::runtime_error("MutableBuffer is not an interpreter object");
+        return env->handle;
+    }
+    static bool plain(const std::vector<Value> &args) {
+        for (const Value &a : args) if (a.isObject()) return false;
+        return true;
+    }
+    MessageResult sendMessage(const std::string &selector, const std::vector<Value> &args) override {
+        if (!real) {
+            if (selector == "APPEND" && !args.empty() && plain(args)) {
+                for (const Value &a : args) data.append(a.bytes.data(), a.bytes.size());
+                return Value::fromObject(shared_from_this());
+            }
+            if ((selector == "STRING" || selector == "MAKESTRING") && args.empty()) return Value::string(data);
+            if (selector == "LENGTH" && args.empty()) return Value::string(std::to_string(data.size()));
+        }
+        return promote().object->sendMessage(selector, args);
+    }
+    Value sendBinary(const std::string &selector, const Value &rhs) override {
+        return promote().object->sendBinary(selector, rhs);
+    }
+    Value sendUnary(const std::string &selector) override { return promote().object->sendUnary(selector); }
+    std::string display() const override {
+        if (!real) return data;
+        MessageResult text = real->object->sendMessage("STRING", {});
+        return text ? text->bytes.str() : std::string();
+    }
+};
+// The .MUTABLEBUFFER class: NEW with plain-string arguments makes a NativeMutableBuffer; everything else is the
+// interpreter's class (which is also what the interpreter receives for it).
+struct NativeMutableBufferClass final : NativeRefBase {
+    static Value interpreterClass() { return envClass("MUTABLEBUFFER"); }
+    void *materialize() override {
+        auto *env = dynamic_cast<EnvObject *>(interpreterClass().object.get());
+        if (!env) throw std::runtime_error(".MutableBuffer is not an interpreter class");
+        return env->handle;
+    }
+    MessageResult sendMessage(const std::string &selector, const std::vector<Value> &args) override {
+        // NEW([string] [, buffersize]): the initial content; the size is only a capacity hint.
+        if (selector == "NEW" && args.size() <= 2 && NativeMutableBuffer::plain(args)) {
+            if (args.size() == 2) {
+                const std::string &n = args[1].bytes;
+                if (n.empty() || n.find_first_not_of("0123456789") != std::string::npos)
+                    return interpreterClass().object->sendMessage(selector, args);   // let the interpreter raise its error
+            }
+            auto buffer = std::make_shared<NativeMutableBuffer>(args.empty() ? std::string() : args[0].bytes.str());
+            if (args.size() == 2) {
+                const std::string &n = args[1].bytes;
+                buffer->data.reserve(n.size() > 8 ? std::size_t(1) << 26 : std::min<std::size_t>(std::stoull(n), std::size_t(1) << 26));
+            }
+            return Value::fromObject(buffer);
+        }
+        return interpreterClass().object->sendMessage(selector, args);
+    }
+    Value sendBinary(const std::string &selector, const Value &rhs) override {
+        return interpreterClass().object->sendBinary(selector, rhs);
+    }
+    std::string display() const override { return "The MutableBuffer class"; }
+};
+inline Value mutableBufferClass() {
+    static thread_local const Value c = Value::fromObject(std::make_shared<NativeMutableBufferClass>());
+    return c;
+}
+#endif
 #ifdef RX2CPP_HOST_API
 // Stream BIFs (STREAM CHARIN CHAROUT CHARS LINEIN LINEOUT LINES) from compiled code: one interpreter .Stream object per
 // name and thread, so OPEN / CHAROUT / CLOSE issued by separate BIF calls act on the same stream (the interpreter keeps
