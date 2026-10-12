@@ -51,4 +51,22 @@ inline void setSymbol(Variables &vars, const std::string &symbol, Value value) {
     }
     set(vars, key, std::move(value));
 }
+// A whole stem passed as an argument to the hosted interpreter: a copy of its tails at call time.
+struct StemSnapshot final : ObjectDispatch {
+    std::string name;
+    std::vector<std::pair<std::string, Value>> tails;
+    std::optional<Value> dflt;
+    std::string display() const override { return name; }
+};
+inline Value stemArg(Variables &vars, const std::string &stem) {
+    auto snap = std::make_shared<StemSnapshot>();
+    snap->name = stem;
+    auto &owner = variableOwner(vars, stem);
+    for (const auto &kv : owner) {
+        if (kv.first == stem) snap->dflt = kv.second;
+        else if (kv.first.size() > stem.size() && kv.first.compare(0, stem.size(), stem) == 0)
+            snap->tails.emplace_back(kv.first.substr(stem.size()), kv.second);
+    }
+    return Value::fromObject(snap);
+}
 #endif

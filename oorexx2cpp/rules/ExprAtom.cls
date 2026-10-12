@@ -27,6 +27,11 @@
       if (value('RX2CPP_KERNEL', , 'ENVIRONMENT') \= '' | value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '') & wordpos(t~text, 'TRUE FALSE NIL') = 0 & \ctx~hasProgramClass(t~text) then -
         return 'rx::envClass(' || .RxQuote~cpp(t~text) || ')'
       if ctx~hasProgramClass(t~text) then return 'rx::Value::fromObject(_rxClasses.at(' || .RxQuote~cpp(t~text) || '))'
+      /* A hosted unit shares objects with the interpreter, so collections must be interpreter objects. */
+      if t~text == 'ARRAY' & ctx~hasHostUnit & ctx~hostedEnabled then do
+        ctx~markHosted('.ARRAY')
+        return 'rx::host::findClass("ARRAY")'
+      end
       if t~text == 'ARRAY' then return 'rx::Value::fromObject(std::make_shared<rx::ArrayClass>())'
       /* .TRUE/.FALSE are the strings 1 and 0 */
       if t~text == 'TRUE' then return 'rx::Value::string("1")'
@@ -48,6 +53,9 @@
       /* Rexx function invocation requires abuttal: F(3) differs from F (3). */
       if s~is('(') & s~peek~line == t~endLine & s~peek~col == t~endCol then -
         return ctx~builtinExpr~parse(ctx, t~text)
+      /* Bare stem as an argument of a program that has a hosted unit: pass its tails to the interpreter. */
+      if ctx~hasHostUnit & ctx~hostedEnabled & right(t~text, 1) == '.' & pos('.', t~text) == length(t~text) & (s~is(',') | s~is(')')) then
+        return 'rx::stemArg(vars, ' || .RxQuote~cpp(t~text) || ')'
       return .RxCompoundSymbols~load(t~text)
     end
     when s~accept('(') then do

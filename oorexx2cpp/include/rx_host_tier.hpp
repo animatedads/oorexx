@@ -73,6 +73,12 @@ struct HostObject final : ObjectDispatch {
         if (!v.isObject()) return c->String(v.bytes.data(), v.bytes.size());
         if (auto h = std::dynamic_pointer_cast<HostObject>(v.object)) return h->handle;
         if (std::dynamic_pointer_cast<NilObject>(v.object)) return c->Nil();
+        if (auto st = std::dynamic_pointer_cast<StemSnapshot>(v.object)) {
+            RexxStemObject stem = c->NewStem(st->name.c_str());
+            if (st->dflt) c->SetStemElement(stem, "", toRexx(c, *st->dflt));
+            for (const auto &t : st->tails) c->SetStemElement(stem, t.first.c_str(), toRexx(c, t.second));
+            return stem;
+        }
         throw std::runtime_error("native object cannot be passed to the hosted interpreter (not implemented)");
     }
     MessageResult sendMessage(const std::string &selector, const std::vector<Value> &args) override {

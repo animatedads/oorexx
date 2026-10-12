@@ -79,6 +79,9 @@
    interpreter session. RX2CPP_HOSTED=0 restores the fail-closed rejection. */
 ::method hostedEnabled
   return value('RX2CPP_HOSTED', , 'ENVIRONMENT') \= '0'
+::method hasHostUnit
+  expose hostUnit
+  return hostUnit \== ''
 ::method markHosted
   expose hostedClasses
   use arg name
