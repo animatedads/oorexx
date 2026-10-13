@@ -974,3 +974,7 @@ inline MessageResult interpreterCall(Variables &vars, const std::string &name, c
 #endif
 }
 #endif
+
+#ifdef RX2CPP_HOST_API
+#include "rx_native_nine.hpp"
+#endif
