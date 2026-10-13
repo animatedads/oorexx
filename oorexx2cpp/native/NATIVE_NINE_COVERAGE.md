@@ -28,7 +28,7 @@ A standalone C++ fast-path smoke built under `g++ -std=c++17 -Wall -Wextra -Werr
 
 ### Important boundaries
 
-1. Native fast paths assume `.String` scalar keys with strict byte equality. Other object keys are promoted to the interpreter; work is required to qualify mixed-key hash/equality, hash order, and case-sensitive comparisons across all collection operations.
+1. Native Supplier NEXT on an exhausted cursor delegates to the interpreter (which raises 93.937), rather than inventing success. Native fast paths assume `.String` scalar keys with strict byte equality. Other object keys are promoted to the interpreter; work is required to qualify mixed-key hash/equality, hash order, and case-sensitive comparisons across all collection operations.
 2. Lazy promotion is one-way; once promoted, all further messages use the original interpreter object. Object identity is retained when passed back to ooRexx. Concurrent native mutation and interpreter reference ownership remain distinct qualification tasks.
 3. `List` APPEND tokens, deletion and re-appending require a dedicated edge-case contract before promoting fast-path REMOVE or INSERT. This increment deliberately does not implement those operations natively.
 4. `Message` START/WAIT/CANCEL/REPLY and DateTime time zones and calendar rules must not be second-guessed by synthetic scheduling/calendar code. Those use the kernel.

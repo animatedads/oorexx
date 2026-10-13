@@ -160,7 +160,10 @@ struct NativeSupplier final : NativeNineBase {
     MessageResult sendMessage(const std::string &s,const std::vector<Value> &a) override {
         if (real) return real->object->sendMessage(s,a);
         if (s=="AVAILABLE" && a.empty()) return nineTruth(position<values.size());
-        if (s=="NEXT" && a.empty()) { if (position<values.size()) ++position; record(s,a); return std::nullopt; }
+        if (s=="NEXT" && a.empty()) {
+            if (position>=values.size()) return common(s,a);  // ooRexx raises 93.937 when exhausted
+            ++position; record(s,a); return std::nullopt;
+        }
         if (s=="ITEM" && a.empty() && position<values.size()) return values[position];
         if (s=="INDEX" && a.empty() && position<indexes.size()) return indexes[position];
         return common(s,a);
