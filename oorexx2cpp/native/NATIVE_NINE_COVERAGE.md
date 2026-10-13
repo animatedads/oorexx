@@ -43,3 +43,9 @@ A standalone C++ fast-path smoke built under `g++ -std=c++17 -Wall -Wextra -Werr
 - `native/check_native_nine_one.sh` and nine independently runnable scripts.
 
 This is an additive development increment, not a claim of full native parity for every method on nine sophisticated ooRexx classes.
+
+## Supplier sparse-array regression (follow-up)
+
+An ooRexx Supplier preserves array SIZE positions, including unpopulated slots, which appear as `.NIL` during iteration. `NativeArray::snapshotItems()` returns only populated entries, so it may **never** supply a Supplier constructor unless the native array is fully populated (`slots.size() == count` and each slot present). Interpreter arrays require `SIZE == ITEMS` and per-position `HASINDEX` confirmation. Sparse inputs are sent to the interpreter unchanged. The Supplier rig now includes a three-slot pair with the middle positions missing on both sides; silently compacting both arrays would previously have produced a plausible but incorrect two-entry native Supplier.
+
+The interpreter oracle was run using ooRexx 5.3.0 r13196 and matches the pinned two-line expected output. The isolated GCC and Clang mock fast-path gate confirms dense inputs use the native Supplier and sparse native arrays bypass the native constructor. Full RX2CPP-generated library qualification remains pending.

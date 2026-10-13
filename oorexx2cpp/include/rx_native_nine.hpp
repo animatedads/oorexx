@@ -227,19 +227,29 @@ struct NativeNineClass final : NativeRefBase {
             if(kind=="SUPPLIER" && a.size()==2) {
                 auto extract=[](const Value &v)->std::optional<std::vector<Value>> {
                     if(!v.isObject()) return std::nullopt;
-                    if(auto *native=dynamic_cast<NativeArray *>(v.object.get())) return native->snapshotItems();
+                    if (auto *native=dynamic_cast<NativeArray *>(v.object.get())) {
+                        // snapshotItems() removes holes; Supplier cursor positions must not shift.
+                        // Only use the native constructor for a wholly populated Array.
+                        if (native->real || native->slots.size()!=native->count) return std::nullopt;
+                        for (const auto &slot:native->slots) if (!slot) return std::nullopt;
+                        return native->snapshotItems();
+                    }
                     // Real interpreter Arrays are queried at the public message boundary.
                     auto cls=v.object->sendMessage("ISA",{envClass("ARRAY")});
                     if(!cls || cls->isObject() || cls->bytes!="1") return std::nullopt;
                     auto size=v.object->sendMessage("ITEMS",{});
-                    if(!size || size->isObject()) return std::nullopt;
+                    auto extent=v.object->sendMessage("SIZE",{});
+                    if(!size || !extent || size->isObject() || extent->isObject() || size->bytes!=extent->bytes)
+                        return std::nullopt; // Sparse interpreter arrays keep holes as .NIL supplier entries.
                     std::size_t n=0;
-                    const std::string str=size->bytes.str();
+                    const std::string str=extent->bytes.str();
                     if(str.empty() || str.size()>7) return std::nullopt;
                     for(char c:str) {if(c<'0'||c>'9') return std::nullopt; n=n*10+static_cast<std::size_t>(c-'0');}
                     if(n>1000000) return std::nullopt;
                     std::vector<Value> out;out.reserve(n);
                     for(std::size_t i=1;i<=n;++i) {
+                        auto present=v.object->sendMessage("HASINDEX",{nineNumber(i)});
+                        if(!present || present->isObject() || present->bytes!="1") return std::nullopt;
                         auto item=v.object->sendMessage("AT",{nineNumber(i)});
                         if(!item) return std::nullopt;
                         out.push_back(*item);
