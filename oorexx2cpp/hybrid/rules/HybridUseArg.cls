@@ -12,21 +12,38 @@
     return
   end
   s~expect('USE'); s~expect('ARG')
-  if ctx~current~seenStatement | ctx~current~parameter \== '' then s~fail('USE ARG may occur only once before statements')
-  if s~peek~kind \= 'IDENT' then s~fail('USE ARG requires one simple variable')
-  name = s~next~text
-  ctx~current~setParameter(name)
-  index = 0
-  self~defaultFor(ctx, name, index)
-  /* Arguments are an array: bind names to positions 1..N, any N. */
-  do while s~accept(',')
+  /* Names and default expressions (USE ARG a, b = expr, c). */
+  names = .array~new
+  defaults = .array~new
+  do forever
     if s~peek~kind \= 'IDENT' then s~fail('USE ARG parameter must be a simple variable')
-    name = s~next~text
-    ctx~current~addParameter(name)
-    index = index + 1
-    self~defaultFor(ctx, name, index)
+    names~append(s~next~text)
+    if s~accept('=') then defaults~append(ctx~compareExpr~parse(ctx))
+    else defaults~append('')
+    if \s~accept(',') then leave
   end
   s~separator
+  hasDefault = .false
+  do d over defaults
+    if d \== '' then hasDefault = .true
+  end
+  /* The common case: bound once on entry, before any statement. */
+  if \hasDefault & \ctx~current~seenStatement & ctx~current~parameter == '' then do
+    ctx~current~setParameter(names[1])
+    do i = 2 to names~items
+      ctx~current~addParameter(names[i])
+    end
+    return
+  end
+  /* Anywhere else, or with defaults: bind where the instruction runs. An omitted argument drops the variable, or
+     assigns its default (evaluated only then). */
+  do i = 1 to names~items
+    position = i - 1
+    present = .RxCompoundSymbols~store(names[i], '*arguments[' || position || ']')
+    if defaults[i] \== '' then absent = .RxCompoundSymbols~store(names[i], defaults[i])
+    else absent = 'rx::drop(vars, ' || .RxQuote~cpp(names[i]) || ');'
+    ctx~current~addInstruction('if (arguments.size() > ' || position || ' && arguments[' || position || ']) { ' || present || ' } else { ' || absent || ' }')
+  end
 /* USE ARG name = expression: the expression is evaluated only when that argument is omitted. */
 ::method defaultFor private
   use arg ctx, name, index
@@ -36,3 +53,4 @@
   ctx~current~addInstruction('if (!(arguments.size() > ' || index || ' && arguments[' || index || '])) ' || .RxCompoundSymbols~store(name, expr))
 ::requires 'rules/StmtUseArg.cls'
 ::requires 'rules/CompoundSymbols.cls'
+::requires 'core/RxQuote.cls'

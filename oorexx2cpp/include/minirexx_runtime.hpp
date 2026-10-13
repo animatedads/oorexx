@@ -136,6 +136,7 @@ using MessageResult = std::optional<Value>;
 // Thrown when an object has no such method (ooRexx error 97.1); any other failure keeps its own type.
 struct NoMethod : std::runtime_error {
     using std::runtime_error::runtime_error;
+    std::shared_ptr<ObjectDispatch> conditionObject;   // the interpreter's condition object, when it raised the error
 };
 struct ObjectDispatch {
     virtual MessageResult sendMessage(const std::string &selector,
@@ -167,6 +168,9 @@ struct ObjectDispatch {
 };
 // ooRexx .NIL is one live singleton object, not a C++ null result.
 // Unimplemented .Object messages must reject rather than approximate.
+// With a host interpreter (library mode) any other .NIL message goes to the interpreter's own .NIL (CLASS, ISNIL, ...).
+using NilMessageFallback = MessageResult (*)(const std::string &, const std::vector<Value> &);
+inline NilMessageFallback &nilMessageFallback() { static NilMessageFallback f = nullptr; return f; }
 struct NilObject final : ObjectDispatch {
     std::string display() const override { return "The NIL object"; }
     MessageResult sendMessage(const std::string &selector,
@@ -175,13 +179,20 @@ struct NilObject final : ObjectDispatch {
         std::transform(canonical.begin(), canonical.end(), canonical.begin(),
                        [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
         if (canonical == "STRING" && args.empty()) return Value::string(display());
+        if (nilMessageFallback()) return nilMessageFallback()(canonical, args);
         return ObjectDispatch::sendMessage(canonical, args);
     }
 };
+// A method or routine that ends without a result (bare RETURN, end of the code, FORWARD to a method that returned
+// nothing) returns noResult(): the flag tells the entry point to hand the interpreter no result, as interpreted
+// (RESULT dropped; an expression using it raises the interpreter's own error). Read and cleared right after the call.
+inline bool &noResultPending() { static thread_local bool pending = false; return pending; }
+inline Value noResult();
 inline Value nil() {
     static const std::shared_ptr<ObjectDispatch> singleton = std::make_shared<NilObject>();
     return Value::fromObject(singleton);
 }
+inline Value noResult() { noResultPending() = true; return Value::string(std::string()); }
 
 /* Small native .ARRAY subset. Index operations use ooRexx message selectors
    [] and []= (value FIRST, index SECOND); no C++ indexing semantics leak in.
@@ -438,7 +449,7 @@ inline Value internalRoutineValue(Variables &vars, RoutineRegistry &registry,
 }
 
 inline std::string trim(std::string s) {
-    auto blank = [](unsigned char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; };
+    auto blank = [](unsigned char c) { return c == ' ' || c == '\t'; };  // the interpreter's whitespace: blank, tab
     std::size_t b = 0, e = s.size();
     while (b < e && blank(static_cast<unsigned char>(s[b]))) ++b;
     while (e > b && blank(static_cast<unsigned char>(s[e - 1]))) --e;
@@ -613,9 +624,12 @@ struct SyntaxCondition : std::runtime_error {
     std::string code;
     bool skipInternalTraps;
     std::vector<Value> substitutions;   // RAISE SYNTAX ... ARRAY/ADDITIONAL values, kept for the interpreter's message
+    std::shared_ptr<ObjectDispatch> conditionObject;   // the interpreter's condition object, when it raised the error
     SyntaxCondition(std::string c, const std::string &text, bool skip)
         : std::runtime_error("Error " + c + ": " + text), code(std::move(c)), skipInternalTraps(skip) {}
 };
+// SIGNAL label in compiled code: leaves every active loop of the activation, as Rexx does.
+struct SignalJump { int target; std::size_t line; };
 struct ProgramExit { int code; };
 // The interpreter's process status for an uncaught SYNTAX error is 256 minus the error number
 // (98 -> 158, 42 -> 214, 93 -> 163).  Runtime errors that carry no "Error N" prefix keep status 2.
@@ -765,7 +779,7 @@ inline Value divide(const Value &a, const Value &b) {
     long double av, bv;
     if (!tryDecimal(a, av) || !tryDecimal(b, bv))
         throw std::runtime_error("division requires numeric operands");
-    if (bv == 0.0L) throw std::runtime_error("division by zero");
+    if (bv == 0.0L) throw SyntaxCondition("42.3", "Arithmetic overflow; divisor must not be zero", false);
     const long double quotient = av / bv;
     if (!std::isfinite(quotient)) throw std::runtime_error("division overflow");
     std::ostringstream out;
@@ -802,7 +816,10 @@ inline Value compare(const Value &a, const std::string &op, const Value &b) {
     else if (tryDecimal(a, ad) && tryDecimal(b, bd))
         rel = (ad > bd) - (ad < bd);
     else {
-        const std::string as = trim(a.bytes), bs = trim(b.bytes);
+        // Non-strict: blanks/tabs stripped, then the shorter string padded with blanks (as the interpreter).
+        std::string as = trim(a.bytes), bs = trim(b.bytes);
+        if (as.size() < bs.size()) as.append(bs.size() - as.size(), ' ');
+        else if (bs.size() < as.size()) bs.append(as.size() - bs.size(), ' ');
         rel = (as > bs) - (as < bs);
     }
     if (op == "=") return fromInteger(rel == 0);
@@ -973,7 +990,7 @@ inline Value wholeDivide9(const Value &lhs, const Value &rhs) {
     constexpr std::int64_t maxDefault = 999999999;
     if (a < -maxDefault || a > maxDefault || b < -maxDefault || b > maxDefault)
         throw std::runtime_error("% outside qualified default NUMERIC DIGITS 9 subset");
-    if (b == 0) throw std::runtime_error("division by zero in %");
+    if (b == 0) throw SyntaxCondition("42.3", "Arithmetic overflow; divisor must not be zero", false);
     return fromInteger(a / b);
 }
 inline Value logicalOr(const Value &lhs, const Value &rhs) {

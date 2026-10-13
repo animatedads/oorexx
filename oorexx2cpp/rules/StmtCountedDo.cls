@@ -7,6 +7,7 @@
   return s~is('DO') & s~lookAheadText(2) == '='
 ::method emit
   use arg ctx, depth
+  .local['RX2CPP.CLAUSEWORDS'] = 'TO BY FOR UNTIL WHILE OVER'   /* keywords of this clause end its expressions */
   s = ctx~stream
   s~expect('DO')
   if s~peek~kind \= 'IDENT' then s~fail('only counted DO variable = start TO end [BY step] supported')

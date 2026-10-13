@@ -7,6 +7,7 @@
   return ctx~stream~is('DO')
 ::method emit
   use arg ctx
+  .local['RX2CPP.CLAUSEWORDS'] = 'TO BY FOR UNTIL WHILE OVER'   /* keywords of this clause end its expressions */
   s = ctx~stream
   s~expect('DO')
   if \s~accept('WHILE') then s~fail('native DO currently supports DO WHILE only')

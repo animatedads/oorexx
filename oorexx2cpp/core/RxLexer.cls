@@ -151,6 +151,15 @@
         self~emit('OP', '~~', markLine, markCol)
       end
       /* Special environment class symbols, initially only .ARRAY. */
+      /* .. and ... (and .._x): environment symbols whose name starts with a dot; an unknown one is its own name. */
+      when c == '.' & self~char(1) == '.' then do
+        self~move
+        value = ''
+        do while self~isSymbolRest(self~char)
+          value = value || self~move
+        end
+        self~emit('DOTIDENT', value~translate, markLine, markCol)
+      end
       when c == '.' & self~isStart(self~char(1)) then do
         self~move
         value = ''

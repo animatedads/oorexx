@@ -11,6 +11,15 @@
 ::attribute seenStatement get
 ::attribute guard get
 ::attribute attributeSetter get
+::attribute labels get          /* label name -> case index (1..n), for SIGNAL and SIGNAL ON ... NAME */
+::attribute trapped get         /* the body has labels or SIGNAL: it runs inside a trap loop */
+::method setTraps
+  expose labels trapped
+  use arg names, trapped
+  labels = .directory~new
+  do i = 1 to names~items
+    if \labels~hasIndex(names[i]) then labels[names[i]] = i
+  end
 ::method markAttributeSetter
   expose attributeSetter
   attributeSetter = .true
@@ -27,7 +36,7 @@
   expose guard
   use arg guard
 ::method init
-  expose selector parameter parameters exposed instructions hasReturn seenStatement guard attributeSetter options isAbstract
+  expose selector parameter parameters exposed instructions hasReturn seenStatement guard attributeSetter options isAbstract labels trapped
   use arg selector
   options = .nil
   isAbstract = .false
@@ -39,6 +48,8 @@
   instructions = .array~new
   hasReturn = .false
   seenStatement = .false
+  labels = .directory~new
+  trapped = .false
 ::method addExpose
   expose exposed seenStatement
   use arg name
@@ -64,30 +75,36 @@
 /* NUMERIC alters activation context but does not prevent a subsequent
    USE ARG in the same routine, as the ooRexx interpreter permits. */
 ::method addNumericInstruction
-  expose instructions hasReturn
+  expose instructions hasReturn trapped
   use arg cpp
-  if hasReturn then raise syntax 40.1 array('rx2cpp: NUMERIC after RETURN')
+  if hasReturn & \trapped then raise syntax 40.1 array('rx2cpp: NUMERIC after RETURN')
   instructions~append(cpp)
 ::method addInstruction
-  expose instructions seenStatement hasReturn
+  expose instructions seenStatement hasReturn trapped
   use arg line
-  if hasReturn then raise syntax 40.1 array('rx2cpp: statement after RETURN is not supported')
+  /* In a trap loop a RETURN ends only its own path: labels and handlers follow it. */
+  if hasReturn & \trapped then raise syntax 40.1 array('rx2cpp: statement after RETURN is not supported')
   instructions~append(line)
   seenStatement = .true
+/* Generated scaffolding (trap loop, SIGL line markers): not a Rexx statement (EXPOSE / USE ARG may still follow). */
+::method addRaw
+  expose instructions
+  use arg line
+  instructions~append(line)
 /* A RETURN inside IF/DO exits at run time only if its branch is taken.
    The enclosing method must still have an unconditional final RETURN in
    the current restricted ABI, so this does not mark hasReturn. */
 ::method branchReturnValue
-  expose instructions seenStatement hasReturn
+  expose instructions seenStatement hasReturn trapped
   use arg expression
-  if hasReturn then raise syntax 40.1 array('rx2cpp: RETURN after terminal RETURN')
+  if hasReturn & \trapped then raise syntax 40.1 array('rx2cpp: RETURN after terminal RETURN')
   instructions~append('{ const rx::Value result = ' || expression || ';')
   instructions~append('return result; }')
   seenStatement = .true
 ::method returnValue
-  expose instructions seenStatement hasReturn
+  expose instructions seenStatement hasReturn trapped
   use arg expression
-  if hasReturn then raise syntax 40.1 array('rx2cpp: duplicate RETURN')
+  if hasReturn & \trapped then raise syntax 40.1 array('rx2cpp: duplicate RETURN')
   instructions~append('const rx::Value result = ' || expression || ';')
   instructions~append('return result;')
   seenStatement = .true

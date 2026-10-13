@@ -356,6 +356,12 @@ inline std::optional<Value> quickBif(const std::string &name, const std::vector<
     }
     return std::nullopt;
 }
+// 256^n by multiplication: GCC 13 reports a false -Warray-bounds inside cpp_int for a shift of cpp_int(1) by 8n bits.
+inline boost::multiprecision::cpp_int byteRange(std::size_t n) {
+    boost::multiprecision::cpp_int r = 1;
+    for (std::size_t i = 0; i < n; ++i) r *= 256;
+    return r;
+}
 // DATATYPE (A L M N U W and the one-argument form), MAX, MIN, ABS under the caller's NUMERIC settings, exactly as the
 // interpreter computes them; anything else (B, X, 9, ..., objects, omitted arguments) returns nullopt for the full route.
 inline std::optional<Value> numericBif(const std::string &name, const std::vector<BifSlot> &a, const ActivationNumeric &num) {
@@ -432,13 +438,13 @@ inline std::optional<Value> numericBif(const std::string &name, const std::vecto
         if (bytes.size() > n) bytes = bytes.substr(bytes.size() - n);
         else bytes.insert(0, n - bytes.size(), '\0');
         cpp_int v = unsignedOf(bytes);
-        if (n && (static_cast<unsigned char>(bytes[0]) & 0x80)) v -= cpp_int(1) << (8 * n);
+        if (n && (static_cast<unsigned char>(bytes[0]) & 0x80)) v -= byteRange(n);
         return v;
     };
     auto bytesOf = [](cpp_int v, std::size_t n, bool fixed) -> std::string {   // big-endian; fixed: n bytes two's complement
         std::string out;
         if (fixed) {
-            if (v < 0) v += cpp_int(1) << (8 * n);
+            if (v < 0) v += byteRange(n);
             for (std::size_t i = 0; i < n; ++i) { out.insert(out.begin(), static_cast<char>(static_cast<unsigned>(v & 0xFF))); v >>= 8; }
             return out;
         }
@@ -500,8 +506,62 @@ inline std::optional<Value> numericBif(const std::string &name, const std::vecto
     }
     return std::nullopt;
 }
+// X2C / X2B / X2D take hex digits, B2X binary digits. The native code handles only the plain form (digits only);
+// blanks between groups, their placement rules and every invalid character are the interpreter's (exact results and
+// error numbers 93.931 / 93.933 / 93.976 ... with their substitutions).
+inline bool plainRadixDigits(const std::string &name, const std::string &s) {
+    if (name == "B2X") return s.find_first_not_of("01") == std::string::npos;
+    return s.find_first_not_of("0123456789abcdefABCDEF") == std::string::npos;
+}
+inline bool radixBifName(const std::string &name) { return name == "X2C" || name == "X2B" || name == "X2D" || name == "B2X"; }
+// BIFs that read or set the caller's own state stay compiled whatever their arguments are.
+inline bool languageStateBif(const std::string &name) {
+    return name == "VALUE" || name == "VAR" || name == "SYMBOL" || name == "TRACE" || name == "ADDRESS" || name == "ARG" ||
+           name == "DIGITS" || name == "FUZZ" || name == "FORM" || name == "CONDITION";
+}
+inline Value dispatchBifNative(BifRuntime& bif, Variables& vars, const std::string& name,
+                               const std::vector<BifSlot>& slots);
+// Built-ins without side effects: when the native implementation refuses a call, the interpreter's own built-in decides
+// (its exact error, or its result where the native subset is narrower).
+inline bool pureBif(const std::string &name) {
+    static const std::unordered_set<std::string> impure{"VALUE","VAR","SYMBOL","TRACE","ADDRESS","ARG","DIGITS","FUZZ","FORM",
+        "CONDITION","LINEIN","LINEOUT","CHARIN","CHAROUT","CHARS","LINES","STREAM","QUEUED","RANDOM","SETLOCAL","ENDLOCAL",
+        "DIRECTORY","FILESPEC","QUALIFY","RXQUEUE","BEEP","USERID","ERRORTEXT","SOURCELINE"};
+    return impure.count(name) == 0;
+}
 inline Value dispatchBif(BifRuntime& bif, Variables& vars, const std::string& name,
                          const std::vector<BifSlot>& slots) {
+#ifdef RX2CPP_HOST_API
+    if (pureBif(name)) {
+        try { return dispatchBifNative(bif, vars, name, slots); }
+        catch (const std::runtime_error &) {
+            auto result = interpreterCall(vars, name, slots);
+            if (!result) throw std::runtime_error("BIF " + name + ": no result");
+            return std::move(*result);
+        }
+    }
+#endif
+    return dispatchBifNative(bif, vars, name, slots);
+}
+inline Value dispatchBifNative(BifRuntime& bif, Variables& vars, const std::string& name,
+                               const std::vector<BifSlot>& slots) {
+#ifdef RX2CPP_HOST_API
+    // An object argument (other than a String, which is a value) goes to the interpreter's own BIF: its ~STRING / ~REQUEST
+    // rules and its errors, exactly.
+    if (!languageStateBif(name)) {
+        for (const auto &slot : slots) {
+            if (!slot || !slot->isObject()) continue;
+            auto result = interpreterCall(vars, name, slots);
+            if (!result) throw std::runtime_error("BIF " + name + ": no result");
+            return std::move(*result);
+        }
+    }
+    if (radixBifName(name) && !slots.empty() && slots[0] && !slots[0]->isObject() && !plainRadixDigits(name, slots[0]->bytes.str())) {
+        auto result = interpreterCall(vars, name, slots);
+        if (!result) throw std::runtime_error("BIF " + name + ": no result");
+        return std::move(*result);
+    }
+#endif
     if(auto quick=quickBif(name,slots)) return std::move(*quick);
     if(auto numeric=numericBif(name,slots,vars.numeric)) return std::move(*numeric);
 #ifdef RX2CPP_HOST_API
@@ -513,6 +573,15 @@ inline Value dispatchBif(BifRuntime& bif, Variables& vars, const std::string& na
         if(name=="TRACE") return Value::string(slots.empty() ? traceSetting() : traceSet(*slots[0]));
         return Value::string(slots.empty() ? addressEnvironment() : addressSet(*slots[0]));
     }
+#ifdef RX2CPP_HOST_API
+    // VALUE(name, [new], selector): ENVIRONMENT, '' (.environment) and every other selector belong to the interpreter
+    // that loaded this library, so its own VALUE runs (same results, same errors); the local pool stays compiled.
+    if(name=="VALUE" && slots.size()>=3 && slots[2]) {
+        auto result=interpreterCall(vars,"VALUE",slots);
+        if(!result) throw std::runtime_error("BIF VALUE: no result");
+        return std::move(*result);
+    }
+#endif
     if(name=="SYMBOL" || name=="VAR" || name=="VALUE") {
         rxbif_variables::VariableRouter router(bif.native,
             [&vars]{return frameNumeric(vars);},
@@ -811,6 +880,7 @@ inline MessageResult hostStringBif(const Value &receiver, const std::string &sel
     std::string name = selector;
     for (char &c : name) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
     auto fallback = [&]() -> MessageResult { return hostStringBifPrevious()(receiver, selector, args); };
+    if (radixBifName(name) && !receiver.isObject() && !plainRadixDigits(name, receiver.bytes.str())) return fallback();
     if (name == "C2D" || name == "D2C" || name == "X2D" || name == "D2X") {
         const ActivationNumeric def0;
         const ActivationNumeric &n0 = currentNumeric ? *currentNumeric : def0;

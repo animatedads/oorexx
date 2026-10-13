@@ -29,3 +29,4 @@
 ::requires 'rules/StmtExit.cls'
 ::requires 'rules/StmtNop.cls'
 ::requires 'rules/StmtAssign.cls'
+::requires 'rules/StmtAddress.cls'

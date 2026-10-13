@@ -56,6 +56,22 @@
   expose declaredName
   if var('DECLAREDNAME') then return declaredName
   return ''
+/* The original source file of this class (PARSE SOURCE in its methods). */
+::method setSourceName
+  expose sourceName
+  use arg sourceName
+::method sourceName
+  expose sourceName
+  if var('SOURCENAME') then return sourceName
+  return ''
+/* ::CLASS ... PUBLIC: visible to packages that require this one; otherwise (PRIVATE, the default) only to its own. */
+::method setPublic
+  expose isPublic
+  use arg isPublic
+::method isPublic
+  expose isPublic
+  if var('ISPUBLIC') then return isPublic
+  return .false
 ::method setParentName
   expose parentName allowInheritance
   use arg name
@@ -69,11 +85,17 @@
   self~ensureInit
 /* The interpreter's default INIT (accepts and ignores its arguments) for a native root class that declares none. */
 ::method ensureInit
-  expose methods
+  expose methods externalParent className
   do method over methods
     if method~selector == 'INIT' then return
   end
-  methods~append(.RxHybridMethod~new('INIT'))
+  init = .RxHybridMethod~new('INIT')
+  /* A class that declares no INIT runs the inherited one with NEW's arguments: with an interpreter parent (ooTestCase,
+     Stream, ...) that is the parent's INIT, reached through this class's super helper (see NativeLibraryEmitter). */
+  if var('EXTERNALPARENT') then if externalParent \== '' then
+    init~addRaw('{ std::vector<rx::Value> _fa; _fa.push_back(rx::Value::string("INIT")); _fa.push_back(rx::argumentArray(arguments)); ' || -
+                '(void)rx2cpp::selfSendValues(' || .RxQuote~cpp('RX2CPP_SUPERA_' || className) || ', _fa); }')
+  methods~append(init)
 ::method setMixinParentName
   expose isMixin
   use arg name
@@ -139,9 +161,27 @@
   if controlDepth <= 0 then self~stream~fail('control stack underflow')
   controlDepth -= 1
 ::method emitStatement
-  expose scopes
+  expose scopes lineOffset
   use arg depth
+  /* SIGL: the line (in the original source file) of the clause running when a condition is trapped. */
+  if self~current~hasMethod('TRAPPED') then if self~current~trapped then do
+    if var('LINEOFFSET') = 0 then lineOffset = 0
+    self~current~addRaw('_rxLine = ' || (self~stream~peek~line + lineOffset) || ';')
+  end
+  /* Each statement starts without clause keywords (a DO body does not inherit its header's TO/BY/...). */
+  saved = .local['RX2CPP.CLAUSEWORDS']
+  .local['RX2CPP.CLAUSEWORDS'] = ''
   scopes~rexxLogic(self, depth)
+  .local['RX2CPP.CLAUSEWORDS'] = saved
+/* Lines of this unit's source are lines of the original file plus this offset (combined packages, class sections). */
+::method setLineOffset
+  expose lineOffset stream
+  use arg lineOffset
+  stream~setLineOffset(lineOffset)
+::method lineOffset
+  expose lineOffset
+  if var('LINEOFFSET') = 0 then return 0
+  return lineOffset
 ::method rexxInstruction
   expose rules
   use arg depth
@@ -282,13 +322,36 @@
     current = .RxHybridMethod~new(methodName)
     current~setOptions(directive[3])
     s~skipSeparators
+    /* Labels or SIGNAL: the body runs in a trap loop. Each label starts a case; SIGNAL label and a trapped condition
+       continue the loop at that case (all active DO loops end, as in Rexx). */
+    bodyLabels = s~methodBodyLabels
+    current~setTraps(bodyLabels, bodyLabels~items > 0 | s~methodBodySignals)
+    if current~trapped then do
+      current~addRaw('rx::MethodTraps _rxTrap; int _rxAt = 0; std::size_t _rxLine = 0; (void)_rxLine;')
+      current~addRaw('for (;;) { try { switch (_rxAt) { case 0: {')
+    end
+    afterLabel = .false
     do while s~peek~kind \= 'EOF' & \s~is('::')
-      if current~hasReturn then s~fail('statement after RETURN')
+      if current~trapped & s~atLabel then do
+        labelName = s~next~text
+        s~expect(':')
+        current~addRaw('} [[fallthrough]]; case ' || current~labels[labelName] || ': {')
+        afterLabel = .true
+        s~skipSeparators
+        iterate
+      end
+      if current~hasReturn & \current~trapped then s~fail('statement after RETURN')
       if current~isAbstract then s~fail('an ABSTRACT method has no body')
       self~emitStatement
       s~skipSeparators
     end
-    if current~selector \= 'INIT' & \current~hasReturn & \current~isAbstract then current~returnValue('rx::Value::string(std::string())')
+    if current~selector \= 'INIT' & \current~hasReturn & \current~isAbstract & \current~trapped then current~returnValue('rx::noResult()')
+    if current~trapped then do
+      current~addRaw('} } break; }')
+      current~addRaw('catch (const rx::SignalJump &_rxJump) { _rxAt = _rxJump.target; rx::set(vars, "SIGL", rx::Value::string(std::to_string(_rxJump.line))); }')
+      current~addRaw('catch (...) { _rxAt = _rxTrap.fire(vars, _rxLine, std::current_exception()); if (_rxAt < 0) throw; } }')
+      if current~selector \= 'INIT' then current~addRaw('return rx::noResult();')
+    end
     if directive[3]~isClass then classMethods~append(current)
     else methods~append(current)
     scopes~endScope

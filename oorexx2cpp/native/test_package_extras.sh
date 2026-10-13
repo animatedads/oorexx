@@ -58,8 +58,13 @@ check_fail 'bad ANNOTATE value' "$class
 ::annotate package PERSON 1 + 2"
 check_fail 'non-OFF TRACE' "::options trace intermediate
 $class"
-check_fail 'REQUIRES without namespace' "$class
-::requires 'native_extras_dependency.cls'"
+# A plain ::REQUIRES of a .cls package is combined into the library (native/combine_package.rex): its classes compile too.
+printf '%s\n' "$class" "::requires 'native_extras_dependency.cls'" > "$OUT/plainreq.cls"
+mkdir -p "$OUT/plainreq"
+"$ROOT/native/build.sh" "$OUT/plainreq.cls" "$OUT/plainreq" rx2cpp_plainreq > "$OUT/plainreq.log" 2>&1 \
+  || { tail -20 "$OUT/plainreq.log"; echo "FAIL: plain REQUIRES rejected" >&2; exit 1; }
+grep -q '^::class EXTERNTHING public' "$OUT/plainreq/rx2cpp_plainreq_declaration.cls" \
+  || { echo "FAIL: plain REQUIRES package not combined into the library" >&2; exit 1; }
 check_fail 'same-line package directive' "$class
 ::annotate package WHO 'a'; ::constant D 1"
 check_fail 'malformed resource option' "$class

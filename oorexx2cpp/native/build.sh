@@ -54,7 +54,15 @@ if grep -qiE "^[[:space:]]*::requires[[:space:]]+['\"][^'\"]+\.cls['\"][[:space:
     (cd "$(dirname -- "$SOURCE")" && "$REXX_BIN" "$ROOT/native/combine_package.rex" "$SOURCE" "$TMP/combined.cls" >/dev/null)
     SOURCE="$TMP/combined.cls"
 fi
-(cd "$ROOT" && "$REXX_BIN" rx2cpp_native_library.rex "$SOURCE" "$TMP/generated" "$PACKAGE")
+# RX2CPP_COMPILER_LIB=dir: generate with rx2cpp compiled by itself (dir/librx2cppc.so, see native/build_self.sh);
+# the driver is rx2cpp_native_library.rex with its compiler packages replaced by that library. Same output, faster.
+if [[ -n "${RX2CPP_COMPILER_LIB:-}" ]]; then
+    [[ -f "$RX2CPP_COMPILER_LIB/librx2cppc.so" ]] || { echo "rx2cpp: no librx2cppc.so in $RX2CPP_COMPILER_LIB" >&2; exit 66; }
+    { sed -e "/^::requires '/d" "$ROOT/rx2cpp_native_library.rex"; echo "::requires 'rx2cppc' library"; } > "$TMP/rx2cpp_driver.rex"
+    (cd "$ROOT" && LD_LIBRARY_PATH="$RX2CPP_COMPILER_LIB:$LD_LIBRARY_PATH" "$REXX_BIN" "$TMP/rx2cpp_driver.rex" "$SOURCE" "$TMP/generated" "$PACKAGE")
+else
+    (cd "$ROOT" && "$REXX_BIN" rx2cpp_native_library.rex "$SOURCE" "$TMP/generated" "$PACKAGE")
+fi
 # Each library keeps its own copy of the runtime's inline variables (hooks, current context, library package): GCC would
 # otherwise make them process-wide (STB_GNU_UNIQUE overrides -Bsymbolic) and two loaded libraries would share them.
 uniqueflag=( )
@@ -98,6 +106,15 @@ mv -f "$TMP/generated_package.cpp" "$OUT/generated_package.cpp"
 # Keep the declaration package (and its rexxc image) next to the library for diagnosis.
 if [[ -f "$TMP/generated_declaration.cls" ]]; then mv -f "$TMP/generated_declaration.cls" "$OUT/${PACKAGE}_declaration.cls"; fi
 if [[ -f "$TMP/generated_declaration.rxc" ]]; then mv -f "$TMP/generated_declaration.rxc" "$OUT/${PACKAGE}_declaration.rxc"; fi
+# The published generated_package.cpp includes the tokenized image: publish it too, so the sources rebuild as they are.
+if [[ -f "$TMP/generated_declaration_image.inc" ]]; then mv -f "$TMP/generated_declaration_image.inc" "$OUT/generated_declaration_image.inc"; fi
 if [[ -f "$TMP/generated_interpreted.cls" ]]; then mv -f "$TMP/generated_interpreted.cls" "$OUT/${PACKAGE}_interpreted.cls"; fi
 mv -f "$TMP/lib${PACKAGE}.so" "$OUT/lib${PACKAGE}.so"
+# <lib>_requires.cls: what an interpreted program requires in place of the original source. Besides loading the library
+# it imports the library's declaration package, so the library's public classes resolve in the requiring program as
+# they would from the source package (before .LOCAL: a public class ERROR, not the .ERROR stream). A bare
+# ::requires 'lib' LIBRARY only reaches them through .ENVIRONMENT.
+upper=$(printf '%s' "$PACKAGE" | tr '[:lower:]' '[:upper:]')
+printf "/* rx2cpp: require this file instead of the original source of native library %s. */\npkg = .environment['RX2CPP.PACKAGE.%s']\nif pkg \\\\== .nil then .context~package~addPackage(pkg)\n::requires '%s' library\n" \
+    "$PACKAGE" "$upper" "$PACKAGE" > "$OUT/${PACKAGE}_requires.cls"
 printf 'Built native ooRexx library: %s\n' "$OUT/lib${PACKAGE}.so"

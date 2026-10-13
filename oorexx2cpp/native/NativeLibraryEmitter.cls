@@ -42,7 +42,7 @@
   do unit over units
     name = unit~className
     classSide = unit~isClassSide
-    self~identifier(name, 'class')
+    self~identifier(.RxQuote~identifier(name), 'class')
     countClasses += 1
     slotIndex += 1
     isRoot = unit~parentName == ''
@@ -50,7 +50,7 @@
     else rootName = rootOf[unit~parentName]
     rootOf[name] = rootName
     if \classSide then classes = classes || '    ' || .RxQuote~cpp(name) || ',' || '0a'x
-    factories = factories || '    if (className == ' || .RxQuote~cpp(name) || ') return makeGeneratedObject_' || name || '();' || '0a'x
+    factories = factories || '    if (className == ' || .RxQuote~cpp(name) || ') return makeGeneratedObject_' || .RxQuote~identifier(name) || '();' || '0a'x
     if \classSide then do
       resolved = .directory~new
       if unit~parentName \== '' then do
@@ -68,7 +68,10 @@
       newOk[name] = ok
       declared = name
       if unit~hasMethod('DECLAREDNAME') then if unit~declaredName \== '' then declared = '"' || unit~declaredName || '"'
-      source = source || '::class ' || declared || ' public'
+      /* Visibility as written: a class without PUBLIC is private to this package, as interpreted. */
+      source = source || '::class ' || declared
+      if \unit~hasMethod('ISPUBLIC') then source = source || ' public'
+      else if unit~isPublic then source = source || ' public'
       if unit~isMixin then source = source || ' mixinclass ' || unit~parentName
       else if \isRoot then source = source || ' subclass ' || unit~parentName
       else if unit~externalParent \== '' then source = source || ' subclass ' || unit~externalParent
@@ -82,25 +85,30 @@
     end
     countInit = 0
     /* SELF~selector:SUPER(...) from compiled code: the interpreter performs the super dispatch (start scope = the parent of
-       this class) through this helper; its first argument is the selector, the rest are the call's arguments (omitted ones stay omitted). */
+       this class) through this helper, named after the class (RX2CPP_SUPER_<class>) so that a subclass's helper never
+       shadows it (one shared name sent to a subclass instance would restart at the subclass's parent: endless recursion); its first argument is the selector, the rest are the call's arguments (omitted ones stay omitted). */
     /* Class side: FORWARD CLASS (SUPER) / ~m:super from a class method. The helper lives in the same class scope, so its
        own FORWARD CLASS (SUPER) starts exactly where the compiled method's would. */
     if classSide then do
-      source = source || '::method RX2CPP_SUPERA class' || '0a'x
+      /* Class methods are compiled under the class's own name (X, not X__CLASS); a class method never meets an
+         instance method of the same name, so the class-side helper is RX2CPP_SUPERA_X ... CLASS. */
+      helperName = name
+      if helperName~right(7) == '__CLASS' then helperName = helperName~left(helperName~length - 7)
+      source = source || '::method RX2CPP_SUPERA_' || helperName || ' class' || '0a'x
       source = source || '  use arg selector, args' || '0a'x
       source = source || '  forward message (selector) arguments (args) class (super)' || '0a'x
-      source = source || '::method RX2CPP_SUPER class' || '0a'x
+      source = source || '::method RX2CPP_SUPER_' || helperName || ' class' || '0a'x
       source = source || '  use arg selector' || '0a'x
       source = source || '  forward message (selector) arguments (arg(1, "A")~section(2)) class (super)' || '0a'x
     end
     if \classSide & (unit~parentName \== '' | unit~externalParent \== '') then do
-      source = source || '::method RX2CPP_SUPER' || '0a'x
+      source = source || '::method RX2CPP_SUPER_' || name || '0a'x
       source = source || '  use arg selector' || '0a'x
       source = source || '  args = arg(1, "A")~section(2)' || '0a'x
       source = source || '  msg = .Message~new(self, .array~of(selector, .' || name || '~superClass), "A", args)' || '0a'x
       source = source || '  msg~send' || '0a'x
       source = source || '  if msg~hasResult then return msg~result' || '0a'x
-      source = source || '::method RX2CPP_SUPERA' || '0a'x
+      source = source || '::method RX2CPP_SUPERA_' || name || '0a'x
       source = source || '  use arg selector, args' || '0a'x
       source = source || '  msg = .Message~new(self, .array~of(selector, .' || name || '~superClass), "A", args)' || '0a'x
       source = source || '  msg~send' || '0a'x
@@ -124,7 +132,7 @@
         self~identifier(selectorBase, 'method selector')
         selectorSymbol = selectorBase~lower
       end
-      if selector == 'RX2CPP_NATIVE_TOKEN' | selector == 'COPY' then
+      if selector == 'RX2CPP_NATIVE_TOKEN' then
         raise syntax 40.1 array('rx2cpp: reserved native method ' || selector)
       if \classSide then do
         key = selector~upper
@@ -146,7 +154,7 @@
         iterate
       end
       if selector == 'INIT' then countInit += 1
-      symbol = 'rx_native_' || name~lower || '_' || selectorSymbol
+      symbol = 'rx_native_' || .RxQuote~identifier(name~lower) || '_' || selectorSymbol
       if isSetter then symbol = symbol || '_set'
       cpp = cpp || 'RexxMethod2(RexxObjectPtr, ' || symbol || ', OSELF, self, ARGLIST, args)' || '0a'x
       cpp = cpp || '{ return rx2cpp::call(context, args, self, ' || .RxQuote~cpp(name) || ', ' || .RxQuote~cpp(selector) || ', ' || ,
@@ -186,7 +194,13 @@
         source = source || '::method RX2CPP_NATIVE_RELEASE external "LIBRARY ' || packageName || ' rx_native_uninit"' || '0a'x
       end
       else source = source || '::method UNINIT external "LIBRARY ' || packageName || ' rx_native_uninit"' || '0a'x
-      source = source || '::method COPY external "LIBRARY ' || packageName || ' rx_native_copy_reject"' || '0a'x
+      /* Object's COPY would share the native state: rejected, unless the class defines its own COPY (an ordinary
+         method that builds the copy itself). */
+      ownCopy = .false
+      do m over unit~methods
+        if m~selector == 'COPY' then ownCopy = .true
+      end
+      if \ownCopy then source = source || '::method COPY external "LIBRARY ' || packageName || ' rx_native_copy_reject"' || '0a'x
     end
     else if countInit > 1 then raise syntax 40.1 array('rx2cpp: class ' || name || ' declares more than one INIT')
   end
@@ -267,6 +281,22 @@
   output = output~changeStr('%FACTORY_DISPATCH%', factories)
   output = output~changeStr('%INTERNAL_NAME%', .RxQuote~cpp('rx2cpp-generated-' || packageName))
   output = output~changeStr('%PACKAGE_NAME%', .RxQuote~cpp(packageName))
+  /* ::REQUIRES 'x' LIBRARY lines of the declaration: when x is another rx2cpp library, its declaration package is
+     imported at load time, so its public classes resolve before .LOCAL / .ENVIRONMENT (as for a required package). */
+  required = ''
+  extraLines = .array~new
+  if arg(5, 'E') then extraLines = extras~makeArray('0a'x)
+  do line over extraLines
+    parse var line directive rest
+    if translate(directive) \== '::REQUIRES' then iterate
+    rest = rest~strip~strip('T', ';')~strip
+    if translate(rest~word(rest~words)) \== 'LIBRARY' then iterate
+    libName = rest~subWord(1, rest~words - 1)~strip
+    q = libName~left(1)
+    if (q == "'" | q == '"') & libName~right(1) == q then libName = libName~substr(2, libName~length - 2)
+    if libName \== '' then required = required || .RxQuote~cpp(libName) || ', '
+  end
+  output = output~changeStr('%REQUIRED_LIBRARIES%', required)
   return output
 /* interpreted_form tokenized: the declaration package is embedded as source between markers and written to
    <prefix>_declaration.cls. native/build.sh then builds the library, runs rexxc on that file (rexxc resolves the

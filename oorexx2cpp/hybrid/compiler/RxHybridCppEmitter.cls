@@ -5,7 +5,7 @@
 ::method emit
   use arg unit, legacyFactory, options
   if arg(2, 'O') then legacyFactory = .true
-  suffix = unit~className
+  suffix = .RxQuote~identifier(unit~className)   /* C++ name; any string is a Rexx class id */
   lines = .array~new
   lines~append('// rx2cpp ooRexx class compiler output: ARGLIST ABI (any number of arguments)')
   lines~append('#include "generated.hpp"')

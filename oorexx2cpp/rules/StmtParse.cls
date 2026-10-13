@@ -9,6 +9,7 @@
   return ctx~stream~is('PARSE') | (ctx~stream~is('ARG') & ctx~stream~lookAheadText(1) \== '=')
 ::method emit
   use arg ctx, depth
+  .local['RX2CPP.CLAUSEWORDS'] = 'WITH'   /* keywords of this clause end its expressions */
   s = ctx~stream
   bare = s~is('ARG')
   if bare then do

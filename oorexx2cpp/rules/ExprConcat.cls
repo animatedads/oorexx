@@ -36,7 +36,11 @@
   select
     when t~kind == 'STRING' | t~kind == 'NUMBER' | t~kind == 'INT' | t~kind == 'DOTIDENT' then return .true
     when t~kind == 'IDENT' then do
-      if wordpos(t~text, 'THEN TO BY FOR UNTIL WHILE OVER WITH ELSE END DO WHEN OTHERWISE IF NAME ARRAY ADDITIONAL DESCRIPTION RETURN EXIT') = 0 then return .true
+      /* Clause keywords end a term: the structural ones always, others only inside the clause that has them (a DO
+         header's TO/BY/FOR/WHILE/UNTIL/OVER, PARSE VALUE's WITH, RAISE's options); elsewhere they are variables. */
+      clauseWords = .local['RX2CPP.CLAUSEWORDS']
+      if clauseWords == .nil then clauseWords = ''
+      if wordpos(t~text, 'THEN ELSE END DO WHEN OTHERWISE IF' clauseWords) = 0 then return .true
       /* A sub-keyword abutted to the previous term ('x['name) is a symbol in abuttal, not a keyword. */
       prev = s~previous
       return t~line == prev~endLine & t~col == prev~endCol

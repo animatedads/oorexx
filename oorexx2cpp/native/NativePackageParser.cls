@@ -11,6 +11,7 @@
 ::attribute interpretedSource get
 ::attribute interpretedMethods get
 ::attribute interpretedPublic get
+::attribute inputName
 ::method parse
   expose options prolog interpretedSource interpretedMethods interpretedPublic
   use arg source, table = (.RxNativeInterpretedTable~new)
@@ -152,14 +153,30 @@
       end
       interpretedMethods[classEntry~name] = text
     end
-    unit = .RxHybridCompiler~new(section, .true)~parse
+    /* SIGL is a line of the original file: a combined package marks where each file starts. */
+    markerLine = 0
+    do m = start - 1 to 1 by -1
+      if lines[m]~left(25) == '/* ---- rx2cpp combined: ' then do
+        markerLine = m
+        leave
+      end
+    end
+    unit = .RxHybridCompiler~new(section, .true)
+    unit~setLineOffset(start - 1 - markerLine)
+    /* PARSE SOURCE names the class's original file: the combine marker's path, else the compiled file itself. */
+    if markerLine > 0 then parse value lines[markerLine] with '/* ---- rx2cpp combined: ' sourcePath ' ----'
+    else sourcePath = self~inputName
+    unit~setSourceName(sourcePath)
+    unit = unit~parse
     name = unit~className
+    if value('RX2CPP_PROGRESS', , 'ENVIRONMENT') == '1' then
+      .error~lineout('rx2cpp: progress' time('E')~format(, 1)'s parsed class' name '(lines' start'..'finish')')
     if names~hasIndex(name) then self~reject(start, 'duplicate class ' || name)
     /* A superclass must already exist in this same native package.
        Requiring parent-first order makes the class scope graph unambiguous. */
     if unit~parentName \== '' then do
       /* An interpreter class (STREAM, ARRAY, ...) is allowed as the parent of a native root class. */
-      if \names~hasIndex(unit~parentName) & wordpos(unit~parentName~upper, 'STREAM ARRAY LIST QUEUE DIRECTORY STEM SET BAG TABLE RELATION IDENTITYTABLE MUTABLEBUFFER STRING OBJECT') > 0 then
+      if \names~hasIndex(unit~parentName) & self~interpreterClass(unit~parentName) then
         unit~useExternalParent
       else if \names~hasIndex(unit~parentName) then
         self~reject(start, 'unknown or forward parent ' || unit~parentName)
@@ -175,6 +192,10 @@
   end
   table~checkUnused
   return units
+/* The package ::REQUIREs other packages or libraries: a parent that is not defined here may come from them. */
+::method setRequiredElsewhere
+  expose requiredElsewhere
+  use arg requiredElsewhere
 ::method directiveAt private
   use arg directives, lineNo, kind
   do entry over directives
@@ -238,6 +259,15 @@
     end
   end
   return moved
+/* A class the interpreter itself provides (.Stream, .Directory, .Comparator, ...): allowed as the parent of a native root. */
+::method interpreterClass private
+  expose requiredElsewhere
+  use arg name
+  /* A class of a package or library this one ::REQUIREs is resolved by the interpreter when the library loads. */
+  if var('REQUIREDELSEWHERE') then if requiredElsewhere then return .true
+  candidate = .environment[name~upper]
+  if candidate == .nil then return .false
+  return candidate~isA(.Class)
 ::method reject private
   use arg lineNo, reason
   raise syntax 40.1 array('rx2cpp: native package line ' || lineNo || ': ' || reason)

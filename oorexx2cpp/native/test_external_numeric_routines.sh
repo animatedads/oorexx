@@ -18,9 +18,9 @@ OO_ROOT="$OO_ROOT" REXX_BIN="$REXX_BIN" CXX="$CXX" \
 cmp "$OUT/oracle.out" "$OUT/native.out"
 # PRIVATE and implicit-private EXTERNAL declarations must remain interpreted
 # package declarations, not C++ native routine exports.
-grep -Fq '::routine RX_MATH_SIN EXTERNAL ' "$OUT/generated_package.cpp"
-grep -Fq '::routine RX_MATH_SECRET PRIVATE EXTERNAL ' "$OUT/generated_package.cpp"
-! grep -q 'REXX_TYPED_ROUTINE(RX_MATH_SIN,' "$OUT/generated_package.cpp"
+grep -Fq '::routine RX_MATH_SIN EXTERNAL ' "$OUT/${PKG}_declaration.cls"
+grep -Fq '::routine RX_MATH_SECRET PRIVATE EXTERNAL ' "$OUT/${PKG}_declaration.cls"
+if grep -q 'REXX_TYPED_ROUTINE(RX_MATH_SIN,' "$OUT/generated_package.cpp"; then echo "FAIL unexpected match: grep -q 'REXX_TYPED_ROUTINE(RX_MATH_SIN,' '$OUT/generated_package.cpp'" >&2; exit 1; fi
 echo "PASS $CXX high-precision NUMERIC + interpreter-owned EXTERNAL routine package"
 # Interpreter package metadata/handle probe is generated only in a test build.
 mkdir -p "$OUT/probe"

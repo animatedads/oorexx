@@ -172,7 +172,11 @@
 ::method statement
   expose scopes
   use arg depth
+  /* Each statement starts without clause keywords (a DO body does not inherit its header's TO/BY/...). */
+  saved = .local['RX2CPP.CLAUSEWORDS']
+  .local['RX2CPP.CLAUSEWORDS'] = ''
   scopes~rexxLogic(self, depth)
+  .local['RX2CPP.CLAUSEWORDS'] = saved
 ::method rexxInstruction
   expose registry
   use arg depth

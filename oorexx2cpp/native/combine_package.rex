@@ -34,9 +34,13 @@ visit: procedure
   kept = ''
   do line over lines
     parse var line lead rest
-    if translate(lead) == '::REQUIRES' & pos('LIBRARY', translate(rest)) = 0 then do
-      parse var rest q 2 name (q) .
-      if q \== '"' & q \== "'" then parse var rest name .
+    /* LIBRARY is the word after the package name, not a substring of it (NativeLibraryEmitter.cls is a file). */
+    after = ''
+    if translate(lead) == '::REQUIRES' then do
+      parse var rest q 2 name (q) after
+      if q \== '"' & q \== "'" then parse var rest name after
+    end
+    if translate(lead) == '::REQUIRES' & wordpos('LIBRARY', translate(after~translate(' ', ';'))) = 0 then do
       /* RX2CPP_LIBMAP="Compress.cls=compresslib ...": a dependency already built as a native library is required as one. */
       mapped = ''
       do pair over value('RX2CPP_LIBMAP', , 'ENVIRONMENT')~makeArray(' ')

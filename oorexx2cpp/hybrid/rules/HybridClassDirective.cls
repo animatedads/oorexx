@@ -12,21 +12,28 @@
   if s~peek~kind == 'STRING' then do
     declared = s~next~text
     name = declared~upper
-    if verify(name, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_!?') > 0 | name == '' then s~fail('quoted class name must be a symbol: ' || declared)
-    if declared \== name then ctx~setDeclaredName(declared)
+    /* Any string is a class id in ooRexx; C++ names are mangled (.RxQuote~identifier), the Rexx name is kept. */
+    if name == '' then s~fail('empty quoted class name')
+    /* Keep the quoted spelling when it differs from the upper-case name or is not a plain symbol ("A.B"). */
+    if declared \== name | verify(name, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_!?') > 0 then ctx~setDeclaredName(declared)
   end
   else do
     if s~peek~kind \= 'IDENT' then s~fail('expected class identifier')
     name = s~next~text
   end
   publicSeen = .false
+  privateSeen = .false
   parentSeen = .false
   inheritSeen = .false
   do while s~peek~kind \= 'SEP' & s~peek~kind \= 'EOF'
     select
       when s~accept('PUBLIC') then do
-        if publicSeen then s~fail('duplicate PUBLIC option')
+        if publicSeen | privateSeen then s~fail('duplicate PUBLIC/PRIVATE option')
         publicSeen = .true
+      end
+      when s~accept('PRIVATE') then do
+        if publicSeen | privateSeen then s~fail('duplicate PUBLIC/PRIVATE option')
+        privateSeen = .true
       end
       when s~accept('SUBCLASS') then do
         if parentSeen then s~fail('duplicate parent option')
@@ -56,4 +63,5 @@
     if inheritSeen then leave
   end
   s~separator
+  if ctx~hasMethod('SETPUBLIC') then ctx~setPublic(publicSeen)
   return name

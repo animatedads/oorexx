@@ -13,9 +13,11 @@ do i = 1 to codes~items
   counts += 1
 end
 x = .FakeSelection~new
-r = x~find(.nil)
+r = x~find(.TestContext~new('NOP'))
 if r~name \== 'first' then raise syntax 40.1 array('rule precedence')
-if x~find('absent') \== .nil then raise syntax 40.1 array('rule fallback')
+if x~find(.TestContext~new('SAY 1')) \== .nil then raise syntax 40.1 array('rule fallback')
+/* A clause whose second token is '=' is an assignment: the last (assignment) rule, whatever the first word. */
+if x~find(.TestContext~new('NOP = 1'))~name \== 'second' then raise syntax 40.1 array('assignment precedence')
 say 'PASS' counts 'NUMERIC clauses x 2 backends + ordered shared resolver'
 exit 0
 ::class TestContext
@@ -55,7 +57,7 @@ exit 0
   use arg name, flag
 ::method accepts
   use arg context
-  return context == .nil
+  return context~stream~is('NOP')
 ::requires 'rules/StmtNumeric.cls'
 ::requires 'hybrid/rules/HybridNumeric.cls'
 ::requires 'core/RxRexxRuleSelection.cls'

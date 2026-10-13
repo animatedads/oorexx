@@ -25,8 +25,10 @@ inline bool send(void *t, const std::string &s, const std::vector<Arg> &a, Resul
 #else
 #include <oorexxapi.h>
 #include <mutex>
+#include <typeinfo>
 #include <cstdlib>
 #include <map>
+namespace rx { inline std::shared_ptr<ObjectDispatch> takeKeptCondition(); }
 namespace rxobj {
 struct Arg { void *obj = nullptr; std::string bytes; bool omitted = false; };
 struct Result { int kind = 0; std::string bytes; void *obj = nullptr; };
@@ -83,6 +85,25 @@ inline void *environmentObject(const std::string &name) {
 }
 // The package that declares a native library's classes (set by its loader): .CONTEXT~PACKAGE, package-local symbols.
 inline RexxObjectPtr &libraryPackage() { static RexxObjectPtr p = NULLOBJECT; return p; }
+// An interpreter routine for compiled code to run: created in the library's declaration package when there is one, so
+// it resolves names as the compiled code's own package would (public routines and classes of its ::REQUIRES, e.g. PP of
+// ooTest.frm); otherwise a routine of its own.
+inline RexxRoutineObject packageRoutine(RexxThreadContext *t, const char *name, const std::string &source) {
+    if (libraryPackage() == NULLOBJECT) return t->NewRoutine(name, source.c_str(), source.size());
+    RexxObjectPtr routineClass = (RexxObjectPtr)t->FindClass("ROUTINE");
+    RexxArrayObject lines = t->NewArray(0);
+    std::size_t from = 0;
+    while (from <= source.size()) {
+        std::size_t nl = source.find('\n', from);
+        if (nl == std::string::npos) nl = source.size();
+        t->ArrayAppend(lines, (RexxObjectPtr)t->NewString(source.data() + from, nl - from));
+        from = nl + 1;
+    }
+    RexxArrayObject args = t->ArrayOfThree((RexxObjectPtr)t->String(name), (RexxObjectPtr)lines, libraryPackage());
+    RexxObjectPtr r = t->SendMessage(routineClass, "NEW", args);
+    if (t->CheckCondition()) { t->ClearCondition(); return NULLOBJECT; }
+    return (RexxRoutineObject)r;
+}
 // An environment symbol that is not a class: the package's LOCAL directory, then .local, then .environment.
 inline void *environmentEntry(const std::string &name) {
     RexxThreadContext *t = need();
@@ -129,6 +150,14 @@ inline bool isPlainString(RexxThreadContext *t, RexxObjectPtr o) {
 // The substitution values (ADDITIONAL) of the last interpreter condition a send turned into a C++ exception, so the
 // condition can be raised again unchanged when it leaves compiled code.
 inline std::vector<std::string> &lastAdditional() { static thread_local std::vector<std::string> v; return v; }
+// The interpreter's condition object (a global reference) of the last condition the bridge cleared to throw it in C++;
+// the thrower attaches it to the exception (takeKeptCondition), so a compiled SIGNAL ON trap sees the real object.
+inline void *&keptCondition() { static thread_local void *h = nullptr; return h; }
+inline void keepCondition(RexxThreadContext *t) {
+    if (keptCondition()) { t->ReleaseGlobalReference((RexxObjectPtr)keptCondition()); keptCondition() = nullptr; }
+    RexxDirectoryObject info = t->GetConditionInfo();
+    if (info != NULLOBJECT) keptCondition() = (void *)t->RequestGlobalReference((RexxObjectPtr)info);
+}
 inline void captureAdditional(RexxThreadContext *t, RexxDirectoryObject info) {
     lastAdditional().clear();
     if (info == NULLOBJECT) return;
@@ -137,7 +166,11 @@ inline void captureAdditional(RexxThreadContext *t, RexxDirectoryObject info) {
     const size_t n = t->ArraySize((RexxArrayObject)add);
     for (size_t i = 1; i <= n; ++i) {
         RexxObjectPtr o = t->ArrayAt((RexxArrayObject)add, i);
-        lastAdditional().push_back(o == NULLOBJECT ? std::string() : std::string(t->ObjectToStringValue(o)));
+        if (o == NULLOBJECT) { lastAdditional().push_back(std::string()); continue; }
+        // An explicit ~STRING: the API's implicit conversion would raise NOSTRING when the caller traps ANY.
+        RexxObjectPtr s = t->IsString(o) ? o : t->SendMessage0(o, "STRING");
+        if (t->CheckCondition()) { t->ClearCondition(); s = NULLOBJECT; }
+        lastAdditional().push_back(s == NULLOBJECT || !t->IsString(s) ? std::string() : std::string(t->ObjectToStringValue(s)));
     }
 }
 // A new interpreter Array of `size` slots holding `items` (items[i] at index i+1; an omitted Arg leaves a hole).
@@ -162,6 +195,47 @@ inline void directoryPutAll(void *dir, const std::vector<std::string> &keys, con
         if (keys[i].find('\0') == std::string::npos) t->DirectoryPut((RexxDirectoryObject)dir, value, keys[i].c_str());
         else temps(t->SendMessage2((RexxObjectPtr)dir, "[]=", value, temps((RexxObjectPtr)t->NewString(keys[i].data(), keys[i].size()))));
     }
+}
+// The interpreter's condition object for SYNTAX `code` with these substitutions, made by the interpreter itself (a tiny
+// routine that RAISEs it under SIGNAL ON SYNTAX): CODE, RC, MESSAGE, ERRORTEXT, ADDITIONAL, DESCRIPTION are exact.
+inline void *conditionObject(const std::string &code, const std::vector<Arg> &subs) {
+    RexxThreadContext *t = need();
+    static thread_local RexxObjectPtr routine = NULLOBJECT;
+    if (routine == NULLOBJECT) {
+        static const char source[] =
+            "use arg code, subs\n"
+            "signal on syntax\n"
+            "if subs~items = 0 then raise syntax (code)\n"
+            "raise syntax (code) additional (subs)\n"
+            "syntax: return condition('O')\n";
+        RexxRoutineObject made = t->NewRoutine("rx2cpp_condition", source, sizeof(source) - 1);
+        if (made == NULLOBJECT || t->CheckCondition()) { t->ClearCondition(); throw std::runtime_error("cannot build a condition object"); }
+        routine = t->RequestGlobalReference((RexxObjectPtr)made);
+    }
+    LocalRefs temps(t);
+    RexxArrayObject array = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(subs.size()));
+    for (std::size_t i = 0; i < subs.size(); i++)
+        t->ArrayPut(array, subs[i].obj ? (RexxObjectPtr)subs[i].obj : temps((RexxObjectPtr)t->NewString(subs[i].bytes.data(), subs[i].bytes.size())), i + 1);
+    RexxArrayObject args = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(2));
+    t->ArrayPut(args, temps((RexxObjectPtr)t->NewString(code.data(), code.size())), 1);
+    t->ArrayPut(args, (RexxObjectPtr)array, 2);
+    RexxObjectPtr r = temps(t->CallRoutine((RexxRoutineObject)routine, args));
+    if (t->CheckCondition() || r == NULLOBJECT) { t->ClearCondition(); throw std::runtime_error("cannot build a condition object for " + code); }
+    return (void *)t->RequestGlobalReference(r);
+}
+// PARSE VERSION of the interpreter running this library (asked once).
+inline std::string interpreterVersion() {
+    static std::string version;
+    static std::once_flag once;
+    std::call_once(once, [] {
+        RexxThreadContext *t = need();
+        static const char source[] = "parse version v\nreturn v\n";
+        RexxRoutineObject r = t->NewRoutine("rx2cpp_version", source, sizeof(source) - 1);
+        RexxObjectPtr v = r == NULLOBJECT ? NULLOBJECT : t->CallRoutine(r, t->NewArray(0));
+        if (t->CheckCondition() || v == NULLOBJECT) { t->ClearCondition(); throw std::runtime_error("cannot read PARSE VERSION"); }
+        version = t->ObjectToStringValue(v);
+    });
+    return version;
 }
 inline void bifStat(const std::string &name);
 inline bool send(void *target, const std::string &selector, const std::vector<Arg> &args, Result &out,
@@ -205,8 +279,9 @@ inline bool send(void *target, const std::string &selector, const std::vector<Ar
         RexxCondition cd; t->DecodeConditionInfo(info, &cd);
         code = std::to_string(cd.code / 1000) + "." + std::to_string(cd.code % 1000);
         text = cd.message ? t->ObjectToStringValue(cd.message) : "error in message " + selector;
-        captureAdditional(t, info);
+        keepCondition(t);          // the condition object itself, before anything else runs in the interpreter
         t->ClearCondition();
+        captureAdditional(t, info);   // sends ~STRING: only with no condition pending
         return false;
     }
     if (r == NULLOBJECT) { out.kind = 0; return true; }
@@ -261,6 +336,7 @@ inline bool sendStringNumeric(const std::string &receiver, const std::string &se
         RexxCondition cd; t->DecodeConditionInfo(t->GetConditionInfo(), &cd);
         code = std::to_string(cd.code / 1000) + "." + std::to_string(cd.code % 1000);
         text = cd.message ? t->ObjectToStringValue(cd.message) : "error in message " + selector;
+        keepCondition(t);
         t->ClearCondition();
         return false;
     }
@@ -303,8 +379,14 @@ inline std::string callBif(const std::string &name, const std::vector<std::pair<
         RexxCondition cd; t->DecodeConditionInfo(t->GetConditionInfo(), &cd);
         std::string code = std::to_string(cd.code / 1000) + "." + std::to_string(cd.code % 1000);
         std::string text = cd.message ? t->ObjectToStringValue(cd.message) : "error in " + name;
+        RexxDirectoryObject info = t->GetConditionInfo();
+        keepCondition(t);
         t->ClearCondition();
-        throw rx::SyntaxCondition(code, text, false);
+        captureAdditional(t, info);   // the message substitutions, no condition pending
+        rx::SyntaxCondition raised(code, text, false);
+        for (const std::string &a : lastAdditional()) raised.substitutions.push_back(rx::Value::string(a));
+        raised.conditionObject = rx::takeKeptCondition();
+        throw raised;
     }
     if (r == NULLOBJECT) return std::string();
     RexxStringObject str = (RexxStringObject)temps((RexxObjectPtr)t->ObjectToString(r));
@@ -336,6 +418,31 @@ struct EnvObject final : ObjectDispatch {
         if (r.kind == 2) return adopt(r.obj);
         return Value::string(r.bytes);
     }
+    // A compiled stem object crosses once: it becomes an interpreter stem holding its contents, and the compiled object
+    // forwards to that stem from then on (both sides share one stem), as in the hosted tier.
+    static void *stemHandle(StemObject &st) {
+        std::lock_guard<std::mutex> g(st.lock);
+        if (st.remote) {
+            if (auto *e = dynamic_cast<EnvObject *>(st.remote.get())) return e->handle;
+            throw std::runtime_error("stem object is bound to a non-interpreter object");
+        }
+        RexxThreadContext *t = rxobj::need();
+        rxobj::LocalRefs temps(t);
+        RexxStemObject stem = t->NewStem(st.name.c_str());
+        void *h = (void *)t->RequestGlobalReference((RexxObjectPtr)stem);
+        auto one = [&](const Value &v) -> RexxObjectPtr {
+            std::vector<rxobj::Arg> c; convert({v}, c);
+            return c[0].obj ? (RexxObjectPtr)c[0].obj : temps((RexxObjectPtr)t->NewString(c[0].bytes.data(), c[0].bytes.size()));
+        };
+        if (st.dflt) {
+            t->SendMessage1((RexxObjectPtr)stem, "[]=", one(*st.dflt));
+            if (t->CheckCondition()) { t->ClearCondition(); throw std::runtime_error("cannot set the stem default"); }
+        }
+        for (const auto &e : st.tails) t->SetStemElement(stem, e.first.c_str(), one(e.second));
+        st.tails.clear(); st.dflt.reset();
+        st.remote = std::make_shared<EnvObject>(h);
+        return h;
+    }
     static void convert(const std::vector<Value> &args, std::vector<rxobj::Arg> &out) {
         for (const Value &v : args) {
             rxobj::Arg a;
@@ -348,12 +455,18 @@ struct EnvObject final : ObjectDispatch {
                     continue;
                 }
                 if (!k) {
+                    if (auto *st = dynamic_cast<StemObject *>(v.object.get())) {
+                        a.obj = stemHandle(*st);
+                        out.push_back(std::move(a));
+                        continue;
+                    }
                     if (auto *n = dynamic_cast<NativeRefBase *>(v.object.get())) {
                         a.obj = n->materialize();
                         out.push_back(std::move(a));
                         continue;
                     }
-                    throw std::runtime_error("only interpreter objects can be passed to interpreter messages");
+                    throw std::runtime_error(std::string("only interpreter objects can be passed to interpreter messages (") +
+                                             typeid(*v.object).name() + ")");
                 }
                 if (k->handle == nullptr) a.omitted = true;   // rx::omittedArgument()
                 else a.obj = k->handle;
@@ -365,9 +478,10 @@ struct EnvObject final : ObjectDispatch {
         std::vector<rxobj::Arg> in; convert(args, in);
         rxobj::Result r; std::string code, text;
         if (!rxobj::send(handle, selector, in, r, code, text)) {
-            if (code == "97.1") throw NoMethod(text);
+            if (code == "97.1") { NoMethod missing(text); missing.conditionObject = takeKeptCondition(); throw missing; }
             SyntaxCondition condition(code, text, false);
             for (const std::string &a : rxobj::lastAdditional()) condition.substitutions.push_back(Value::string(a));
+            condition.conditionObject = takeKeptCondition();
             throw condition;
         }
         if (r.kind == 0) return std::nullopt;
@@ -423,6 +537,12 @@ inline MessageResult hostStringMessage(const Value &receiver, const std::string 
     return EnvObject::wrap(r);
 }
 inline const bool hostStringFallbackInstalled = (stringMessageFallback() = &hostStringMessage, true);
+inline MessageResult hostNilMessage(const std::string &selector, const std::vector<Value> &args) {
+    RexxThreadContext *t = rxobj::need();
+    EnvObject nil((void *)t->RequestGlobalReference(t->Nil()));   // the interpreter's own .NIL (released with this wrapper)
+    return nil.sendMessage(selector, args);
+}
+inline const bool hostNilFallbackInstalled = (nilMessageFallback() = &hostNilMessage, true);
 #endif
 #ifdef RX2CPP_HOST_API
 inline Value envClass(const std::string &name);
@@ -438,6 +558,143 @@ struct LibraryContext final : ObjectDispatch {
     }
     std::string display() const override { return "a RexxContext"; }
 };
+// The interpreter condition object kept by the last failing interpreter call (see rxobj::keepCondition).
+inline std::shared_ptr<ObjectDispatch> takeKeptCondition() {
+    void *h = rxobj::keptCondition();
+    if (!h) return nullptr;
+    rxobj::keptCondition() = nullptr;
+    return std::make_shared<EnvObject>(h);
+}
+// ---- SIGNAL ON / OFF, labels and CONDITION() in a compiled activation (method or package routine) ----
+// A library-specific way to recognise "a condition is pending in the interpreter" (the template's PendingCondition):
+// returns the condition object and clears the condition.
+inline std::shared_ptr<ObjectDispatch> (*pendingConditionHook)(const std::exception &) = nullptr;
+struct RaisedCondition {
+    std::string name = "SYNTAX";
+    std::string code;
+    std::vector<Value> substitutions;
+    std::shared_ptr<ObjectDispatch> object;
+};
+inline bool numericCode(const std::string &c) {
+    return !c.empty() && c.find('.') != std::string::npos && c.find_first_not_of("0123456789.") == std::string::npos;
+}
+// The condition an exception from compiled code stands for (false: not a condition, e.g. EXIT).
+inline bool describeRaised(std::exception_ptr e, RaisedCondition &out) {
+    try { std::rethrow_exception(e); }
+    catch (const SyntaxCondition &c) {
+        out.object = c.conditionObject;
+        if (numericCode(c.code)) { out.code = c.code; out.substitutions = c.substitutions; }
+        else { out.code = "98.900"; out.substitutions = {Value::string(c.what())}; }
+        return true;
+    }
+    catch (const NoMethod &m) { out.object = m.conditionObject; out.code = "98.900"; out.substitutions = {Value::string(m.what())}; return true; }
+    catch (const SignalJump &) { return false; }
+    catch (const std::exception &x) {
+        if (pendingConditionHook) if (auto o = pendingConditionHook(x)) { out.object = o; return true; }
+        out.code = "98.900"; out.substitutions = {Value::string(x.what())};
+        return true;
+    }
+    catch (...) { return false; }
+}
+inline Value conditionEntry(const std::shared_ptr<ObjectDispatch> &object, const char *key) {
+    MessageResult v = object->sendMessage("[]", {Value::string(key)});
+    return v ? *v : nil();
+}
+struct MethodTraps {
+    enum Kind { SYNTAX, ERROR, FAILURE, NOVALUE, ANY, KINDS };
+    bool on[KINDS] = {};
+    int label[KINDS] = {};
+    bool has = false;                          // a condition was trapped in this activation
+    std::string name;
+    std::shared_ptr<ObjectDispatch> object;
+    static int kindOf(const std::string &c) {
+        if (c == "SYNTAX") return SYNTAX;
+        if (c == "ERROR") return ERROR;
+        if (c == "FAILURE") return FAILURE;
+        if (c == "NOVALUE") return NOVALUE;
+        if (c == "ANY") return ANY;
+        return -1;
+    }
+    void set(const char *c, int target) { const int k = kindOf(c); on[k] = true; label[k] = target; }
+    void clear(const char *c) { on[kindOf(c)] = false; }
+    // An exception reached the activation: the label to continue at (the trap is turned off), or -1 to let it go on.
+    int fire(Variables &vars, std::size_t line, std::exception_ptr e) {
+        RaisedCondition raised;
+        if (!describeRaised(e, raised)) return -1;
+        const int k = kindOf(raised.name);
+        const int use = (k >= 0 && on[k]) ? k : (on[ANY] ? ANY : -1);
+        if (use < 0) return -1;
+        on[use] = false;
+        if (!raised.object) {
+            std::vector<rxobj::Arg> subs; EnvObject::convert(raised.substitutions, subs);
+            raised.object = std::make_shared<EnvObject>(rxobj::conditionObject(raised.code, subs));
+        }
+        has = true;
+        name = raised.name;
+        object = raised.object;
+        if (name == "SYNTAX" || name == "ERROR" || name == "FAILURE") set(vars, "RC", conditionEntry(object, "RC"));
+        rx::set(vars, "SIGL", Value::string(std::to_string(line)));
+        return label[use];
+    }
+    static void set(Variables &vars, const char *n, const Value &v) { rx::set(vars, n, v); }
+    // CONDITION([option]) of this activation.
+    Value condition(const std::optional<Value> &arg) const {
+        char option = 'I';
+        if (arg && !arg->isObject() && !arg->bytes.empty())
+            option = static_cast<char>(std::toupper(static_cast<unsigned char>(arg->bytes[0])));
+        switch (option) {
+        case 'A': return has ? conditionEntry(object, "ADDITIONAL") : nil();
+        case 'O': return has ? Value::fromObject(object) : nil();
+        case 'C': return Value::string(has ? name : std::string());
+        case 'I': return Value::string(has ? "SIGNAL" : "");
+        case 'D': {
+            if (!has) return Value::string(std::string());
+            Value d = conditionEntry(object, "DESCRIPTION");
+            return d.isObject() ? Value::string(std::string()) : d;
+        }
+        case 'S': {
+            if (!has) return Value::string(std::string());
+            const int k = kindOf(name);
+            return Value::string(k >= 0 && on[k] ? "ON" : "OFF");
+        }
+        default: throw SyntaxCondition("40.904", "CONDITION option must be one of ACDIOS", false);
+        }
+    }
+    // RAISE PROPAGATE: the trapped condition again, to the caller.
+    [[noreturn]] void propagate() const {
+        if (!has) throw SyntaxCondition("93.900", "RAISE PROPAGATE outside a condition trap", false);
+        Value code = conditionEntry(object, "CODE");
+        SyntaxCondition again(code.isObject() ? std::string("98.900") : code.bytes.str(), name, false);
+        Value additional = conditionEntry(object, "ADDITIONAL");
+        if (additional.isObject() && !dynamic_cast<NilObject *>(additional.object.get()))
+            for (const Value &item : arrayItems(additional)) again.substitutions.push_back(item);
+        again.conditionObject = object;
+        throw again;
+    }
+};
+// CONDITION() in an activation that traps nothing: no condition information.
+inline Value noCondition(const std::optional<Value> &arg) {
+    char option = 'I';
+    if (arg && !arg->isObject() && !arg->bytes.empty())
+        option = static_cast<char>(std::toupper(static_cast<unsigned char>(arg->bytes[0])));
+    if (option == 'A' || option == 'O') return nil();
+    return Value::string(std::string());
+}
+inline Value interpreterVersion() { return Value::string(rxobj::interpreterVersion()); }
+// The interpreter's system name (first word of PARSE SOURCE: LINUX, WindowsNT, ...).
+inline std::string interpreterSystem() {
+    static std::string name;
+    static std::once_flag once;
+    std::call_once(once, [] {
+        RexxThreadContext *t = rxobj::need();
+        static const char source[] = "parse source s .\nreturn s\n";
+        RexxRoutineObject r = t->NewRoutine("rx2cpp_system", source, sizeof(source) - 1);
+        RexxObjectPtr v = r == NULLOBJECT ? NULLOBJECT : t->CallRoutine(r, t->NewArray(0));
+        if (t->CheckCondition() || v == NULLOBJECT) { t->ClearCondition(); throw std::runtime_error("cannot read PARSE SOURCE"); }
+        name = t->ObjectToStringValue(v);
+    });
+    return name;
+}
 inline Value libraryContext() { static const Value c = Value::fromObject(std::make_shared<LibraryContext>()); return c; }
 // The method's own argument list as an interpreter array (omitted arguments stay empty slots): FORWARD's default ARGUMENTS.
 inline Value argumentArray(const std::vector<std::optional<Value>> &args) {
@@ -468,8 +725,18 @@ inline Value envClass(const std::string &name) {
     void *h = (name == "LOCAL" || name == "ENVIRONMENT") ? rxobj::environmentObject(name) : rxobj::findClass(name);
     if (!h) {
         // Not a class: an environment entry (.REXXINFO, .OUTPUT, an application's .local['X']), looked up each time.
-        if (void *entry = rxobj::environmentEntry(name)) return Value::fromObject(std::make_shared<EnvObject>(entry));
-        throw std::runtime_error("unknown environment class ." + name);
+        if (void *entry = rxobj::environmentEntry(name)) {
+            // A String entry (.local~v1 = 'a') is a string value in compiled code, as strings are everywhere.
+            RexxThreadContext *t = rxobj::need();
+            if (rxobj::isPlainString(t, (RexxObjectPtr)entry)) {
+                RexxStringObject so = (RexxStringObject)t->ObjectToString((RexxObjectPtr)entry);
+                Value v = Value::string(std::string(t->StringData(so), t->StringLength(so)));
+                rxobj::release(entry);
+                return v;
+            }
+            return Value::fromObject(std::make_shared<EnvObject>(entry));
+        }
+        return Value::string("." + name);   // an unknown environment symbol is its own name, as interpreted (.FOO, ...)
     }
     auto obj = std::make_shared<EnvObject>(h);
     Value value = Value::fromObject(obj);
@@ -903,11 +1170,13 @@ inline std::optional<Value> streamBif(const std::string &name, const std::vector
 // CALL / function call of a routine only the interpreter can resolve (rexxutil SysXxx, external .rex routines), run in a
 // small interpreter routine under the caller's NUMERIC settings. An argument that names a stem the callee filled
 // (SysFileTree spec, 'files.', ...) is copied back into the caller's compiled variables, as the interpreter would leave it.
-inline MessageResult interpreterCall(Variables &vars, const std::string &name, const std::vector<std::optional<Value>> &args) {
+// dynamicName: CALL (expression), the routine name computed at run time (passed as one more argument).
+inline MessageResult interpreterCall(Variables &vars, const std::string &name, const std::vector<std::optional<Value>> &args,
+                                     const std::optional<Value> &dynamicName = std::nullopt) {
     RexxThreadContext *t = rxobj::need();
     rxobj::LocalRefs temps(t);
     rxobj::bifStat("CALL " + name);
-    std::string call = "call " + name + " ";
+    std::string call = dynamicName ? "call (arg(" + std::to_string(args.size() + 1) + ")) " : "call " + name + " ";
     for (std::size_t i = 0; i < args.size(); ++i) {
         if (i) call += ",";
         if (args[i]) call += "arg(" + std::to_string(i + 1) + ")";
@@ -924,12 +1193,12 @@ inline MessageResult interpreterCall(Variables &vars, const std::string &name, c
     auto it = cache.find(source);
     RexxRoutineObject routine;
     if (it == cache.end()) {
-        routine = t->NewRoutine("rx2cpp_call", source.c_str(), source.size());
+        routine = rxobj::packageRoutine(t, "rx2cpp_call", source);
         if (routine == NULLOBJECT) throw std::runtime_error("cannot create interpreter call for " + name);
         t->RequestGlobalReference((RexxObjectPtr)routine);
         cache.emplace(source, routine);
     } else routine = it->second;
-    RexxArrayObject arr = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(args.size()));
+    RexxArrayObject arr = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(args.size() + (dynamicName ? 1 : 0)));
     std::vector<rxobj::Arg> conv;
     for (std::size_t i = 0; i < args.size(); ++i) {
         if (!args[i]) continue;
@@ -937,13 +1206,23 @@ inline MessageResult interpreterCall(Variables &vars, const std::string &name, c
         RexxObjectPtr o = conv[0].obj ? (RexxObjectPtr)conv[0].obj : temps((RexxObjectPtr)t->NewString(conv[0].bytes.data(), conv[0].bytes.size()));
         t->ArrayPut(arr, o, i + 1);
     }
+    if (dynamicName) {
+        conv.clear(); EnvObject::convert({*dynamicName}, conv);
+        t->ArrayPut(arr, conv[0].obj ? (RexxObjectPtr)conv[0].obj : temps((RexxObjectPtr)t->NewString(conv[0].bytes.data(), conv[0].bytes.size())), args.size() + 1);
+    }
     RexxObjectPtr r = temps(t->CallRoutine(routine, arr));
     if (t->CheckCondition()) {
         RexxCondition cd; t->DecodeConditionInfo(t->GetConditionInfo(), &cd);
         std::string code = std::to_string(cd.code / 1000) + "." + std::to_string(cd.code % 1000);
         std::string text = cd.message ? t->ObjectToStringValue(cd.message) : "error in " + name;
+        RexxDirectoryObject info = t->GetConditionInfo();
+        rxobj::keepCondition(t);
         t->ClearCondition();
-        throw SyntaxCondition(code, text, false);
+        rxobj::captureAdditional(t, info);   // the message substitutions (43.1 "Could not find routine &1"), no condition pending
+        SyntaxCondition raised(code, text, false);
+        for (const std::string &a : rxobj::lastAdditional()) raised.substitutions.push_back(Value::string(a));
+        raised.conditionObject = takeKeptCondition();
+        throw raised;
     }
     if (r == NULLOBJECT) return std::nullopt;
     RexxArrayObject out = (RexxArrayObject)r;
@@ -970,6 +1249,47 @@ inline MessageResult interpreterCall(Variables &vars, const std::string &name, c
     RexxObjectPtr res = t->ArrayAt(out, 1);
     if (res == NULLOBJECT) return std::nullopt;
     return valueOf(res);
+}
+// ADDRESS environment command: the interpreter that loaded this library runs the command with its own environment
+// handlers (same shell, same output, same RC); RC is then set in the compiled method's variables.
+// Not yet: ERROR / FAILURE conditions for a SIGNAL ON / CALL ON trap in the compiled method.
+inline void interpreterCommand(Variables &vars, const Value &environment, const Value &command) {
+    RexxThreadContext *t = rxobj::need();
+    rxobj::LocalRefs temps(t);
+    rxobj::bifStat("ADDRESS " + environment.bytes.str());
+    static thread_local RexxRoutineObject routine = NULLOBJECT;
+    if (routine == NULLOBJECT) {
+        static const char source[] = "use arg rx2cppEnvironment, rx2cppCommand\naddress value rx2cppEnvironment\n"
+                                     "rx2cppCommand\nreturn rc\n";
+        routine = t->NewRoutine("rx2cpp_address", source, sizeof(source) - 1);
+        if (routine == NULLOBJECT) throw std::runtime_error("cannot create interpreter ADDRESS helper");
+        t->RequestGlobalReference((RexxObjectPtr)routine);
+    }
+    std::vector<rxobj::Arg> conv;
+    RexxArrayObject arr = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(2));
+    std::size_t index = 0;
+    for (const Value *v : {&environment, &command}) {
+        conv.clear(); EnvObject::convert({*v}, conv);
+        RexxObjectPtr o = conv[0].obj ? (RexxObjectPtr)conv[0].obj : temps((RexxObjectPtr)t->NewString(conv[0].bytes.data(), conv[0].bytes.size()));
+        t->ArrayPut(arr, o, ++index);
+    }
+    RexxObjectPtr r = temps(t->CallRoutine(routine, arr));
+    if (t->CheckCondition()) {
+        RexxCondition cd; t->DecodeConditionInfo(t->GetConditionInfo(), &cd);
+        std::string code = std::to_string(cd.code / 1000) + "." + std::to_string(cd.code % 1000);
+        std::string text = cd.message ? t->ObjectToStringValue(cd.message) : "error in ADDRESS";
+        RexxDirectoryObject info = t->GetConditionInfo();
+        rxobj::keepCondition(t);
+        t->ClearCondition();
+        rxobj::captureAdditional(t, info);   // the message substitutions (43.1 "Could not find routine &1"), no condition pending
+        SyntaxCondition raised(code, text, false);
+        for (const std::string &a : rxobj::lastAdditional()) raised.substitutions.push_back(Value::string(a));
+        raised.conditionObject = takeKeptCondition();
+        throw raised;
+    }
+    if (r == NULLOBJECT) throw std::runtime_error("ADDRESS helper returned no RC");
+    RexxStringObject rs = (RexxStringObject)temps((RexxObjectPtr)t->ObjectToString(r));
+    set(vars, "RC", Value::string(std::string(t->StringData(rs), t->StringLength(rs))));
 }
 #endif
 }

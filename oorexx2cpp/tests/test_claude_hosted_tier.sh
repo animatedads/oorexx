@@ -22,6 +22,13 @@ if RX2CPP_HOSTED=0 "$ROOT/build.sh" "$ROOT/examples/claude/hosted_datetime.rex" 
   echo "FAIL RX2CPP_HOSTED=0 accepted a hosted class"; exit 1; fi
 grep -q 'unsupported environment class .DATETIME' "$WORK/off.blog" || { cat "$WORK/off.blog"; echo "FAIL missing rejection text"; exit 1; }
 echo "PASS RX2CPP_HOSTED=0 rejects with a source location"
-printf 'say .ENVIRONMENT\n' > "$WORK/nil.rex"
-if "$ROOT/build.sh" "$WORK/nil.rex" "$WORK/nil.bin" "$WORK/nil.cpp" >/dev/null 2>&1; then echo "FAIL .ENVIRONMENT must stay fail-closed"; exit 1; fi
-echo "PASS non-class environment symbols stay fail-closed"
+printf 'say .ENVIRONMENT\nsay .local~class\n' > "$WORK/nil.rex"
+# Without the hosted tier there is no interpreter: .ENVIRONMENT must be refused.
+if RX2CPP_HOSTED=0 "$ROOT/build.sh" "$WORK/nil.rex" "$WORK/off_nil.bin" "$WORK/off_nil.cpp" >/dev/null 2>&1; then echo "FAIL .ENVIRONMENT must stay fail-closed without the hosted tier"; exit 1; fi
+echo "PASS non-class environment symbols stay fail-closed without the hosted tier"
+# With it, .ENVIRONMENT / .LOCAL are the interpreter's own directories: same output as interpreted.
+"$REXX_BIN" "$WORK/nil.rex" > "$WORK/nil.exp" 2>&1
+"$ROOT/build.sh" "$WORK/nil.rex" "$WORK/nil.bin" "$WORK/nil.cpp" > "$WORK/nil.blog" 2>&1 || { cat "$WORK/nil.blog"; echo "FAIL hosted .ENVIRONMENT build"; exit 1; }
+"$WORK/nil.bin" > "$WORK/nil.out" 2>&1
+cmp -s "$WORK/nil.exp" "$WORK/nil.out" || { diff -u "$WORK/nil.exp" "$WORK/nil.out"; echo "FAIL hosted .ENVIRONMENT differs"; exit 1; }
+echo "PASS hosted .ENVIRONMENT / .LOCAL identical to the interpreter"

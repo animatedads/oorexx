@@ -116,7 +116,7 @@ struct HostObject final : ObjectDispatch {
     std::string display() const override {
         auto r = const_cast<HostObject *>(this)->sendMessage("STRING", {});
         if (!r) throw std::runtime_error("hosted STRING method returned no result");
-        return r->isObject() ? r->object->display() : r->bytes;
+        return r->isObject() ? r->object->display() : r->bytes.str();
     }
 };
 

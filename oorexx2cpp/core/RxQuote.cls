@@ -1,5 +1,16 @@
 /* Convert byte strings to literal-safe C++ ASCII, never use host code evaluation. */
 ::class RxQuote public
+/* A C++ identifier part for any Rexx name: letters, digits and _ unchanged, every other byte as _HH (hex). A class
+   id may be any string in ooRexx (::class "LENGTH.testGroup"); only the C++ names are mangled, never the Rexx name. */
+::method identifier class
+  use arg value
+  answer = ''
+  do i = 1 to value~length
+    c = value~substr(i, 1)
+    if verify(c, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_') == 0 then answer = answer || c
+    else answer = answer || '_' || c2x(c)
+  end
+  return answer
 ::method cpp class
   use arg value
   answer = '"'

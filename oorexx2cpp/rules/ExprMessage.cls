@@ -76,12 +76,27 @@
         s~fail('expected literal method selector after ~ or ~~')
       selectorEnd = s~peek
       selector = s~next~text
+      /* START / STARTWITH need the interpreter's activities. A standalone program without the hosted tier has no
+         interpreter objects, so its receivers could never run them: refuse at compile time instead of failing later. */
+      if wordpos(translate(selector), 'START STARTWITH') > 0 & ctx~hasMethod('HOSTEDENABLED') then
+        if \ctx~hostedEnabled & value('RX2CPP_HOST_API', , 'ENVIRONMENT') == '' & value('RX2CPP_KERNEL', , 'ENVIRONMENT') == '' then
+          s~fail('concurrency (~' || selector || ') needs the interpreter: not supported in a standalone compiled program')
       args = .array~new
       /* receiver~attribute = value  sends  attribute=(value)  and is an assignment, not a message instruction. */
       if asInstruction & s~is('=') then do
         s~next
         selector = selector || '='
         args~append(ctx~logicalExpr~parse(ctx))
+        attrAssign = .true
+      end
+      /* receiver~attribute += value: attribute=(receiver~attribute op value), the receiver evaluated once. */
+      else if asInstruction & .RxCompoundAssignmentOps~isSupported(s~peek~text) then do
+        op = .RxCompoundAssignmentOps~selector(s~next~text)
+        t = ctx~label
+        code = code || 'rx::Value _old' || t || ' = rx::messageValue(' || recv || ', ' || .RxQuote~cpp(selector) || ', std::vector<rx::Value>(), false); '
+        code = code || 'rx::Value _rhs' || t || ' = ' || ctx~logicalExpr~parse(ctx) || '; '
+        selector = selector || '='
+        args~append('rx::sendBinary(_old' || t || ', ' || .RxQuote~cpp(op) || ', _rhs' || t || ', vars.numeric)')
         attrAssign = .true
       end
     end

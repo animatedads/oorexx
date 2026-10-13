@@ -45,9 +45,11 @@
         /* ARRAY (expr, expr, ...): the listed values are the arguments. */
         if value('RX2CPP_HOST_API', , 'ENVIRONMENT') == '' then s~fail('FORWARD ARRAY requires the host-API native lane')
         s~expect('(')
+        /* ARRAY () forwards no arguments; an omitted item (ARRAY (a, , c)) stays omitted. */
         items = ''
-        do forever
-          items = items || '_fi.push_back(' || ctx~logicalExpr~parse(ctx) || '); '
+        if \s~is(')') then do forever
+          if s~is(',') | s~is(')') then items = items || '_fi.push_back(rx::omittedArgument()); '
+          else items = items || '_fi.push_back(' || ctx~logicalExpr~parse(ctx) || '); '
           if \s~accept(',') then leave
         end
         s~expect(')')
@@ -62,7 +64,13 @@
       end
     end
   end
+  /* CONTINUE: the forwarded message's result goes to RESULT (dropped when there is none) and the method goes on. */
+  continue = s~accept('CONTINUE')
   s~separator
+  if continue then do
+    self~emitContinue(ctx, selector, selectorExpr, targetExpr, arrayExpr, toSuper)
+    return
+  end
   if ctx~current~selector == 'INIT' then s~fail('INIT FORWARD is not supported')
   if targetExpr \== '' | selectorExpr \== '' then do
     if toSuper then s~fail('FORWARD CLASS with TO/MESSAGE expression is not supported')
@@ -88,14 +96,43 @@
   end
   else do
     if selector == '' then selector = ctx~current~selector
-    if toSuper then helper = 'RX2CPP_SUPERA'
+    if toSuper then helper = 'RX2CPP_SUPERA_' || ctx~className   /* this class's helper (see NativeLibraryEmitter) */
     else helper = 'SENDWITH'
-    value = '([&]() -> rx::Value { std::vector<rx::Value> _fa; _fa.push_back(rx::Value::string(' || .RxQuote~cpp(selector~upper) || ')); _fa.push_back(' || arrayExpr || '); rx::Value _fr = rx2cpp::selfSendValue(' || .RxQuote~cpp(helper) || ', _fa); '
+    /* FORWARD returns whatever the target returns, including no result. */
+    value = '([&]() -> rx::Value { std::vector<rx::Value> _fa; _fa.push_back(rx::Value::string(' || .RxQuote~cpp(selector~upper) || ')); _fa.push_back(' || arrayExpr || '); std::optional<rx::Value> _fr = rx2cpp::selfSendValues(' || .RxQuote~cpp(helper) || ', _fa); '
     do field over ctx~current~exposed
       value = value || 'rx::set(vars, ' || .RxQuote~cpp(field) || ', rx::get(fields_, ' || .RxQuote~cpp(field) || ')); '
     end
-    value = value || 'return _fr; }())'
+    value = value || 'if (!_fr) return rx::noResult(); return *_fr; }())'
   end
   if ctx~controlDepth > 0 then ctx~current~branchReturnValue(value)
   else ctx~current~returnValue(value)
+::method emitContinue private
+  use arg ctx, selector, selectorExpr, targetExpr, arrayExpr, toSuper
+  s = ctx~stream
+  if value('RX2CPP_HOST_API', , 'ENVIRONMENT') == '' then s~fail('FORWARD CONTINUE requires the host-API native lane')
+  if arrayExpr == '' then arrayExpr = 'rx::argumentArray(arguments)'
+  if targetExpr \== '' | selectorExpr \== '' then do
+    if toSuper then s~fail('FORWARD CLASS with TO/MESSAGE expression is not supported')
+    if targetExpr == '' then targetExpr = 'rx::selfObject()'
+    if selectorExpr == '' then do
+      if selector == '' then selector = ctx~current~selector
+      selectorExpr = 'rx::Value::string(' || .RxQuote~cpp(selector) || ')'
+    end
+    send = 'rx::sendMessage(' || targetExpr || ', "SENDWITH", _fa)'
+    first = selectorExpr
+  end
+  else do
+    if selector == '' then selector = ctx~current~selector
+    helper = 'SENDWITH'
+    if toSuper then helper = 'RX2CPP_SUPERA_' || ctx~className   /* this class's helper (see NativeLibraryEmitter) */
+    send = 'rx2cpp::selfSendValues(' || .RxQuote~cpp(helper) || ', _fa)'
+    first = 'rx::Value::string(' || .RxQuote~cpp(selector~upper) || ')'
+  end
+  code = '{ std::vector<rx::Value> _fa; _fa.push_back(' || first || '); _fa.push_back(' || arrayExpr || '); std::optional<rx::Value> _fr = ' || send || '; '
+  do field over ctx~current~exposed
+    code = code || 'rx::set(vars, ' || .RxQuote~cpp(field) || ', rx::get(fields_, ' || .RxQuote~cpp(field) || ')); '
+  end
+  code = code || 'if (_fr) rx::set(vars, "RESULT", *_fr); else rx::drop(vars, "RESULT"); }'
+  ctx~line(0, code)
 ::requires 'core/RxQuote.cls'

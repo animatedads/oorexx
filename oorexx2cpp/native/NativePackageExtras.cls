@@ -161,6 +161,12 @@
   use arg tokens, start, finish, lineNo
   /* ::REQUIRES 'name' LIBRARY: another native library this one needs; the interpreter loads it with this package. */
   if finish == start + 2 & tokens[start]~kind == 'STRING' & tokens[start+1]~text == 'LIBRARY' then return
+  /* ::REQUIRES 'name' of an interpreted package (json.cls, a file not combined in): the declaration package requires
+     it, so the interpreter loads it with the library, searching as it would for the source. */
+  if finish == start + 1 & tokens[start]~kind == 'STRING' then do
+    if tokens[start]~text == '' then self~reject(lineNo, 'empty REQUIRES package')
+    return
+  end
   if finish \= start + 3 | tokens[start]~kind \= 'STRING' | ,
       tokens[start+1]~text \= 'NAMESPACE' | tokens[start+2]~kind \= 'IDENT' then
     self~reject(lineNo, 'only ::REQUIRES literal NAMESPACE symbol is supported')

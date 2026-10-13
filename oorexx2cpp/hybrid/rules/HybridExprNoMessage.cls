@@ -79,7 +79,7 @@
   tag = n
   code = '([&]() -> rx::Value { std::vector<rx::Value> _sa' || tag || '; '
   if super then code = code || '_sa' || tag || '.push_back(rx::Value::string(' || .RxQuote~cpp(selector~upper) || ')); '
-  if super then target = 'RX2CPP_SUPER'
+  if super then target = 'RX2CPP_SUPER_' || ctx~className   /* the helper of this class (see NativeLibraryEmitter) */
   else target = selector~upper
   do expr over argExprs
     code = code || '_sa' || tag || '.push_back(' || expr || '); '

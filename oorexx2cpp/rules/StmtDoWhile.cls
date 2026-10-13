@@ -8,6 +8,7 @@
   return s~is('DO') & s~lookAheadText(1) == 'WHILE'
 ::method emit
   use arg ctx, depth
+  .local['RX2CPP.CLAUSEWORDS'] = 'TO BY FOR UNTIL WHILE OVER'   /* keywords of this clause end its expressions */
   s = ctx~stream
   s~expect('DO')
   s~expect('WHILE')

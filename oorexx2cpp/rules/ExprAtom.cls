@@ -7,6 +7,9 @@
   select
     when t~kind == 'STRING' then do
       s~next
+      /* "NAME"(args): a function call by literal name (no internal-label search), library lane. */
+      if s~is('(') & s~peek~line == t~endLine & s~peek~col == t~endCol & ctx~builtinExpr~hasMethod('PARSEQUOTED') then
+        return ctx~builtinExpr~parseQuoted(ctx, t~text)
       return 'rx::Value::string(' || .RxQuote~cpp(t~text) || ')'
     end
     when t~kind == 'NUMBER' | t~kind == 'INT' then do
@@ -65,7 +68,7 @@
       return 'rx::selfObject()'
     end
     when t~kind == 'IDENT' then do
-      if wordpos(t~text, 'THEN DO UNTIL ELSE END IF EXIT') > 0 then s~fail('reserved word in expression')
+      if wordpos(t~text, 'THEN DO ELSE END IF EXIT') > 0 then s~fail('reserved word in expression')
       s~next
       /* Rexx function invocation requires abuttal: F(3) differs from F (3). */
       if s~is('(') & s~peek~line == t~endLine & s~peek~col == t~endCol then -

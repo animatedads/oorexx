@@ -17,6 +17,14 @@
   catalog = self~catalogue
   if catalog == .nil then return name == 'ABS' | name == 'LENGTH'
   return catalog~signature(name) \= ''
+/* True when COUNT arguments are within the catalogue's arity for NAME (false for an unknown name). */
+::method arityOk class
+  use arg name, count
+  catalog = self~catalogue
+  if catalog == .nil then return (name == 'ABS' | name == 'LENGTH') & count == 1
+  signature = catalog~signature(name)
+  if signature == '' then return .false
+  return count >= word(signature, 1) & (word(signature, 2) == '*' | count <= word(signature, 2))
 ::method validate class
   use arg stream,name,count
   catalog = self~catalogue

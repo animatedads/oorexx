@@ -11,6 +11,28 @@
   s = ctx~stream
   s~expect('CALL')
   token = s~peek
+  /* CALL (expression) [args]: the name is computed at run time; the interpreter resolves it as it would the source's. */
+  if s~is('(') & ctx~hasMethod('ISPACKAGEROUTINE') & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \== '' then do
+    s~expect('(')
+    nameExpr = ctx~logicalExpr~parse(ctx)
+    s~expect(')')
+    args = .array~new
+    if s~peek~kind \= 'SEP' & s~peek~kind \= 'EOF' then do forever
+      if s~is(',') then args~append('RX2CPP_OMITTED')
+      else args~append(ctx~logicalExpr~parse(ctx))
+      if \s~accept(',') then leave
+    end
+    code = '{ std::vector<std::optional<rx::Value>> _rxCallArgs; '
+    do argExpr over args
+      if argExpr == 'RX2CPP_OMITTED' then code = code || '_rxCallArgs.emplace_back(std::nullopt); '
+      else code = code || '_rxCallArgs.emplace_back(' || argExpr || '); '
+    end
+    code = code || 'auto _rxR = rx::interpreterCall(vars, "(dynamic)", _rxCallArgs, std::optional<rx::Value>(' || nameExpr || ')); '
+    code = code || 'if (_rxR) rx::set(vars, "RESULT", *_rxR); else rx::drop(vars, "RESULT"); }'
+    ctx~line(depth, code)
+    s~separator
+    return
+  end
   if token~kind \= 'IDENT' then s~fail('CALL requires a literal built-in name')
   name = s~next~text
   if name == 'ON' | name == 'OFF' then s~fail('CALL condition traps are not yet implemented')
@@ -39,7 +61,9 @@
       if argExpr == 'RX2CPP_OMITTED' then code = code || '_rxCallArgs.emplace_back(std::nullopt); '
       else code = code || '_rxCallArgs.emplace_back(' || argExpr || '); '
     end
-    code = code || 'rx::set(vars, "RESULT", rx2cpp::makeGeneratedObject_RX2CPP_ROUTINE_IMPL()->invokeValues(' || .RxQuote~cpp(name) || ', _rxCallArgs)); }'
+    /* A routine that returns nothing drops RESULT, as interpreted (see rx::noResult). */
+    code = code || 'rx::noResultPending() = false; rx::Value _rxCalled = rx2cpp::makeGeneratedObject_RX2CPP_ROUTINE_IMPL()->invokeValues(' || .RxQuote~cpp(name) || ', _rxCallArgs); '
+    code = code || 'if (std::exchange(rx::noResultPending(), false)) rx::drop(vars, "RESULT"); else rx::set(vars, "RESULT", _rxCalled); }'
     ctx~line(depth, code)
     s~separator
     return

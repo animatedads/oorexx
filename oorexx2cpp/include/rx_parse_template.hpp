@@ -121,9 +121,11 @@ inline std::vector<Value> parseTemplate(const Value &sourceIn, const std::vector
             next = found == std::string::npos ? s.size() : found + op.delimiter.size();
         }
         const std::size_t matchStart = boundary;
-        // An anchor behind the cursor gives the preceding target the remaining
-        // source; the next target starts at the newly selected backward anchor.
-        flush(cursor, boundary <= cursor ? s.size() - cursor : boundary - cursor);
+        // A positional pattern at or behind the cursor gives the preceding target the remaining
+        // source; the next target starts at the newly selected backward anchor. A string pattern
+        // is never behind: found at the cursor it delimits an empty field ('a::b' with ':' ':').
+        if (op.kind == ParseOp::Kind::Literal) flush(cursor, boundary - cursor);
+        else flush(cursor, boundary <= cursor ? s.size() - cursor : boundary - cursor);
         cursor = next;
         anchor = op.kind == ParseOp::Kind::Literal ? matchStart : next;
     }

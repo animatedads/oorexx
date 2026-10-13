@@ -24,6 +24,34 @@
     n = n + 1
   end
   return .false
+/* A method body from here to the next directive: its labels (in order) and whether it uses SIGNAL at all. */
+::method methodBodyLabels
+  labels = .array~new
+  n = 0
+  do while self~lookAheadKind(n) \= 'EOF'
+    atClause = n == 0
+    if n > 0 then atClause = self~lookAheadKind(n - 1) == 'SEP'
+    if atClause then do
+      if self~lookAheadKind(n) == 'OP' & self~lookAheadText(n) == '::' then leave
+      if self~lookAheadKind(n) == 'IDENT' & self~lookAheadText(n + 1) == ':' & self~lookAheadKind(n + 1) == 'OP' then
+        labels~append(self~lookAheadText(n))
+    end
+    n = n + 1
+  end
+  return labels
+::method methodBodySignals
+  n = 0
+  do while self~lookAheadKind(n) \= 'EOF'
+    if n > 0 then if self~lookAheadKind(n - 1) == 'SEP' then
+      if self~lookAheadKind(n) == 'OP' & self~lookAheadText(n) == '::' then leave
+    if self~lookAheadKind(n) == 'IDENT' & self~lookAheadText(n) == 'SIGNAL' then do
+      atClause = n == 0
+      if n > 0 then atClause = self~lookAheadKind(n - 1) == 'SEP' | wordpos(self~lookAheadText(n - 1), 'THEN ELSE OTHERWISE') > 0
+      if atClause then return .true
+    end
+    n = n + 1
+  end
+  return .false
 ::method position
   expose cursor
   use arg cursor
@@ -73,6 +101,13 @@
   if self~peek~kind \= 'SEP' then self~fail('expected end of instruction')
   self~skipSeparators
 ::method fail
+  expose lineOffset
   use arg reason
   t = self~peek
-  raise syntax 40.1 array ('rx2cpp:' || t~line || ':' || t~col || ': ' || reason || " (at '" || t~text || "')")
+  /* A class section of a package: report the line of the original source file. */
+  line = t~line
+  if var('LINEOFFSET') then line = line + lineOffset
+  raise syntax 40.1 array ('rx2cpp:' || line || ':' || t~col || ': ' || reason || " (at '" || t~text || "')")
+::method setLineOffset
+  expose lineOffset
+  use arg lineOffset

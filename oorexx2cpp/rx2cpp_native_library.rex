@@ -8,6 +8,8 @@ end
 signal on syntax name compilerError
 signal on error name compilerError
 signal on failure name compilerError
+progress = value('RX2CPP_PROGRESS', , 'ENVIRONMENT') == '1'
+call time 'R'
 source = readSource(input)
 extras = .RxNativePackageExtras~new~parse(source)
 source = extras~sanitized
@@ -15,9 +17,13 @@ routines = .RxNativePackageRoutines~new~parse(source)
 source = routines~sanitized
 gateOK = .RxNativeSourceGate~new~validate(source)
 parser = .RxNativePackageParser~new
+parser~inputName = input
+parser~setRequiredElsewhere(extras~suffix~caselessPos('::requires') > 0)
 /* Interpreted table (RX2CPP_TABLE, set by native/build.sh): classes / methods the interpreter runs. */
 table = .RxNativeInterpretedTable~new(value('RX2CPP_TABLE', , 'ENVIRONMENT'))
+if progress then .error~lineout('rx2cpp: progress' time('E')~format(, 1)'s source scanned')
 units = parser~parse(source, table)
+if progress then .error~lineout('rx2cpp: progress' time('E')~format(, 1)'s parsed' units~items 'classes')
 table~report
 extras~validate(units)
 if routines~implementation \= .nil then do
@@ -48,6 +54,7 @@ else suffix = extras~suffix || parser~interpretedSource
 /* The package prolog runs once, interpreted, when the library is loaded (see loadPackage in the template). */
 if parser~prolog \== '' then suffix = suffix || '::routine RX2CPP_PACKAGE_PROLOG' || '0a'x || parser~prolog
 nativeSource = emitter~emitPackage(units, packageName, template, options, suffix, routines)
+if progress then .error~lineout('rx2cpp: progress' time('E')~format(, 1)'s package glue emitted')
 cpp = ''
 header = '#ifndef RX2CPP_GENERATED_HPP' || '0a'x || ,
          '#define RX2CPP_GENERATED_HPP' || '0a'x || ,
@@ -62,7 +69,8 @@ if routines~implementation \= .nil then do
 end
 do unit over units
   cpp = cpp || .RxHybridCppEmitter~new~emit(unit, .false, options)
-  header = header || 'std::shared_ptr<CompiledObject> makeGeneratedObject_' || unit~className || '();' || '0a'x
+  if progress then .error~lineout('rx2cpp: progress' time('E')~format(, 1)'s emitted' unit~className '('cpp~length 'bytes so far)')
+  header = header || 'std::shared_ptr<CompiledObject> makeGeneratedObject_' || .RxQuote~identifier(unit~className) || '();' || '0a'x
   names = names || unit~className || ' '
 end
 header = header || '}' || '0a'x || '#endif' || '0a'x

@@ -10,9 +10,18 @@
     when mode == 'ARG' then do
       return 'rx::argumentAt(_rxProgramArgs, ' || argIndex || ')'
     end
+    when mode == 'SOURCE' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' then do
+      /* A method of a native library: the interpreter's system name, METHOD, the class's original source file. A package
+         routine's call type (SUBROUTINE / FUNCTION) is only known at run time: not supported yet. */
+      if ctx~className == 'RX2CPP_ROUTINE_IMPL' then ctx~stream~fail('PARSE SOURCE in a package routine of a native library is not supported yet')
+      return 'rx::Value::string(rx::interpreterSystem() + ' || .RxQuote~cpp(' METHOD ' || ctx~sourceName) || ')'
+    end
     when mode == 'SOURCE' then do
       return 'rx::sourceDescriptor(' || .RxQuote~cpp(ctx~sourceName) || ')'
     end
+    when mode == 'VERSION' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' then
+      /* A native library runs inside the interpreter: PARSE VERSION is the interpreter's own. */
+      return 'rx::interpreterVersion()'
     when mode == 'VERSION' then do
       /* The reference ooRexx version used to compile the source. An
          explicit COMPILED suffix distinguishes native execution. */

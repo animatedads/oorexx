@@ -20,12 +20,12 @@ grep -q "$(printf '^PROLOGUE\t.*')" "$TMP/one.map"
 grep -q "$(printf '^METHOD\t53414D504C45\t534543524554\t50524956415445\t')" "$TMP/one.map"
 grep -q "$(printf '^CLASS_METHOD\t53414D504C45\t5554494C495459\t50524956415445\t')" "$TMP/one.map"
 grep -q "$(printf '^ROUTINE\t\t494E5445524E414C\t50524956415445\t')" "$TMP/one.map"
-! grep -q 'DO NOT EXECUTE PROLOGUE' "$TMP/one.map"  # source encoded
-! grep -q '^CLASS.*46414B45' "$TMP/one.map"     # quoted ::class Fake
+if grep -q 'DO NOT EXECUTE PROLOGUE' "$TMP/one.map"; then echo "FAIL unexpected match: grep -q 'DO NOT EXECUTE PROLOGUE' '$TMP/one.map'" >&2; exit 1; fi  # source encoded
+if grep -q '^CLASS.*46414B45' "$TMP/one.map"; then echo "FAIL unexpected match: grep -q '^CLASS.*46414B45' '$TMP/one.map'" >&2; exit 1; fi     # quoted ::class Fake
 # Verify class-side INIT is neutralised but its method source and original
 # selector are available in the model.  Instance INIT remains independent.
 run "$ROOT/tests/fixtures/object_inspection/class_init.cls" "$TMP/init.cls" >"$TMP/init.map"
-! grep -q 'SHOULD NOT RUN CLASS INIT' "$TMP/init.map"
+if grep -q 'SHOULD NOT RUN CLASS INIT' "$TMP/init.map"; then echo "FAIL unexpected match: grep -q 'SHOULD NOT RUN CLASS INIT' '$TMP/init.map'" >&2; exit 1; fi
 grep -q "$(printf '^CLASS_METHOD\t41\t494E4954\t5055424C4943\t.*494E5350454354494F4E5F414C494153')" "$TMP/init.map"
 grep -q "$(printf '^METHOD\t41\t494E4954\t')" "$TMP/init.map"
 # Fail closed before trying to execute prologues from imported packages.
@@ -47,7 +47,7 @@ fi
 [[ -s "$ROOT/tests/fixtures/object_inspection/class_init.cls" ]]
 # --tree: the whole ::REQUIRES graph is mapped from neutralised copies; no dependency code runs.
 "$REXX_BIN" "$ROOT/inspector/inspect.rex" --tree "$ROOT/tests/fixtures/object_inspection/tree_main.rex" "$TMP/tree" >"$TMP/tree.map" 2>&1
-! grep -q 'SHOULD NOT RUN' "$TMP/tree.map"
+if grep -q 'SHOULD NOT RUN' "$TMP/tree.map"; then echo "FAIL unexpected match: grep -q 'SHOULD NOT RUN' '$TMP/tree.map'" >&2; exit 1; fi
 grep -q "$(printf '^requires\t.*tree_dep.cls')" "$TMP/tree.map"
 grep -q "$(printf '^CLASS\t\t4348494C44\t')" "$TMP/tree.map"
 grep -q "$(printf '^edge\t')" "$TMP/tree.map"

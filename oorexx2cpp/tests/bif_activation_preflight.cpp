@@ -54,6 +54,7 @@ int main() {
     assert(rx::get(parent,"X").bytes=="safe");
     child.numeric.fuzz=2;
     assert(call(b,child,"VAR",{Value::string("x")}).bytes=="1");
-    reject(b,child,"TRACE",{});
+    // TRACE() is language state owned by the compiled program (as the interpreter: N by default), not a rejected BIF.
+    assert(call(b,child,"TRACE",{}).bytes=="N");
     std::cout << "PASS activation variable provider: aliases, stem tails, scalar preflight, numeric, selectors\n";
 }

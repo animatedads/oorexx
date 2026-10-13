@@ -24,10 +24,16 @@ done
 # Ensure future BIF/macro features are not silently interpreted as compounds.
 printf 'x = .environment~of(1,2)\n' > "$WORK/unsupported.rex"
 rm -f "$WORK/unsupported.cpp"
-if "$ROOT/run-compiler.sh" "$WORK/unsupported.rex" "$WORK/unsupported.cpp" >"$WORK/unsupported.log" 2>&1; then
+# Without the hosted tier (RX2CPP_HOSTED=0) environment objects do not exist: the compile must fail, leaving nothing.
+if RX2CPP_HOSTED=0 "$ROOT/run-compiler.sh" "$WORK/unsupported.rex" "$WORK/unsupported.cpp" >"$WORK/unsupported.log" 2>&1; then
     echo 'FAIL unsupported object syntax accepted' >&2; exit 1
 fi
 [[ ! -e "$WORK/unsupported.cpp" ]] || { echo 'FAIL partial C++ created' >&2; exit 1; }
 grep -Eq 'rx2cpp:[0-9]+:[0-9]+:' "$WORK/unsupported.log"
 echo "PASS fail-closed unimplemented object syntax"
+# With the hosted tier (the default) it is a message to the interpreter's own .ENVIRONMENT, never a compound variable.
+"$ROOT/run-compiler.sh" "$WORK/unsupported.rex" "$WORK/hosted.cpp" >"$WORK/hosted.log" 2>&1 || { cat "$WORK/hosted.log" >&2; echo 'FAIL hosted .ENVIRONMENT message rejected' >&2; exit 1; }
+grep -q 'rx::host::environmentDirectory("ENVIRONMENT")' "$WORK/hosted.cpp" && grep -q '"OF"' "$WORK/hosted.cpp" \
+    || { echo 'FAIL .ENVIRONMENT~OF not compiled as a message to the interpreter' >&2; exit 1; }
+echo "PASS hosted .ENVIRONMENT message (not a compound)"
 echo "QUALIFIED $passed output parity fixtures, 1 rejection; CXX=$CXX"

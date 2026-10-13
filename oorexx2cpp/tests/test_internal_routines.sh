@@ -33,12 +33,25 @@ reject() {
   grep -q 'rx2cpp:' "$WORK/reject_$name.stderr" || { echo "FAIL missing diagnostic $name" >&2; exit 1; }
   echo "PASS reject $name"
 }
+parity() {
+  local name=$1 contents=$2
+  printf '%s\n' "$contents" > "$WORK/parity_$name.rex"
+  "$REXX_BIN" "$WORK/parity_$name.rex" > "$WORK/parity_$name.oracle" 2>&1 || true
+  "$ROOT/run-compiler.sh" "$WORK/parity_$name.rex" "$WORK/parity_$name.cpp"
+  "$CXX" -std=c++17 -O2 -Wall -Wextra -Werror -I"$ROOT/include" "$WORK/parity_$name.cpp" -o "$WORK/parity_$name.native"
+  "$WORK/parity_$name.native" > "$WORK/parity_$name.nativeout" 2>&1 || true
+  cmp "$WORK/parity_$name.oracle" "$WORK/parity_$name.nativeout" || { diff -u "$WORK/parity_$name.oracle" "$WORK/parity_$name.nativeout"; echo "FAIL $name" >&2; exit 1; }
+  echo "PASS interpreter/native $name"
+  passes=$((passes+1))
+}
 reject label_without_exit $'say 1\nf:\n return 2'
-reject missing_return $'exit\nf:\n say 3'
+# A routine without RETURN that runs off the end of the program is valid ooRexx (the program ends there; the
+# interpreter prints 3 once): parity, not rejection.
+parity missing_return $'call f\nsay "back" result\ncall f\nexit\nf:\n say 3'
 reject procedure_after_statement $'exit\nf:\n say 2\n procedure\n return 0'
 reject procedure_at_entry $'procedure\nsay 2\nexit'
 reject signal_unsupported $'exit\nf:\n signal xyz\n return 0'
 reject unknown_internal $'call missing 9\nexit'
 reject use_arg_at_entry $'use arg value\nsay value'
 reject label_in_block $'do 1\nf:\n say 1\nend\nexit'
-echo "Internal routine qualification: $passes byte-identical programs, 12 protected-output rejection cases; CXX=$CXX"
+echo "Internal routine qualification: $passes byte-identical programs, 7 protected-output rejection cases; CXX=$CXX"

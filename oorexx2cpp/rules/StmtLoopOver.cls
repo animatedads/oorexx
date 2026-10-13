@@ -16,6 +16,7 @@
   return s~lookAheadKind(k) == 'IDENT' & s~lookAheadText(k + 1) == 'OVER'
 ::method emit
   use arg ctx, depth
+  .local['RX2CPP.CLAUSEWORDS'] = 'TO BY FOR UNTIL WHILE OVER'   /* keywords of this clause end its expressions */
   s = ctx~stream
   s~next
   labelName = ''

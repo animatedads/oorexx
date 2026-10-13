@@ -20,14 +20,32 @@ if [[ "$MODE" == 'all' || "$MODE" == 'compiler' ]]; then
   trap 'rm -rf "$WORK"' EXIT
   printf 'test\tstatus\tcompiler_exit\n' > "$WORK/compiler_results.tsv"
   verified=0
+  accepted=0
   for f in "$CORPUS"/tests/*.rex; do
     name=$(basename "$f" .rex)
     target="$WORK/$name.cpp"
     printf '// SENTINEL: prior valid generated source\n' > "$target"
     if RX2CPP_HOSTED=0 "$ROOT/run-compiler.sh" "$f" "$target" > "$WORK/$name.log" 2>&1; then
-      echo "NEEDS NATIVE QUALIFICATION: $name was accepted by the compiler" >&2
-      # Do not silently claim threading correctness when compilation succeeds.
-      exit 1
+      # Accepted: it must be qualified natively here, never silently claimed. Stdout and exit code must match the
+      # interpreter on every one of RUNS runs.
+      RX2CPP_HOSTED=0 "$ROOT/build.sh" "$f" "$WORK/$name.native" "$WORK/$name.build.cpp" > "$WORK/$name.cxx.log" 2>&1 || { cat "$WORK/$name.cxx.log" >&2; echo "FAIL: $name accepted but does not build" >&2; exit 1; }
+      set +e
+      "$REXX_BIN" "$f" > "$WORK/$name.oracle" 2> /dev/null; oracleCode=$?
+      set -e
+      for ((run = 1; run <= RUNS; run++)); do
+        set +e
+        timeout 120 "$WORK/$name.native" > "$WORK/$name.out" 2> /dev/null; nativeCode=$?
+        set -e
+        if ! cmp -s "$WORK/$name.oracle" "$WORK/$name.out" || [[ $oracleCode != "$nativeCode" ]]; then
+          diff -u "$WORK/$name.oracle" "$WORK/$name.out" >&2 || true
+          echo "FAIL: $name accepted but native run $run differs (exit $nativeCode, interpreter $oracleCode)" >&2
+          exit 1
+        fi
+      done
+      printf '%s\tNATIVE_PARITY\t0\n' "$name" >> "$WORK/compiler_results.tsv"
+      echo "PASS native parity $name ($RUNS runs)"
+      accepted=$((accepted + 1))
+      continue
     else
       code=$?
       if [[ "$code" == 124 || "$code" == 137 ]]; then
@@ -42,5 +60,5 @@ if [[ "$MODE" == 'all' || "$MODE" == 'compiler' ]]; then
     printf '%s\tREJECTED_SAFE\t%s\n' "$name" "$code" >> "$WORK/compiler_results.tsv"
     verified=$((verified + 1))
   done
-  echo "Compiler fail-closed gate: $verified cases rejected without clobbering output"
+  echo "Compiler gate: $verified cases rejected without clobbering output, $accepted accepted with native parity"
 fi

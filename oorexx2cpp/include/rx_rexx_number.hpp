@@ -74,7 +74,8 @@ inline int decimalDigits(const cpp_int &c) {
     }
     return static_cast<int>(n.convert_to<std::string>().size());
 }
-inline bool rexxBlank(char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; }
+// The interpreter's whitespace for numbers and non-strict comparison: blank and horizontal tab only (not LF, CR).
+inline bool rexxBlank(char c) { return c == ' ' || c == '\t'; }
 inline bool tryParseRexxDecimal(const Value &v, RexxDecimal &out, const char *&err) {
     if (v.isObject()) { err = "numeric operation on an object requires message dispatch"; return false; }
     // No copies: scan the bytes between leading and trailing blanks in place.
@@ -134,8 +135,18 @@ inline bool tryParseRexxDecimal(const Value &v, RexxDecimal &out, const char *&e
 }
 inline RexxDecimal parseRexxDecimal(const Value &v) {
     RexxDecimal out; const char *err = nullptr;
-    if (!tryParseRexxDecimal(v, out, err)) throw std::runtime_error(err);
+    if (!tryParseRexxDecimal(v, out, err)) {
+        if (v.isObject()) throw std::runtime_error(err);
+        // As the interpreter: Error 41.1 Nonnumeric value ("v") used in arithmetic operation.
+        SyntaxCondition bad("41.1", "Nonnumeric value (\"" + v.bytes.str() + "\") used in arithmetic operation", false);
+        bad.substitutions.push_back(v);
+        throw bad;
+    }
     return out;
+}
+// Error 42.3 Arithmetic overflow; divisor must not be zero.
+[[noreturn]] inline void divisionByZero() {
+    throw SyntaxCondition("42.3", "Arithmetic overflow; divisor must not be zero", false);
 }
 inline void roundRexx(RexxDecimal &v, const ActivationNumeric &context) {
     if (context.digits < 1 || context.digits > 100000 || context.fuzz >= context.digits)
@@ -374,7 +385,7 @@ inline Value numericMul(const Value &a, const Value &b, const ActivationNumeric 
 }
 inline Value numericDiv(const Value &a, const Value &b, const ActivationNumeric &ctx) {
     RexxDecimal x = parseRexxDecimal(a), y = parseRexxDecimal(b);
-    if (y.coefficient == 0) throw std::runtime_error("division by zero");
+    if (y.coefficient == 0) divisionByZero();
     if (x.coefficient == 0) return Value::number("0");
     const bool negative = (x.coefficient < 0) != (y.coefficient < 0);
     cpp_int numer = x.coefficient < 0 ? -x.coefficient : x.coefficient;
@@ -502,7 +513,7 @@ inline Value numericWholeDivide(const Value &a, const Value &b, const Activation
     RexxDecimal x = parseRexxDecimal(a), y = parseRexxDecimal(b);
     roundRexx(x, ctx); roundRexx(y, ctx);
     roundRexx(x, ctx); roundRexx(y, ctx);
-    if (y.coefficient == 0) throw std::runtime_error("division by zero");
+    if (y.coefficient == 0) divisionByZero();
     if (x.exponent >= 0) x.coefficient *= decimalPow10(x.exponent);
     else y.coefficient *= decimalPow10(-x.exponent);
     if (y.exponent >= 0) y.coefficient *= decimalPow10(y.exponent);
@@ -515,7 +526,7 @@ inline Value numericWholeDivide(const Value &a, const Value &b, const Activation
 // x // y : remainder of the truncated integer quotient (sign of the dividend).
 inline Value numericRemainder(const Value &a, const Value &b, const ActivationNumeric &ctx) {
     RexxDecimal x = parseRexxDecimal(a), y = parseRexxDecimal(b);
-    if (y.coefficient == 0) throw std::runtime_error("division by zero");
+    if (y.coefficient == 0) divisionByZero();
     if (x.coefficient == 0) return Value::number("0");
     // ooRexx checkNumber(): an operand longer than DIGITS is TRUNCATED (not rounded) to DIGITS+1 digits.
     auto chop = [&](RexxDecimal &v) {
@@ -537,14 +548,22 @@ inline Value numericRemainder(const Value &a, const Value &b, const ActivationNu
 }
 // x ** n : integer power, ooRexx algorithm (left-to-right binary powering at DIGITS+len(n)+1).
 inline Value numericPower(const Value &a, const Value &b, const ActivationNumeric &ctx) {
-    RexxDecimal n = parseRexxDecimal(b);
+    // As the interpreter: Error 26.8 Operand to the right of the power operator (**) must be a whole number; found "b".
+    auto notWhole = [&b]() {
+        SyntaxCondition bad("26.8", "Operand to the right of the power operator (**) must be a whole number; found \"" +
+                            (b.isObject() ? std::string() : b.bytes.str()) + "\"", false);
+        bad.substitutions.push_back(b);
+        throw bad;
+    };
+    RexxDecimal n;
+    { const char *err = nullptr; if (!tryParseRexxDecimal(b, n, err)) notWhole(); }
     // exponent must be a whole number
     if (n.exponent < 0) {
         cpp_int p = decimalPow10(-n.exponent);
-        if (n.coefficient % p != 0) throw std::runtime_error("Error 26.3: power must be a whole number");
+        if (n.coefficient % p != 0) notWhole();
         n.coefficient /= p; n.exponent = 0;
     } else n.coefficient *= decimalPow10(n.exponent);
-    if (decimalDigits(n.coefficient) > 9) throw std::runtime_error("Error 26.3: power must be a whole number");
+    if (decimalDigits(n.coefficient) > 9) notWhole();
     const bool negativePower = n.coefficient < 0;
     const std::uint64_t power = static_cast<std::uint64_t>(negativePower ? -n.coefficient : n.coefficient);
     const int digits = static_cast<int>(ctx.digits);
