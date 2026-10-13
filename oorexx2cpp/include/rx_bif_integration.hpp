@@ -712,6 +712,12 @@ inline std::optional<std::string> quickStringBif(const std::string &name, const 
     return std::nullopt;
 }
 inline std::unordered_map<void *, bool> &stringIsACache() { static thread_local std::unordered_map<void *, bool> m; return m; }
+// The interpreter class object an ISA argument stands for: an interpreter class, or a compiled / native class wrapper.
+inline void *stringIsAKey(const Value &cls) {
+    if (auto *e = dynamic_cast<EnvObject *>(cls.object.get())) return e->handle;
+    if (auto *n = dynamic_cast<NativeRefBase *>(cls.object.get())) return n->materialize();
+    return nullptr;
+}
 // String methods that are hot in parsers (json.cls): [] (no padding), VERIFY with options, ISA of a class object.
 inline std::optional<MessageResult> quickStringMethod(const std::string &name, const Value &receiver, const std::vector<Value> &args) {
     const std::string &s = receiver.bytes;
@@ -748,12 +754,52 @@ inline std::optional<MessageResult> quickStringMethod(const std::string &name, c
         return MessageResult(Value::string("0"));
     }
     if (name == "ISA" && args.size() == 1 && args[0].isObject()) {
-        auto *cls = dynamic_cast<EnvObject *>(args[0].object.get());
-        if (!cls || !cls->handle) return std::nullopt;
         // Every plain string has class String: the answer depends only on the class object asked about.
-        auto it = stringIsACache().find(cls->handle);
+        void *h = stringIsAKey(args[0]);
+        if (!h) return std::nullopt;
+        auto it = stringIsACache().find(h);
         if (it != stringIsACache().end()) return MessageResult(Value::string(it->second ? "1" : "0"));
         return std::nullopt;
+    }
+    auto plainArgs = [&]() { for (const Value &a : args) if (a.isObject()) return false; return true; };
+    // A string's STRING / MAKESTRING / REQUEST('STRING') is the string itself.
+    if ((name == "STRING" || name == "MAKESTRING") && args.empty()) return MessageResult(receiver);
+    if (name == "REQUEST" && args.size() == 1 && !args[0].isObject()) {
+        std::string w = args[0].bytes;
+        for (char &c : w) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        if (w == "STRING") return MessageResult(receiver);
+        return std::nullopt;
+    }
+    // hay~POS(needle [, start]) / ~LASTPOS: the POS / LASTPOS built-ins with the receiver as haystack.
+    if ((name == "POS" || name == "LASTPOS") && (args.size() == 1 || args.size() == 2) && plainArgs()) {
+        std::vector<BifSlot> a{args[0], receiver};
+        if (args.size() == 2) a.emplace_back(args[1]);
+        if (auto r = quickBif(name, a)) return MessageResult(std::move(*r));
+        return std::nullopt;
+    }
+    if (name == "COUNTSTR" && args.size() == 1 && plainArgs()) {
+        const std::string &needle = args[0].bytes;
+        std::size_t n = 0;
+        if (!needle.empty())
+            for (std::size_t at = s.find(needle); at != std::string::npos; at = s.find(needle, at + needle.size())) ++n;
+        return MessageResult(Value::string(std::to_string(n)));
+    }
+    if (name == "CHANGESTR" && (args.size() == 2 || args.size() == 3) && plainArgs()) {
+        const std::string &needle = args[0].bytes, &repl = args[1].bytes;
+        std::size_t limit = std::string::npos;
+        if (args.size() == 3 && !count(args[2], limit, false)) return std::nullopt;
+        if (needle.empty() || limit == 0) return MessageResult(receiver);
+        std::string out;
+        out.reserve(s.size());
+        std::size_t from = 0, done = 0;
+        for (std::size_t at = s.find(needle); at != std::string::npos && done < limit; at = s.find(needle, from)) {
+            out.append(s, from, at - from);
+            out += repl;
+            from = at + needle.size();
+            ++done;
+        }
+        out.append(s, from, std::string::npos);
+        return MessageResult(Value::string(std::move(out)));
     }
     return std::nullopt;
 }
@@ -773,9 +819,9 @@ inline MessageResult hostStringBif(const Value &receiver, const std::string &sel
     if (auto quick = quickStringBif(name, receiver, args)) return MessageResult(Value::string(*quick));
     if (auto quick = quickStringMethod(name, receiver, args)) return std::move(*quick);
     if (name == "ISA" && args.size() == 1 && args[0].isObject())
-        if (auto *cls = dynamic_cast<EnvObject *>(args[0].object.get()); cls && cls->handle) {
+        if (void *h = stringIsAKey(args[0])) {
             MessageResult r = fallback();   // the interpreter answers once per class object; plain strings all share class String
-            if (r && !r->isObject()) stringIsACache()[cls->handle] = r->bytes == "1";
+            if (r && !r->isObject()) stringIsACache()[h] = r->bytes == "1";
             return r;
         }
     if (name == "SUBCHAR" && args.size() == 1 && !args[0].isObject() && !args[0].bytes.empty() && args[0].bytes.size() < 10 &&

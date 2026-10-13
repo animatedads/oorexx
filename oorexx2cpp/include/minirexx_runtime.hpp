@@ -266,8 +266,15 @@ inline Value arrayClass() {
 }
 // LOOP value OVER .Array iterates in index order; sparse/other collections
 // fail closed until their own ITERATOR semantics are implemented.
+// A native collection that can hand DO ... OVER its items directly (nullopt: ask it for MAKEARRAY as usual).
+struct ItemSnapshot {
+    virtual std::optional<std::vector<Value>> snapshotItems() = 0;
+    virtual ~ItemSnapshot() = default;
+};
 inline std::vector<Value> arrayItems(const Value &collection) {
     if (!collection.isObject()) throw std::runtime_error("LOOP OVER requires a collection object");
+    if (auto *snapshot = dynamic_cast<ItemSnapshot *>(collection.object.get()))
+        if (auto items = snapshot->snapshotItems()) return std::move(*items);
     auto array = std::dynamic_pointer_cast<ArrayObject>(collection.object);
     if (!array) {
         // Any other collection (interpreter objects included): DO ... OVER iterates its MAKEARRAY, as ooRexx does.

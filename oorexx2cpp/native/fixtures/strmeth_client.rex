@@ -1,0 +1,1 @@
+say .SMTest~new~run

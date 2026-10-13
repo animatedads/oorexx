@@ -139,6 +139,18 @@ inline void captureAdditional(RexxThreadContext *t, RexxDirectoryObject info) {
         lastAdditional().push_back(o == NULLOBJECT ? std::string() : std::string(t->ObjectToStringValue(o)));
     }
 }
+// A new interpreter Array of `size` slots holding `items` (items[i] at index i+1; an omitted Arg leaves a hole).
+inline void *newArray(std::size_t size, const std::vector<Arg> &items) {
+    RexxThreadContext *t = need();
+    LocalRefs temps(t);
+    RexxArrayObject arr = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(size));
+    for (std::size_t i = 0; i < items.size(); i++) {
+        const Arg &a = items[i];
+        if (a.omitted) continue;
+        t->ArrayPut(arr, a.obj ? (RexxObjectPtr)a.obj : temps((RexxObjectPtr)t->NewString(a.bytes.data(), a.bytes.size())), i + 1);
+    }
+    return (void *)t->RequestGlobalReference((RexxObjectPtr)arr);
+}
 inline void bifStat(const std::string &name);
 inline bool send(void *target, const std::string &selector, const std::vector<Arg> &args, Result &out,
                  std::string &code, std::string &text) {
@@ -518,6 +530,213 @@ struct NativeMutableBufferClass final : NativeRefBase {
 inline Value mutableBufferClass() {
     static thread_local const Value c = Value::fromObject(std::make_shared<NativeMutableBufferClass>());
     return c;
+}
+// .ARRAY in compiled library code (single dimension). Native while it stays in compiled code: [] []= AT PUT APPEND
+// ITEMS SIZE FIRST LAST FIRSTITEM LASTITEM ISEMPTY HASINDEX REMOVE MAKEARRAY ALLITEMS ALLINDEXES ISA CLASS and the
+// identity comparisons. Any other message, an index that is not a plain positive whole number, or leaving compiled
+// code creates the interpreter's own Array with the same slots and size; from then on this object forwards to it.
+// SIZE follows the interpreter: the larger of the NEW size and the highest index used; APPEND uses last item + 1.
+struct NativeArrayClass;
+inline Value nativeArrayClass();
+struct NativeArray final : NativeRefBase, ItemSnapshot, std::enable_shared_from_this<NativeArray> {
+    std::vector<std::optional<Value>> slots;   // slots.size() is the Array's SIZE
+    std::size_t count = 0;                      // ITEMS
+    std::optional<Value> real;
+    static constexpr std::size_t maxSlots = std::size_t(1) << 20;
+    explicit NativeArray(std::size_t size = 0) : slots(size) {}
+    // A positive whole number written plainly (blanks around allowed); anything else is left to the interpreter.
+    static bool index(const Value &v, std::size_t &out) {
+        if (v.isObject()) return false;
+        const std::string &s = v.bytes;
+        std::size_t a = s.find_first_not_of(' '), b = s.find_last_not_of(' ');
+        if (a == std::string::npos || b - a + 1 > 9) return false;
+        std::size_t n = 0;
+        for (std::size_t i = a; i <= b; ++i) {
+            if (s[i] < '0' || s[i] > '9') return false;
+            n = n * 10 + static_cast<std::size_t>(s[i] - '0');
+        }
+        if (n == 0) return false;
+        out = n;
+        return true;
+    }
+    static bool omitted(const Value &v) {
+        auto *e = dynamic_cast<EnvObject *>(v.object.get());
+        return e && e->handle == nullptr;
+    }
+    std::size_t lastIndex() const {
+        for (std::size_t i = slots.size(); i > 0; --i) if (slots[i - 1]) return i;
+        return 0;
+    }
+    bool place(std::size_t i, const Value &v) {      // false: too sparse to keep natively
+        if (i > slots.size()) {
+            if (i > maxSlots) return false;
+            slots.resize(i);
+        }
+        if (!slots[i - 1]) ++count;
+        slots[i - 1] = v;
+        return true;
+    }
+    Value &promote() {
+        if (!real) {
+            std::vector<Value> values;
+            std::vector<bool> holes;
+            values.reserve(slots.size());
+            for (const auto &s : slots) { values.push_back(s ? *s : Value::string(std::string())); holes.push_back(!s); }
+            std::vector<rxobj::Arg> in; EnvObject::convert(values, in);
+            for (std::size_t i = 0; i < in.size(); ++i) if (holes[i]) in[i].omitted = true;
+            real = Value::fromObject(std::make_shared<EnvObject>(rxobj::newArray(slots.size(), in)));
+            std::vector<std::optional<Value>>().swap(slots);
+            count = 0;
+        }
+        return *real;
+    }
+    void *materialize() override { return static_cast<EnvObject *>(promote().object.get())->handle; }
+    std::optional<std::vector<Value>> snapshotItems() override {
+        if (real) return std::nullopt;
+        std::vector<Value> items;
+        items.reserve(count);
+        for (const auto &s : slots) if (s) items.push_back(*s);
+        return items;
+    }
+    Value self() { return Value::fromObject(shared_from_this()); }
+    static Value number(std::size_t n) { return Value::string(std::to_string(n)); }
+    Value newArrayOf(std::vector<Value> items) {
+        auto a = std::make_shared<NativeArray>(items.size());
+        for (std::size_t i = 0; i < items.size(); ++i) a->slots[i] = std::move(items[i]);
+        a->count = items.size();
+        return Value::fromObject(a);
+    }
+    MessageResult forward(const std::string &selector, const std::vector<Value> &args) {
+        return promote().object->sendMessage(selector, args);
+    }
+    MessageResult sendMessage(const std::string &selector, const std::vector<Value> &args) override;
+    Value sendBinary(const std::string &selector, const Value &rhs) override {
+        if (!real && (selector == "==" || selector == "=" || selector == "\\==" || selector == "\\=" || selector == "<>" || selector == "><")) {
+            const bool same = rhs.isObject() && rhs.object.get() == this;
+            const bool positive = selector == "==" || selector == "=";
+            return Value::string(same == positive ? "1" : "0");
+        }
+        return promote().object->sendBinary(selector, rhs);
+    }
+    Value sendUnary(const std::string &selector) override { return promote().object->sendUnary(selector); }
+    std::string display() const override {
+        MessageResult text = const_cast<NativeArray *>(this)->forward("STRING", {});
+        return text ? text->bytes.str() : std::string();
+    }
+};
+struct NativeArrayClass final : NativeRefBase {
+    static Value interpreterClass() { return envClass("ARRAY"); }
+    void *materialize() override { return static_cast<EnvObject *>(interpreterClass().object.get())->handle; }
+    MessageResult sendMessage(const std::string &selector, const std::vector<Value> &args) override {
+        if (selector == "NEW") {
+            std::size_t n = 0;
+            if (args.empty()) return Value::fromObject(std::make_shared<NativeArray>());
+            if (args.size() == 1 && !args[0].isObject()) {
+                const std::string &s = args[0].bytes;
+                const std::size_t a = s.find_first_not_of(' ');
+                if (a != std::string::npos && s.substr(a, s.find_last_not_of(' ') - a + 1) == "0")
+                    return Value::fromObject(std::make_shared<NativeArray>(0));
+                if (NativeArray::index(args[0], n) && n <= NativeArray::maxSlots)
+                    return Value::fromObject(std::make_shared<NativeArray>(n));
+            }
+        } else if (selector == "OF") {
+            auto a = std::make_shared<NativeArray>(args.size());
+            for (std::size_t i = 0; i < args.size(); ++i) {
+                if (NativeArray::omitted(args[i])) continue;
+                a->slots[i] = args[i];
+                ++a->count;
+            }
+            return Value::fromObject(a);
+        }
+        return interpreterClass().object->sendMessage(selector, args);
+    }
+    Value sendBinary(const std::string &selector, const Value &rhs) override {
+        return interpreterClass().object->sendBinary(selector, rhs);
+    }
+    std::string display() const override { return "The Array class"; }
+};
+inline Value nativeArrayClass() {
+    static thread_local const Value c = Value::fromObject(std::make_shared<NativeArrayClass>());
+    return c;
+}
+inline MessageResult NativeArray::sendMessage(const std::string &selector, const std::vector<Value> &args) {
+    if (real) return real->object->sendMessage(selector, args);
+    std::size_t i = 0;
+    const std::size_t n = args.size();
+    switch (selector.empty() ? 0 : selector[0]) {
+    case '[':
+        if (selector == "[]" && n == 1 && index(args[0], i))
+            return i <= slots.size() && slots[i - 1] ? *slots[i - 1] : nil();
+        if (selector == "[]=" && n == 2 && !omitted(args[0]) && index(args[1], i) && place(i, args[0])) return std::nullopt;
+        break;
+    case 'A':
+        if (selector == "AT" && n == 1 && index(args[0], i))
+            return i <= slots.size() && slots[i - 1] ? *slots[i - 1] : nil();
+        if (selector == "APPEND" && n == 1 && !omitted(args[0])) {
+            const std::size_t at = lastIndex() + 1;
+            if (place(at, args[0])) return number(at);
+        }
+        if (selector == "ALLITEMS" && n == 0) return newArrayOf(*snapshotItems());
+        if (selector == "ALLINDEXES" && n == 0) {
+            std::vector<Value> ix;
+            for (std::size_t k = 0; k < slots.size(); ++k) if (slots[k]) ix.push_back(number(k + 1));
+            return newArrayOf(std::move(ix));
+        }
+        break;
+    case 'C':
+        if (selector == "CLASS" && n == 0) return nativeArrayClass();
+        break;
+    case 'F':
+        if (selector == "FIRST" && n == 0) {
+            for (std::size_t k = 0; k < slots.size(); ++k) if (slots[k]) return number(k + 1);
+            return nil();
+        }
+        if (selector == "FIRSTITEM" && n == 0) {
+            for (const auto &s : slots) if (s) return *s;
+            return nil();
+        }
+        break;
+    case 'H':
+        if (selector == "HASINDEX" && n == 1 && index(args[0], i))
+            return Value::string(i <= slots.size() && slots[i - 1] ? "1" : "0");
+        break;
+    case 'I':
+        if (selector == "ITEMS" && n == 0) return number(count);
+        if (selector == "ISEMPTY" && n == 0) return Value::string(count == 0 ? "1" : "0");
+        if (selector == "ISA" && n == 1 && args[0].isObject()) {
+            if (dynamic_cast<NativeArrayClass *>(args[0].object.get())) return Value::string("1");
+            // An Array instance: isA(c) is c == .Array or .Array~isSubclassOf(c) (no promotion needed).
+            Value cls = NativeArrayClass::interpreterClass();
+            if (auto *e = dynamic_cast<EnvObject *>(args[0].object.get()))
+                if (e->handle == static_cast<EnvObject *>(cls.object.get())->handle) return Value::string("1");
+            return cls.object->sendMessage("ISSUBCLASSOF", args);
+        }
+        break;
+    case 'L':
+        if (selector == "LAST" && n == 0) { const std::size_t l = lastIndex(); return l ? number(l) : nil(); }
+        if (selector == "LASTITEM" && n == 0) { const std::size_t l = lastIndex(); return l ? *slots[l - 1] : nil(); }
+        break;
+    case 'M':
+        if (selector == "MAKEARRAY" && n == 0) return newArrayOf(*snapshotItems());
+        break;
+    case 'P':
+        if (selector == "PUT" && n == 2 && !omitted(args[0]) && index(args[1], i) && place(i, args[0])) return std::nullopt;
+        break;
+    case 'R':
+        if (selector == "REMOVE" && n == 1 && index(args[0], i)) {
+            if (i > slots.size() || !slots[i - 1]) return nil();
+            Value out = std::move(*slots[i - 1]);
+            slots[i - 1].reset();
+            --count;
+            return out;
+        }
+        break;
+    case 'S':
+        if (selector == "SIZE" && n == 0) return number(slots.size());
+        break;
+    default: break;
+    }
+    return forward(selector, args);
 }
 #endif
 #ifdef RX2CPP_HOST_API

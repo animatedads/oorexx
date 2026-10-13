@@ -36,6 +36,7 @@
       if t~text == 'CONTEXT' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' then return 'rx::libraryContext()'
       /* Native library: .MUTABLEBUFFER builds native buffers that become the interpreter's own only when they leave. */
       if t~text == 'MUTABLEBUFFER' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' & \ctx~hasProgramClass(t~text) then return 'rx::mutableBufferClass()'
+      if t~text == 'ARRAY' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' & \ctx~hasProgramClass(t~text) then return 'rx::nativeArrayClass()'
       /* Kernel / host-API mode: environment classes are the interpreter's own objects, not reimplementations. */
       if (value('RX2CPP_KERNEL', , 'ENVIRONMENT') \= '' | value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '') & wordpos(t~text, 'TRUE FALSE NIL') = 0 & \ctx~hasProgramClass(t~text) then -
         return 'rx::envClass(' || .RxQuote~cpp(t~text) || ')'
