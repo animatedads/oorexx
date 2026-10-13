@@ -147,6 +147,25 @@ public:
         std::lock_guard<std::mutex> lock(gate_);
         states_.erase(token);
     }
+    // Interpreter object -> its native state (exact compiled instances only), so an object the interpreter hands back
+    // to compiled code runs its compiled methods directly.
+    void bind(void *handle, const std::shared_ptr<InstanceState> &state) {
+        if (!handle) return;
+        std::lock_guard<std::mutex> lock(gate_);
+        byHandle_[handle] = state;
+    }
+    void unbind(void *handle) {
+        if (!handle) return;
+        std::lock_guard<std::mutex> lock(gate_);
+        byHandle_.erase(handle);
+    }
+    std::shared_ptr<InstanceState> byHandle(void *handle) {
+        std::lock_guard<std::mutex> lock(gate_);
+        auto it = byHandle_.find(handle);
+        return it == byHandle_.end() ? nullptr : it->second.lock();
+    }
+private:
+    std::unordered_map<void *, std::weak_ptr<InstanceState>> byHandle_;
 };
 namespace {
 struct ReleaseAndReacquire {
@@ -259,8 +278,10 @@ static bool privateAllowedFor(const InstanceState *receiver, const MethodInfo &i
 }
 class NativeInstanceRef final : public rx::NativeRefBase {
     std::shared_ptr<InstanceState> st_;
+    std::shared_ptr<rx::EnvObject> keep_;   // adopted from the interpreter: holds its global reference (no early UNINIT)
 public:
-    explicit NativeInstanceRef(std::shared_ptr<InstanceState> st) : st_(std::move(st)) {}
+    explicit NativeInstanceRef(std::shared_ptr<InstanceState> st, std::shared_ptr<rx::EnvObject> keep = nullptr)
+        : st_(std::move(st)), keep_(std::move(keep)) {}
     void *materialize() override { return materializeState(st_); }
     rx::MessageResult sendMessage(const std::string &selector, const std::vector<rx::Value> &args) override {
         if (Resolved *method = lookupMethod(st_->dynamicClass, selector))
@@ -365,6 +386,11 @@ std::optional<rx::Value> packageClassImpl(const std::string &name) {
     if (!directNewTable().count(up)) return std::nullopt;
     return rx::Value::fromObject(std::make_shared<NativeClassObj>(up));
 }
+std::optional<rx::Value> adoptImpl(void *globalRef) {
+    auto st = InstanceTable::instance().byHandle(globalRef);
+    if (!st || !st->alive || !st->exact || st->handle != globalRef) return std::nullopt;
+    return rx::Value::fromObject(std::make_shared<NativeInstanceRef>(st, std::make_shared<rx::EnvObject>(globalRef)));
+}
 std::optional<rx::Value> selfObjectImpl() {
     if (!currentState) return std::nullopt;
     return rx::Value::fromObject(std::make_shared<NativeInstanceRef>(currentState->shared_from_this()));
@@ -375,7 +401,8 @@ std::string dynamicClassOf(RexxMethodContext *ctx, RexxObjectPtr self) {
     if (id == NULLOBJECT) return std::string();
     return upperOf(ctx->ObjectToStringValue(id));
 }
-[[maybe_unused]] const bool hooksInstalled = (rx::packageClassHook = &packageClassImpl, rx::selfObjectHook = &selfObjectImpl, true);
+[[maybe_unused]] const bool hooksInstalled = (rx::packageClassHook = &packageClassImpl, rx::selfObjectHook = &selfObjectImpl,
+                                              rx::adoptHook = &adoptImpl, true);
 }
 #endif
 namespace {
@@ -403,7 +430,7 @@ public:
         if (ctx_->CheckCondition()) throw PendingCondition();
         if (result == NULLOBJECT) return std::nullopt;
         if (rxobj::isPlainString(ctx_->threadContext, result)) return rx::Value::string(stringValue(ctx_, result));
-        return rx::Value::fromObject(std::make_shared<rx::EnvObject>((void *)ctx_->threadContext->RequestGlobalReference(result)));
+        return rx::EnvObject::adopt((void *)ctx_->threadContext->RequestGlobalReference(result));
     }
     std::optional<rx::Value> sendValues(const std::string &selector, const std::vector<rx::Value> &args) override {
         if (state_ && state_->exact) {
@@ -424,7 +451,7 @@ public:
         if (result == NULLOBJECT) return std::nullopt;
         temps(result);
         if (rxobj::isPlainString(ctx_->threadContext, result)) return rx::Value::string(stringValue(ctx_, result));
-        return rx::Value::fromObject(std::make_shared<rx::EnvObject>((void *)ctx_->threadContext->RequestGlobalReference(result)));
+        return rx::EnvObject::adopt((void *)ctx_->threadContext->RequestGlobalReference(result));
     }
 #endif
     std::string send(const std::string &selector, const std::vector<std::string> &args) override {
@@ -470,6 +497,7 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
                 state->token = token;
                 state->handle = (void *)selfObj;
                 state->alive = true;
+                if (!classSide) InstanceTable::instance().bind(state->handle, state);
                 setRootToken(token);
                 failedInitToken.clear();
                 return NULLOBJECT;
@@ -499,6 +527,7 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
 #endif
                 state->handle = (void *)selfObj;
                 state->alive = true;
+                if (!classSide) InstanceTable::instance().bind(state->handle, state);
                 // Register before the body runs: INIT may send messages (SELF~attr = ...) that arrive in this object.
                 token = InstanceTable::instance().add(state);
                 state->token = token;
@@ -548,7 +577,7 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
 #ifdef RX2CPP_HOST_API
             // Strings stay scalar values; every other interpreter object is passed as itself (no marshalling).
             if (!rxobj::isPlainString(ctx->threadContext, item))
-                positional.emplace_back(rx::Value::fromObject(std::make_shared<rx::EnvObject>((void *)ctx->threadContext->RequestGlobalReference(item))));
+                positional.emplace_back(rx::EnvObject::adopt((void *)ctx->threadContext->RequestGlobalReference(item)));
             else
 #endif
             positional.emplace_back(rx::Value::string(stringValue(ctx, item)));
@@ -608,7 +637,7 @@ static RexxObjectPtr rx2cpp_routine_entry(RexxCallContext *context, RexxArrayObj
             if (item == NULLOBJECT) positional.emplace_back(std::nullopt);
             else if (rxobj::isPlainString(context->threadContext, item)) positional.emplace_back(rx::Value::string(rx2cpp_routine_string(context, item)));
             else if (item == context->Nil()) positional.emplace_back(rx::nil());
-            else positional.emplace_back(rx::Value::fromObject(std::make_shared<rx::EnvObject>((void *)context->threadContext->RequestGlobalReference(item))));
+            else positional.emplace_back(rx::EnvObject::adopt((void *)context->threadContext->RequestGlobalReference(item)));
         }
         rx::Value outcome = obj->invokeValues(name, positional);
         if (outcome.isObject()) {
@@ -668,7 +697,10 @@ RexxMethod1(RexxObjectPtr, rx_native_uninit, OSELF, self)
     if (value != NULLOBJECT) {
         const auto s = context->ObjectToString(value);
         auto token = std::string(context->StringData(s), context->StringLength(s));
-        if (auto st = rx2cpp::InstanceTable::instance().find(token)) { st->alive = false; st->handle = nullptr; }
+        if (auto st = rx2cpp::InstanceTable::instance().find(token)) {
+            rx2cpp::InstanceTable::instance().unbind(st->handle);
+            st->alive = false; st->handle = nullptr;
+        }
         rx2cpp::InstanceTable::instance().remove(token);
         context->DropObjectVariable("RX2CPP_NATIVE_ID");
     }

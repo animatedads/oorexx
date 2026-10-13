@@ -299,13 +299,21 @@ struct NativeRefBase : ObjectDispatch {
 };
 // Hooks installed by a generated library: package classes created natively, and SELF of a natively dispatched method.
 inline std::optional<Value> (*packageClassHook)(const std::string &) = nullptr;
+// An interpreter object that is a live instance of one of this library's compiled classes comes back as that native
+// instance (its compiled methods then run directly). The hook takes over the global reference it is given.
+inline std::optional<Value> (*adoptHook)(void *globalRef) = nullptr;
 inline std::optional<Value> (*selfObjectHook)() = nullptr;
 struct EnvObject final : ObjectDispatch {
     void *handle;
     explicit EnvObject(void *h) : handle(h) {}
     ~EnvObject() override { rxobj::release(handle); }
+    // A global reference from the interpreter as a Value: a compiled instance of this library, or an interpreter object.
+    static Value adopt(void *globalRef) {
+        if (adoptHook) if (auto v = adoptHook(globalRef)) return std::move(*v);
+        return Value::fromObject(std::make_shared<EnvObject>(globalRef));
+    }
     static Value wrap(const rxobj::Result &r) {
-        if (r.kind == 2) return Value::fromObject(std::make_shared<EnvObject>(r.obj));
+        if (r.kind == 2) return adopt(r.obj);
         return Value::string(r.bytes);
     }
     static void convert(const std::vector<Value> &args, std::vector<rxobj::Arg> &out) {
@@ -836,7 +844,7 @@ inline MessageResult interpreterCall(Variables &vars, const std::string &name, c
     auto valueOf = [&](RexxObjectPtr o) -> Value {
         if (o == t->Nil()) return nil();
         if (rxobj::isPlainString(t, o)) return Value::string(text(o));
-        return Value::fromObject(std::make_shared<EnvObject>((void *)t->RequestGlobalReference(o)));
+        return EnvObject::adopt((void *)t->RequestGlobalReference(o));
     };
     const std::size_t n = t->ArraySize(out);
     for (std::size_t i = 2; i <= n; ++i) {
