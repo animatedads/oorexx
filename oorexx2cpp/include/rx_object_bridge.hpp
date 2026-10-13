@@ -6,6 +6,7 @@
 // Either way messages go to the interpreter's own dispatch and results are its own objects: no marshalling.
 #if defined(RX2CPP_KERNEL) || defined(RX2CPP_HOST_API)
 #include "minirexx_runtime.hpp"
+#include <csignal>
 #ifdef RX2CPP_KERNEL
 #include "rx_kernel_bif.h"
 namespace rxobj {
@@ -151,12 +152,31 @@ inline void *newArray(std::size_t size, const std::vector<Arg> &items) {
     }
     return (void *)t->RequestGlobalReference((RexxObjectPtr)arr);
 }
+// Store entries into an interpreter Directory in the given order (the same as [] = for each, without a send per entry).
+inline void directoryPutAll(void *dir, const std::vector<std::string> &keys, const std::vector<Arg> &values) {
+    RexxThreadContext *t = need();
+    for (std::size_t i = 0; i < keys.size(); i++) {
+        LocalRefs temps(t);
+        const Arg &a = values[i];
+        RexxObjectPtr value = a.obj ? (RexxObjectPtr)a.obj : temps((RexxObjectPtr)t->NewString(a.bytes.data(), a.bytes.size()));
+        if (keys[i].find('\0') == std::string::npos) t->DirectoryPut((RexxDirectoryObject)dir, value, keys[i].c_str());
+        else temps(t->SendMessage2((RexxObjectPtr)dir, "[]=", value, temps((RexxObjectPtr)t->NewString(keys[i].data(), keys[i].size()))));
+    }
+}
 inline void bifStat(const std::string &name);
 inline bool send(void *target, const std::string &selector, const std::vector<Arg> &args, Result &out,
                  std::string &code, std::string &text) {
     RexxThreadContext *t = need();
     static const bool sendStats = std::getenv("RX2CPP_BIF_STATS") != nullptr;
-    if (sendStats) bifStat("~" + selector + " to " + std::string(t->ObjectToStringValue(t->SendMessage0((RexxObjectPtr)target, "CLASS"))));
+    if (sendStats) {
+        std::string cls = t->ObjectToStringValue(t->SendMessage0((RexxObjectPtr)target, "CLASS"));
+        // A class object: name the class itself (.Directory~new, .MathInteger~coerce, ...).
+        if (cls == "The Class class") cls = std::string("class ") + t->ObjectToStringValue(t->SendMessage0((RexxObjectPtr)target, "ID"));
+        bifStat("~" + selector + " to " + cls);
+        // RX2CPP_TRAP_SEND="~NEW to class X": stop in the debugger at that send (where does it come from?).
+        static const char *trap = std::getenv("RX2CPP_TRAP_SEND");
+        if (trap && ("~" + selector + " to " + cls) == trap) std::raise(SIGTRAP);
+    }
     LocalRefs temps(t);
     auto argObj = [&](const Arg &a) -> RexxObjectPtr {
         return a.obj ? (RexxObjectPtr)a.obj : temps((RexxObjectPtr)t->NewString(a.bytes.data(), a.bytes.size()));
@@ -436,7 +456,7 @@ inline Value selfObject() {
     if (selfObjectHook) if (auto v = selfObjectHook()) return *v;
     void *h = rxobj::selfHandle();
     if (!h) throw std::runtime_error("SELF is not available here");
-    return Value::fromObject(std::make_shared<EnvObject>(h));
+    return EnvObject::adopt(h);
 }
 // .NAME environment symbols resolve to the interpreter's own classes (.ARRAY, .DIRECTORY, .LIST, ...).
 inline Value envClass(const std::string &name) {
@@ -665,6 +685,93 @@ struct NativeArrayClass final : NativeRefBase {
 };
 inline Value nativeArrayClass() {
     static thread_local const Value c = Value::fromObject(std::make_shared<NativeArrayClass>());
+    return c;
+}
+// .DIRECTORY in compiled library code. Native while it stays in compiled code: [] []= AT PUT HASINDEX ITEMS ISEMPTY ISA
+// CLASS and the identity comparisons, with plain string indexes. Iteration order is the interpreter's hash order, which
+// depends on insertion history: anything that shows order (ALLINDEXES, MAKEARRAY, SUPPLIER, DO OVER, ...), REMOVE,
+// any other message, or leaving compiled code creates the interpreter's Directory by replaying the first insertions in
+// their original order (the same history gives the same table) and forwards to it from then on.
+struct NativeDirectoryClass;
+inline Value nativeDirectoryClass();
+struct NativeDirectory final : NativeRefBase, std::enable_shared_from_this<NativeDirectory> {
+    std::vector<std::string> order;                       // first-insertion order
+    std::unordered_map<std::string, Value> entries;
+    std::optional<Value> real;
+    Value &promote() {
+        if (!real) {
+            MessageResult made = envClass("DIRECTORY").object->sendMessage("NEW", {});
+            if (!made || !made->isObject()) throw std::runtime_error(".Directory~new returned no object");
+            auto *env = dynamic_cast<EnvObject *>(made->object.get());
+            if (!env) throw std::runtime_error(".Directory~new is not an interpreter object");
+            std::vector<Value> values;
+            values.reserve(order.size());
+            for (const auto &k : order) values.push_back(entries.at(k));
+            std::vector<rxobj::Arg> in; EnvObject::convert(values, in);
+            rxobj::directoryPutAll(env->handle, order, in);
+            real = *made;
+            std::vector<std::string>().swap(order);
+            std::unordered_map<std::string, Value>().swap(entries);
+        }
+        return *real;
+    }
+    void *materialize() override { return static_cast<EnvObject *>(promote().object.get())->handle; }
+    MessageResult sendMessage(const std::string &selector, const std::vector<Value> &args) override {
+        if (real) return real->object->sendMessage(selector, args);
+        const std::size_t n = args.size();
+        const bool key0 = n >= 1 && !args[n == 2 ? 1 : 0].isObject();
+        if ((selector == "[]" || selector == "AT") && n == 1 && key0) {
+            auto it = entries.find(args[0].bytes);
+            return it == entries.end() ? nil() : it->second;
+        }
+        if ((selector == "[]=" || selector == "PUT") && n == 2 && key0 && !NativeArray::omitted(args[0])) {
+            const std::string &k = args[1].bytes;
+            auto it = entries.find(k);
+            if (it == entries.end()) { order.push_back(k); entries.emplace(k, args[0]); }
+            else it->second = args[0];
+            return std::nullopt;
+        }
+        if (selector == "HASINDEX" && n == 1 && key0) return Value::string(entries.count(args[0].bytes) ? "1" : "0");
+        if (selector == "ITEMS" && n == 0) return Value::string(std::to_string(entries.size()));
+        if (selector == "ISEMPTY" && n == 0) return Value::string(entries.empty() ? "1" : "0");
+        if (selector == "CLASS" && n == 0) return nativeDirectoryClass();
+        if (selector == "ISA" && n == 1 && args[0].isObject()) {
+            if (args[0].object.get() == nativeDirectoryClass().object.get()) return Value::string("1");
+            Value cls = envClass("DIRECTORY");
+            if (auto *e = dynamic_cast<EnvObject *>(args[0].object.get()))
+                if (e->handle == static_cast<EnvObject *>(cls.object.get())->handle) return Value::string("1");
+            return cls.object->sendMessage("ISSUBCLASSOF", args);
+        }
+        return promote().object->sendMessage(selector, args);
+    }
+    Value sendBinary(const std::string &selector, const Value &rhs) override {
+        if (!real && (selector == "==" || selector == "=" || selector == "\\==" || selector == "\\=" || selector == "<>" || selector == "><")) {
+            const bool same = rhs.isObject() && rhs.object.get() == this;
+            const bool positive = selector == "==" || selector == "=";
+            return Value::string(same == positive ? "1" : "0");
+        }
+        return promote().object->sendBinary(selector, rhs);
+    }
+    Value sendUnary(const std::string &selector) override { return promote().object->sendUnary(selector); }
+    std::string display() const override {
+        MessageResult text = const_cast<NativeDirectory *>(this)->promote().object->sendMessage("STRING", {});
+        return text ? text->bytes.str() : std::string();
+    }
+};
+struct NativeDirectoryClass final : NativeRefBase {
+    void *materialize() override { return static_cast<EnvObject *>(envClass("DIRECTORY").object.get())->handle; }
+    MessageResult sendMessage(const std::string &selector, const std::vector<Value> &args) override {
+        // Only .Directory~new without arguments: an initial size changes the interpreter's table layout (and order).
+        if (selector == "NEW" && args.empty()) return Value::fromObject(std::make_shared<NativeDirectory>());
+        return envClass("DIRECTORY").object->sendMessage(selector, args);
+    }
+    Value sendBinary(const std::string &selector, const Value &rhs) override {
+        return envClass("DIRECTORY").object->sendBinary(selector, rhs);
+    }
+    std::string display() const override { return "The Directory class"; }
+};
+inline Value nativeDirectoryClass() {
+    static thread_local const Value c = Value::fromObject(std::make_shared<NativeDirectoryClass>());
     return c;
 }
 inline MessageResult NativeArray::sendMessage(const std::string &selector, const std::vector<Value> &args) {

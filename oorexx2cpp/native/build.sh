@@ -55,7 +55,11 @@ if grep -qiE "^[[:space:]]*::requires[[:space:]]+['\"][^'\"]+\.cls['\"][[:space:
     SOURCE="$TMP/combined.cls"
 fi
 (cd "$ROOT" && "$REXX_BIN" rx2cpp_native_library.rex "$SOURCE" "$TMP/generated" "$PACKAGE")
-cxxflags=( -std=c++17 -O2 -fPIC -Wall -Wextra -Werror
+# Each library keeps its own copy of the runtime's inline variables (hooks, current context, library package): GCC would
+# otherwise make them process-wide (STB_GNU_UNIQUE overrides -Bsymbolic) and two loaded libraries would share them.
+uniqueflag=( )
+if "$CXX" -fno-gnu-unique -x c++ -E /dev/null >/dev/null 2>&1; then uniqueflag=( -fno-gnu-unique ); fi
+cxxflags=( -std=c++17 -O2 -fPIC -Wall -Wextra -Werror "${uniqueflag[@]}"
     -I"$OO_INCLUDE" -I"$ROOT/include" -I"$ROOT/hybrid" -I"$TMP" -DRX2CPP_HOST_API "${bifflags[@]}" )
 objs=( )
 for src in "$TMP/generated.cpp" "${bifsrc[@]}"; do

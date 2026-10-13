@@ -113,6 +113,7 @@ typedef std::unordered_map<std::string, MethodTable, CiHash, CiEq> ClassMethodTa
 struct InstanceState : std::enable_shared_from_this<InstanceState> {
     std::string dynamicClass;        // the class the instance was created from (upper case)
     bool exact = false;              // the dynamic class is a class of this package, so direct dispatch is faithful
+    bool classSide = false;          // the state of a class object (its CLASS methods), not of an instance
     std::mutex gate;
     void *handle = nullptr;          // interpreter object, valid while alive
     bool alive = false;
@@ -276,6 +277,38 @@ static bool privateAllowedFor(const InstanceState *receiver, const MethodInfo &i
     if (currentState == receiver) return true;
     return instanceOfScope(currentState->dynamicClass, info.definingClass);
 }
+/* Does an instance of this compiled class answer the comparison `op` with .Object's own method (identity)? Exact for
+   the class: the interpreter is asked once per (class, operator) whether an instance's instanceMethod(op) is the one
+   a plain .Object instance runs (a compiled method of that name, a mixin such as Orderable, or an interpreter parent
+   that defines it all give false). Not seen: a method given to one object later with SETMETHOD. */
+bool objectIdentityOp(const std::shared_ptr<InstanceState> &st, const std::string &op) {
+    static thread_local std::map<std::pair<std::string, std::string>, bool> known;
+    const auto key = std::make_pair(st->dynamicClass, op);
+    auto it = known.find(key);
+    if (it != known.end()) return it->second;
+    bool identity = false;
+    if (!lookupMethod(st->dynamicClass, op)) {
+        static thread_local void *plainObject = nullptr;   // one .Object instance, kept for the comparison
+        if (!plainObject) {
+            void *object = rxobj::findClass("OBJECT");
+            rxobj::Result r; std::string code, text;
+            if (object && rxobj::send(object, "NEW", {}, r, code, text) && r.kind == 2) plainObject = r.obj;
+            if (object) rxobj::release(object);
+        }
+        void *mine = materializeState(st);
+        if (plainObject && mine) {
+            std::vector<rxobj::Arg> name(1); name[0].bytes = op;
+            rxobj::Result a, b; std::string code, text;
+            const bool okA = rxobj::send(mine, "INSTANCEMETHOD", name, a, code, text);
+            const bool okB = okA && rxobj::send(plainObject, "INSTANCEMETHOD", name, b, code, text);
+            identity = okA && okB && a.kind == 2 && b.kind == 2 && a.obj == b.obj;
+            if (okA && a.kind == 2) rxobj::release(a.obj);
+            if (okB && b.kind == 2) rxobj::release(b.obj);
+        }
+    }
+    known.emplace(key, identity);
+    return identity;
+}
 class NativeInstanceRef final : public rx::NativeRefBase {
     std::shared_ptr<InstanceState> st_;
     std::shared_ptr<rx::EnvObject> keep_;   // adopted from the interpreter: holds its global reference (no early UNINIT)
@@ -284,11 +317,37 @@ public:
         : st_(std::move(st)), keep_(std::move(keep)) {}
     void *materialize() override { return materializeState(st_); }
     rx::MessageResult sendMessage(const std::string &selector, const std::vector<rx::Value> &args) override {
+        // ISA of a compiled instance whose class does not define ISA: the answer depends on its class and the class asked
+        // about, so the interpreter answers once per pair.
+        if (args.size() == 1 && args[0].isObject() && !st_->classSide && selector == "ISA" && !lookupMethod(st_->dynamicClass, "ISA")) {
+            void *key = nullptr;
+            if (auto *e = dynamic_cast<rx::EnvObject *>(args[0].object.get())) key = e->handle;
+            else if (auto *n = dynamic_cast<rx::NativeRefBase *>(args[0].object.get()); n && !dynamic_cast<NativeInstanceRef *>(n)) key = n->materialize();
+            if (key) {
+                static thread_local std::map<std::pair<std::string, void *>, bool> known;
+                const auto k = std::make_pair(st_->dynamicClass, key);
+                auto it = known.find(k);
+                if (it != known.end()) return rx::Value::string(it->second ? "1" : "0");
+                auto r = interpreterSend(st_, selector, args);
+                if (r && !r->isObject()) known.emplace(k, r->bytes == "1");
+                return r;
+            }
+        }
         if (Resolved *method = lookupMethod(st_->dynamicClass, selector))
             if (method->second.isPublic || privateAllowedFor(st_.get(), method->second)) return runNative(st_, *method, optionalsOf(args));
         return interpreterSend(st_, selector, args);
     }
+    const InstanceState *state() const { return st_.get(); }
     rx::Value sendBinary(const std::string &selector, const rx::Value &rhs) override {
+        // .Object's comparisons are identity: answered here when that is the method the object would run.
+        const bool positive = selector == "==" || selector == "=";
+        if ((positive || selector == "\\==" || selector == "\\=" || selector == "<>" || selector == "><") &&
+            objectIdentityOp(st_, selector)) {
+            bool same = false;
+            if (auto *other = dynamic_cast<NativeInstanceRef *>(rhs.object.get())) same = other->state() == st_.get();
+            else if (auto *env = dynamic_cast<rx::EnvObject *>(rhs.object.get())) same = st_->alive && st_->handle && env->handle == st_->handle;
+            return rx::Value::string(same == positive ? "1" : "0");
+        }
         auto r = sendMessage(selector, {rhs});
         if (!r) throw std::runtime_error("operator message returned no value: " + selector);
         return *r;
@@ -386,13 +445,35 @@ std::optional<rx::Value> packageClassImpl(const std::string &name) {
     if (!directNewTable().count(up)) return std::nullopt;
     return rx::Value::fromObject(std::make_shared<NativeClassObj>(up));
 }
+/* This library's class objects that compiled code may instantiate directly (directNewTable), by interpreter handle. */
+const std::unordered_map<void *, std::string> &classByHandle() {
+    static thread_local std::unordered_map<void *, std::string> table;
+    static thread_local bool filled = false;
+    if (!filled) {
+        filled = true;
+        for (const auto &name : directNewTable())
+            if (void *h = rxobj::findClass(name)) table.emplace(h, name);   // class objects live as long as the interpreter
+    }
+    return table;
+}
+std::optional<rx::Value> adoptClass(void *handle) {
+    const auto &classes = classByHandle();
+    auto it = classes.find(handle);
+    if (it == classes.end()) return std::nullopt;
+    return rx::Value::fromObject(std::make_shared<NativeClassObj>(it->second));
+}
 std::optional<rx::Value> adoptImpl(void *globalRef) {
     auto st = InstanceTable::instance().byHandle(globalRef);
-    if (!st || !st->alive || !st->exact || st->handle != globalRef) return std::nullopt;
-    return rx::Value::fromObject(std::make_shared<NativeInstanceRef>(st, std::make_shared<rx::EnvObject>(globalRef)));
+    if (st && st->alive && st->exact && st->handle == globalRef)
+        return rx::Value::fromObject(std::make_shared<NativeInstanceRef>(st, std::make_shared<rx::EnvObject>(globalRef)));
+    if (auto cls = adoptClass(globalRef)) { rxobj::release(globalRef); return cls; }
+    return std::nullopt;
 }
 std::optional<rx::Value> selfObjectImpl() {
     if (!currentState) return std::nullopt;
+    // SELF in a CLASS method is the receiving class object itself (a subclass, for an inherited class method).
+    if (currentState->classSide && currentState->handle)
+        if (auto cls = adoptClass(currentState->handle)) return cls;
     return rx::Value::fromObject(std::make_shared<NativeInstanceRef>(currentState->shared_from_this()));
 }
 std::string dynamicClassOf(RexxMethodContext *ctx, RexxObjectPtr self) {
@@ -436,6 +517,13 @@ public:
         if (state_ && state_->exact) {
             std::optional<rx::Value> out;
             if (nativeSelfSend(state_, className_, selector, args, out)) return out;
+        }
+        // SELF~NEW in a CLASS method: the receiving class object itself (a subclass for an inherited class method) makes
+        // the instance; for a class compiled code may instantiate, that runs natively.
+        if (state_ && state_->classSide) {
+            static const CiEq same;
+            if (same(selector, "NEW"))
+                if (auto cls = adoptClass((void *)self_)) return cls->object->sendMessage("NEW", args);
         }
         std::vector<rxobj::Arg> in; rx::EnvObject::convert(args, in);
         // A self send can run many times inside one native call: release every local reference it makes.
@@ -523,6 +611,7 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
                 state = std::make_shared<InstanceState>();
 #ifdef RX2CPP_HOST_API
                 state->dynamicClass = classSide ? className : dynamicClassOf(ctx, selfObj);
+                state->classSide = classSide;
                 state->exact = !classSide && directMethodTable().count(state->dynamicClass) > 0;
 #endif
                 state->handle = (void *)selfObj;
@@ -550,6 +639,7 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
                 // The class object has no native state until its first CLASS method runs (no INIT CLASS declared).
                 state = std::make_shared<InstanceState>();
                 state->dynamicClass = className;
+                state->classSide = true;
                 state->handle = (void *)selfObj;
                 state->alive = true;
                 token = InstanceTable::instance().add(state);
