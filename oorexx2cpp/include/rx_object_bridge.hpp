@@ -1294,3 +1294,7 @@ inline void interpreterCommand(Variables &vars, const Value &environment, const 
 #endif
 }
 #endif
+
+#ifdef RX2CPP_HOST_API
+#include "rx_native_nine.hpp"
+#endif
