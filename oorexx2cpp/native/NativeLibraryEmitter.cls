@@ -209,7 +209,7 @@
   routineEntries = ''
   if arg(6, 'E') then do
     do routineName over routines~names
-      self~identifier(routineName, 'routine')
+      self~identifier(.RxQuote~identifier(routineName), 'routine')
       if routineName == 'RX2CPP_ROUTINE_IMPL' then
         raise syntax 40.1 array('rx2cpp: reserved native routine identifier')
       visibility = routines~visibilities[routineName]
@@ -220,15 +220,16 @@
         entryName = 'RX2CPP_PRIVATE_' || routineName
         if routines~visibilities~hasIndex(entryName) then
           raise syntax 40.1 array('rx2cpp: private routine ABI alias collision ' || entryName)
-        source = source || '::routine ' || routineName || ' private external "LIBRARY ' || ,
+        source = source || '::routine "' || routineName || '" private external "LIBRARY ' || ,
                   packageName || ' ' || entryName || '"' || '0a'x
       end
-      symbol = 'rx_native_routine_' || routineName~lower
+      symbol = 'rx_native_routine_' || .RxQuote~identifier(routineName~lower)
       if routineDefs == '' then routineDefs = '#define RX2CPP_HAS_ROUTINES 1' || '0a'x || ,
         'static RexxObjectPtr rx2cpp_routine_entry(RexxCallContext *context, RexxArrayObject args, const char *name);' || '0a'x
       routineDefs = routineDefs || 'RexxRoutine1(RexxObjectPtr, ' || symbol || ', ARGLIST, args)' || '0a'x
       routineDefs = routineDefs || '{ return rx2cpp_routine_entry(context, args, ' || .RxQuote~cpp(routineName) || '); }' || '0a'x
-      routineEntries = routineEntries || '    REXX_TYPED_ROUTINE(' || entryName || ', ' || symbol || '),' || '0a'x
+      /* REXX_TYPED_ROUTINE written out: the exported name is a string, not an identifier (it may hold dots). */
+      routineEntries = routineEntries || '    { ROUTINE_TYPED_STYLE, 0, ' || .RxQuote~cpp(entryName) || ', (void *)' || symbol || ', 0, 0 },' || '0a'x
     end
   end
   if arg(6, 'E') then do

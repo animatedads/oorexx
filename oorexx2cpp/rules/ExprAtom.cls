@@ -12,6 +12,11 @@
         return ctx~builtinExpr~parseQuoted(ctx, t~text)
       return 'rx::Value::string(' || .RxQuote~cpp(t~text) || ')'
     end
+    /* A lone period is a constant symbol: its value is "." (xrange(., .)). */
+    when t~kind == 'OP' & t~text == '.' then do
+      s~next
+      return 'rx::Value::string(".")'
+    end
     when t~kind == 'NUMBER' | t~kind == 'INT' then do
       s~next
       return 'rx::Value::number(' || .RxQuote~cpp(t~text) || ')'

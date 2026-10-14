@@ -22,7 +22,7 @@ CXX="$CXX" "$ROOT/native/build.sh" "$FIX/native.cls" "$OUT" rxnumericshared
 "$REXX_BIN" "$FIX/native_client.rex" > "$OUT/method.native"
 cmp "$OUT/method.reference" "$OUT/method.native"
 sha=$(sha256sum "$OUT/librxnumericshared.so" | cut -d' ' -f1)
-printf '%s\n' '::class Numerics public' '::method init' '::method compute' '  numeric form VALUE 8' '  return 1' > "$OUT/invalid.cls"
+printf '%s\n' '::class Numerics public' '::method init' '::method compute' '  numeric form VALUE' '  return 1' > "$OUT/invalid.cls"   # no expression after VALUE: 35.917 when interpreted
 if CXX="$CXX" "$ROOT/native/build.sh" "$OUT/invalid.cls" "$OUT" rxnumericshared >"$OUT/rejected.log" 2>&1; then
   echo 'FAIL accepted invalid NUMERIC FORM expression'; exit 1
 fi

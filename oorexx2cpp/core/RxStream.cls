@@ -39,6 +39,53 @@
     n = n + 1
   end
   return labels
+/* Labels of this method body that are internal routines: the targets of CALL name / name(...). For each, a directory
+   with PROCEDURE (.true when the label's first instruction is PROCEDURE) and EXPOSE (its names, in order). */
+::method methodBodyCalls
+  use arg labels
+  calls = .directory~new
+  n = 0
+  do while self~lookAheadKind(n) \= 'EOF'
+    atClause = n == 0
+    if n > 0 then atClause = self~lookAheadKind(n - 1) == 'SEP' | wordpos(self~lookAheadText(n - 1), 'THEN ELSE OTHERWISE') > 0
+    if atClause & self~lookAheadKind(n) == 'OP' & self~lookAheadText(n) == '::' then leave
+    name = ''
+    if atClause & self~lookAheadKind(n) == 'IDENT' & self~lookAheadText(n) == 'CALL' & self~lookAheadKind(n + 1) == 'IDENT' then
+      name = self~lookAheadText(n + 1)
+    else if self~lookAheadKind(n) == 'IDENT' & self~lookAheadText(n + 1) == '(' then do
+      t = self~lookAheadToken(n); p = self~lookAheadToken(n + 1)
+      if p~line == t~endLine & p~col == t~endCol then name = self~lookAheadText(n)
+    end
+    if name \== '' then if labels~hasItem(name) then calls[name] = 'PENDING'
+    n = n + 1
+  end
+  /* PROCEDURE [EXPOSE names] right after each called label */
+  n = 0
+  do while self~lookAheadKind(n) \= 'EOF'
+    atClause = n == 0
+    if n > 0 then atClause = self~lookAheadKind(n - 1) == 'SEP'
+    if atClause & self~lookAheadKind(n) == 'OP' & self~lookAheadText(n) == '::' then leave
+    if atClause & self~lookAheadKind(n) == 'IDENT' & self~lookAheadText(n + 1) == ':' then do
+      name = self~lookAheadText(n)
+      if calls~hasIndex(name) then if calls[name]~isA(.string) then do
+        info = .directory~new; info~procedure = .false; info~expose = .array~new
+        k = n + 2
+        do while self~lookAheadKind(k) == 'SEP'; k = k + 1; end
+        if self~lookAheadKind(k) == 'IDENT' & self~lookAheadText(k) == 'PROCEDURE' then do
+          info~procedure = .true
+          if self~lookAheadText(k + 1) == 'EXPOSE' then do
+            k = k + 2
+            do while self~lookAheadKind(k) == 'IDENT'
+              info~expose~append(self~lookAheadText(k)); k = k + 1
+            end
+          end
+        end
+        calls[name] = info
+      end
+    end
+    n = n + 1
+  end
+  return calls
 ::method methodBodySignals
   n = 0
   do while self~lookAheadKind(n) \= 'EOF'
@@ -75,6 +122,12 @@
   i = cursor + offset
   if i > tokens~items then return '<eof>'
   return tokens[i]~text
+::method lookAheadToken
+  expose tokens cursor
+  use arg offset
+  i = cursor + offset
+  if i > tokens~items then return tokens[tokens~items]
+  return tokens[i]
 ::method next
   expose tokens cursor
   t = tokens[cursor]

@@ -13,6 +13,7 @@ call time 'R'
 source = readSource(input)
 extras = .RxNativePackageExtras~new~parse(source)
 source = extras~sanitized
+.local['RX2CPP.INPUTNAME'] = input   /* PARSE SOURCE of a routine outside any combine marker */
 routines = .RxNativePackageRoutines~new~parse(source)
 source = routines~sanitized
 gateOK = .RxNativeSourceGate~new~validate(source)
@@ -72,6 +73,24 @@ do unit over units
   if progress then .error~lineout('rx2cpp: progress' time('E')~format(, 1)'s emitted' unit~className '('cpp~length 'bytes so far)')
   header = header || 'std::shared_ptr<CompiledObject> makeGeneratedObject_' || .RxQuote~identifier(unit~className) || '();' || '0a'x
   names = names || unit~className || ' '
+end
+/* SOURCELINE: the lines of each source file it reads, embedded (split as the interpreter does: LF, a CR before it
+   dropped; a final line end adds no line). */
+files = .local['RX2CPP.SOURCEFILES']
+if files~isA(.array) then if files~items > 0 then do
+  header = header || '}' || '0a'x || '#include <string>' || '0a'x || '#include <vector>' || '0a'x || 'namespace rx2cpp {' || '0a'x
+  header = header || 'const std::vector<std::string> &sourceLines(int id);' || '0a'x
+  cpp = cpp || 'namespace rx2cpp {' || '0a'x || 'const std::vector<std::string> &sourceLines(int id) {' || '0a'x
+  do id = 1 to files~items
+    fileLines = readSource(files[id])~makeArray('0a'x)
+    body = .mutableBuffer~new
+    do oneLine over fileLines
+      if oneLine~right(1) == '0d'x then oneLine = oneLine~left(oneLine~length - 1)
+      body~append(.RxQuote~cpp(oneLine), ', ')
+    end
+    cpp = cpp || '    static const std::vector<std::string> file' || id || ' = {' || body~string || '};' || '0a'x || '    if (id == ' || id || ') return file' || id || ';' || '0a'x
+  end
+  cpp = cpp || '    static const std::vector<std::string> none;' || '0a'x || '    return none;' || '0a'x || '}' || '0a'x || '}' || '0a'x
 end
 header = header || '}' || '0a'x || '#endif' || '0a'x
 /* All parsing and validation completes before writing generated output. */

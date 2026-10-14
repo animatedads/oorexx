@@ -42,10 +42,8 @@ sed 's/$/ COMPILED/' "$WORK/version.interpreter" > "$WORK/version.expected"
 cmp "$WORK/version.expected" "$WORK/version.actual" || { diff -u "$WORK/version.expected" "$WORK/version.actual"; exit 1; }
 echo 'PASS PARSE VERSION: reference version with COMPILED marker'
 passed=$((passed+1))
+# (parse source / version / arg with an empty template are valid: examples/parse/parse_empty_templates.rex.)
 negatives=(
-  'parse source'
-  'parse version'
-  'parse arg'
   'parse lower'
   'parse upper unknown x'
   'parse arg a + x'

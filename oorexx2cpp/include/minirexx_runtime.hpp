@@ -27,6 +27,7 @@
 #include <utility>
 #include <vector>
 #include <deque>
+#include <random>
 
 namespace rx {
 // The interpreter implements operators as messages to the LEFT operand.
@@ -193,7 +194,76 @@ inline Value nil() {
     return Value::fromObject(singleton);
 }
 inline Value noResult() { noResultPending() = true; return Value::string(std::string()); }
-
+// Per-activation state of the built-ins, as RexxActivation keeps it.
+//   Stream table (LINEIN, CHAROUT, STREAM, ...): qualified name -> stream object. Every method activation has its own,
+//   made on first use; internal routines and compiled package routines called from compiled code share their caller's.
+//   A routine called by the interpreter starts one of its own (the interpreted caller's is not reachable from here).
+//   RANDOM seed: every method and routine activation has its own (internal routines use their caller's), started from
+//   the thread's seed source as Activity::getRandomSeed does.
+struct MethodTraps;
+// NOTREADY raised by a stream built-in in an activation that traps it (SIGNAL ON NOTREADY / ANY): the interpreter's
+// condition object (an EnvObject) travels to the trap.
+struct NotReadyCondition : std::runtime_error {
+    std::shared_ptr<ObjectDispatch> conditionObject;
+    explicit NotReadyCondition(std::shared_ptr<ObjectDispatch> o) : std::runtime_error("NOTREADY"), conditionObject(std::move(o)) {}
+};
+// How compiled code is about to call a compiled package routine (SUBROUTINE / FUNCTION), for its PARSE SOURCE.
+inline std::string &pendingCallType() { static thread_local std::string type; return type; }
+struct ActivationScope {
+    enum Kind { Method, Routine };
+    Kind kind;
+    MethodTraps *traps = nullptr;   // the SIGNAL ON state of the running activation (method body or internal routine)
+    std::string callType;           // a routine's: SUBROUTINE / FUNCTION, '' when the interpreter called it
+    std::unique_ptr<std::unordered_map<std::string, Value>> table;
+    bool seeded = false;
+    std::uint64_t seed = 0;
+    ActivationScope *saved;
+    static ActivationScope *&current() { static thread_local ActivationScope *scope = nullptr; return scope; }
+    explicit ActivationScope(Kind k = Method) : kind(k), callType(std::exchange(pendingCallType(), std::string())),
+                                                 saved(current()) { current() = this; }
+    // PARSE SOURCE call type of the running package routine.
+    static std::string routineCallType() {
+        ActivationScope *s = current();
+        if (!s || s->kind != Routine || s->callType.empty())
+            throw std::runtime_error("PARSE SOURCE: the call type of a compiled routine called by the interpreter is not known");
+        return s->callType;
+    }
+    ~ActivationScope() { current() = saved; }
+    ActivationScope(const ActivationScope &) = delete;
+    ActivationScope &operator=(const ActivationScope &) = delete;
+    static std::unordered_map<std::string, Value> &streams() {
+        static thread_local std::unordered_map<std::string, Value> outside;   // no compiled activation on this thread
+        ActivationScope *s = current();
+        while (s && s->kind == Routine && s->saved) s = s->saved;
+        if (!s) return outside;
+        if (!s->table) s->table = std::make_unique<std::unordered_map<std::string, Value>>();
+        return *s->table;
+    }
+    // Activity::generateRandomNumberSeed / getRandomSeed: a per-thread source, a new value for each activation.
+    static std::uint64_t activitySeed() {
+        static thread_local std::uint64_t source = [] {
+            std::random_device device;
+            std::uint64_t v = 0;
+            for (int i = 0; i < 4; ++i) v = v << 16 ^ device();
+            return v;
+        }();
+        static thread_local std::mt19937 rng{std::random_device{}()};
+        source = source << 16 ^ (rng() & 0x7fffffff);
+        return source;
+    }
+    static std::uint64_t &randomSeed() {
+        static thread_local bool outsideSeeded = false;
+        static thread_local std::uint64_t outsideSeed = 0;
+        ActivationScope *s = current();
+        if (!s) {
+            if (!outsideSeeded) { outsideSeed = activitySeed(); outsideSeeded = true; }
+            return outsideSeed;
+        }
+        if (!s->seeded) { s->seed = activitySeed(); s->seeded = true; }
+        return s->seed;
+    }
+};
+using StreamScope = ActivationScope;
 /* Small native .ARRAY subset. Index operations use ooRexx message selectors
    [] and []= (value FIRST, index SECOND); no C++ indexing semantics leak in.
    Uninitialised elements and multidimensional arrays are unsupported. */
@@ -631,6 +701,8 @@ struct SyntaxCondition : std::runtime_error {
 // SIGNAL label in compiled code: leaves every active loop of the activation, as Rexx does.
 struct SignalJump { int target; std::size_t line; };
 struct ProgramExit { int code; };
+// EXIT inside an internal routine of a compiled method leaves the method (with its value, or no result).
+struct MethodExit { std::optional<Value> value; };
 // The interpreter's process status for an uncaught SYNTAX error is 256 minus the error number
 // (98 -> 158, 42 -> 214, 93 -> 163).  Runtime errors that carry no "Error N" prefix keep status 2.
 inline int uncaughtStatus(const std::string &what) {

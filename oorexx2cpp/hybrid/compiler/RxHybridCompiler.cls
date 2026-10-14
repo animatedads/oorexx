@@ -61,7 +61,12 @@
   expose sourceName
   use arg sourceName
 ::method sourceName
-  expose sourceName
+  expose sourceName className current
+  /* A package routine: its own file (routines of several combined files share one implementation class). */
+  if className == 'RX2CPP_ROUTINE_IMPL' & var('CURRENT') then if .local['RX2CPP.ROUTINESOURCES']~isA(.directory) then do
+    routineSource = .local['RX2CPP.ROUTINESOURCES'][current~selector~upper]
+    if routineSource \== .nil then return routineSource
+  end
   if var('SOURCENAME') then return sourceName
   return ''
 /* ::CLASS ... PUBLIC: visible to packages that require this one; otherwise (PRIVATE, the default) only to its own. */
@@ -326,7 +331,21 @@
        continue the loop at that case (all active DO loops end, as in Rexx). */
     bodyLabels = s~methodBodyLabels
     current~setTraps(bodyLabels, bodyLabels~items > 0 | s~methodBodySignals)
-    if current~trapped then do
+    /* Internal routines (CALL label / label(...)): the body becomes one function entered at label k with the call's
+       arguments and variable pool (the caller's, or a PROCEDURE pool); RETURN goes back to the caller, EXIT leaves the
+       method. Each activation has its own trap state. */
+    internalCalls = s~methodBodyCalls(bodyLabels)
+    current~setInternalCalls(internalCalls)
+    if current~hasInternalCalls then do
+      current~addRaw('std::function<rx::Value(int, const std::vector<std::optional<rx::Value>> &, rx::Variables &, bool)> _rxBody;')
+      current~addRaw('_rxBody = [&](int _rxEntry, const std::vector<std::optional<rx::Value>> &arguments, rx::Variables &vars, bool _rxInternal) -> rx::Value {')
+      current~addRaw('(void)_rxInternal; (void)arguments;')
+      /* PARSE ARG / ARG read this activation's own arguments (an internal routine's, not the method's). */
+      current~addRaw('std::vector<rx::Value> _rxProgramArgs; for (const auto &_a : arguments) _rxProgramArgs.push_back(_a ? *_a : rx::Value::string(std::string())); (void)_rxProgramArgs;')
+      current~addRaw('rx::MethodTraps _rxTrap; int _rxAt = _rxEntry; std::size_t _rxLine = 0; (void)_rxLine;')
+      current~addRaw('for (;;) { try { switch (_rxAt) { case 0: {')
+    end
+    else if current~trapped then do
       current~addRaw('rx::MethodTraps _rxTrap; int _rxAt = 0; std::size_t _rxLine = 0; (void)_rxLine;')
       current~addRaw('for (;;) { try { switch (_rxAt) { case 0: {')
     end
@@ -349,8 +368,15 @@
     if current~trapped then do
       current~addRaw('} } break; }')
       current~addRaw('catch (const rx::SignalJump &_rxJump) { _rxAt = _rxJump.target; rx::set(vars, "SIGL", rx::Value::string(std::to_string(_rxJump.line))); }')
+      current~addRaw('catch (const rx::MethodExit &) { throw; }')   /* EXIT from an internal routine is not a condition */
       current~addRaw('catch (...) { _rxAt = _rxTrap.fire(vars, _rxLine, std::current_exception()); if (_rxAt < 0) throw; } }')
       if current~selector \= 'INIT' then current~addRaw('return rx::noResult();')
+    end
+    if current~hasInternalCalls then do
+      if current~selector == 'INIT' then current~addRaw('return rx::Value::string(std::string());')
+      current~addRaw('};')
+      current~addRaw('try { return _rxBody(0, arguments, vars, false); }')
+      current~addRaw('catch (const rx::MethodExit &_rxExit) { if (_rxExit.value) return *_rxExit.value; return rx::noResult(); }')
     end
     if directive[3]~isClass then classMethods~append(current)
     else methods~append(current)

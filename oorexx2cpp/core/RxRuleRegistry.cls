@@ -27,6 +27,8 @@
   rules~append(.RxStmtInterpret~new)
   rules~append(.RxStmtTrace~new)
   rules~append(.RxStmtNop~new)
+  rules~append(.RxStmtDrop~new)
+  rules~append(.RxStmtQueue~new)
   rules~append(.RxStmtAddress~new)
   rules~append(.RxStmtCall~new)
   rules~append(.RxStmtCompoundAssign~new)
@@ -40,6 +42,8 @@
 ::requires 'rules/StmtSay.cls'
 ::requires 'rules/StmtTrace.cls'
 ::requires 'rules/StmtNop.cls'
+::requires 'rules/StmtDrop.cls'
+::requires 'rules/StmtQueue.cls'
 ::requires 'rules/StmtAddress.cls'
 ::requires 'rules/StmtDoUntil.cls'
 ::requires 'rules/StmtDoWhile.cls'

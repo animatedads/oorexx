@@ -1,8 +1,8 @@
 /* SIGNAL in a compiled method or package routine (the body runs in a trap loop, see RxHybridCompiler~parse):
-     SIGNAL ON  SYNTAX | ERROR | FAILURE | ANY [NAME label]   trap (label defaults to the condition name)
-     SIGNAL OFF SYNTAX | ERROR | FAILURE | ANY
+     SIGNAL ON  SYNTAX | ERROR | FAILURE | NOTREADY | ANY [NAME label]   trap (label defaults to the condition name)
+     SIGNAL OFF SYNTAX | ERROR | FAILURE | NOTREADY | ANY                 (NOTREADY: native library lane)
      SIGNAL label                                           jump: every active DO loop ends, SIGL = this line
-   NOVALUE, NOTREADY, HALT, LOSTDIGITS, NOMETHOD, NOSTRING, USER and SIGNAL VALUE fail closed: compiled code does not
+   NOVALUE, HALT, LOSTDIGITS, NOMETHOD, NOSTRING, USER and SIGNAL VALUE fail closed: compiled code does not
    raise those conditions, so trapping them would silently differ from the interpreter. */
 ::class RxHybridSignal public
 ::method accepts
@@ -40,6 +40,9 @@
   use arg s, how
   if s~peek~kind \= 'IDENT' then s~fail('SIGNAL ' || how || ' needs a condition name')
   name = s~next~text
-  if wordpos(name, 'SYNTAX ERROR FAILURE ANY') = 0 then
-    s~fail('SIGNAL ' || how || ' ' || name || ' is not supported in compiled methods (only SYNTAX ERROR FAILURE ANY)')
+  /* NOTREADY comes from the stream built-ins, which run through the interpreter in the native library lane. */
+  supported = 'SYNTAX ERROR FAILURE ANY'
+  if value('RX2CPP_HOST_API', , 'ENVIRONMENT') \== '' then supported = supported 'NOTREADY'
+  if wordpos(name, supported) = 0 then
+    s~fail('SIGNAL ' || how || ' ' || name || ' is not supported in compiled methods (only' supported || ')')
   return name

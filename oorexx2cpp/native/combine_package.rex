@@ -1,8 +1,8 @@
 /* rx2cpp: combine a multi-file ooRexx package into one source for the native lane.
    ::REQUIRES 'file.cls' of a file next to the requiring one (or on REXX_PATH) is resolved depth-first,
    dependencies first (parents before subclasses), each file once; those ::REQUIRES lines are removed.
-   ::REQUIRES ... LIBRARY and requires of files that cannot be found stay as they are (the native lane
-   then decides). Each file's own ::OPTIONS stay at the top of its section only if identical to the first.
+   ::REQUIRES ... LIBRARY, requires of files that cannot be found, and files named in RX2CPP_KEEP_INTERPRETED stay as
+   they are (the native lane then decides; a kept file is loaded by the interpreter). Each file's own ::OPTIONS stay at the top of its section only if identical to the first.
    Usage: rexx combine_package.rex input.cls output.cls
    Prints the number of files combined. */
 parse arg input output
@@ -41,6 +41,15 @@ visit: procedure
       if q \== '"' & q \== "'" then parse var rest name after
     end
     if translate(lead) == '::REQUIRES' & wordpos('LIBRARY', translate(after~translate(' ', ';'))) = 0 then do
+      /* RX2CPP_KEEP_INTERPRETED="ooTest.frm FileUtils.cls ...": these stay ordinary ::REQUIRES (the interpreter loads them). */
+      keep = .false
+      do kept1 over value('RX2CPP_KEEP_INTERPRETED', , 'ENVIRONMENT')~makeArray(' ')
+        if kept1 \== '' & translate(filespec('name', name)) == translate(kept1) then keep = .true
+      end
+      if keep then do
+        kept = kept || line || '0a'x
+        iterate
+      end
       /* RX2CPP_LIBMAP="Compress.cls=compresslib ...": a dependency already built as a native library is required as one. */
       mapped = ''
       do pair over value('RX2CPP_LIBMAP', , 'ENVIRONMENT')~makeArray(' ')
@@ -62,6 +71,11 @@ visit: procedure
         kept = kept || '0a'x   /* keep line numbering */
         iterate
       end
+    end
+    /* A #! line is only valid as line 1 of a program: blank it in a combined file (line numbering kept). */
+    if line~left(2) == '#!' & kept == '' then do
+      kept = kept || '0a'x
+      iterate
     end
     kept = kept || line || '0a'x
   end

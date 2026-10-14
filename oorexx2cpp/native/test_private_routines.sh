@@ -16,11 +16,11 @@ OO_ROOT="$OO_ROOT" REXX_BIN="$REXX_BIN" CXX="$CXX" \
 cmp "$OUT/oracle.out" "$OUT/native.out"
 [[ $(wc -l < "$OUT/native.out") == 5 ]]
 # Explicit source-level privacy and lower-level ABI aliases are different.
-grep -q '::routine HELPERPRIVATE private external' "$OUT/rx2cpp_private_test_declaration.cls"
-grep -q '::routine HELPEREXPLICIT private external' "$OUT/rx2cpp_private_test_declaration.cls"
-if grep -q 'REXX_TYPED_ROUTINE(HELPERPRIVATE,' "$OUT/generated_package.cpp"; then echo "FAIL unexpected match: grep -q 'REXX_TYPED_ROUTINE(HELPERPRIVATE,' '$OUT/generated_package.cpp'" >&2; exit 1; fi
-if grep -q 'REXX_TYPED_ROUTINE(HELPEREXPLICIT,' "$OUT/generated_package.cpp"; then echo "FAIL unexpected match: grep -q 'REXX_TYPED_ROUTINE(HELPEREXPLICIT,' '$OUT/generated_package.cpp'" >&2; exit 1; fi
-grep -q 'REXX_TYPED_ROUTINE(RX2CPP_PRIVATE_HELPERPRIVATE,' "$OUT/generated_package.cpp"
+grep -q '::routine "HELPERPRIVATE" private external' "$OUT/rx2cpp_private_test_declaration.cls"
+grep -q '::routine "HELPEREXPLICIT" private external' "$OUT/rx2cpp_private_test_declaration.cls"
+if grep -qF '0, "HELPERPRIVATE", (void *)' "$OUT/generated_package.cpp"; then echo "FAIL unexpected match: grep -qF '0, "HELPERPRIVATE", (void *)' '$OUT/generated_package.cpp'" >&2; exit 1; fi
+if grep -qF '0, "HELPEREXPLICIT", (void *)' "$OUT/generated_package.cpp"; then echo "FAIL unexpected match: grep -qF '0, "HELPEREXPLICIT", (void *)' '$OUT/generated_package.cpp'" >&2; exit 1; fi
+grep -qF '0, "RX2CPP_PRIVATE_HELPERPRIVATE", (void *)' "$OUT/generated_package.cpp"
 echo "PASS $CXX implicit/explicit PRIVATE + PUBLIC native library: 5 byte-identical lines"
 # Probe ooRexx's own package routine metadata and call a compiled private
 # routine using the package-owned handle.  Instrumentation is *test only*;

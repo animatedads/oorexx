@@ -77,7 +77,8 @@ inline std::vector<Value> parseTemplate(const Value &sourceIn, const std::vector
     std::optional<Value> converted;
     if (sourceIn.isObject()) converted = parseSourceString(sourceIn);
     const std::string &s = converted ? converted->bytes : sourceIn.bytes;
-    if (ops.empty() || ops.size() > 64) throw std::runtime_error("invalid PARSE template size");
+    if (ops.size() > 64) throw std::runtime_error("invalid PARSE template size");
+    if (ops.empty()) return {};   // an empty template (PULL alone): the source is read and discarded
     std::vector<Value> values;
     values.reserve(ops.size());
     std::size_t cursor = 0;

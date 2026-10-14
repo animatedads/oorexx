@@ -484,14 +484,16 @@ rx::Value invoke(const std::string &name,const std::vector<rx::Value> &a,Context
     }
     if(name=="POS"||name=="LASTPOS"){
         const auto &needle=get(0),&hay=get(1);
-        if(needle.empty())return iv(0);
+        // Every argument is validated before any result is decided (BUILTIN(POS) / BUILTIN(LASTPOS)).
         const size_t start=a.size()>=3?ct(2,1):
             (name=="POS"?1:hay.size());
+        const size_t range=a.size()==4?ct(3):0;
+        if(needle.empty())return iv(0);
         if(name=="POS"){
             const size_t from=start-1;
             if(from>=hay.size())return iv(0);
             if(a.size()==4){
-                const size_t span=ct(3);
+                const size_t span=range;
                 if(span==0||needle.size()>span)return iv(0);
                 const size_t end=from+std::min(span,hay.size()-from);
                 const size_t found=hay.find(needle,from);
@@ -504,7 +506,7 @@ rx::Value invoke(const std::string &name,const std::vector<rx::Value> &a,Context
         // character of the match. 'range' bounds the search window backwards.
         const size_t end=std::min(start,hay.size());
         if(end<needle.size())return iv(0);
-        const size_t span=a.size()==4?ct(3):end;
+        const size_t span=a.size()==4?range:end;
         if(span<needle.size())return iv(0);
         const size_t begin=end-std::min(end,span);
         const size_t found=hay.rfind(needle,end-needle.size());

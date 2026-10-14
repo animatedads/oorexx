@@ -86,8 +86,8 @@
       self~reject(start, 'unsupported ::ROUTINE options; expected name [PUBLIC|PRIVATE] [EXTERNAL "LIBRARY ..."]')
     if seen~hasIndex(name) then self~reject(start, 'duplicate ::ROUTINE ' || name)
     seen[name] = .true
-    if verify(name, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_') > 0 then
-      self~reject(start, 'unsupported routine identifier ' || name)
+    /* Any symbol or string names a routine (ooRexxUnit.getShellName); C++ names are mangled (.RxQuote~identifier). */
+    if name == '' then self~reject(start, 'empty routine name')
     if isExternal then do
       /* An external routine has no implementation body. Non-comment clauses
          before the next directive must be diagnosed, not silently dropped. */
@@ -108,7 +108,18 @@
       names~append(name)
       visibilities[name] = visibility
       if start == 1 then self~reject(start, 'native routine must follow a package class')
-      synthetic[start] = '::method ' || name
+      synthetic[start] = '::method "' || name || '"'
+      /* PARSE SOURCE names the routine's original file: the combine marker before it, else the compiled file. */
+      sourcePath = .local['RX2CPP.INPUTNAME']
+      if sourcePath == .nil then sourcePath = ''
+      do m = start - 1 to 1 by -1
+        if lines[m]~left(25) == '/* ---- rx2cpp combined: ' then do
+          parse value lines[m] with '/* ---- rx2cpp combined: ' sourcePath ' ----'
+          leave
+        end
+      end
+      if \.local['RX2CPP.ROUTINESOURCES']~isA(.directory) then .local['RX2CPP.ROUTINESOURCES'] = .directory~new
+      .local['RX2CPP.ROUTINESOURCES'][name~upper] = sourcePath
       do j = start + 1 to finish
         synthetic[j] = lines[j]
       end

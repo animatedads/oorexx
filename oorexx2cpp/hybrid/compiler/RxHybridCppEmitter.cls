@@ -77,6 +77,9 @@
       lines~append('      rx::Variables vars(fields_, {' || names || '});')
     end
     else lines~append('      rx::Variables vars;')
+    /* Per-activation built-in state (stream table, RANDOM seed): see rx::ActivationScope. */
+    if unit~className \== 'RX2CPP_ROUTINE_IMPL' then lines~append('      rx::ActivationScope _rxActivation(rx::ActivationScope::Method);')
+    else lines~append('      rx::ActivationScope _rxActivation(rx::ActivationScope::Routine);')
     /* The ARG()/PARSE ARG copy of the argument list costs a string copy per argument per call: build it only when the body reads it. */
     usesProgramArgs = .false
     do statement over method~instructions

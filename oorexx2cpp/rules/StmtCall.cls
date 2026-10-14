@@ -11,11 +11,15 @@
   s = ctx~stream
   s~expect('CALL')
   token = s~peek
-  /* CALL (expression) [args]: the name is computed at run time; the interpreter resolves it as it would the source's. */
-  if s~is('(') & ctx~hasMethod('ISPACKAGEROUTINE') & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \== '' then do
-    s~expect('(')
-    nameExpr = ctx~logicalExpr~parse(ctx)
-    s~expect(')')
+  /* CALL (expression) [args] / CALL "name" [args]: the interpreter resolves the name at run time, as it would the
+     source's (a literal name keeps its spelling: CALL "ARG_TEST.rex" runs that program). */
+  if (s~is('(') | token~kind == 'STRING') & ctx~hasMethod('ISPACKAGEROUTINE') & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \== '' then do
+    if token~kind == 'STRING' then nameExpr = 'rx::Value::string(' || .RxQuote~cpp(s~next~text) || ')'
+    else do
+      s~expect('(')
+      nameExpr = ctx~logicalExpr~parse(ctx)
+      s~expect(')')
+    end
     args = .array~new
     if s~peek~kind \= 'SEP' & s~peek~kind \= 'EOF' then do forever
       if s~is(',') then args~append('RX2CPP_OMITTED')
@@ -33,6 +37,20 @@
     s~separator
     return
   end
+  /* CALL label of this compiled method: an internal routine (HybridFunctionCall~internalCall). */
+  if token~kind == 'IDENT' & ctx~hasMethod('CURRENT') then if ctx~current~hasMethod('HASINTERNALCALLS') then
+    if ctx~current~internalCalls~hasIndex(token~text) then do
+      name = s~next~text
+      args = .array~new
+      if s~peek~kind \= 'SEP' & s~peek~kind \= 'EOF' then do forever
+        if s~is(',') then args~append('RX2CPP_OMITTED')
+        else args~append(ctx~logicalExpr~parse(ctx))
+        if \s~accept(',') then leave
+      end
+      ctx~line(depth, '(void)' || ctx~builtinExpr~internalCall(ctx, name, args, 'CALL', token~line) || ';')
+      s~separator
+      return
+    end
   if token~kind \= 'IDENT' then s~fail('CALL requires a literal built-in name')
   name = s~next~text
   if name == 'ON' | name == 'OFF' then s~fail('CALL condition traps are not yet implemented')
@@ -62,7 +80,7 @@
       else code = code || '_rxCallArgs.emplace_back(' || argExpr || '); '
     end
     /* A routine that returns nothing drops RESULT, as interpreted (see rx::noResult). */
-    code = code || 'rx::noResultPending() = false; rx::Value _rxCalled = rx2cpp::makeGeneratedObject_RX2CPP_ROUTINE_IMPL()->invokeValues(' || .RxQuote~cpp(name) || ', _rxCallArgs); '
+    code = code || 'rx::noResultPending() = false; rx::pendingCallType() = "SUBROUTINE"; rx::Value _rxCalled = rx2cpp::makeGeneratedObject_RX2CPP_ROUTINE_IMPL()->invokeValues(' || .RxQuote~cpp(name) || ', _rxCallArgs); '
     code = code || 'if (std::exchange(rx::noResultPending(), false)) rx::drop(vars, "RESULT"); else rx::set(vars, "RESULT", _rxCalled); }'
     ctx~line(depth, code)
     s~separator

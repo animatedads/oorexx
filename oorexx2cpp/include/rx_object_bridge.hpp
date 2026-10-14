@@ -27,6 +27,8 @@ inline bool send(void *t, const std::string &s, const std::vector<Arg> &a, Resul
 #include <mutex>
 #include <typeinfo>
 #include <cstdlib>
+#include <pwd.h>
+#include <unistd.h>
 #include <map>
 namespace rx { inline std::shared_ptr<ObjectDispatch> takeKeptCondition(); }
 namespace rxobj {
@@ -588,6 +590,7 @@ inline bool describeRaised(std::exception_ptr e, RaisedCondition &out) {
         return true;
     }
     catch (const NoMethod &m) { out.object = m.conditionObject; out.code = "98.900"; out.substitutions = {Value::string(m.what())}; return true; }
+    catch (const NotReadyCondition &n) { out.name = "NOTREADY"; out.object = n.conditionObject; return true; }
     catch (const SignalJump &) { return false; }
     catch (const std::exception &x) {
         if (pendingConditionHook) if (auto o = pendingConditionHook(x)) { out.object = o; return true; }
@@ -601,17 +604,29 @@ inline Value conditionEntry(const std::shared_ptr<ObjectDispatch> &object, const
     return v ? *v : nil();
 }
 struct MethodTraps {
-    enum Kind { SYNTAX, ERROR, FAILURE, NOVALUE, ANY, KINDS };
+    enum Kind { SYNTAX, ERROR, FAILURE, NOVALUE, NOTREADY, ANY, KINDS };
     bool on[KINDS] = {};
     int label[KINDS] = {};
     bool has = false;                          // a condition was trapped in this activation
     std::string name;
     std::shared_ptr<ObjectDispatch> object;
+    MethodTraps *saved = nullptr;
+    // The running activation's traps are known to the stream built-ins (NOTREADY), through its ActivationScope.
+    MethodTraps() { if (ActivationScope *a = ActivationScope::current()) { saved = a->traps; a->traps = this; } }
+    ~MethodTraps() { if (ActivationScope *a = ActivationScope::current()) if (a->traps == this) a->traps = saved; }
+    MethodTraps(const MethodTraps &) = delete;
+    MethodTraps &operator=(const MethodTraps &) = delete;
+    // Is NOTREADY trapped in the running activation (SIGNAL ON NOTREADY, or ANY)?
+    static bool notReadyArmed() {
+        ActivationScope *a = ActivationScope::current();
+        return a && a->traps && (a->traps->on[NOTREADY] || a->traps->on[ANY]);
+    }
     static int kindOf(const std::string &c) {
         if (c == "SYNTAX") return SYNTAX;
         if (c == "ERROR") return ERROR;
         if (c == "FAILURE") return FAILURE;
         if (c == "NOVALUE") return NOVALUE;
+        if (c == "NOTREADY") return NOTREADY;
         if (c == "ANY") return ANY;
         return -1;
     }
@@ -1122,51 +1137,6 @@ inline MessageResult NativeArray::sendMessage(const std::string &selector, const
 }
 #endif
 #ifdef RX2CPP_HOST_API
-// Stream BIFs (STREAM CHARIN CHAROUT CHARS LINEIN LINEOUT LINES) from compiled code: one interpreter .Stream object per
-// name and thread, so OPEN / CHAROUT / CLOSE issued by separate BIF calls act on the same stream (the interpreter keeps
-// such a table per activation; a compiled activation needs its own). A call without a stream name (default streams)
-// returns nullopt and goes the ordinary route.
-inline std::optional<Value> streamBif(const std::string &name, const std::vector<std::optional<Value>> &a) {
-    static const char *names[] = {"STREAM","CHARIN","CHAROUT","CHARS","LINEIN","LINEOUT","LINES", nullptr};
-    bool known = false;
-    for (const char **n = names; *n; ++n) if (name == *n) known = true;
-    if (!known || a.empty() || !a[0] || a[0]->isObject() || a[0]->bytes.empty()) return std::nullopt;
-    static thread_local std::unordered_map<std::string, Value> table;
-    const std::string &key = a[0]->bytes;
-    auto it = table.find(key);
-    if (it == table.end()) {
-        Value cls = envClass("STREAM");
-        MessageResult made = cls.object->sendMessage("NEW", {Value::string(key)});
-        if (!made || !made->isObject()) throw std::runtime_error("cannot create stream " + key);
-        it = table.emplace(key, *made).first;
-    }
-    Value stream = it->second;
-    std::vector<Value> rest;
-    for (std::size_t i = 1; i < a.size(); ++i) rest.push_back(a[i] ? *a[i] : omittedArgument());
-    while (!rest.empty() && rest.back().isObject() && dynamic_cast<EnvObject *>(rest.back().object.get()) &&
-           static_cast<EnvObject *>(rest.back().object.get())->handle == nullptr) rest.pop_back();
-    std::string selector = name;
-    if (name == "STREAM") {
-        std::string op = rest.empty() || rest[0].isObject() ? std::string("S") : rest[0].bytes.str();
-        const char o = op.empty() ? 'S' : static_cast<char>(std::toupper(static_cast<unsigned char>(op[0])));
-        std::vector<Value> args;
-        if (o == 'C') {
-            if (rest.size() < 2) return std::nullopt;
-            selector = "COMMAND"; args.push_back(rest[1]);
-            std::string cmd = rest[1].bytes;
-            for (char &c : cmd) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-            MessageResult r = stream.object->sendMessage(selector, args);
-            if (cmd.find("CLOSE") != std::string::npos) table.erase(key);
-            return r ? *r : Value::string("");
-        }
-        selector = o == 'D' ? "DESCRIPTION" : "STATE";
-        MessageResult r = stream.object->sendMessage(selector, {});
-        return r ? *r : Value::string("");
-    }
-    MessageResult r = stream.object->sendMessage(selector, rest);
-    if ((name == "CHAROUT" || name == "LINEOUT") && rest.empty()) table.erase(key);   // CHAROUT(name) closes the stream
-    return r ? *r : Value::string("");
-}
 // CALL / function call of a routine only the interpreter can resolve (rexxutil SysXxx, external .rex routines), run in a
 // small interpreter routine under the caller's NUMERIC settings. An argument that names a stem the callee filled
 // (SysFileTree spec, 'files.', ...) is copied back into the caller's compiled variables, as the interpreter would leave it.
@@ -1181,6 +1151,9 @@ inline MessageResult interpreterCall(Variables &vars, const std::string &name, c
         if (i) call += ",";
         if (args[i]) call += "arg(" + std::to_string(i + 1) + ")";
     }
+    // End the clause explicitly: a trailing omitted argument leaves a final comma, which at the end of a line would
+    // continue the clause into the next one (f(a,) has 2 arguments, the second omitted).
+    call += ";";
     const std::string source =
         "numeric digits " + std::to_string(vars.numeric.digits) + "; numeric fuzz " + std::to_string(vars.numeric.fuzz) +
         "; numeric form " + (vars.numeric.engineering ? "engineering" : "scientific") + "\n" + call +
@@ -1290,6 +1263,313 @@ inline void interpreterCommand(Variables &vars, const Value &environment, const 
     if (r == NULLOBJECT) throw std::runtime_error("ADDRESS helper returned no RC");
     RexxStringObject rs = (RexxStringObject)temps((RexxObjectPtr)t->ObjectToString(r));
     set(vars, "RC", Value::string(std::string(t->StringData(rs), t->StringLength(rs))));
+}
+// Runs one small interpreter helper (source, arguments); a condition it raises is re-raised in the compiled code as is.
+inline RexxObjectPtr interpreterHelper(RexxThreadContext *t, rxobj::LocalRefs &temps, RexxRoutineObject &routine,
+                                       const char *name, const char *source, const std::vector<Value> &args) {
+    if (routine == NULLOBJECT) {
+        routine = t->NewRoutine(name, source, std::strlen(source));
+        if (routine == NULLOBJECT) throw std::runtime_error(std::string("cannot create interpreter helper ") + name);
+        t->RequestGlobalReference((RexxObjectPtr)routine);
+    }
+    std::vector<rxobj::Arg> conv;
+    RexxArrayObject arr = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(args.size()));
+    std::size_t index = 0;
+    for (const Value &v : args) {
+        conv.clear(); EnvObject::convert({v}, conv);
+        RexxObjectPtr o = conv[0].obj ? (RexxObjectPtr)conv[0].obj : temps((RexxObjectPtr)t->NewString(conv[0].bytes.data(), conv[0].bytes.size()));
+        t->ArrayPut(arr, o, ++index);
+    }
+    RexxObjectPtr r = temps(t->CallRoutine(routine, arr));
+    if (t->CheckCondition()) {
+        RexxCondition cd; t->DecodeConditionInfo(t->GetConditionInfo(), &cd);
+        std::string code = std::to_string(cd.code / 1000) + "." + std::to_string(cd.code % 1000);
+        std::string text = cd.message ? t->ObjectToStringValue(cd.message) : std::string("error in ") + name;
+        RexxDirectoryObject info = t->GetConditionInfo();
+        rxobj::keepCondition(t);
+        t->ClearCondition();
+        rxobj::captureAdditional(t, info);
+        SyntaxCondition raised(code, text, false);
+        for (const std::string &a : rxobj::lastAdditional()) raised.substitutions.push_back(Value::string(a));
+        raised.conditionObject = takeKeptCondition();
+        throw raised;
+    }
+    return r;
+}
+// PARSE PULL / PULL (linein false): the interpreter's current external data queue, standard input when it is empty;
+// PARSE LINEIN (linein true): standard input. As interpreted, read by the interpreter.
+inline Value interpreterParseSource(bool linein) {
+    RexxThreadContext *t = rxobj::need();
+    rxobj::LocalRefs temps(t);
+    static thread_local RexxRoutineObject pull = NULLOBJECT, line = NULLOBJECT;
+    RexxObjectPtr r = linein ? interpreterHelper(t, temps, line, "rx2cpp_linein", "parse linein rx2cppLine\nreturn rx2cppLine\n", {})
+                             : interpreterHelper(t, temps, pull, "rx2cpp_pull", "parse pull rx2cppLine\nreturn rx2cppLine\n", {});
+    if (r == NULLOBJECT) return Value::string(std::string());
+    RexxStringObject rs = (RexxStringObject)temps((RexxObjectPtr)t->ObjectToString(r));
+    return Value::string(std::string(t->StringData(rs), t->StringLength(rs)));
+}
+// PUSH (lifo) / QUEUE: one line onto the interpreter's current external data queue.
+inline void interpreterQueue(bool lifo, const Value &line) {
+    RexxThreadContext *t = rxobj::need();
+    rxobj::LocalRefs temps(t);
+    static thread_local RexxRoutineObject push = NULLOBJECT, queue = NULLOBJECT;
+    if (lifo) interpreterHelper(t, temps, push, "rx2cpp_push", "push arg(1)\nreturn\n", {line});
+    else interpreterHelper(t, temps, queue, "rx2cpp_queue", "queue arg(1)\nreturn\n", {line});
+}
+// One stream method, sent by a small interpreter routine: a NOTREADY the stream raises lands in that Rexx activation
+// (as interpreted, the first Rexx activation above the stream decides), not in the interpreted caller of this compiled
+// code. With NOTREADY trapped in the running compiled activation (SIGNAL ON NOTREADY / ANY), the helper traps it and the
+// condition goes to that trap (NotReadyCondition); otherwise it is ignored, as an untrapped NOTREADY is.
+inline Value streamSend(const Value &stream, const std::string &selector, const std::vector<Value> &args) {
+    RexxThreadContext *t = rxobj::need();
+    rxobj::LocalRefs temps(t);
+    const bool armed = MethodTraps::notReadyArmed();
+    static thread_local RexxRoutineObject plain = NULLOBJECT, trapping = NULLOBJECT;
+    RexxArrayObject list = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(args.size()));
+    std::vector<rxobj::Arg> conv;
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        const Value &v = args[i];
+        if (v.isObject()) if (auto *e = dynamic_cast<EnvObject *>(v.object.get())) if (e->handle == nullptr) continue;   // omitted
+        conv.clear(); EnvObject::convert({v}, conv);
+        t->ArrayPut(list, conv[0].obj ? (RexxObjectPtr)conv[0].obj : temps((RexxObjectPtr)t->NewString(conv[0].bytes.data(), conv[0].bytes.size())), i + 1);
+    }
+    const std::vector<Value> helperArgs{stream, Value::string(selector), EnvObject::adopt((void *)t->RequestGlobalReference((RexxObjectPtr)list))};
+    RexxObjectPtr r = armed
+        ? interpreterHelper(t, temps, trapping, "rx2cpp_stream_trap",
+              "use arg rx2cppStream, rx2cppMessage, rx2cppArgs\nsignal on notready name rx2cppNotReady\n"
+              "return .array~of(rx2cppStream~sendWith(rx2cppMessage, rx2cppArgs))\n"
+              "rx2cppNotReady: return .array~of(.nil, condition('O'))\n", helperArgs)
+        : interpreterHelper(t, temps, plain, "rx2cpp_stream",
+              "use arg rx2cppStream, rx2cppMessage, rx2cppArgs\n"
+              "return .array~of(rx2cppStream~sendWith(rx2cppMessage, rx2cppArgs))\n", helperArgs);
+    if (r == NULLOBJECT) return Value::string(std::string());
+    RexxArrayObject out = (RexxArrayObject)r;
+    if (t->ArraySize(out) >= 2) {
+        RexxObjectPtr cond = t->ArrayAt(out, 2);
+        if (cond != NULLOBJECT && cond != t->Nil())
+            throw NotReadyCondition(std::make_shared<EnvObject>((void *)t->RequestGlobalReference(cond)));
+    }
+    RexxObjectPtr res = t->ArrayAt(out, 1);
+    if (res == NULLOBJECT) return Value::string(std::string());
+    if (rxobj::isPlainString(t, res)) {
+        RexxStringObject so = (RexxStringObject)temps((RexxObjectPtr)t->ObjectToString(res));
+        return Value::string(std::string(t->StringData(so), t->StringLength(so)));
+    }
+    return EnvObject::adopt((void *)t->RequestGlobalReference(res));
+}
+// SysFileSystem::canonicalizeName (Unix): ~ is the home directory, a relative name is under the current directory, then
+// duplicate and trailing slashes, "." and ".." are removed (whether the file exists or not). The stream table key.
+inline std::string qualifyStreamName(const std::string &name) {
+    std::string full = name;
+    if (!full.empty() && full[0] == '~') {
+        const std::size_t slash = full.find('/');
+        const std::string user = full.substr(1, slash == std::string::npos ? std::string::npos : slash - 1);
+        const char *home = nullptr;
+        if (user.empty()) home = std::getenv("HOME");
+        else if (struct passwd *pw = getpwnam(user.c_str())) home = pw->pw_dir;
+        if (home) full = std::string(home) + (slash == std::string::npos ? std::string() : full.substr(slash));
+    }
+    if (full.empty() || full[0] != '/') {
+        char cwd[4096];
+        if (!getcwd(cwd, sizeof cwd)) return name;
+        full = std::string(cwd) + "/" + full;
+    }
+    std::string out = "/";
+    std::size_t previousSlash = 0;
+    for (std::size_t i = 0; i < full.size(); ++i) {
+        const char c = full[i];
+        const char next = i + 1 < full.size() ? full[i + 1] : '\0';
+        if (c == '/') {
+            if (next != '.') previousSlash = out.size() - 1;
+            if (out.back() == '/') continue;
+            out += c;
+        } else if (c == '.' && out.back() == '/') {
+            if (next == '\0' || next == '/') continue;
+            if (next == '.') {
+                const char after = i + 2 < full.size() ? full[i + 2] : '\0';
+                if (after == '\0' || after == '/') {
+                    ++i;
+                    out.resize(previousSlash + 1);
+                    while (previousSlash > 0) { if (out[--previousSlash] == '/') break; }
+                    continue;
+                }
+            }
+            out += c;
+        } else out += c;
+    }
+    if (out.size() > 1 && out.back() == '/') out.pop_back();
+    return out;
+}
+// The stream built-ins (LINEIN LINEOUT LINES CHARIN CHAROUT CHARS STREAM), as BuiltinFunctions.cpp runs them: the name
+// resolves (RexxActivation::resolveStream) to the default .INPUT / .OUTPUT ("" or omitted), STDIN STDOUT STDERR, or the
+// stream object of this activation's stream table (made with .Stream~new on first use); the BIF then sends the stream
+// method with the arguments given. The QUEUE: name and any call the BIF rejects go to the interpreter's own built-in
+// (they do not touch the stream table): its result or exact error.
+inline Value streamBif(Variables &vars, const std::string &name, const std::vector<std::optional<Value>> &a) {
+    auto delegate = [&]() -> Value {
+        auto r = interpreterCall(vars, name, a);
+        if (!r) throw std::runtime_error("BIF " + name + ": no result");
+        return std::move(*r);
+    };
+    const std::size_t argc = a.size();
+    auto text = [&](std::size_t i) -> std::optional<std::string> {
+        if (i >= argc || !a[i]) return std::nullopt;
+        return a[i]->bytes.str();
+    };
+    auto upper = [](std::string v) { for (char &c : v) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c))); return v; };
+    for (const auto &slot : a) if (slot && slot->isObject()) return delegate();
+    const std::optional<std::string> streamName = text(0);
+    if (streamName && upper(*streamName) == "QUEUE:") return delegate();
+    // positions and counts must be whole numbers (optional_big_integer); anything else is the interpreter's error
+    auto whole = [&](std::size_t i) {
+        if (i >= argc || !a[i]) return true;
+        RexxDecimal d; const char *err = nullptr;
+        if (!tryParseRexxDecimal(*a[i], d, err)) return false;
+        if (d.exponent >= 0 || d.coefficient == 0) return true;
+        return d.coefficient % decimalPow10(-d.exponent) == 0;
+    };
+    auto &table = ActivationScope::streams();
+    std::string fullName;
+    auto resolve = [&](bool input, bool add) -> Value {
+        fullName = streamName ? *streamName : std::string();
+        if (!streamName || streamName->empty()) return envClass(input ? "INPUT" : "OUTPUT");
+        const std::string u = upper(*streamName);
+        if (u == "STDIN" || u == "STDIN:") return envClass("INPUT");
+        if (u == "STDOUT" || u == "STDOUT:") return envClass("OUTPUT");
+        if (u == "STDERR" || u == "STDERR:") return envClass("ERROR");
+        fullName = qualifyStreamName(*streamName);
+        auto it = table.find(fullName);
+        if (it != table.end()) return it->second;
+        MessageResult made = envClass("STREAM").object->sendMessage("NEW", {Value::string(*streamName)});
+        if (!made || !made->isObject()) throw std::runtime_error("cannot create stream " + *streamName);
+        if (add) table.emplace(fullName, *made);
+        return *made;
+    };
+    auto send = [&](const Value &stream, const std::string &selector, std::vector<Value> args) -> Value {
+        while (!args.empty() && args.back().isObject() && dynamic_cast<EnvObject *>(args.back().object.get()) &&
+               static_cast<EnvObject *>(args.back().object.get())->handle == nullptr) args.pop_back();
+        return streamSend(stream, selector, args);
+    };
+    auto arg = [&](std::size_t i) { return i < argc && a[i] ? *a[i] : omittedArgument(); };
+    if (name == "LINEIN" || name == "CHARIN") {
+        if (argc > 3 || !whole(1) || !whole(2)) return delegate();
+        Value stream = resolve(true, true);
+        if (argc <= 1) return send(stream, name, {});
+        if (argc == 2) return send(stream, name, {arg(1)});
+        return send(stream, name, {arg(1), arg(2)});
+    }
+    if (name == "LINEOUT" || name == "CHAROUT") {
+        if (argc > 3 || !whole(2)) return delegate();
+        Value stream = resolve(false, true);
+        if (argc == 0) return send(stream, name, {});
+        if (argc == 1) {
+            Value r = send(stream, name, {});
+            if (name == "LINEOUT") table.erase(fullName);   // a close request: removeFileName
+            return r;
+        }
+        if (argc == 2) return send(stream, name, {arg(1)});
+        return send(stream, name, {arg(1), arg(2)});
+    }
+    if (name == "LINES") {
+        if (argc > 2) return delegate();
+        std::string option = "NORMAL";
+        if (auto o = text(1)) { if (o->empty()) return delegate(); option = *o; }
+        const char opt = static_cast<char>(std::toupper(static_cast<unsigned char>(option[0])));
+        if (opt != 'C' && opt != 'N') return delegate();
+        Value stream = resolve(true, true);
+        Value r = send(stream, "LINES", {Value::string(option)});
+        if (opt == 'N' && !r.isObject()) {
+            RexxDecimal d; const char *err = nullptr;
+            if (tryParseRexxDecimal(r, d, err)) return Value::string(d.coefficient != 0 ? "1" : "0");
+        }
+        return r;
+    }
+    if (name == "CHARS") {
+        if (argc > 1) return delegate();
+        return send(resolve(true, true), "CHARS", {});
+    }
+    if (name == "STREAM") {
+        if (argc < 1 || argc > 3 || !streamName || streamName->empty()) return delegate();
+        char action = 'S';
+        if (auto op = text(1)) { if (op->empty()) return delegate(); action = static_cast<char>(std::toupper(static_cast<unsigned char>((*op)[0]))); }
+        if (action == 'S' || action == 'D') {
+            if (argc > 2) return delegate();
+            return send(resolve(true, false), action == 'S' ? "STATE" : "DESCRIPTION", {});
+        }
+        if (action != 'C' || argc < 3 || !a[2]) return delegate();
+        const Value command = *a[2];
+        auto hasWord = [&](const char *w) {
+            std::istringstream in(upper(command.bytes.str())); std::string t;
+            while (in >> t) if (t == w) return true;
+            return false;
+        };
+        if (hasWord("OPEN")) {
+            Value stream = resolve(true, true);
+            Value r = send(stream, "COMMAND", {command});
+            if (r.isObject() || r.bytes.str() != "READY:") table.erase(fullName);
+            return r;
+        }
+        if (hasWord("CLOSE")) {
+            Value stream = resolve(true, true);
+            Value r = send(stream, "COMMAND", {command});
+            table.erase(fullName);
+            return r;
+        }
+        if (hasWord("SEEK") || hasWord("POSITION")) return send(resolve(true, true), "COMMAND", {command});
+        return send(resolve(true, false), "COMMAND", {command});
+    }
+    throw std::runtime_error("not a stream built-in: " + name);
+}
+// RANDOM([min] [, max] [, seed]) as BUILTIN(RANDOM) and RexxActivation::random run it, on this activation's seed (see
+// rx::ActivationScope): the same seeded sequences as interpreted. A call the BIF rejects goes to the interpreter's own
+// RANDOM for its exact error (after the seed was set, as there).
+inline Value randomBif(Variables &vars, const std::vector<std::optional<Value>> &a) {
+    auto delegate = [&]() -> Value {
+        auto r = interpreterCall(vars, "RANDOM", a);
+        if (!r) throw std::runtime_error("BIF RANDOM: no result");
+        return std::move(*r);
+    };
+    const std::size_t argc = a.size();
+    if (argc > 3) return delegate();
+    for (const auto &slot : a) if (slot && slot->isObject()) return delegate();
+    auto intArg = [&](std::size_t i, std::optional<std::int64_t> &out) -> bool {   // optional_integer
+        if (i >= argc || !a[i]) return true;
+        RexxDecimal d; const char *err = nullptr;
+        std::int64_t v = 0;
+        if (!tryParseRexxDecimal(*a[i], d, err) || !oorexxWholeNumber(d, 18, true, v)) return false;
+        out = v;
+        return true;
+    };
+    std::optional<std::int64_t> mn, mx, sd;
+    if (argc == 2 && !a[0] && !a[1]) { mn = 0; mx = 999; }   // RANDOM(,) is not RANDOM()
+    else if (!intArg(0, mn) || !intArg(1, mx)) return delegate();
+    if (!intArg(2, sd)) return delegate();
+    constexpr std::uint64_t factor = 25214903917ULL, adder = 11ULL;
+    std::uint64_t &seed = ActivationScope::randomSeed();
+    if (sd) {
+        if (*sd < 0) return delegate();
+        seed = ~static_cast<std::uint64_t>(*sd);
+        for (int i = 0; i < 13; ++i) seed = seed * factor + adder;
+    }
+    seed = seed * factor + adder;
+    std::uint64_t bits = seed;
+    std::int64_t minimum = 0, maximum = 999;
+    if (mn) {
+        if (!mx && !sd) maximum = *mn;
+        else if (!mx && sd) minimum = *mn;
+        else { minimum = *mn; maximum = *mx; }
+    } else if (mx) maximum = *mx;
+    if (maximum < minimum || maximum - minimum > 999999999) return delegate();
+    if (minimum != maximum) {
+        std::uint64_t work = 0;
+        for (int i = 0; i < 64; ++i) { work <<= 1; work |= (bits & 1ULL); bits >>= 1; }
+        minimum += static_cast<std::int64_t>(work % static_cast<std::uint64_t>(maximum - minimum + 1));
+    }
+    return Value::number(std::to_string(minimum));
+}
+inline bool streamBifName(const std::string &name) {
+    return name == "LINEIN" || name == "LINEOUT" || name == "LINES" || name == "CHARIN" || name == "CHAROUT" ||
+           name == "CHARS" || name == "STREAM";
 }
 #endif
 }

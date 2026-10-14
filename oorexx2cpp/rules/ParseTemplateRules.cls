@@ -86,7 +86,7 @@
       otherwise s~fail('unsupported PARSE template component')
     end
   end
-  if targets~items == 0 then s~fail('PARSE template needs a destination')
+  /* No target at all (PULL alone, PARSE VAR x 'a'): valid; the source is still read. */
   if operations~items > 64 then s~fail('PARSE template exceeds qualified 64-element limit')
   initializer = ''
   do i = 1 to operations~items

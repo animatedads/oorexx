@@ -28,5 +28,7 @@
 ::requires 'rules/StmtCall.cls'
 ::requires 'rules/StmtExit.cls'
 ::requires 'rules/StmtNop.cls'
+::requires 'rules/StmtDrop.cls'
+::requires 'rules/StmtQueue.cls'
 ::requires 'rules/StmtAssign.cls'
 ::requires 'rules/StmtAddress.cls'

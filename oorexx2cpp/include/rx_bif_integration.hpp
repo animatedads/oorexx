@@ -10,6 +10,7 @@
 #include "rxbif_breadth.hpp"
 #include "rxbif_variables.hpp"
 #include <cctype>
+#include <cstring>
 #ifdef RX2CPP_BIF_ISOLATED
 #include "rxbif_oorexx_bridge.hpp"
 #include <cstdlib>
@@ -84,37 +85,55 @@ inline bool decimalLiteral(const std::string& s) {
     }
     return digit;
 }
-// Returns false for symbolic forms not representable by the current lexer.
-// Valid numeric and leading-dot constants are deliberately not assignable.
-inline bool splitBifSymbol(const std::string& raw, std::string& canonical,
-                           bool& literal) {
-    canonical.clear(); literal=false;
-    if(decimalLiteral(raw)) {literal=true;canonical=raw;return true;}
-    if(raw.size()>1 && raw[0]=='.' && basicSymbolPart(raw.substr(1))) {
-        literal=true; canonical=symbolUpper(raw); return true;
+// LanguageParser::scanSymbol: what kind of symbol a string is (SYMBOL, VAR and VALUE classify their name with it).
+enum class SymbolScan { Bad, LiteralDot, Numeric, Literal, Name, Stem, Compound };
+inline SymbolScan scanSymbol(const std::string &s) {
+    const std::size_t n = s.size();
+    if (n == 0 || n > 250) return SymbolScan::Bad;
+    auto symbolChar = [](unsigned char c) {
+        return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' || c == '!' ||
+               c == '?' || c == '_';
+    };
+    auto digit = [](unsigned char c) { return c >= '0' && c <= '9'; };
+    std::size_t compound = 0, i = 0;
+    bool haveExponent = false;
+    while (i < n && symbolChar(static_cast<unsigned char>(s[i]))) { if (s[i] == '.') ++compound; ++i; }
+    if (i < n) {
+        if (i + 1 >= n) return SymbolScan::Bad;
+        if (s[i] != '-' && s[i] != '+') return SymbolScan::Bad;
+        if (i == 0 || std::toupper(static_cast<unsigned char>(s[i - 1])) != 'E') return SymbolScan::Bad;
+        for (std::size_t k = i + 1; k < n; ++k) if (!digit(static_cast<unsigned char>(s[k]))) return SymbolScan::Bad;
+        haveExponent = true;
     }
-    if(raw.empty()) return false;
-    const auto dot=raw.find('.');
-    if(dot==std::string::npos) {
-        if(!basicSymbolPart(raw)) return false;
-        canonical=symbolUpper(raw);return true;
-    }
-    if(!basicSymbolPart(raw.substr(0,dot))) return false;
-    canonical=symbolUpper(raw.substr(0,dot));canonical+='.';
-    std::size_t start=dot+1;
-    while(start<raw.size()) {
-        auto end=raw.find('.',start);
-        std::string part=raw.substr(start,end==std::string::npos?std::string::npos:end-start);
-        if(!part.empty()) {
-            if(!basicSymbolPart(part)&& !(part[0]>='0'&&part[0]<='9')) return false;
-            // Only uppercase source-symbol spelling; substituted tail values
-            // are supplied unchanged by compoundKey in the variable provider.
-            canonical+=symbolUpper(part);
+    if (s[0] == '.' || digit(static_cast<unsigned char>(s[0]))) {
+        if (compound == 1 && n == 1) return SymbolScan::LiteralDot;
+        if (compound > 1) return haveExponent ? SymbolScan::Bad : SymbolScan::Literal;
+        std::size_t k = 0;
+        while (k < n && (digit(static_cast<unsigned char>(s[k])) || s[k] == '.')) ++k;
+        if (k >= n) return SymbolScan::Numeric;
+        if (std::toupper(static_cast<unsigned char>(s[k])) == 'E') {
+            ++k;
+            if (k < n && (s[k] == '-' || s[k] == '+')) return SymbolScan::Numeric;
+            while (k < n) { if (!digit(static_cast<unsigned char>(s[k]))) return SymbolScan::Literal; ++k; }
+            return SymbolScan::Numeric;
         }
-        if(end==std::string::npos) break;
-        canonical+='.';start=end+1;
+        return SymbolScan::Literal;
     }
-    return true;
+    if (compound == 0) return SymbolScan::Name;
+    if (compound == 1 && s[n - 1] == '.') return SymbolScan::Stem;
+    return SymbolScan::Compound;
+}
+// VariableDictionary::getVariableRetriever: the upper-case name; false for a string that is not a symbol. literal: a
+// constant symbol (its value is its upper-case name). An environment symbol (.name) is the interpreter's (see
+// dispatchBifNative).
+inline bool splitBifSymbol(const std::string& raw, std::string& canonical, bool& literal) {
+    canonical = symbolUpper(raw);
+    literal = false;
+    switch (scanSymbol(canonical)) {
+    case SymbolScan::Bad: return false;
+    case SymbolScan::LiteralDot: case SymbolScan::Numeric: case SymbolScan::Literal: literal = true; return true;
+    default: return true;
+    }
 }
 inline rxbif_variables::Reply frameVariableReply(Variables& vars,
                  const rxbif_variables::Request& req,
@@ -130,19 +149,33 @@ inline rxbif_variables::Reply frameVariableReply(Variables& vars,
     if(literal) {
         if(req.action==Action::Exchange)
             throw std::runtime_error("BIF VALUE: numeric/literal symbol cannot be assigned");
-        if(req.action==Action::Fetch && !decimalLiteral(req.name))
-            throw std::runtime_error("BIF VALUE: object-valued constant requires qualified ABI");
         return {SymbolKind::Literal,false,
-                req.action==Action::Fetch ? BifSlot{Value::string(req.name)} : std::nullopt};
+                req.action==Action::Fetch ? BifSlot{Value::string(symbol)} : std::nullopt};
     }
     const std::string resolved=compoundSymbol(symbol)?compoundKey(vars,symbol):symbol;
     const Value* previous=lookup(vars,resolved);
-    if (!previous && compoundSymbol(symbol)) {
+    std::optional<Value> boundElement;
+    if (compoundSymbol(symbol) && symbol.find('.')+1 < symbol.size()) {   // a compound variable (stem plus tail)
         const std::string stem=symbol.substr(0,symbol.find('.')+1);
-        previous=lookup(vars,stem);
+        // A stem object (bound stem): the element's own state (set, default, or DROPped), its value for VALUE.
+        if (StemObject *bound=boundStem(vars,stem)) {
+            const std::string tail=resolved.substr(stem.size());
+            if (bound->has(tail)) { boundElement=bound->get(tail); previous=&*boundElement; }
+            else previous=nullptr;
+        }
+        else if (!previous) previous=lookup(vars,stem);   // the stem's default value
     }
-    if(req.action==Action::Classify)
-        return {SymbolKind::Assignable,previous!=nullptr,std::nullopt};
+    if(req.action==Action::Classify) {
+        // A stem variable exists once the stem is in use: EXPOSEd (an object's stem always exists), or any of its
+        // compound variables set (the interpreter also creates it on a mere reference; that case is not tracked).
+        bool assigned=previous!=nullptr;
+        if(!assigned && !symbol.empty() && symbol.back()=='.' && symbol.find('.')==symbol.size()-1) {
+            assigned=vars.isExposed(symbol);
+            for(const auto& entry:vars) if(!assigned && entry.first.size()>symbol.size() &&
+                                          entry.first.compare(0,symbol.size(),symbol)==0) assigned=true;
+        }
+        return {SymbolKind::Assignable,assigned,std::nullopt};
+    }
     if(previous && previous->isObject())
         throw std::runtime_error("BIF VALUE: object prior cannot cross scalar ABI");
     const Value prior=previous?*previous:Value::string(resolved);
@@ -185,25 +218,54 @@ inline Value argBif(const std::vector<Value>& args, const Vec& a) {
 inline Value argSlotValue(const std::optional<Value>& v) { return *v; }
 inline Value argSlotValue(const std::optional<std::string>& v) { return Value::string(*v); }
 template <class Slot>
+// ARG([n [,option]]) on this activation's own arguments: A (an Array of arguments n.., holes kept), E, O, N; only the
+// first letter of the option counts; errors 40.4 / 40.5 / 40.12 / 40.14 / 40.904 with the interpreter's substitutions.
 inline Value argBifSlots(const std::vector<Slot>& args, const std::vector<BifSlot>& a) {
+    auto fail=[](const char *code, const char *text, std::vector<Value> subs) {
+        SyntaxCondition c(code, text, false); c.substitutions=std::move(subs); throw c;
+    };
+    const Value argName=Value::string("ARG");
     std::size_t count=args.size();
     while(count>0 && !args[count-1]) --count;
     if(a.empty()) return Value::string(std::to_string(count));
-    const Value* nv=slotPtr(a[0]);
-    if(!nv || nv->isObject()) throw std::runtime_error("BIF ARG: argument 1 must be a positive whole number");
-    const std::string& ns=nv->bytes;
-    if(ns.empty()||ns.find_first_not_of("0123456789")!=std::string::npos||ns.find_first_not_of('0')==std::string::npos)
-        throw std::runtime_error("BIF ARG: argument 1 must be a positive whole number");
-    const std::size_t n=std::stoul(ns);
+    if(a.size()>2) fail("40.4","Too many arguments in invocation of ARG",{argName,Value::string("2")});
+    if(!a[0]) fail("40.5","Missing argument in invocation of ARG",{argName,Value::string("1")});
+    const Value &nv=*a[0];
+    RexxDecimal d; const char *perr=nullptr;
+    if(nv.isObject() || !tryParseRexxDecimal(nv,d,perr)) fail("40.12","ARG argument must be a whole number",{argName,Value::string("1"),nv});
+    cpp_int value=d.coefficient;
+    if(d.exponent>0) value*=decimalPow10Compute(d.exponent);
+    else if(d.exponent<0) {
+        const cpp_int p=decimalPow10Compute(-d.exponent);
+        if(value % p != 0) fail("40.12","ARG argument must be a whole number",{argName,Value::string("1"),nv});
+        value/=p;
+    }
+    if(value<=0) fail("40.14","ARG argument must be positive",{argName,Value::string("1"),nv});
+    const std::size_t n = value > cpp_int(args.size()+1) ? args.size()+1 : static_cast<std::size_t>(value);
     const bool exists=n<=args.size() && args[n-1];
-    const Value* ov=a.size()>1?slotPtr(a[1]):nullptr;
-    if(!ov || ov->bytes.empty()) return exists?argSlotValue(args[n-1]):Value::string("");
-    if(ov->isObject()) throw std::runtime_error("BIF ARG: option must be E or O");
-    const char o=static_cast<char>(std::toupper(static_cast<unsigned char>(ov->bytes[0])));
+    char o='N';
+    if(a.size()>1 && a[1]) {
+        const Value &ov=*a[1];
+        const std::string text=ov.isObject() ? ov.object->display() : ov.bytes.str();
+        const char c=text.empty() ? '\0' : static_cast<char>(std::toupper(static_cast<unsigned char>(text[0])));
+        if(c!='A' && c!='E' && c!='N' && c!='O') fail("40.904","ARG argument must be one of AENO",{argName,Value::string("2"),Value::string("AENO"),Value::string(text)});
+        o=c;
+    }
     if(o=='E') return Value::string(exists?"1":"0");
     if(o=='O') return Value::string(exists?"0":"1");
-    if(o=='A') throw std::runtime_error("BIF ARG: option A is not implemented in compiled code");
-    throw std::runtime_error("BIF ARG: option must be A, E or O");
+    if(o=='N') return exists?argSlotValue(args[n-1]):Value::string("");
+#ifdef RX2CPP_HOST_API
+    // A: the arguments from n to the last one that exists, as an Array (omitted ones stay empty slots).
+    const std::size_t size = n<=count ? count-n+1 : 0;
+    Value array=envClass("ARRAY");
+    MessageResult made=array.object->sendMessage("NEW",{Value::string(std::to_string(size))});
+    if(!made) throw std::runtime_error("cannot create the ARG array");
+    for(std::size_t i=0;i<size;++i)
+        if(args[n-1+i]) made->object->sendMessage("PUT",{argSlotValue(args[n-1+i]),Value::string(std::to_string(i+1))});
+    return *made;
+#else
+    throw std::runtime_error("BIF ARG: option A is not implemented in compiled programs");
+#endif
 }
 // FORMAT(number[,before[,after]]) in fixed notation; exponent forms are not implemented here (fail closed).
 inline Value formatBifFixed(const std::vector<BifSlot>& a, const ActivationNumeric& num) {
@@ -514,6 +576,61 @@ inline bool plainRadixDigits(const std::string &name, const std::string &s) {
     return s.find_first_not_of("0123456789abcdefABCDEF") == std::string::npos;
 }
 inline bool radixBifName(const std::string &name) { return name == "X2C" || name == "X2B" || name == "X2D" || name == "B2X"; }
+// The native number / radix code covers the ordinary inputs only; anything else is the interpreter's (its results,
+// NUMERIC DIGITS limits and errors, e.g. 93.929 for D2C(209) under DIGITS 1). True when this call must go there.
+inline bool numericEdgeForInterpreter(const std::string &name, const std::vector<BifSlot> &a, const ActivationNumeric &num) {
+    static const std::unordered_set<std::string> numeric{"DATATYPE","ABS","SIGN","MAX","MIN","TRUNC","FORMAT","D2C","D2X",
+        "C2D","X2D","DIGITS","FUZZ"};
+    if (!numeric.count(name)) return false;
+    for (const auto &s : a) if (s && !s->isObject() && s->bytes.size() > 1000) return true;
+    // A number this subset cannot hold (exponent beyond its range) is still a number to the interpreter.
+    for (const auto &s : a) if (s && !s->isObject()) {
+        RexxDecimal d; const char *err = nullptr;
+        if (!tryParseRexxDecimal(*s, d, err) && err && std::strstr(err, "supported")) return true;
+    }
+    if (a.empty() || !a[0] || a[0]->isObject()) return false;
+    const std::string first = a[0]->bytes.str();
+    if (name == "D2C" || name == "D2X") {
+        if (a.size() > 1) return true;   // the signed form (with a length) is the interpreter's
+        return first.empty() || first.size() > static_cast<std::size_t>(num.digits) ||
+               first.find_first_not_of("0123456789") != std::string::npos;
+    }
+    // FORMAT: exponent places (expp / expt), or a number with more digits than DIGITS (rounded first, possibly to
+    // exponential form): the interpreter's NumberString::formatInternal.
+    if (name == "FORMAT") {
+        if (a.size() > 3) return true;
+        RexxDecimal d; const char *err = nullptr;
+        return tryParseRexxDecimal(*a[0], d, err) && decimalDigits(d.coefficient) > static_cast<int>(num.digits);
+    }
+    if (name == "C2D") return a.size() > 1 || first.size() > 3;
+    if (name == "X2D") return a.size() > 1 || first.size() > 7;
+    return false;
+}
+// SOURCELINE([n]) of compiled code: the lines of its original source file, embedded when it was compiled (the package
+// the interpreter sees is the library's declaration, not that file). Errors as BUILTIN(SOURCELINE).
+inline Value sourceLineBif(const std::vector<std::string> &lines, const std::vector<BifSlot> &a) {
+    auto fail = [](const char *code, const std::string &text, std::vector<Value> subs) {
+        SyntaxCondition c(code, text, false); c.substitutions = std::move(subs); throw c;
+    };
+    if (a.size() > 1) fail("40.4", "Too many arguments in invocation of SOURCELINE; maximum expected is 1",
+                           {Value::string("SOURCELINE"), Value::string("1")});
+    if (a.empty()) return Value::string(std::to_string(lines.size()));
+    if (!a[0]) fail("40.5", "Missing argument in invocation of SOURCELINE; argument 1 is required",
+                    {Value::string("SOURCELINE"), Value::string("1")});
+    if (a[0]->isObject()) throw std::runtime_error("SOURCELINE: the line number must be a string");
+    const std::string text = a[0]->bytes.str();
+    RexxDecimal d; const char *err = nullptr;
+    std::int64_t n = 0;
+    if (!tryParseRexxDecimal(*a[0], d, err) || !oorexxWholeNumber(d, 18, true, n))
+        fail("40.12", "SOURCELINE argument 1 must be a whole number; found \"" + text + "\"",
+             {Value::string("SOURCELINE"), Value::string("1"), *a[0]});
+    if (n <= 0) fail("40.14", "SOURCELINE argument 1 must be positive; found \"" + text + "\"",
+                     {Value::string("SOURCELINE"), Value::string("1"), *a[0]});
+    if (static_cast<std::uint64_t>(n) > lines.size())
+        fail("40.34", "SOURCELINE argument 1 (\"" + std::to_string(n) + "\") must be less than or equal to the number of lines in the program (" +
+                      std::to_string(lines.size()) + ")", {Value::string(std::to_string(n)), Value::string(std::to_string(lines.size()))});
+    return Value::string(lines[static_cast<std::size_t>(n - 1)]);
+}
 // BIFs that read or set the caller's own state stay compiled whatever their arguments are.
 inline bool languageStateBif(const std::string &name) {
     return name == "VALUE" || name == "VAR" || name == "SYMBOL" || name == "TRACE" || name == "ADDRESS" || name == "ARG" ||
@@ -556,7 +673,9 @@ inline Value dispatchBifNative(BifRuntime& bif, Variables& vars, const std::stri
             return std::move(*result);
         }
     }
-    if (radixBifName(name) && !slots.empty() && slots[0] && !slots[0]->isObject() && !plainRadixDigits(name, slots[0]->bytes.str())) {
+    // ERRORTEXT: the interpreter's own message table (its texts differ from the condition-message table compiled in).
+    if (name == "ERRORTEXT" || numericEdgeForInterpreter(name, slots, vars.numeric) ||
+        (radixBifName(name) && !slots.empty() && slots[0] && !slots[0]->isObject() && !plainRadixDigits(name, slots[0]->bytes.str()))) {
         auto result = interpreterCall(vars, name, slots);
         if (!result) throw std::runtime_error("BIF " + name + ": no result");
         return std::move(*result);
@@ -565,7 +684,8 @@ inline Value dispatchBifNative(BifRuntime& bif, Variables& vars, const std::stri
     if(auto quick=quickBif(name,slots)) return std::move(*quick);
     if(auto numeric=numericBif(name,slots,vars.numeric)) return std::move(*numeric);
 #ifdef RX2CPP_HOST_API
-    if(auto streamed=streamBif(name,slots)) return std::move(*streamed);
+    if(streamBifName(name)) return streamBif(vars,name,slots);
+    if(name=="RANDOM") return randomBif(vars,slots);
 #endif
     if(name=="TRACE" || name=="ADDRESS") {   // language state owned by the compiled program, not by a BIF
         if(slots.size()>1 || (slots.size()==1 && (!slots[0] || slots[0]->isObject())))
@@ -580,6 +700,25 @@ inline Value dispatchBifNative(BifRuntime& bif, Variables& vars, const std::stri
         auto result=interpreterCall(vars,"VALUE",slots);
         if(!result) throw std::runtime_error("BIF VALUE: no result");
         return std::move(*result);
+    }
+#endif
+#ifdef RX2CPP_HOST_API
+    // An environment symbol (.name) is looked up by the interpreter (the library's package scope), not in the pool.
+    if((name=="SYMBOL" || name=="VAR" || name=="VALUE") && !slots.empty() && slots[0] && !slots[0]->isObject() &&
+       slots[0]->bytes.size()>1 && slots[0]->bytes[0]=='.' && scanSymbol(slots[0]->bytes.str())==SymbolScan::Literal) {
+        auto result=interpreterCall(vars,name,slots);
+        if(!result) throw std::runtime_error("BIF "+name+": no result");
+        return std::move(*result);
+    }
+    // VALUE of a string that is not a symbol, or assigning a constant symbol: the interpreter's error (40.26, ...),
+    // raised before anything is assigned.
+    if(name=="VALUE" && !slots.empty() && slots[0] && !slots[0]->isObject()) {
+        std::string canonical; bool literal=false;
+        if(!splitBifSymbol(slots[0]->bytes.str(),canonical,literal) || (literal && slots.size()>1 && slots[1])) {
+            auto result=interpreterCall(vars,name,slots);
+            if(!result) throw std::runtime_error("BIF VALUE: no result");
+            return std::move(*result);
+        }
     }
 #endif
     if(name=="SYMBOL" || name=="VAR" || name=="VALUE") {
@@ -607,6 +746,19 @@ inline Value dispatchBifNative(BifRuntime& bif, Variables& vars, const std::stri
             std::string out,code,text;
             if(rxkernel::call(name,raw,present,out,code,text)) return Value::string(out);
             throw SyntaxCondition(code,text,false);
+        }
+    }
+#endif
+#ifdef RX2CPP_HOST_API
+    // What the breadth catalogue would run in an isolated second interpreter instance, the interpreter that loaded this
+    // library runs itself (its exact results and errors, e.g. XRANGE 40.23).
+    {
+        static const std::unordered_set<std::string> isolated{"C2D","TRUNC","X2D","D2X","D2C","TRANSLATE","VERIFY",
+            "DATATYPE","SIGN","FORMAT","MAX","MIN","XRANGE","USERID","ERRORTEXT","QUALIFY"};
+        if(isolated.count(name)) {
+            auto result=interpreterCall(vars,name,slots);
+            if(!result) throw std::runtime_error("BIF "+name+": no result");
+            return std::move(*result);
         }
     }
 #endif
@@ -881,6 +1033,12 @@ inline MessageResult hostStringBif(const Value &receiver, const std::string &sel
     for (char &c : name) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
     auto fallback = [&]() -> MessageResult { return hostStringBifPrevious()(receiver, selector, args); };
     if (radixBifName(name) && !receiver.isObject() && !plainRadixDigits(name, receiver.bytes.str())) return fallback();
+    {
+        std::vector<BifSlot> asSlots{BifSlot(receiver)};
+        for (const Value &v : args) asSlots.emplace_back(v);
+        const ActivationNumeric def0;
+        if (numericEdgeForInterpreter(name, asSlots, currentNumeric ? *currentNumeric : def0)) return fallback();
+    }
     if (name == "C2D" || name == "D2C" || name == "X2D" || name == "D2X") {
         const ActivationNumeric def0;
         const ActivationNumeric &n0 = currentNumeric ? *currentNumeric : def0;

@@ -13,6 +13,16 @@
 ::attribute attributeSetter get
 ::attribute labels get          /* label name -> case index (1..n), for SIGNAL and SIGNAL ON ... NAME */
 ::attribute trapped get         /* the body has labels or SIGNAL: it runs inside a trap loop */
+/* Internal routines of this method (labels used by CALL name / name(...)): label -> directory PROCEDURE, EXPOSE. */
+::method setInternalCalls
+  expose internalCalls
+  use arg internalCalls
+::method internalCalls
+  expose internalCalls
+  if var('INTERNALCALLS') then return internalCalls
+  return .directory~new
+::method hasInternalCalls
+  return self~internalCalls~items > 0
 ::method setTraps
   expose labels trapped
   use arg names, trapped

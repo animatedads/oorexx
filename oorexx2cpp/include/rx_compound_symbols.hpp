@@ -50,6 +50,7 @@ struct StemObject final : ObjectDispatch {
     std::string name;                                   // e.g. "S." (names the missing element: "S.TAIL")
     std::optional<Value> dflt;
     std::unordered_map<std::string, Value> tails;
+    std::unordered_set<std::string> dropped;            // DROPped elements under a default
     std::shared_ptr<ObjectDispatch> remote;             // interpreter stem, once the object has crossed
     mutable std::mutex lock;
     explicit StemObject(std::string n) : name(std::move(n)) {}
@@ -58,19 +59,33 @@ struct StemObject final : ObjectDispatch {
         std::lock_guard<std::mutex> g(lock);
         auto it = tails.find(tail);
         if (it != tails.end()) return it->second;
-        if (dflt) return *dflt;
+        if (dflt && !dropped.count(tail)) return *dflt;
         return Value::string(name + tail);
+    }
+    // True when the element has a value (its own or the stem default, unless DROPped).
+    bool has(const std::string &tail) {
+        if (remote) { auto r = remote->sendMessage("HASINDEX", {Value::string(tail)}); return r && !r->isObject() && r->bytes == "1"; }
+        std::lock_guard<std::mutex> g(lock);
+        return tails.count(tail) || (dflt && !dropped.count(tail));
     }
     void set(const std::string &tail, Value v) {
         if (remote) { remote->sendMessage("[]=", {std::move(v), Value::string(tail)}); return; }
         std::lock_guard<std::mutex> g(lock);
+        dropped.erase(tail);
         tails.insert_or_assign(tail, std::move(v));
+    }
+    // DROP stem.tail: uninitialized even under a stem default.
+    void drop(const std::string &tail) {
+        if (remote) { remote->sendMessage("REMOVE", {Value::string(tail)}); return; }
+        std::lock_guard<std::mutex> g(lock);
+        tails.erase(tail);
+        if (dflt) dropped.insert(tail);
     }
     // S. = value: new default, every element dropped (same object).
     void reset(Value v) {
         if (remote) { remote->sendMessage("[]=", {std::move(v)}); return; }
         std::lock_guard<std::mutex> g(lock);
-        tails.clear(); dflt = std::move(v);
+        tails.clear(); dropped.clear(); dflt = std::move(v);
     }
     Value defaultValue() {
         if (remote) { auto r = remote->sendMessage("[]", {}); return r ? *r : Value::string(name); }
@@ -178,9 +193,14 @@ inline void useStemArgument(Variables &vars, const std::vector<Value> &args, con
     obj->dflt = a;
     assignStem(vars, stem, Value::fromObject(obj));
 }
+inline Value compoundGet(const Variables &vars, const std::string &key, const char *stem);
 inline Value getSymbol(const Variables &vars, const std::string &symbol) {
     if (!compoundSymbol(symbol)) return get(vars, symbol);
     const std::string key = compoundKey(vars, symbol);
+    if (symbol.find('.') != symbol.size() - 1 && key.find('.') == key.size() - 1) {   // a tail that resolved to ''
+        const std::string stemName = key;
+        return compoundGet(vars, key, stemName.c_str());
+    }
     if (const Value *v = lookup(vars, key)) return *v;
     const std::string stem = symbol.substr(0, symbol.find('.') + 1);
     if (const Value *v = lookup(vars, stem)) {
@@ -212,6 +232,12 @@ inline std::string compoundKeyOf(const char *stem, const Tails &...tails) {
     return key;
 }
 inline Value compoundGet(const Variables &vars, const std::string &key, const char *stem) {
+    // An empty tail (S.T with T = ''): the derived name equals the stem's own; the element lives in the stem object.
+    if (key.size() == std::strlen(stem)) {
+        if (StemObject *bound = boundStem(vars, key)) return bound->get(std::string());
+        if (const Value *v = lookup(vars, key)) return *v;   // the stem's default value
+        return Value::string(key);
+    }
     if (const Value *v = lookup(vars, key)) return *v;
     if (const Value *v = lookup(vars, std::string(stem))) {
         if (v->isObject())
@@ -221,11 +247,53 @@ inline Value compoundGet(const Variables &vars, const std::string &key, const ch
     return Value::string(key);
 }
 inline void compoundSet(Variables &vars, const std::string &key, Value value) {
+    // An empty tail: the element must not overwrite the stem's default (same derived name), so the stem becomes an
+    // object, which keeps its elements apart from its default.
+    if (key.find('.') == key.size() - 1) {
+        stemArg(vars, key);
+        if (StemObject *bound = boundStem(vars, key)) { bound->set(std::string(), std::move(value)); return; }
+    }
     if (stemObjectsInUse().load(std::memory_order_relaxed)) {
         const std::string stem = key.substr(0, key.find('.') + 1);
         if (StemObject *bound = boundStem(vars, stem)) { bound->set(key.substr(stem.size()), std::move(value)); return; }
     }
     set(vars, key, std::move(value));
+}
+// DROP symbol. A stem: the variable gets a new empty stem (no default, no elements; the stem variable still exists, as
+// interpreted). A compound: the element is dropped, and stays uninitialized under a stem default.
+inline void dropSymbol(Variables &vars, const std::string &symbol) {
+    if (!compoundSymbol(symbol)) { drop(vars, symbol); return; }
+    if (symbol.find('.') == symbol.size() - 1) {
+        resetStem(vars, symbol);
+        stemObjectsInUse().store(true, std::memory_order_relaxed);
+        set(vars, symbol, Value::fromObject(std::make_shared<StemObject>(symbol)));
+        return;
+    }
+    const std::string key = compoundKey(vars, symbol);
+    const std::string stem = key.substr(0, key.find('.') + 1);
+    if (StemObject *bound = boundStem(vars, stem)) { bound->drop(key.substr(stem.size())); return; }
+    if (lookup(vars, stem)) {   // a stem default: the element needs a tombstone, which the stem object keeps
+        stemArg(vars, stem);
+        if (StemObject *bound = boundStem(vars, stem)) { bound->drop(key.substr(stem.size())); return; }
+    }
+    drop(vars, key);
+}
+// DROP (name): every blank-delimited word of the value is a variable name.
+inline void dropList(Variables &vars, const Value &list) {
+    if (list.isObject()) throw std::runtime_error("DROP (name): the list must be a string");
+    const std::string text = list.bytes.str();
+    std::size_t i = 0;
+    while (i < text.size()) {
+        while (i < text.size() && (text[i] == ' ' || text[i] == '\t')) ++i;
+        std::size_t j = i;
+        while (j < text.size() && text[j] != ' ' && text[j] != '\t') ++j;
+        if (j > i) {
+            std::string name = text.substr(i, j - i);
+            for (char &c : name) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+            dropSymbol(vars, name);
+        }
+        i = j;
+    }
 }
 inline void setSymbol(Variables &vars, const std::string &symbol, Value value) {
     if (!compoundSymbol(symbol)) { set(vars, symbol, std::move(value)); return; }

@@ -12,8 +12,10 @@
     end
     when mode == 'SOURCE' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' then do
       /* A method of a native library: the interpreter's system name, METHOD, the class's original source file. A package
-         routine's call type (SUBROUTINE / FUNCTION) is only known at run time: not supported yet. */
-      if ctx~className == 'RX2CPP_ROUTINE_IMPL' then ctx~stream~fail('PARSE SOURCE in a package routine of a native library is not supported yet')
+         routine: its call type, SUBROUTINE or FUNCTION, as its compiled caller called it (a routine called by the
+         interpreter cannot know it: a run-time error). */
+      if ctx~className == 'RX2CPP_ROUTINE_IMPL' then
+        return 'rx::Value::string(rx::interpreterSystem() + " " + rx::ActivationScope::routineCallType() + ' || .RxQuote~cpp(' ' || ctx~sourceName) || ')'
       return 'rx::Value::string(rx::interpreterSystem() + ' || .RxQuote~cpp(' METHOD ' || ctx~sourceName) || ')'
     end
     when mode == 'SOURCE' then do

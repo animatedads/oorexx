@@ -759,6 +759,7 @@ static RexxObjectPtr rx2cpp_routine_entry(RexxCallContext *context, RexxArrayObj
     try {
 #ifdef RX2CPP_HOST_API
         rxobj::Scope hostScope(context->threadContext);
+        rx::ActivationScope callerScope(rx::ActivationScope::Method);   // called by the interpreter: a stream table of its own
         auto obj = rx2cpp::makeGeneratedObject_RX2CPP_ROUTINE_IMPL();
         const size_t count = context->ArraySize(args);
         std::vector<std::optional<rx::Value>> positional;
