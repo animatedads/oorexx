@@ -22,6 +22,13 @@ int main() {
  }
  const auto d=NativeNineClass("DATETIME");
  assert(d.kind=="DATETIME");
+ // Materialization may not dereference a temporary, already-freed EnvObject.
+ // The standalone stub gives an uncached fresh EnvObject from every lookup.
+ // Run under ASan to detect a regression in the class-reference ownership.
+ for(const char *name : {"LIST","QUEUE","TABLE","SET","BAG","RELATION","SUPPLIER","MESSAGE","DATETIME"}) {
+  auto classRef=nativeNineClass(name);
+  assert(dynamic_cast<NativeNineClass *>(classRef.object.get())->materialize()==nullptr);
+ }
  auto dense1=std::make_shared<NativeArray>();dense1->slots={V("x"), V("y")};dense1->count=2;
  auto dense2=std::make_shared<NativeArray>();dense2->slots={V("a"), V("b")};dense2->count=2;
  auto sparse1=std::make_shared<NativeArray>();sparse1->slots={V("x"),std::nullopt,V("z")};sparse1->count=2;

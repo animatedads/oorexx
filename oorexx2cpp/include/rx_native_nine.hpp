@@ -208,9 +208,13 @@ struct NativeDateTime final : NativeNineBase {
 // through materialize(), so interpreted callers always see real Rexx objects.
 struct NativeNineClass final : NativeRefBase {
     std::string kind;
+    // The interpreter class must remain referenced across materialize().
+    // A temporary envClass(kind) result is not an ownership guarantee.
+    std::optional<Value> interpreterClass_;
     explicit NativeNineClass(std::string k):kind(std::move(k)){}
     void *materialize() override {
-        auto *env=dynamic_cast<EnvObject *>(envClass(kind).object.get());
+        if (!interpreterClass_) interpreterClass_ = envClass(kind);
+        auto *env=dynamic_cast<EnvObject *>(interpreterClass_->object.get());
         if(!env) throw std::runtime_error("cannot resolve class "+kind);
         return env->handle;
     }
