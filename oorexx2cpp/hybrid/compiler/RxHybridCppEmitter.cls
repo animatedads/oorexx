@@ -41,7 +41,10 @@
   lines~append('  std::string invoke0(const std::string &selector) override { return invokeArgs(selector, {}); }')
   lines~append('  std::string invoke(const std::string &selector, const std::string &argument) override { return invokeArgs(selector, {argument}); }')
   lines~append('  std::string invoke2(const std::string &selector, const std::string &first, const std::string &second) override { return invokeArgs(selector, {first, second}); }')
-  if suffix == 'RX2CPP_ROUTINE_IMPL' then do
+  /* Native library: the scalar routine entry is the value entry (one copy of each body, values and objects alike). */
+  if suffix == 'RX2CPP_ROUTINE_IMPL' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \== '' then
+    lines~append('  std::string invokeMany(const std::string &selector, const std::vector<std::optional<std::string>> &arguments) override { return invokeArgs(selector, arguments); }')
+  else if suffix == 'RX2CPP_ROUTINE_IMPL' then do
     lines~append('  std::string invokeMany(const std::string &selector, const std::vector<std::optional<std::string>> &arguments) override {')
     lines~append('    (void)arguments;')
     self~dispatchMany(lines, unit, options)

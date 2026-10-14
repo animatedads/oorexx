@@ -58,8 +58,10 @@
     header = .RxLexer~new(line || '0a'x)~scan
     if header~items < 5 | header[1]~text \= '::' | header[2]~text \= 'ROUTINE' then
       self~reject(start, 'invalid ::ROUTINE declaration')
-    if header[3]~kind \= 'IDENT' then self~reject(start, 'routine name must be a simple symbol')
+    /* A quoted name is a routine name like a symbol (upper case, as the interpreter registers it). */
+    if header[3]~kind \= 'IDENT' & header[3]~kind \= 'STRING' then self~reject(start, 'routine name must be a symbol or a string')
     name = header[3]~text
+    if header[3]~kind == 'STRING' then name = name~upper
     /* An EXTERNAL routine is implemented by ooRexx's named library, not the
        native class compiler. Keep the original package directive verbatim. */
     visibility = 'PRIVATE'

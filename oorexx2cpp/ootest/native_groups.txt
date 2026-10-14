@@ -73,3 +73,17 @@ bif/X2B
 bif/X2C
 bif/X2D
 bif/XRANGE
+# base/class: the groups identical so far (see HANDOFF_2026-10-13.md for the others).
+class/CircularQueue
+class/CollectionSetlikeMethods
+class/Comparator
+class/DateTime
+class/File
+class/Method
+class/Monitor
+class/Object
+class/Orderable
+class/Package
+class/Properties
+class/Routine
+class/TimeSpan

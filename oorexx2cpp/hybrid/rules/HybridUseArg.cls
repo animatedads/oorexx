@@ -15,6 +15,11 @@
   /* Names and default expressions (USE ARG a, b = expr, c). */
   names = .array~new
   defaults = .array~new
+  /* A bare USE ARG binds nothing. */
+  if s~peek~kind == 'SEP' | s~peek~kind == 'EOF' then do
+    s~separator
+    return
+  end
   do forever
     if s~peek~kind \= 'IDENT' then s~fail('USE ARG parameter must be a simple variable')
     names~append(s~next~text)

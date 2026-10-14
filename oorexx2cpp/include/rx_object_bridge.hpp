@@ -1266,6 +1266,30 @@ inline void interpreterCommand(Variables &vars, const Value &environment, const 
     RexxStringObject rs = (RexxStringObject)temps((RexxObjectPtr)t->ObjectToString(r));
     set(vars, "RC", Value::string(std::string(t->StringData(rs), t->StringLength(rs))));
 }
+// SAY in a native library: the line goes to the interpreter's .OUTPUT (~SAY), as interpreted SAY output does, so a
+// redirected .OUTPUT (a Monitor on a stream, ...) receives it and the order with interpreted output is kept.
+inline void hostSay(const std::string &line) {
+    RexxThreadContext *t = rxobj::need();
+    rxobj::LocalRefs temps(t);
+    RexxDirectoryObject local = (RexxDirectoryObject)temps((RexxObjectPtr)t->GetLocalEnvironment());
+    RexxObjectPtr stream = local ? t->DirectoryAt(local, "OUTPUT") : NULLOBJECT;
+    if (stream == NULLOBJECT || stream == t->Nil()) { std::fwrite(line.data(), 1, line.size(), stdout); std::fputc('\n', stdout); return; }
+    temps(t->SendMessage1(stream, "SAY", temps((RexxObjectPtr)t->NewString(line.data(), line.size()))));
+    if (t->CheckCondition()) {
+        RexxCondition cd; t->DecodeConditionInfo(t->GetConditionInfo(), &cd);
+        std::string code = std::to_string(cd.code / 1000) + "." + std::to_string(cd.code % 1000);
+        std::string text = (cd.message && t->IsString(cd.message)) ? t->ObjectToStringValue(cd.message) : std::string("error in SAY");
+        RexxDirectoryObject info = t->GetConditionInfo();
+        rxobj::keepCondition(t);
+        t->ClearCondition();
+        rxobj::captureAdditional(t, info);
+        SyntaxCondition raised(code, text, false);
+        for (const std::string &a : rxobj::lastAdditional()) raised.substitutions.push_back(Value::string(a));
+        raised.conditionObject = takeKeptCondition();
+        throw raised;
+    }
+}
+inline const bool hostSayInstalled = (sayHook() = &hostSay, true);
 // Runs one small interpreter helper (source, arguments); a condition it raises is re-raised in the compiled code as is.
 inline RexxObjectPtr interpreterHelper(RexxThreadContext *t, rxobj::LocalRefs &temps, RexxRoutineObject &routine,
                                        const char *name, const char *source, const std::vector<Value> &args) {

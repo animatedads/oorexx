@@ -177,6 +177,10 @@
   saved = .local['RX2CPP.CLAUSEWORDS']
   .local['RX2CPP.CLAUSEWORDS'] = ''
   before = self~current~instructions~items
+  /* .LINE: the line (in the original source file) of the clause being compiled. */
+  clauseOffset = 0
+  if var('LINEOFFSET') then clauseOffset = lineOffset
+  .local['RX2CPP.CLAUSELINE'] = self~stream~peek~line + clauseOffset
   scopes~rexxLogic(self, depth)
   .local['RX2CPP.CLAUSEWORDS'] = saved
   /* A clause that calls TIME or DATE starts with a fresh clause time stamp (rx::ActivationScope::clauseBoundary). */
@@ -307,13 +311,26 @@
         iterate
       end
     end
-    /* ::METHOD name ATTRIBUTE is the method-directive spelling of ::ATTRIBUTE name (getter and setter). */
-    if s~lookAheadText(1) == 'METHOD' & s~lookAheadText(3) == 'ATTRIBUTE' then do
+    /* ::METHOD name [options] ATTRIBUTE [options] is the method-directive spelling of ::ATTRIBUTE name (getter and
+       setter); the options may come before or after ATTRIBUTE, as the interpreter's directive parser allows. */
+    isAttributeMethod = .false
+    if s~lookAheadText(1) == 'METHOD' then do
+      k = 3
+      do while s~lookAheadKind(k) \= 'SEP' & s~lookAheadKind(k) \= 'EOF'
+        if s~lookAheadKind(k) == 'IDENT' & s~lookAheadText(k) == 'ATTRIBUTE' then isAttributeMethod = .true
+        k = k + 1
+      end
+    end
+    if isAttributeMethod then do
       s~expect('::'); s~expect('METHOD')
       attributeName = s~next~text
-      s~expect('ATTRIBUTE')
+      attributeOptions = .RxHybridMethodOptions~new
+      do while s~peek~kind == 'IDENT'
+        word = s~next~text~upper
+        if word \== 'ATTRIBUTE' then attributeOptions~add(s, word)
+      end
       s~separator
-      self~addAttribute(attributeName, 'BOTH', .RxHybridMethodOptions~new)
+      self~addAttribute(attributeName, 'BOTH', attributeOptions)
       s~skipSeparators
       iterate
     end

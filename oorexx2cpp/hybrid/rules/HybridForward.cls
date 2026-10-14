@@ -71,7 +71,14 @@
     self~emitContinue(ctx, selector, selectorExpr, targetExpr, arrayExpr, toSuper)
     return
   end
-  if ctx~current~selector == 'INIT' then s~fail('INIT FORWARD is not supported')
+  /* INIT: the forwarded INIT runs (its result, like INIT's own, is ignored: NEW answers the new object); then INIT
+     ends, as FORWARD always ends the method. */
+  if ctx~current~selector == 'INIT' then do
+    if value('RX2CPP_HOST_API', , 'ENVIRONMENT') == '' then s~fail('INIT FORWARD requires the host-API native lane')
+    self~emitContinue(ctx, selector, selectorExpr, targetExpr, arrayExpr, toSuper)
+    ctx~current~branchReturnValue('rx::Value::string(std::string())')
+    return
+  end
   if targetExpr \== '' | selectorExpr \== '' then do
     if toSuper then s~fail('FORWARD CLASS with TO/MESSAGE expression is not supported')
     if targetExpr == '' then targetExpr = 'rx::selfObject()'

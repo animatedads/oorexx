@@ -19,7 +19,8 @@ cmp "$OUT/oracle.out" "$OUT/native.out"
 echo "PASS native routine and class interpreter parity: $(wc -l <"$OUT/native.out") lines"
 # A failed compile never overwrites the previous successfully built native library.
 before=$(sha256sum "$OUT/lib${PACKAGE}.so" | cut -d' ' -f1)
-for kind in external duplicate quoted malformed_use_arg expose; do
+# (A quoted routine name is valid, upper case as interpreted: compared with the interpreter below.)
+for kind in external duplicate malformed_use_arg expose; do
   file="$OUT/bad_$kind.cls"
   { cat <<'REXX'
 ::class RoutineHost public
@@ -44,3 +45,13 @@ REXX
   [[ "$before" == "$after" ]] || { echo "FAIL rollback $kind" >&2; exit 1; }
   echo "PASS reject $kind (prior .so intact)"
 done
+# A quoted routine name ("foo") names routine FOO, as the interpreter registers it.
+printf '::class QuotedHost public\n::routine "foo" public\n  return "quoted" arg()\n' > "$OUT/quoted.cls"
+printf 'say foo(1, 2) "foo"(3)\n::requires "quoted.cls"\n' > "$OUT/quoted_i.rex"
+printf 'say foo(1, 2) "foo"(3)\n::requires "rx2cpp_quoted" library\n' > "$OUT/quoted_c.rex"
+(cd "$OUT" && "$REXX_BIN" quoted_i.rex > quoted.expected 2>&1)
+OO_ROOT="$OO_ROOT" REXX_BIN="$REXX_BIN" CXX="$CXX" "$ROOT/native/build.sh" "$OUT/quoted.cls" "$OUT" rx2cpp_quoted > "$OUT/quoted.log" 2>&1 ||
+  { echo "FAIL quoted routine name build" >&2; tail -5 "$OUT/quoted.log" >&2; exit 1; }
+(cd "$OUT" && "$REXX_BIN" quoted_c.rex > quoted.actual 2>&1)
+cmp "$OUT/quoted.expected" "$OUT/quoted.actual" || { diff "$OUT/quoted.expected" "$OUT/quoted.actual" >&2; exit 1; }
+echo "PASS quoted routine name: identical to the interpreter"

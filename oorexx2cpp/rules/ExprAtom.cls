@@ -25,6 +25,9 @@
       s~next
       /* .NIL is a singleton, never a string or absent method result. */
       if t~text == 'NIL' then return 'rx::nil()'
+      /* .LINE: the line number of the current clause (a constant of the compiled clause). */
+      if t~text == 'LINE' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \== '' & .local['RX2CPP.CLAUSELINE'] \== .nil then
+        return 'rx::Value::number("' || .local['RX2CPP.CLAUSELINE'] || '")'
       if t~text == 'CONTEXT' & ctx~hasHostUnit & ctx~hostedEnabled then do
         ctx~markHosted('.CONTEXT')
         return 'rx::host::contextObject()'
@@ -34,7 +37,8 @@
         ctx~markHosted('.' || t~text)
         return 'rx::host::environmentDirectory(' || .RxQuote~cpp(t~text) || ')'
       end
-      if t~text == 'OUTPUT' | t~text == 'ROUTINES' then do
+      /* (In a native library .OUTPUT is the interpreter's own, like any environment symbol: see below.) */
+      if (t~text == 'OUTPUT' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') == '') | t~text == 'ROUTINES' then do
         if \ctx~hostedEnabled then s~fail('.' || t~text || ' requires RX2CPP_HOSTED=1')
         ctx~markHosted('.' || t~text)
         if t~text == 'OUTPUT' then return 'rx::host::localSymbol("OUTPUT")'

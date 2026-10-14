@@ -230,6 +230,21 @@
         self~move
         self~emit('OP', c, markLine, markCol)
       end
+      /* The interpreter's Scanner also takes 'AA'x and 'AC'x (code page not signs) as the backslash: \ \= \== \< \<< \> \>> */
+      when c == 'aa'x | c == 'ac'x then do
+        self~move
+        op = '\'
+        if self~char == '=' then do
+          op = op || self~move
+          if self~char == '=' then op = op || self~move
+        end
+        else if self~char == '<' | self~char == '>' then do
+          d = self~move
+          op = op || d
+          if self~char == d then op = op || self~move
+        end
+        self~emit('OP', op, markLine, markCol)
+      end
       otherwise self~fault("unsupported source character '" || c || "'")
     end
   end

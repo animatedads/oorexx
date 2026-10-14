@@ -114,6 +114,16 @@
       source = source || '  msg~send' || '0a'x
       source = source || '  if msg~hasResult then return msg~result' || '0a'x
     end
+    /* A root class (implicitly a subclass of Object): FORWARD CLASS (SUPER) / ~m:super reach Object's methods
+       (setMethod, ...); the helper's own FORWARD CLASS (SUPER) starts at Object, from this class's scope. */
+    if \classSide & unit~parentName == '' & unit~externalParent == '' & \unit~isMixin then do
+      source = source || '::method RX2CPP_SUPER_' || name || '0a'x
+      source = source || '  use arg selector' || '0a'x
+      source = source || '  forward message (selector) arguments (arg(1, "A")~section(2)) class (super)' || '0a'x
+      source = source || '::method RX2CPP_SUPERA_' || name || '0a'x
+      source = source || '  use arg selector, args' || '0a'x
+      source = source || '  forward message (selector) arguments (args) class (super)' || '0a'x
+    end
     do method over unit~methods
       selector = method~selector
       classOption = ''
@@ -128,10 +138,12 @@
         selectorSymbol = 'op_' || .RxOperatorSelectors~symbol(selector)
       end
       else if selectorBase == '[]' then selectorSymbol = 'index_get'
-      else do
+      else if verify(selectorBase, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_') == 0 & selectorBase \== '' then do
         self~identifier(selectorBase, 'method selector')
         selectorSymbol = selectorBase~lower
       end
+      /* Any other selector (a quoted name such as "test_[]"): a mangled C++ name, a quoted declaration. */
+      else selectorSymbol = 'q_' || .RxQuote~identifier(selectorBase)~lower
       if selector == 'RX2CPP_NATIVE_TOKEN' then
         raise syntax 40.1 array('rx2cpp: reserved native method ' || selector)
       if \classSide then do
@@ -149,6 +161,8 @@
       if method~isAbstract then do
         abstractName = selector
         if isOperator | selector == '[]' | selector~right(1) == '=' then abstractName = '"' || selector || '"'
+        else if verify(selector, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_!?.') > 0 then
+          abstractName = '"' || selector~changeStr('"', '""') || '"'
         /* The interpreter owns abstract methods: declared, never implemented natively. */
         source = source || '::method ' || abstractName || classOption || ' ' || method~declaration || ' abstract' || '0a'x
         iterate
@@ -163,6 +177,8 @@
       guardOption = ' ' || method~declaration
       declared = selector
       if isOperator | isSetter | selector == '[]' then declared = '"' || selector || '"'
+      else if verify(selector, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_!?.') > 0 then
+        declared = '"' || selector~changeStr('"', '""') || '"'
       source = source || '::method ' || declared || classOption || guardOption || ' external "LIBRARY ' || packageName || ' ' || symbol || '"' || '0a'x
     end
     /* ::CONSTANT creates a getter on the class and instance. Delegate its

@@ -43,10 +43,12 @@
   s = ctx~stream
   s~expect('::'); s~expect('METHOD')
   if s~peek~kind \= 'IDENT' & s~peek~kind \= 'STRING' then s~fail('expected method selector')
-  name = s~next~text
-  if name == '[]' | name == '[]=' | .RxOperatorSelectors~symbol(name) \== '' then nop
-  else if verify(name, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_') > 0 then
-    s~fail('unsupported native method selector')
+  nameToken = s~next
+  name = nameToken~text
+  /* A quoted method name is upper case, as the interpreter registers it ("do_it" is DO_IT). */
+  if nameToken~kind == 'STRING' then name = name~upper
+  /* Any selector a quoted name can spell ("test_[]", "a b"): the native entry's C++ name is mangled. */
+  if name == '' then s~fail('empty method selector')
   /* UNKNOWN is an ordinary method to compile: the interpreter invokes it for messages no method answers. */
   /* A user UNINIT is compiled under its own name; the generated UNINIT runs it, then releases the native state. */
   if name == 'UNINIT' then name = 'RX2CPP_USER_UNINIT'

@@ -1194,7 +1194,20 @@ inline bool within(std::int64_t current, std::int64_t limit, std::int64_t step) 
     if (step == 0) throw std::runtime_error("DO BY 0 unsupported");
     return step > 0 ? current <= limit : current >= limit;
 }
+// SAY output: standard output, or (in a native library) the interpreter's .OUTPUT, as Activity::sayOutput does.
+inline void (*&sayHook())(const std::string &) { static void (*hook)(const std::string &) = nullptr; return hook; }
 inline void say(const std::vector<Value> &items) {
+    if (sayHook()) {
+        std::string line;
+        bool first = true;
+        for (const auto &item : items) {
+            if (!first) line += ' ';
+            first = false;
+            line += item.isObject() ? item.object->display() : item.bytes.str();
+        }
+        sayHook()(line);
+        return;
+    }
     bool first = true;
     for (const auto &item : items) {
         if (!first) std::cout << ' ';
