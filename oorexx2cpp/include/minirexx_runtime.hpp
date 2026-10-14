@@ -209,8 +209,17 @@ struct NotReadyCondition : std::runtime_error {
 };
 // How compiled code is about to call a compiled package routine (SUBROUTINE / FUNCTION), for its PARSE SOURCE.
 inline std::string &pendingCallType() { static thread_local std::string type; return type; }
+// The clock of an activation (RexxActivation::getTime / getElapsed): one time stamp per clause, read at the first
+// TIME / DATE of the clause; the elapsed-time origin of TIME('E') / TIME('R'). Microseconds since 0001-01-01.
+struct ClauseClock {
+    bool valid = false;
+    std::int64_t utc = 0, local = 0, offset = 0;
+    std::int64_t elapsed = 0;
+    bool elapsedReset = false;
+};
 struct ActivationScope {
     enum Kind { Method, Routine };
+    ClauseClock clockState;
     Kind kind;
     MethodTraps *traps = nullptr;   // the SIGNAL ON state of the running activation (method body or internal routine)
     std::string callType;           // a routine's: SUBROUTINE / FUNCTION, '' when the interpreter called it
@@ -221,6 +230,10 @@ struct ActivationScope {
     static ActivationScope *&current() { static thread_local ActivationScope *scope = nullptr; return scope; }
     explicit ActivationScope(Kind k = Method) : kind(k), callType(std::exchange(pendingCallType(), std::string())),
                                                  saved(current()) { current() = this; }
+    // A new clause begins (compiled before every statement that calls TIME or DATE): the next one reads the clock again.
+    static void clauseBoundary() { if (ActivationScope *s = current()) s->clockState.valid = false; else outsideClock().valid = false; }
+    static ClauseClock &outsideClock() { static thread_local ClauseClock c; return c; }
+    static ClauseClock &clock() { ActivationScope *s = current(); return s ? s->clockState : outsideClock(); }
     // PARSE SOURCE call type of the running package routine.
     static std::string routineCallType() {
         ActivationScope *s = current();
@@ -264,6 +277,15 @@ struct ActivationScope {
     }
 };
 using StreamScope = ActivationScope;
+// An internal routine call works on a copy of its caller's clock (RexxActivation settings are copied for INTERNALCALL):
+// TIME('R') there does not reset the caller's elapsed time; the caller's clause time stamp is kept.
+struct InternalCallClock {
+    ClauseClock saved;
+    InternalCallClock() : saved(ActivationScope::clock()) { ActivationScope::clock().valid = false; }
+    ~InternalCallClock() { ActivationScope::clock() = saved; }
+    InternalCallClock(const InternalCallClock &) = delete;
+    InternalCallClock &operator=(const InternalCallClock &) = delete;
+};
 /* Small native .ARRAY subset. Index operations use ooRexx message selectors
    [] and []= (value FIRST, index SECOND); no C++ indexing semantics leak in.
    Uninitialised elements and multidimensional arrays are unsupported. */

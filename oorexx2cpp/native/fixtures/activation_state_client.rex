@@ -8,6 +8,7 @@ signal on syntax
 say o~streams(f)
 say o~notReady(f)
 say o~sourceKinds
+say o~clock
 say o~sourceLines
 signal on notready name leaked
 say o~untrapped(f)

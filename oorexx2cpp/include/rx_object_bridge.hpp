@@ -28,6 +28,8 @@ inline bool send(void *t, const std::string &s, const std::vector<Arg> &a, Resul
 #include <typeinfo>
 #include <cstdlib>
 #include <pwd.h>
+#include <sys/time.h>
+#include <ctime>
 #include <unistd.h>
 #include <map>
 namespace rx { inline std::shared_ptr<ObjectDispatch> takeKeptCondition(); }
@@ -280,7 +282,7 @@ inline bool send(void *target, const std::string &selector, const std::vector<Ar
         RexxDirectoryObject info = t->GetConditionInfo();
         RexxCondition cd; t->DecodeConditionInfo(info, &cd);
         code = std::to_string(cd.code / 1000) + "." + std::to_string(cd.code % 1000);
-        text = cd.message ? t->ObjectToStringValue(cd.message) : "error in message " + selector;
+        text = (cd.message && t->IsString(cd.message)) ? t->ObjectToStringValue(cd.message) : "error in message " + selector;
         keepCondition(t);          // the condition object itself, before anything else runs in the interpreter
         t->ClearCondition();
         captureAdditional(t, info);   // sends ~STRING: only with no condition pending
@@ -337,7 +339,7 @@ inline bool sendStringNumeric(const std::string &receiver, const std::string &se
     if (t->CheckCondition()) {
         RexxCondition cd; t->DecodeConditionInfo(t->GetConditionInfo(), &cd);
         code = std::to_string(cd.code / 1000) + "." + std::to_string(cd.code % 1000);
-        text = cd.message ? t->ObjectToStringValue(cd.message) : "error in message " + selector;
+        text = (cd.message && t->IsString(cd.message)) ? t->ObjectToStringValue(cd.message) : "error in message " + selector;
         keepCondition(t);
         t->ClearCondition();
         return false;
@@ -380,7 +382,7 @@ inline std::string callBif(const std::string &name, const std::vector<std::pair<
     if (t->CheckCondition()) {
         RexxCondition cd; t->DecodeConditionInfo(t->GetConditionInfo(), &cd);
         std::string code = std::to_string(cd.code / 1000) + "." + std::to_string(cd.code % 1000);
-        std::string text = cd.message ? t->ObjectToStringValue(cd.message) : "error in " + name;
+        std::string text = (cd.message && t->IsString(cd.message)) ? t->ObjectToStringValue(cd.message) : "error in " + name;
         RexxDirectoryObject info = t->GetConditionInfo();
         keepCondition(t);
         t->ClearCondition();
@@ -1187,7 +1189,7 @@ inline MessageResult interpreterCall(Variables &vars, const std::string &name, c
     if (t->CheckCondition()) {
         RexxCondition cd; t->DecodeConditionInfo(t->GetConditionInfo(), &cd);
         std::string code = std::to_string(cd.code / 1000) + "." + std::to_string(cd.code % 1000);
-        std::string text = cd.message ? t->ObjectToStringValue(cd.message) : "error in " + name;
+        std::string text = (cd.message && t->IsString(cd.message)) ? t->ObjectToStringValue(cd.message) : "error in " + name;
         RexxDirectoryObject info = t->GetConditionInfo();
         rxobj::keepCondition(t);
         t->ClearCondition();
@@ -1250,7 +1252,7 @@ inline void interpreterCommand(Variables &vars, const Value &environment, const 
     if (t->CheckCondition()) {
         RexxCondition cd; t->DecodeConditionInfo(t->GetConditionInfo(), &cd);
         std::string code = std::to_string(cd.code / 1000) + "." + std::to_string(cd.code % 1000);
-        std::string text = cd.message ? t->ObjectToStringValue(cd.message) : "error in ADDRESS";
+        std::string text = (cd.message && t->IsString(cd.message)) ? t->ObjectToStringValue(cd.message) : "error in ADDRESS";
         RexxDirectoryObject info = t->GetConditionInfo();
         rxobj::keepCondition(t);
         t->ClearCondition();
@@ -1284,7 +1286,7 @@ inline RexxObjectPtr interpreterHelper(RexxThreadContext *t, rxobj::LocalRefs &t
     if (t->CheckCondition()) {
         RexxCondition cd; t->DecodeConditionInfo(t->GetConditionInfo(), &cd);
         std::string code = std::to_string(cd.code / 1000) + "." + std::to_string(cd.code % 1000);
-        std::string text = cd.message ? t->ObjectToStringValue(cd.message) : std::string("error in ") + name;
+        std::string text = (cd.message && t->IsString(cd.message)) ? t->ObjectToStringValue(cd.message) : std::string("error in ") + name;
         RexxDirectoryObject info = t->GetConditionInfo();
         rxobj::keepCondition(t);
         t->ClearCondition();
@@ -1566,6 +1568,58 @@ inline Value randomBif(Variables &vars, const std::vector<std::optional<Value>> 
         minimum += static_cast<std::int64_t>(work % static_cast<std::uint64_t>(maximum - minimum + 1));
     }
     return Value::number(std::to_string(minimum));
+}
+// RexxActivation::getTime: the clause's time stamp (SystemInterpreter::getCurrentTime on first use in the clause).
+inline ClauseClock &clauseTime() {
+    ClauseClock &c = ActivationScope::clock();
+    if (!c.valid) {
+        if (c.elapsedReset) { c.elapsed = c.utc; c.elapsedReset = false; }   // TIME('R') in an earlier clause
+        timeval tv; gettimeofday(&tv, nullptr);
+        std::tm local{}; time_t secs = tv.tv_sec; localtime_r(&secs, &local);
+        constexpr std::int64_t epochBase = 62135596800LL * 1000000LL;   // 0001-01-01 to 1970-01-01
+        c.utc = static_cast<std::int64_t>(tv.tv_sec) * 1000000LL + tv.tv_usec + epochBase;
+        c.offset = static_cast<std::int64_t>(local.tm_gmtoff) * 1000000LL;
+        c.local = c.utc + c.offset;
+        c.valid = true;
+    }
+    return c;
+}
+// TIME and DATE (BuiltinFunctions.cpp) on this activation's clock: the elapsed timer here; every other form of the
+// current time is formatted by the interpreter's own TIME / DATE from the clause's time stamp (input style 'F'), so
+// all the TIME / DATE calls of one clause see the same instant. A conversion (an input time or date) is the
+// interpreter's, as are rejected calls.
+inline Value timeDateBif(Variables &vars, const std::string &name, const std::vector<std::optional<Value>> &a) {
+    auto delegate = [&](const std::vector<std::optional<Value>> &args) -> Value {
+        auto r = interpreterCall(vars, name, args);
+        if (!r) throw std::runtime_error("BIF " + name + ": no result");
+        return std::move(*r);
+    };
+    for (const auto &slot : a) if (slot && slot->isObject()) return delegate(a);
+    if (a.size() > 1) return delegate(a);
+    char style = 'N';
+    if (!a.empty() && a[0]) {
+        if (a[0]->bytes.empty()) return delegate(a);
+        style = static_cast<char>(std::toupper(static_cast<unsigned char>(a[0]->bytes[0])));
+    }
+    ClauseClock &c = clauseTime();
+    if (name == "TIME" && (style == 'E' || style == 'R')) {
+        if (c.elapsed == 0) c.elapsed = c.utc;                               // getElapsed: the first call starts it
+        const std::int64_t threshold = c.utc - c.elapsed;
+        std::string out = "0";
+        if (threshold < 0) c.elapsedReset = true;
+        else if (threshold > 0) {
+            char work[64];
+            std::snprintf(work, sizeof work, "%d.%06d", static_cast<int>(threshold / 1000000LL), static_cast<int>(threshold % 1000000LL));
+            out = work;
+        }
+        if (style == 'R') c.elapsedReset = true;
+        return Value::string(out);
+    }
+    std::vector<std::optional<Value>> args;
+    args.push_back(a.empty() ? std::nullopt : a[0]);
+    args.push_back(Value::string(std::to_string(c.local)));
+    args.push_back(Value::string("F"));
+    return delegate(args);
 }
 inline bool streamBifName(const std::string &name) {
     return name == "LINEIN" || name == "LINEOUT" || name == "LINES" || name == "CHARIN" || name == "CHAROUT" ||

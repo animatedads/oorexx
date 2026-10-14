@@ -686,6 +686,7 @@ inline Value dispatchBifNative(BifRuntime& bif, Variables& vars, const std::stri
 #ifdef RX2CPP_HOST_API
     if(streamBifName(name)) return streamBif(vars,name,slots);
     if(name=="RANDOM") return randomBif(vars,slots);
+    if(name=="TIME" || name=="DATE") return timeDateBif(vars,name,slots);
 #endif
     if(name=="TRACE" || name=="ADDRESS") {   // language state owned by the compiled program, not by a BIF
         if(slots.size()>1 || (slots.size()==1 && (!slots[0] || slots[0]->isObject())))

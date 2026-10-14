@@ -56,7 +56,7 @@ private:
 [[noreturn]] inline void raisePending(RexxThreadContext *c) {
     RexxCondition cd;
     c->DecodeConditionInfo(c->GetConditionInfo(), &cd);
-    std::string text = cd.message ? c->ObjectToStringValue(cd.message) : "";
+    std::string text = (cd.message && c->IsString(cd.message)) ? c->ObjectToStringValue(cd.message) : "";
     const std::string code = std::to_string(cd.code / 1000) + "." + std::to_string(cd.code % 1000);
     c->ClearCondition();
     if (code == "97.1") throw NoMethod(text);

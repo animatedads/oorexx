@@ -122,7 +122,7 @@
     code = code || 'rx::Variables _rxProcVars(vars, std::vector<std::string>{' || names || '}); '
     target = '_rxProcVars'
   end
-  code = code || 'rx::noResultPending() = false; rx::Value _rxIr = _rxBody(' || entry || ', _rxIa, ' || target || ', true); '
+  code = code || 'rx::noResultPending() = false; rx::InternalCallClock _rxClock; rx::Value _rxIr = _rxBody(' || entry || ', _rxIa, ' || target || ', true); '
   code = code || 'const bool _rxNone = std::exchange(rx::noResultPending(), false); vars.numeric = _rxSavedNumeric; '
   if mode == 'FUNCTION' then do
     code = code || 'if (_rxNone) { rx::SyntaxCondition _rxNo("44.1", "No data returned from function", false); '
@@ -186,6 +186,9 @@
   end
   /* ARG reads this activation's own argument slots (omitted slots stay omitted). */
   if name == 'ARG' then return code || 'return rx::argBifSlots(arguments, _rxSlots); }())'
+  /* TIME / DATE in a DO header: the header is evaluated again on every iteration, each time a new clause. */
+  if (name == 'TIME' | name == 'DATE') & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \== '' then
+    if wordpos('WHILE', .local['RX2CPP.CLAUSEWORDS']) > 0 then code = code || 'rx::ActivationScope::clauseBoundary(); '
   return code || 'return rx::dispatchBif(rx2cppBif(), vars, ' || .RxQuote~cpp(name) || ', _rxSlots); }())'
 ::requires 'core/RxQuote.cls'
 ::requires 'rules/RxBuiltinRules.cls'

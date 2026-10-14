@@ -41,6 +41,23 @@ eof:
   do forever; x = linein(file); end
 any:
   return condition('C')
+::method clock
+  first = time('E')
+  same = time('L') == time('L') & date('S') == date('S') & time('F') == time('F')
+  y = time('R'); z = time('R')
+  n = 0
+  do while time('E') < 0.02; n = n + 1; end
+  do until time('E') > 0.04; end
+  t = time('T'); d = date('B')
+  r0 = time('R')
+  call SysSleep 0.2
+  call resetter
+  e = time('E')
+  return first same (e >= 0.3) (inner >= 0.2) (y <= z) (n > 0) datatype(t, 'W') datatype(d, 'W') (time('O') == time('O'))
+resetter:
+  inner = time('R')
+  call SysSleep 0.15
+  return
 ::method sourceKinds
   call whereFrom
   r = result

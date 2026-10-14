@@ -64,7 +64,11 @@ static void raiseSyntaxIn(RexxThreadContext *t, const rx::SyntaxCondition &e) {
         if (auto *env = dynamic_cast<rx::EnvObject *>(e.conditionObject.get())) {
             if (env->handle && t->IsDirectory((RexxObjectPtr)env->handle)) {
                 RexxObjectPtr add = t->DirectoryAt((RexxDirectoryObject)env->handle, "ADDITIONAL");
-                if (add != NULLOBJECT && t->IsArray(add)) { t->RaiseException(number, (RexxArrayObject)add); return; }
+                if (add != NULLOBJECT && t->IsArray(add)) {
+                    if (t->ArraySize((RexxArrayObject)add) == 0) { t->RaiseException0(number); return; }
+                    t->RaiseException(number, (RexxArrayObject)add);
+                    return;
+                }
             }
         }
     }

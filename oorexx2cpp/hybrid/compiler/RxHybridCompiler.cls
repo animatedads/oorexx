@@ -176,8 +176,20 @@
   /* Each statement starts without clause keywords (a DO body does not inherit its header's TO/BY/...). */
   saved = .local['RX2CPP.CLAUSEWORDS']
   .local['RX2CPP.CLAUSEWORDS'] = ''
+  before = self~current~instructions~items
   scopes~rexxLogic(self, depth)
   .local['RX2CPP.CLAUSEWORDS'] = saved
+  /* A clause that calls TIME or DATE starts with a fresh clause time stamp (rx::ActivationScope::clauseBoundary). */
+  if value('RX2CPP_HOST_API', , 'ENVIRONMENT') \== '' then do
+    code = self~current~instructions
+    do i = before + 1 to code~items
+      if code[i]~pos('"TIME"') > 0 | code[i]~pos('"DATE"') > 0 then do
+        if before == 0 then code~insert('rx::ActivationScope::clauseBoundary();', .nil)
+        else code~insert('rx::ActivationScope::clauseBoundary();', before)
+        leave
+      end
+    end
+  end
 /* Lines of this unit's source are lines of the original file plus this offset (combined packages, class sections). */
 ::method setLineOffset
   expose lineOffset stream

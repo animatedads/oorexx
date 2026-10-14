@@ -64,7 +64,8 @@ for g in "${groups[@]}"; do
     echo "FAIL $g: compile ($(grep -m1 'rx2cpp:' "$WORK/out/$sub.$n.build.log" | cut -c1-160))"; fail=$((fail+1)); continue
   fi
   up=$(printf '%s' "$lib" | tr 'a-z' 'A-Z')
-  { printf "rx2cppPackage = .environment['RX2CPP.PACKAGE.%s']\nif rx2cppPackage \\\\== .nil then .context~package~addPackage(rx2cppPackage)\n" "$up"
+  { head -1 "$src" | grep '^#!'   # a #! first line stays first (programs that read their own file)
+    printf "rx2cppPackage = .environment['RX2CPP.PACKAGE.%s']\nif rx2cppPackage \\\\== .nil then .context~package~addPackage(rx2cppPackage)\n" "$up"
     awk -v f="$first" 'NR < f' "$src" | grep -v '^#!'
     printf "::requires 'ooTest.frm'\n::requires '%s' library\n" "$lib"; } > "$WORK/ctree/ooRexx/base/$sub/$n.testGroup"
   run "$WORK/ctree" "$sub" "$n" "$WORK/out/$sub.$n.c"
