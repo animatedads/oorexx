@@ -1,6 +1,6 @@
 # ooTest testGroups whose native compilation gives results identical to the interpreter (ootest/run_native_groups.sh).
 # base/bif: all 73 groups with directives (DELWORD is a plain program, not a library).
-# base/class: 25 of 30 groups identical (see HANDOFF_2026-10-13.md for the others).
+# base/class: 26 of 30 groups identical (see HANDOFF_2026-10-13.md for the others).
 # base/expressions: all 10 groups identical.
 # base/keyword: every group the interpreter loads (IF, ITERATE and LEAVE fail to translate in the interpreter itself).
 bif/ABBREV
@@ -79,6 +79,7 @@ bif/XRANGE
 class/Array
 class/Bag
 class/CircularQueue
+class/Class
 class/CollectionSetlikeMethods
 class/Comparator
 class/DateTime

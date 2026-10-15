@@ -439,9 +439,11 @@ rx::Value invoke(const std::string &name,const std::vector<rx::Value> &a,Context
     if(name=="STRIP"){
         auto s=get(0); char opt=a.size()>=2?caseMode(get(1),name):'B';
         if(opt!='B'&&opt!='L'&&opt!='T')bad(name,"option must be B, L, T");
-        char p=pad(a,2,name)[0];size_t b=0,e=s.size();
-        if(opt!='T')while(b<e&&s[b]==p)b++;
-        if(opt!='L')while(e>b&&s[e-1]==p)e--;
+        // RexxString::strip: the third argument is a set of characters (any length); by default blanks and tabs
+        std::string set=a.size()>=3?str(a,2,name):std::string(" \t");size_t b=0,e=s.size();
+        auto in=[&](char c){return set.find(c)!=std::string::npos;};
+        if(opt!='T')while(b<e&&in(s[b]))b++;
+        if(opt!='L')while(e>b&&in(s[e-1]))e--;
         return sv(s.substr(b,e-b));
     }
     if(name=="SPACE"){

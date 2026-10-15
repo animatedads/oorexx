@@ -11,7 +11,7 @@
   if pos('.', name) > 0 then s~fail('compound ATTRIBUTE names are unsupported')
   mode = 'BOTH'
   opts = .RxHybridMethodOptions~new
-  do while s~peek~kind == 'IDENT' & wordpos(s~peek~text, 'GET SET PUBLIC PRIVATE PROTECTED GUARDED UNGUARDED CLASS') > 0
+  do while s~peek~kind == 'IDENT' & wordpos(s~peek~text, 'GET SET PUBLIC PRIVATE PACKAGE PROTECTED UNPROTECTED GUARDED UNGUARDED CLASS ABSTRACT') > 0
     word = s~next~text~upper
     if word == 'GET' | word == 'SET' then do
       if mode \== 'BOTH' then s~fail('duplicate or conflicting GET/SET')

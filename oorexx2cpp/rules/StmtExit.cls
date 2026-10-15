@@ -12,6 +12,8 @@
   if hasValue then code = ctx~logicalExpr~parse(ctx)
   /* A method of a native library: EXIT leaves the method like RETURN (bare EXIT: no result), as interpreted. */
   if ctx~hasMethod('CURRENT') then if ctx~current~hasMethod('BRANCHRETURNVALUE') then do
+    /* after a REPLY, EXIT has no caller for a value (98.937) */
+    if hasValue & ctx~current~replies & ctx~current~selector \== 'INIT' then code = 'rx::afterReply(' || code || ', true, false)'
     /* In a method with internal routines EXIT may run inside one: it leaves the whole method. */
     if ctx~current~hasInternalCalls then do
       if \hasValue | ctx~current~selector == 'INIT' then ctx~current~addRaw('throw rx::MethodExit{std::nullopt};')

@@ -10,6 +10,7 @@
 ::attribute interpretedPublic
 ::attribute form              /* tokenized | source | file (interpreted table, default tokenized) */
 ::attribute workPrefix        /* build directory prefix for the tokenizer's files */
+::attribute floating          /* floating ::METHOD directives before the first ::CLASS: they lead the declaration */
 ::method init
   self~interpretedMethods = .directory~new
   self~interpretedPublic = .array~new
@@ -18,6 +19,8 @@
 ::method emitPackage
   use arg units, packageName, template, options, extras, routines
   userUninit = .false
+  replyUsed = .false
+  holdsDeclared = .directory~new
   do u over units
     do m over u~methods
       if m~selector == 'RX2CPP_USER_UNINIT' then userUninit = .true
@@ -30,6 +33,8 @@
   if arg(4, 'E') then do
     if options~present then source = options~directive || '0a'x
   end
+  /* (a ::METHOD after the classes would belong to the last class: floating methods go first, as in the source) */
+  if self~floating \== .nil then source = source || self~floating
   factories = ''
   classes = ''
   countClasses = 0
@@ -72,7 +77,8 @@
       source = source || '::class ' || declared
       if \unit~hasMethod('ISPUBLIC') then source = source || ' public'
       else if unit~isPublic then source = source || ' public'
-      if unit~isMixin then source = source || ' mixinclass ' || unit~parentName
+      if unit~isMixin & unit~parentName == '' then source = source || ' mixinclass ' || unit~externalParent   /* (an interpreter class) */
+      else if unit~isMixin then source = source || ' mixinclass ' || unit~parentName
       else if \isRoot then source = source || ' subclass ' || unit~parentName
       else if unit~externalParent \== '' then source = source || ' subclass ' || unit~externalParent
       if unit~mixinNames~items > 0 then do
@@ -156,10 +162,15 @@
         else do
           decl = ' ' || method~declaration~upper || ' '
           pub = 1
-          if decl~pos(' PRIVATE ') > 0 | decl~pos(' PROTECTED ') > 0 then pub = 0
+          if decl~pos(' PRIVATE ') > 0 | decl~pos(' PROTECTED ') > 0 | decl~pos(' PACKAGE ') > 0 then pub = 0
           noRes = 0
           if selector == 'INIT' | method~attributeSetter then noRes = 1
           resolved[key] = name pub noRes
+          replyMethod = .false
+          if method~hasMethod('REPLIES') then replyMethod = method~replies
+          guardsMethod = .false
+          if method~hasMethod('GUARDS') then guardsMethod = method~guards
+          if replyMethod | guardsMethod then resolved~remove(key)   /* (its entry manages its locks) */
         end
       end
       if method~isAbstract then do
@@ -174,11 +185,28 @@
       if selector == 'INIT' then countInit += 1
       symbol = 'rx_native_' || .RxQuote~identifier(name~lower) || '_' || selectorSymbol
       if isSetter then symbol = symbol || '_set'
+      /* guard mode for the native entry: 0 unguarded, 1 guarded (the interpreter locked the object), 2 guarded with
+         REPLY (see the stubs below) */
+      replies = .false
+      if method~hasMethod('REPLIES') then replies = method~replies
+      guarded = wordpos('UNGUARDED', method~declaration~upper) = 0
+      guards = .false
+      if method~hasMethod('GUARDS') then guards = method~guards
+      guardMode = guarded + 2 * replies + 4 * guards
       cpp = cpp || 'RexxMethod2(RexxObjectPtr, ' || symbol || ', OSELF, self, ARGLIST, args)' || '0a'x
       cpp = cpp || '{ return rx2cpp::call(context, args, self, ' || .RxQuote~cpp(name) || ', ' || .RxQuote~cpp(selector) || ', ' || ,
-            (selector == 'INIT')~string || ', ' || method~attributeSetter~string || ', ' || slotIndex || ', ' || isRoot~string || ', ' || .RxQuote~cpp(rootName) || ', ' || classSide~string || '); }' || '0a'x
+            (selector == 'INIT')~string || ', ' || method~attributeSetter~string || ', ' || slotIndex || ', ' || isRoot~string || ', ' || .RxQuote~cpp(rootName) || ', ' || classSide~string || ', ' || guardMode || '); }' || '0a'x
       entries = entries || '    REXX_METHOD(' || symbol || ', ' || symbol || '),' || '0a'x
       guardOption = ' ' || method~declaration
+      /* GUARD statements: the method manages its object lock natively (guard mode bit 4), so it is declared UNGUARDED
+         (a GUARD OFF could not let go of a lock its declaration holds). */
+      if guards & \replies then do
+        guardOption = ''
+        do w over method~declaration~space~makeArray(' ')
+          if wordpos(w~upper, 'GUARDED UNGUARDED') = 0 then guardOption = guardOption || ' ' || w
+        end
+        guardOption = guardOption || ' unguarded'
+      end
       declared = selector
       if isOperator | isSetter | selector == '[]' then declared = '"' || selector || '"'
       else if verify(selector, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_!?.') > 0 then
@@ -188,7 +216,50 @@
          inside the interpreter during the method (NOSTRING, NOTREADY, ...) stops there, as it would in the
          interpreted method, instead of reaching the interpreted caller. Costs one Rexx activation per call from
          interpreted code. */
-      if self~needsRexxFrame(method) then do
+      if replies then do
+        /* REPLY (RexxActivation::reply): the caller's stub (unguarded) starts the method on an activity of its own, a
+           public Rexx frame (RX2CPP_R_...: a started message cannot reach a private one) that forwards to the native
+           entry with the reply box as an extra last argument (rx::ReplyScope), and waits on the box. REPLY (or the
+           method's end without one) gives the stub its result. A guarded method locks the object on its own activity
+           from the start, so the lock stays with it after the reply (VariableDictionary::transfer); when the caller
+           holds the lock already (a nested call: RX2CPP_HOLDS), the method runs under the caller's lock and takes
+           the lock at the REPLY, waiting for the caller to let it go (as interpreted). A SYNTAX error before the
+           reply is raised in the caller, one after it ends the method's activity (reported there). Compiled code
+           sends to it through the interpreter (not in the direct table). */
+        replyUsed = .true
+        hidden = '"RX2CPP_N_' || (packageName || ':' || name || ':' || selector)~upper~changeStr('"', '""') || '"'
+        runner = '"RX2CPP_R_' || (packageName || ':' || name || ':' || selector)~upper~changeStr('"', '""') || '"'
+        source = source || '::method ' || hidden || classOption || ' private unguarded external "LIBRARY ' || packageName || ' ' || symbol || '"' || '0a'x
+        if \holdsDeclared~hasIndex(name || classOption) then do
+          holdsDeclared[name || classOption] = .true
+          source = source || '::method RX2CPP_HOLDS' || classOption || ' private unguarded external "LIBRARY ' || packageName || ' rx_native_holds"' || '0a'x
+        end
+        source = source || '::method ' || runner || classOption || ' unguarded' || '0a'x
+        source = source || '  use arg rx2cppBox, rx2cppArgs' || '0a'x
+        source = source || '  signal on syntax name rx2cppReplyFailed' || '0a'x
+        if guarded then source = source || '  if rx2cppBox~locked then guard on' || '0a'x
+        source = source || '  rx2cppArgs[rx2cppArgs~size + 1] = rx2cppBox' || '0a'x
+        source = source || '  forward message (' || hidden || ') arguments (rx2cppArgs) continue' || '0a'x
+        source = source || '  if rx2cppBox~replied then return' || '0a'x
+        source = source || '  if var("RESULT") then rx2cppBox~reply(result)' || '0a'x
+        source = source || '  else rx2cppBox~reply' || '0a'x
+        source = source || '  return' || '0a'x
+        source = source || 'rx2cppReplyFailed:' || '0a'x
+        source = source || '  if rx2cppBox~replied then raise propagate' || '0a'x
+        source = source || '  rx2cppBox~fail(condition("O"))' || '0a'x
+        callerOption = ''
+        do w over method~declaration~space~makeArray(' ')
+          if wordpos(w~upper, 'GUARDED UNGUARDED') = 0 then callerOption = callerOption || ' ' || w
+        end
+        source = source || '::method ' || declared || classOption || callerOption || ' unguarded' || '0a'x
+        source = source || "  rx2cppNested = self~rx2cpp_holds('" || name~changeStr("'", "''") || "')" || '0a'x
+        if guarded then source = source || '  rx2cppBox = .RX2CPP_REPLY~new(\rx2cppNested, rx2cppNested)' || '0a'x
+        else source = source || '  rx2cppBox = .RX2CPP_REPLY~new(.false, rx2cppNested)' || '0a'x
+        source = source || '  .message~new(self, ' || runner || ', "I", rx2cppBox, .context~args)~start' || '0a'x
+        source = source || '  rx2cppBox~wait' || '0a'x
+        source = source || '  if var("RESULT") then return result' || '0a'x
+      end
+      else if self~needsRexxFrame(method) then do
         /* The entry's name is unique to this library, class and method: FORWARD MESSAGE looks it up from the receiver's
            class, so a subclass that overrides the same method (a SUPER chain) must not find its own entry first. */
         hidden = '"RX2CPP_N_' || (packageName || ':' || name || ':' || selector)~upper~changeStr('"', '""') || '"'
@@ -212,7 +283,8 @@
     /* ::CONSTANT creates a getter on the class and instance. Delegate its
        declaration to ooRexx itself, not to the native instance registry. */
     do constant over unit~constants   /* the class side has none */
-      source = source || '::constant ' || constant[1]
+      if constant~size >= 3 then source = source || '::constant ' || constant[3]   /* the name as written */
+      else source = source || '::constant ' || constant[1]
       if constant[2] \== '' then source = source || ' ' || constant[2]
       source = source || '0a'x
     end
@@ -280,6 +352,32 @@
     do externalHeader over routines~externalDeclarations
       source = source || externalHeader || '0a'x
     end
+  end
+  /* The reply box of methods with REPLY: REPLY (or the method's end) sets it, the caller's stub waits on it. */
+  if replyUsed then do
+    source = source || '::class RX2CPP_REPLY' || '0a'x
+    source = source || '::attribute locked get' || '0a'x
+    source = source || '::attribute nested get' || '0a'x
+    source = source || '::method init' || '0a'x
+    source = source || '  expose done failed locked nested' || '0a'x
+    source = source || '  use arg locked, nested' || '0a'x
+    source = source || '  done = .false; failed = .nil' || '0a'x
+    source = source || '::method replied' || '0a'x
+    source = source || '  expose done' || '0a'x
+    source = source || '  return done' || '0a'x
+    source = source || '::method reply' || '0a'x
+    source = source || '  expose done value' || '0a'x
+    source = source || '  if arg(1, "E") then value = arg(1)' || '0a'x
+    source = source || '  done = .true' || '0a'x
+    source = source || '::method fail' || '0a'x
+    source = source || '  expose done failed' || '0a'x
+    source = source || '  use arg failed' || '0a'x
+    source = source || '  done = .true' || '0a'x
+    source = source || '::method wait' || '0a'x
+    source = source || '  expose done value failed' || '0a'x
+    source = source || '  guard on when done' || '0a'x
+    source = source || '  if failed \== .nil then raise syntax (failed~code) additional (failed~additional)' || '0a'x
+    source = source || '  if var("VALUE") then return value' || '0a'x
   end
   if arg(5, 'E') then source = source || extras
   direct = '[[maybe_unused]] static const ClassMethodTable &directMethodTable() {' || '0a'x

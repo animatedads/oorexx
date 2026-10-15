@@ -7,15 +7,18 @@
 ::attribute options get
 /* Executable code before the first ::CLASS (the package prolog): run by the interpreter when the library loads. */
 ::attribute prolog get
+/* Floating ::METHOD (::ATTRIBUTE, ::CONSTANT) directives before the first ::CLASS: the package's .METHODS. */
+::attribute floating get
 /* Interpreted table results: whole classes (source text, unchanged) and single methods per class (directory). */
 ::attribute interpretedSource get
 ::attribute interpretedMethods get
 ::attribute interpretedPublic get
 ::attribute inputName
 ::method parse
-  expose options prolog interpretedSource interpretedMethods interpretedPublic
+  expose options prolog floating interpretedSource interpretedMethods interpretedPublic
   use arg source, table = (.RxNativeInterpretedTable~new)
   prolog = ''
+  floating = ''
   interpretedSource = ''
   interpretedMethods = .directory~new
   interpretedPublic = .array~new
@@ -91,11 +94,25 @@
         end
         iterate
       end
-      /* Prolog code: kept as source (comments included), ::OPTIONS lines removed. */
+      /* Prolog code: kept as source (comments included), ::OPTIONS lines removed. Floating directives (from the
+         first ::METHOD / ::ATTRIBUTE / ::CONSTANT on) are not code that runs: they lead the declaration package. */
+      floatStart = first
+      do k = 1 to pre~items - 1
+        if pre[k]~text == '::' & wordpos(pre[k+1]~text, 'METHOD ATTRIBUTE CONSTANT') > 0 then do
+          floatStart = pre[k]~line
+          leave
+        end
+      end
       do j2 = 1 to first - 1
-        if optionsLines~hasIndex(j2) then prolog = prolog || '0a'x
+        if j2 >= floatStart then do
+          if \optionsLines~hasIndex(j2) then floating = floating || lines[j2]
+          floating = floating || '0a'x
+          prolog = prolog || '0a'x
+        end
+        else if optionsLines~hasIndex(j2) then prolog = prolog || '0a'x
         else prolog = prolog || lines[j2] || '0a'x
       end
+      if prolog~strip('B', '0a'x)~strip == '' then prolog = ''
       leave
     end
   end
@@ -106,6 +123,28 @@
   scopes = .directory~new
   graphRules = .RxNativeInheritanceRules~new
   interpretedClasses = .directory~new
+  /* Metaclasses run in the interpreter: a class descending from .Class (SUBCLASS / MIXINCLASS / INHERIT, in any
+     order in the file) has classes as its instances, and a class with a METACLASS option is made by one; the
+     interpreter's class machinery is the only faithful implementation of either. */
+  metaclasses = .set~of('CLASS')
+  do until \grown
+    grown = .false
+    do i = 1 to positions~items
+      entry = self~directiveAt(directives, positions[i], 'CLASS')
+      if metaclasses~hasIndex(entry~name) then iterate
+      do k = 1 to entry~words~items - 1
+        w = entry~words[k]
+        if wordpos(w, 'SUBCLASS MIXINCLASS') > 0 & metaclasses~hasIndex(entry~words[k+1]) then grown = .true
+        if w == 'INHERIT' then do m = k + 1 to entry~words~items
+          if metaclasses~hasIndex(entry~words[m]) then grown = .true
+        end
+      end
+      if grown then do
+        metaclasses~put(entry~name)
+        leave
+      end
+    end
+  end
   do i = 1 to positions~items
     start = positions[i]
     if i < positions~items then finish = positions[i+1] - 1
@@ -123,8 +162,12 @@
         if interpretedClasses~hasIndex(classEntry~words[m]) then inheritsInterpreted = classEntry~words[m]
       end
     end
-    if classRule \== .nil | inheritsInterpreted \== '' then do
+    metaReason = ''
+    if metaclasses~hasIndex(classEntry~name) then metaReason = 'a metaclass: its instances are classes'
+    else if classEntry~words~hasItem('METACLASS') then metaReason = 'made by a METACLASS'
+    if classRule \== .nil | inheritsInterpreted \== '' | metaReason \== '' then do
       if classRule \== .nil then classRule~honoured = .true
+      else if metaReason \== '' then .error~lineout('rx2cpp: interpreted:' classEntry~name '(' || metaReason || ')')
       else .error~lineout('rx2cpp: interpreted:' classEntry~name '(inherits interpreted' inheritsInterpreted')')
       do rule over table~methodRules(classEntry~name)   /* its methods are interpreted with it */
         rule~used = .true; rule~honoured = .true

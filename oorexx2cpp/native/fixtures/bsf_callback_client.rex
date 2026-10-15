@@ -1,0 +1,1 @@
+say .CallbackDemo~new~run

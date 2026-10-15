@@ -1,0 +1,1 @@
+say .StripSet~new~run

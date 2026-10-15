@@ -164,6 +164,10 @@ struct ObjectDispatch {
     virtual ~ObjectDispatch() = default;
     // True when the object has no MAKESTRING method (a Stem): its string value comes from STRING, with NOSTRING.
     virtual bool noMakeString() const { return false; }
+    // True for an object of a class that is not built in (RexxInternalObject::isBaseClass false): its string value is
+    // asked for with REQUEST('STRING'), which the class may override, then STRING (RexxInternalObject::requestString).
+    virtual bool requestsString() const { return false; }
+    virtual bool isNilObject() const { return false; }
     // .Object defines =, ==, \=, \==, <>, >< using object identity.
     // Each is a distinct overridable method, not a synthesized negation.
     // More specialised classes (e.g. .String) provide their own comparators.
@@ -188,6 +192,7 @@ using NilMessageFallback = MessageResult (*)(const std::string &, const std::vec
 inline NilMessageFallback &nilMessageFallback() { static NilMessageFallback f = nullptr; return f; }
 struct NilObject final : ObjectDispatch {
     std::string display() const override { return "The NIL object"; }
+    bool isNilObject() const override { return true; }
     MessageResult sendMessage(const std::string &selector,
                               const std::vector<Value> &args) override {
         std::string canonical = selector;
@@ -196,6 +201,14 @@ struct NilObject final : ObjectDispatch {
         if (canonical == "STRING" && args.empty()) return Value::string(display());
         if (nilMessageFallback()) return nilMessageFallback()(canonical, args);
         return ObjectDispatch::sendMessage(canonical, args);
+    }
+    // Object's concatenation operators (||, blank, abuttal) use the string value.
+    Value sendBinary(const std::string &selector, const Value &rhs) override {
+        if (selector == "||" || selector == "" || selector == " ") {
+            const std::string right = rhs.isObject() ? rhs.object->display() : rhs.bytes.str();
+            return Value::string(display() + (selector == " " ? " " : "") + right);
+        }
+        return ObjectDispatch::sendBinary(selector, rhs);
     }
 };
 // A method or routine that ends without a result (bare RETURN, end of the code, FORWARD to a method that returned
@@ -258,6 +271,7 @@ struct ActivationScope {
     ClauseClock clockState;
     Kind kind;
     MethodTraps *traps = nullptr;   // the SIGNAL ON state of the running activation (method body or internal routine)
+    std::optional<int> returnStatus;   // .RS: 0 / 1 (ERROR) / -1 (FAILURE) after a command, none before
     std::string callType;           // a routine's: SUBROUTINE / FUNCTION, '' when the interpreter called it
     std::unique_ptr<std::unordered_map<std::string, Value>> table;
     bool seeded = false;
@@ -1230,7 +1244,11 @@ inline Value requestString(const Value &v) {
     if (!v.isObject()) return v;
     MessageResult r;
     bool viaString = v.object->noMakeString();
-    if (viaString) r = v.object->sendMessage("STRING", {});
+    if (v.object->requestsString()) {
+        r = v.object->sendMessage("REQUEST", {Value::string("STRING")});
+        if (!r || (r->isObject() && r->object->isNilObject())) { r = v.object->sendMessage("STRING", {}); viaString = true; }
+    }
+    else if (viaString) r = v.object->sendMessage("STRING", {});
     else {
         try { r = v.object->sendMessage("MAKESTRING", {}); }
         catch (const NoMethod &) { r = v.object->sendMessage("STRING", {}); viaString = true; }
@@ -1324,12 +1342,13 @@ inline Value sendUnary(const std::string &selector, const Value &operand) {
 }
 // Where a logical value is required (RexxObject::truthValue's error code): 34.1 IF, 34.2 WHEN, 34.3 WHILE, 34.4 UNTIL,
 // 34.6 an element of a logical list, 34.901 a logical operator or method (& | && \), 34.905 a SELECT CASE comparison.
-enum class Truth { If, When, While, Until, List, Method, Case };
+enum class Truth { If, When, While, Until, List, Method, Case, Guard };
 [[noreturn]] inline void badLogicalValue(const Value &v, Truth where) {
-    static const char *const codes[] = {"34.1", "34.2", "34.3", "34.4", "34.6", "34.901", "34.905"};
+    static const char *const codes[] = {"34.1", "34.2", "34.3", "34.4", "34.6", "34.901", "34.905", "34.902"};
     static const char *const lead[] = {"Value of expression following IF keyword", "Value of expression following WHEN keyword",
                                        "Value of expression following WHILE keyword", "Value of expression following UNTIL keyword",
-                                       "Value of logical list expression element", "Logical value", "SELECT CASE comparison result"};
+                                       "Value of logical list expression element", "Logical value", "SELECT CASE comparison result",
+                                       "Value of expression following GUARD keyword"};
     const int k = static_cast<int>(where);
     const std::string found = v.isObject() ? v.object->display() : v.bytes.str();
     SyntaxCondition e(codes[k], std::string(lead[k]) + " must be exactly \"0\" or \"1\"; found \"" + found + "\"", false);

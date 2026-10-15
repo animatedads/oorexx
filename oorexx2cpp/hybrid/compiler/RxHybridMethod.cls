@@ -31,6 +31,37 @@
   expose callOn
   if var('CALLON') then return callOn
   return .false
+/* CALL ON ... NAME x where x is no label of the method: the handler is a routine (package or external), called with
+   the condition object as the internal handlers are (RexxActivation trap handling: CALL x). Index k >= 0 is label
+   value -2 - k in the trap table. */
+::method callOnExternal
+  expose callOnExternal
+  if \var('CALLONEXTERNAL') then callOnExternal = .array~new
+  return callOnExternal
+::method externalHandler
+  use arg name
+  list = self~callOnExternal
+  do k = 1 to list~items
+    if list[k] == name then return -1 - k
+  end
+  list~append(name)
+  return -1 - list~items
+/* The body has GUARD: the method manages its object lock (see HybridGuard). */
+::method setGuards
+  expose guards
+  use arg guards
+::method guards
+  expose guards
+  if var('GUARDS') then return guards
+  return .false
+/* The body has REPLY: RETURN / EXIT with a value check that no reply was made (rx::afterReply). */
+::method setReplies
+  expose replies
+  use arg replies
+::method replies
+  expose replies
+  if var('REPLIES') then return replies
+  return .false
 ::method setTraps
   expose labels trapped
   use arg names, trapped

@@ -23,6 +23,7 @@ class ScopeLock {
     std::condition_variable cv_;
     std::thread::id owner_{};
     unsigned depth_ = 0;
+    unsigned long long version_ = 0;   // counts full releases: the compiled variables may have changed (GUARD WHEN)
 public:
     void lock() {
         std::unique_lock<std::mutex> g(m_);
@@ -32,15 +33,36 @@ public:
     }
     void unlock() {
         std::lock_guard<std::mutex> g(m_);
-        if (--depth_ == 0) { owner_ = std::thread::id(); cv_.notify_one(); }
+        if (--depth_ == 0) { owner_ = std::thread::id(); ++version_; cv_.notify_all(); }
     }
+    // (only this thread's hold: a method running under another thread's hold - a REPLY method before its reply,
+    // while its caller waits - has nothing to release)
     unsigned release_all() {
         std::lock_guard<std::mutex> g(m_);
+        if (depth_ == 0 || owner_ != std::this_thread::get_id()) return 0;
         const unsigned d = depth_;
-        depth_ = 0; owner_ = std::thread::id(); cv_.notify_one();
+        depth_ = 0; owner_ = std::thread::id(); ++version_; cv_.notify_all();
         return d;
     }
+    // GUARD WHEN: let this thread's hold go and wait until another thread has held and released the lock (it may have
+    // changed the compiled variables), then hold it again as deep as before.
+    void waitForChange() {
+        std::unique_lock<std::mutex> g(m_);
+        unsigned d = 0;
+        if (depth_ > 0 && owner_ == std::this_thread::get_id()) { d = depth_; depth_ = 0; owner_ = std::thread::id(); cv_.notify_all(); }
+        const unsigned long long seen = version_;
+        cv_.wait(g, [&] { return version_ != seen; });
+        if (d > 0) {
+            cv_.wait(g, [&] { return depth_ == 0; });
+            owner_ = std::this_thread::get_id(); depth_ = d;
+        }
+    }
+    bool heldByMe() {
+        std::lock_guard<std::mutex> g(m_);
+        return depth_ > 0 && owner_ == std::this_thread::get_id();
+    }
     void reacquire(unsigned d) {
+        if (d == 0) return;
         std::unique_lock<std::mutex> g(m_);
         cv_.wait(g, [&] { return depth_ == 0; });
         owner_ = std::this_thread::get_id(); depth_ = d;

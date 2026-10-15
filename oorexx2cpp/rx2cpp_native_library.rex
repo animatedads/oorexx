@@ -40,6 +40,7 @@ emitter~interpretedMethods = parser~interpretedMethods
 emitter~interpretedPublic = parser~interpretedPublic
 emitter~form = table~form
 emitter~workPrefix = prefix
+emitter~floating = parser~floating
 if table~form == 'file' then do
   /* The interpreted parts go to an editable file read when the library loads; the declaration keeps marker lines. */
   suffix = extras~suffix

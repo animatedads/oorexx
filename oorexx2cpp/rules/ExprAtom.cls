@@ -48,7 +48,11 @@
         return 'rx::host::packageRoutines()'
       end
       /* Native library (host API): .CONTEXT answers PACKAGE with the library's own package. */
-      if t~text == 'CONTEXT' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' then return 'rx::libraryContext()'
+      if t~text == 'CONTEXT' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' then return self~activationContext(ctx)
+      /* .METHODS: the package's floating methods (in a native library: the declaration package carries them) */
+      if t~text == 'METHODS' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' & \ctx~hasProgramClass('METHODS') then return 'rx::packageMethods()'
+      /* .RS: the return status of the activation's last command (.nil before any) */
+      if t~text == 'RS' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' & \ctx~hasProgramClass('RS') then return 'rx::returnStatusValue()'
       /* Native library: .MUTABLEBUFFER builds native buffers that become the interpreter's own only when they leave. */
       if t~text == 'MUTABLEBUFFER' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' & \ctx~hasProgramClass(t~text) then return 'rx::mutableBufferClass()'
       if t~text == 'ARRAY' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' & \ctx~hasProgramClass(t~text) then return 'rx::nativeArrayClass()'
@@ -111,6 +115,37 @@
     end
     otherwise s~fail('expected expression atom')
   end
+/* .CONTEXT in a compiled method or routine of a native library: .CONTEXT~PACKAGE is the library's package; any other
+   use is a snapshot of the activation (rx::activationContext), with its variables unless only another method follows. */
+::method activationContext private
+  use arg ctx
+  s = ctx~stream
+  following = ''
+  if s~is('~') & s~lookAheadKind(1) == 'IDENT' then following = s~lookAheadText(1)
+  if following == 'PACKAGE' | \ctx~hasMethod('CURRENT') then return 'rx::libraryContext()'
+  method = ctx~current
+  if method == .nil then return 'rx::libraryContext()'
+  className = ctx~className
+  isRoutine = className == 'RX2CPP_ROUTINE_IMPL'
+  scope = ''
+  if \isRoutine then scope = className
+  classSide = .false
+  if method~hasMethod('OPTIONS') then if method~options \== .nil then classSide = method~options~isClass
+  name = .RxQuote~cpp(method~selector)
+  /* an internal routine's context is named by its label (getCallname) */
+  if method~hasMethod('HASINTERNALCALLS') then if method~hasInternalCalls then do
+    labels = method~labels
+    labelExpr = name
+    do labelName over labels~allIndexes
+      labelExpr = '(_rxEntry == ' || labels[labelName] || ' ? std::string(' || .RxQuote~cpp(labelName) || ') : ' || labelExpr || ')'
+    end
+    name = '(_rxInternal ? ' || labelExpr || ' : std::string(' || name || '))'
+  end
+  line = .local['RX2CPP.CLAUSELINE']
+  if line == .nil then line = 0
+  withVariables = word('true false', 1 + (following \== '' & following \== 'VARIABLES'))
+  return 'rx::activationContext(vars, arguments, ' || line || ', ' || name || ', ' || .RxQuote~cpp(scope) || ', ' || -
+         .RxQuote~cpp(method~selector) || ', ' || word('false true', 1 + classSide) || ', ' || withVariables || ')'
 ::requires 'core/RxQuote.cls'
 
 ::requires 'rules/CompoundSymbols.cls'

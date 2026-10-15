@@ -115,11 +115,13 @@
   return .false
 ::method checkName private
   expose methods classMethods constants
-  use arg name, mode = 'BOTH'
+  use arg name, mode = 'BOTH', classSide = .false
   if name == 'INIT' | name == 'UNINIT' | name == 'COPY' | name == 'RX2CPP_NATIVE_TOKEN' then
     self~stream~fail('reserved class selector ' || name)
-  /* ::ATTRIBUTE x GET and ::ATTRIBUTE x SET declare the two halves separately. */
-  do m over methods
+  /* ::ATTRIBUTE x GET and ::ATTRIBUTE x SET declare the two halves separately (on the side the directive names). */
+  side = methods
+  if classSide then side = classMethods
+  do m over side
     if (mode \== 'SET' & m~selector == name) | (mode \== 'GET' & m~selector == name || '=') then
       self~stream~fail('duplicate class selector ' || name)
   end
@@ -129,7 +131,9 @@
 ::method addAttribute
   expose methods classMethods
   use arg name, mode, options
-  self~checkName(name, mode)
+  classSide = .false
+  if arg(3, 'E') then classSide = options~isClass
+  self~checkName(name, mode, classSide)
   target = methods
   if arg(3, 'E') then if options~isClass then target = classMethods
   if mode == 'BOTH' | mode == 'GET' then do
@@ -149,9 +153,9 @@
   end
 ::method addConstant
   expose constants
-  use arg name, value
+  use arg name, value, nameText = (name)
   self~checkName(name)
-  constants~append(.array~of(name, value))
+  constants~append(.array~of(name, value, nameText))
 /* Control forms and method bodies must resolve statements through the same
    shared hybrid rule registry. Nested RETURN compiles a C++ branch return,
    but is not an unconditional method terminator. */
@@ -169,6 +173,8 @@
    with the condition object as its argument (the trap delayed meanwhile, SIGL = the clause's line, RESULT untouched). */
 ::method emitCallOnDispatch
   use arg method, calls
+  method~addRaw('/* RX2CPP CALL ON routine handlers */')
+  slot = method~instructions~items
   code = 'auto _rxCallOn = [&]() { while (_rxTrap.ready()) { const rx::MethodTraps::Queued _rxQ = _rxTrap.take(vars); '
   code = code || 'struct _rxUndelay { rx::MethodTraps &m; int slot; ~_rxUndelay() { m.undelay(slot); } } _rxU{_rxTrap, _rxQ.slot}; '
   code = code || 'rx::set(vars, "SIGL", rx::Value::string(std::to_string(_rxLine))); '
@@ -192,9 +198,26 @@
     code = code || '(void)_rxBody(' || entry || ', _rxQa, ' || target || ', true); break; } '
   end
   code = code || 'default: rx::MethodTraps::inheritNext() = nullptr; rx::MethodTraps::handing() = rx::MethodTraps::Handing(); '
+  code = code || 'if (_rxTrap.label[_rxQ.slot] <= -2) { _rxCallOnRoutine(-2 - _rxTrap.label[_rxQ.slot], _rxQa); break; } '
   code = code || 'throw std::runtime_error("CALL ON handler is not an internal routine of this method"); } '
   code = code || 'rx::noResultPending() = false; vars.numeric = _rxSavedNumeric; } }; (void)_rxCallOn;'
   method~addRaw(code)
+  return slot
+/* CALL ON handlers that are routines: a package ::ROUTINE runs compiled, any other one through the interpreter; the
+   argument is the condition object; RESULT is not touched (the trap's CALL). */
+::method callOnExternalCode
+  use arg method
+  code = 'auto _rxCallOnRoutine = [&](int _rxK, const std::vector<std::optional<rx::Value>> &_rxA) { (void)_rxA; switch (_rxK) { '
+  names = method~callOnExternal
+  do k = 1 to names~items
+    name = names[k]
+    if self~isPackageRoutine(name) then do
+      invoke = 'rx2cpp::makeGeneratedObject_RX2CPP_ROUTINE_IMPL()->invokeValues(' || .RxQuote~cpp(name) || ', _rxA)'
+      code = code || 'case ' || (k - 1) || ': rx::pendingCallType() = "SUBROUTINE"; (void)rx::runRaising([&] { return ' || invoke || '; }); break; '
+    end
+    else code = code || 'case ' || (k - 1) || ': (void)rx::interpreterCall(vars, ' || .RxQuote~cpp(name) || ', _rxA); break; '
+  end
+  return code || 'default: break; } };'
 ::method emitStatement
   expose scopes lineOffset
   use arg depth
@@ -408,13 +431,16 @@
     /* Labels or SIGNAL: the body runs in a trap loop. Each label starts a case; SIGNAL label and a trapped condition
        continue the loop at that case (all active DO loops end, as in Rexx). */
     bodyLabels = s~methodBodyLabels
-    current~setTraps(bodyLabels, bodyLabels~items > 0 | s~methodBodySignals)
+    callOn = s~methodBodyCallOn
+    current~setTraps(bodyLabels, bodyLabels~items > 0 | s~methodBodySignals | callOn)
     /* Internal routines (CALL label / label(...)): the body becomes one function entered at label k with the call's
        arguments and variable pool (the caller's, or a PROCEDURE pool); RETURN goes back to the caller, EXIT leaves the
        method. Each activation has its own trap state. */
     internalCalls = s~methodBodyCalls(bodyLabels)
     current~setInternalCalls(internalCalls)
-    current~setCallOn(s~methodBodyCallOn & internalCalls~items > 0)
+    current~setCallOn(callOn)
+    callOnSlot = 0
+    current~setReplies(s~methodBodyReply & className \== 'RX2CPP_ROUTINE_IMPL')
     if current~hasInternalCalls then do
       current~addRaw('std::function<rx::Value(int, const std::vector<std::optional<rx::Value>> &, rx::Variables &, bool)> _rxBody;')
       current~addRaw('_rxBody = [&](int _rxEntry, const std::vector<std::optional<rx::Value>> &arguments, rx::Variables &vars, bool _rxInternal) -> rx::Value {')
@@ -422,11 +448,12 @@
       /* PARSE ARG / ARG read this activation's own arguments (an internal routine's, not the method's). */
       current~addRaw('std::vector<rx::Value> _rxProgramArgs; for (const auto &_a : arguments) _rxProgramArgs.push_back(_a ? *_a : rx::Value::string(std::string())); (void)_rxProgramArgs;')
       current~addRaw('rx::MethodTraps _rxTrap; int _rxAt = _rxEntry; std::size_t _rxLine = 0; (void)_rxLine;')
-      if current~callOn then self~emitCallOnDispatch(current, internalCalls)
+      if current~callOn then callOnSlot = self~emitCallOnDispatch(current, internalCalls)
       current~addRaw('for (;;) { try { switch (_rxAt) { case 0: {')
     end
     else if current~trapped then do
       current~addRaw('rx::MethodTraps _rxTrap; int _rxAt = 0; std::size_t _rxLine = 0; (void)_rxLine;')
+      if current~callOn then callOnSlot = self~emitCallOnDispatch(current, internalCalls)
       current~addRaw('for (;;) { try { switch (_rxAt) { case 0: {')
     end
     afterLabel = .false
@@ -444,6 +471,8 @@
       self~emitStatement
       s~skipSeparators
     end
+    /* the routine handlers of CALL ON, now that the body named them all */
+    if callOnSlot > 0 then current~instructions[callOnSlot] = self~callOnExternalCode(current)
     if current~selector \= 'INIT' & \current~hasReturn & \current~isAbstract & \current~trapped then current~returnValue('rx::noResult()')
     if current~trapped then do
       current~addRaw('} } break; }')

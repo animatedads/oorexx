@@ -20,7 +20,6 @@ valid=$(sha256sum "$OUT/librx2cpp_attrmodeconstant.so")
 for testcase in \
  '::attribute item GET SET' \
  '::attribute item SET GET' \
- "::constant item (1 + 2)" \
  "::attribute item; ::constant item 'duplicate'" \
  "::constant item 'duplicate'; ::method item"; do
   src="$OUT/reject.cls"
@@ -32,4 +31,9 @@ for testcase in \
     echo 'FAIL: negative compilation overwrote valid native library' >&2; exit 1;
   }
 done
-echo "PASS $CXX ::ATTRIBUTE GET/SET ::CONSTANT class+instance: exact interpreter parity; 5 protected rejections"
+# A constant's value may be an expression in parentheses (LanguageParser::constantDirective): evaluated by the interpreter.
+printf '::class Widget public\n::method init\n::constant item (1 + 2)\n' > "$OUT/constexpr.cls"
+"$ROOT/native/build.sh" "$OUT/constexpr.cls" "$OUT" rx2cpp_constexpr > "$OUT/constexpr.log" 2>&1 || { echo 'FAIL: ::constant item (1 + 2) refused' >&2; tail -5 "$OUT/constexpr.log" >&2; exit 1; }
+printf 'say .Widget~new~item .Widget~item\n::requires "rx2cpp_constexpr" library\n' > "$OUT/constexpr.rex"
+[[ "$(cd "$OUT" && "$REXX_BIN" constexpr.rex)" == "3 3" ]] || { echo 'FAIL: ::constant item (1 + 2) is not 3' >&2; exit 1; }
+echo "PASS $CXX ::ATTRIBUTE GET/SET ::CONSTANT class+instance: exact interpreter parity; expression constant; 4 protected rejections"

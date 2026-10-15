@@ -53,11 +53,11 @@
   /* A user UNINIT is compiled under its own name; the generated UNINIT runs it, then releases the native state. */
   if name == 'UNINIT' then name = 'RX2CPP_USER_UNINIT'
   /* Options as the interpreter's directive parser defines them (any order, no duplicates):
-     PUBLIC | PRIVATE, PROTECTED, GUARDED | UNGUARDED, CLASS, ABSTRACT. They are carried verbatim to the
+     PUBLIC | PRIVATE | PACKAGE, PROTECTED | UNPROTECTED, GUARDED | UNGUARDED, CLASS, ABSTRACT. They are carried verbatim to the
      generated class declaration, where the interpreter itself applies them. ATTRIBUTE, EXTERNAL and
      DELEGATE are different method kinds and fail closed. */
   opts = .RxHybridMethodOptions~new
-  do while s~peek~kind == 'IDENT' & wordpos(s~peek~text, 'PUBLIC PRIVATE PROTECTED GUARDED UNGUARDED CLASS ABSTRACT') > 0
+  do while s~peek~kind == 'IDENT' & wordpos(s~peek~text, 'PUBLIC PRIVATE PACKAGE PROTECTED UNPROTECTED GUARDED UNGUARDED CLASS ABSTRACT') > 0
     opts~add(s, s~next~text)
   end
   if s~peek~kind == 'IDENT' & wordpos(s~peek~text, 'ATTRIBUTE EXTERNAL DELEGATE') > 0 then
@@ -78,12 +78,12 @@
   use arg s, word
   word = word~upper
   select
-    when word == 'PUBLIC' | word == 'PRIVATE' then do
+    when word == 'PUBLIC' | word == 'PRIVATE' | word == 'PACKAGE' then do
       if access \== '' then s~fail('duplicate or conflicting access option ' || word)
       access = word
     end
-    when word == 'PROTECTED' then do
-      if protect \== '' then s~fail('duplicate PROTECTED')
+    when word == 'PROTECTED' | word == 'UNPROTECTED' then do
+      if protect \== '' then s~fail('duplicate or conflicting protection option ' || word)
       protect = word
     end
     when word == 'GUARDED' | word == 'UNGUARDED' then do

@@ -77,7 +77,14 @@
   index = 0
   do method over unit~methods
     index = index + 1
-    lines~append('    if (selector == ' || .RxQuote~cpp(method~selector) || ') return rxMethod' || index || '(selector, arguments);')
+    replies = .false
+    if method~hasMethod('REPLIES') then replies = method~replies
+    /* REPLY: the stub passes the reply box as the last argument (rx::ReplyScope) */
+    if replies then do
+      guarded = wordpos('UNGUARDED', method~declaration~upper) = 0
+      lines~append('    if (selector == ' || .RxQuote~cpp(method~selector) || ') { rx::ReplyScope _rxReply(arguments, ' || word('false true', 1 + guarded) || '); return rxMethod' || index || '(selector, _rxReply.arguments); }')
+    end
+    else lines~append('    if (selector == ' || .RxQuote~cpp(method~selector) || ') return rxMethod' || index || '(selector, arguments);')
     target = lines
     lines = bodies
     lines~append('  rx::Value rxMethod' || index || '(const std::string &selector, const std::vector<std::optional<rx::Value>> &arguments) {')

@@ -29,7 +29,11 @@
     if \names~hasIndex(mixin) & wordpos(mixin~upper, 'COMPARABLE ORDERABLE COLLECTION MAPCOLLECTION SETCOLLECTION ORDEREDCOLLECTION INDEXEDCOLLECTION') > 0 then iterate
     if \names~hasIndex(mixin) then self~reject('unknown or forward mixin ' || mixin)
     if \definitions[mixin]~isMixin then self~reject('INHERIT target is not a MIXINCLASS: ' || mixin)
-    if roots[mixin] \== root then self~reject('mixin uses a different native root: ' || mixin)
+    /* (a mixin of an interpreter class is a native root of its own: any class may inherit it, its scope joins the
+       object's state, see the native call's token lookup) */
+    mixinRoot = definitions[roots[mixin]]
+    foreignMixin = mixinRoot~isMixin & mixinRoot~externalParent \== ''
+    if roots[mixin] \== root & \foreignMixin then self~reject('mixin uses a different native root: ' || mixin)
     if mixin == parent then self~reject('INHERIT duplicates direct parent ' || mixin)
     do inherited over scopes[mixin]
       if inherited == root then iterate
@@ -38,7 +42,7 @@
       ancestry~append(inherited)
     end
   end
-  if unit~isMixin & parent == '' then self~reject('MIXINCLASS requires a parent')
+  if unit~isMixin & parent == '' & unit~externalParent == '' then self~reject('MIXINCLASS requires a parent')
   ancestry~append(className)
   scopes[className] = ancestry
   return .true

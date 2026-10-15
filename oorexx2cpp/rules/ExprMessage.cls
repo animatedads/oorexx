@@ -36,9 +36,11 @@
       s~next
       selector = '[]'
       args = .array~new
-      /* a[i, j]: every index is an argument of [] (multi-dimensional arrays, stems, tables). */
-      do forever
-        args~append(ctx~logicalExpr~parse(ctx))
+      /* a[i, j]: every index is an argument of [] (multi-dimensional arrays, stems, tables); an argument list like a
+         message's: a[] has none, a[1, , 3] an omitted one (host API lane). */
+      if \s~is(']') then do forever
+        if (s~is(',') | s~is(']')) & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \== '' then args~append('rx::omittedArgument()')
+        else args~append(ctx~logicalExpr~parse(ctx))
         if \s~accept(',') then leave
       end
       s~expect(']')

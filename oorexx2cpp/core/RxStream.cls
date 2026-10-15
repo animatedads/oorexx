@@ -130,6 +130,20 @@
     n = n + 1
   end
   return .false
+/* The body has a REPLY clause (RETURN and EXIT then check for a value after the reply). */
+::method methodBodyReply
+  n = 0
+  do while self~lookAheadKind(n) \= 'EOF'
+    if n > 0 then if self~lookAheadKind(n - 1) == 'SEP' then
+      if self~lookAheadKind(n) == 'OP' & self~lookAheadText(n) == '::' then leave
+    if self~lookAheadKind(n) == 'IDENT' & self~lookAheadText(n) == 'REPLY' then do
+      atClause = n == 0
+      if n > 0 then atClause = self~lookAheadKind(n - 1) == 'SEP' | wordpos(self~lookAheadText(n - 1), 'THEN ELSE OTHERWISE :') > 0
+      if atClause then return .true
+    end
+    n = n + 1
+  end
+  return .false
 ::method methodBodySignals
   n = 0
   do while self~lookAheadKind(n) \= 'EOF'

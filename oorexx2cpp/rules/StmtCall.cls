@@ -74,8 +74,10 @@
       if s~peek~kind \= 'IDENT' then s~fail('CALL ON ... NAME requires a label')
       label = s~next~text
     end
-    if \ctx~current~internalCalls~hasIndex(label) then s~fail('CALL ON: the handler' label 'is not a label of this method (external handlers are not supported)')
-    ctx~line(depth, '_rxTrap.setCall(' || .RxQuote~cpp(condition) || ', ' || ctx~current~labels[label] || ');')
+    /* a label of the method (an internal routine), else a routine: CALL label, as the trap calls it */
+    if ctx~current~internalCalls~hasIndex(label) then target = ctx~current~labels[label]
+    else target = ctx~current~externalHandler(label)
+    ctx~line(depth, '_rxTrap.setCall(' || .RxQuote~cpp(condition) || ', ' || target || ');')
     s~separator
     return
   end

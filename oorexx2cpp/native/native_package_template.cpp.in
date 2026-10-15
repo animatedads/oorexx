@@ -492,6 +492,10 @@ std::optional<rx::Value> runNative(const std::shared_ptr<InstanceState> &st, Res
     if (info.noResult || noValue) return std::nullopt;
     return result;
 }
+/* A class of this library changed at run time (DEFINE, DELETE, INHERIT, UNINHERIT sent by compiled code): instances
+   made from then on take their methods from the interpreter (an object's methods are fixed when it is created, so
+   existing instances keep direct dispatch). */
+std::atomic<bool> &classesChanged() { static std::atomic<bool> changed{false}; return changed; }
 class NativeClassObj final : public rx::NativeRefBase {
     std::string name_;
     std::shared_ptr<rx::EnvObject> interpreterClass_;
@@ -509,7 +513,9 @@ public:
     void *materialize() override { return iclass().handle; }
     rx::MessageResult sendMessage(const std::string &selector, const std::vector<rx::Value> &args) override {
         static const CiEq same;
-        if (same(selector, "NEW")) {
+        if (same(selector, "DEFINE") || same(selector, "DELETE") || same(selector, "INHERIT") || same(selector, "UNINHERIT"))
+            classesChanged() = true;
+        if (same(selector, "NEW") && !classesChanged()) {
             auto st = std::make_shared<InstanceState>();
             st->dynamicClass = name_;
             st->exact = true;
@@ -580,13 +586,61 @@ std::string dynamicClassOf(RexxMethodContext *ctx, RexxObjectPtr self) {
 }
 #endif
 namespace {
+// The objects whose lock for a compiled class's scope this thread holds through a running guarded compiled method. The
+// stub of a method with REPLY asks (RX2CPP_HOLDS): when its caller holds the lock (a nested call) the method must not
+// lock again on its own activity before the reply (it would wait for the caller, which waits for the reply).
+thread_local std::vector<std::pair<RexxObjectPtr, std::string>> heldLocks;
+struct HeldLock {
+    bool on = false;
+    void hold(RexxObjectPtr object, const std::string &scope) {
+        if (on) return;
+        heldLocks.emplace_back(object, scope);
+        on = true;
+    }
+    void drop() { if (on && !heldLocks.empty()) heldLocks.pop_back(); on = false; }
+    ~HeldLock() { drop(); }
+};
 class Frame final : public SelfSender {
     RexxMethodContext *ctx_; RexxObjectPtr self_; ScopeLock &lock_; SelfSender *previous_;
     std::shared_ptr<InstanceState> state_; std::string className_;
+    HeldLock *held_ = nullptr;
+    std::unique_lock<ScopeLock> *pendingScope_ = nullptr;
+    bool guardHeld_ = false;   // a method with GUARD: whether it holds the object's lock now (RexxActivation objectScope)
 public:
+    // GUARD ON / OFF (only when the state changes); the compiled scope lock goes while it waits for the object's lock.
+    void guardSet(bool on) {
+        if (on == guardHeld_) return;
+        if (on) {
+            { ReleaseAndReacquire released(lock_); ctx_->SetGuardOn(); }
+            if (held_) held_->hold(self_, className_);
+        } else {
+            ctx_->SetGuardOff();
+            if (held_) held_->drop();
+        }
+        guardHeld_ = on;
+    }
+    // GUARD WHEN, expression false: wait for a change, the object's lock let go meanwhile (RexxActivation::guardWait).
+    void guardWait() {
+        const bool had = guardHeld_;
+        if (had) guardSet(false);
+        lock_.waitForChange();
+        if (had) guardSet(true);
+    }
+    void setHeld(HeldLock *held) { held_ = held; }
+    void setPendingScope(std::unique_lock<ScopeLock> *scope) { pendingScope_ = scope; }
     Frame(RexxMethodContext *c, RexxObjectPtr s, ScopeLock &l, std::shared_ptr<InstanceState> st, std::string cls)
         : ctx_(c), self_(s), lock_(l), previous_(detail::currentSender), state_(std::move(st)), className_(std::move(cls)) { detail::currentSender = this; }
     ~Frame() override { detail::currentSender = previous_; }
+    // After a REPLY: a guarded method takes the object's lock on this activity (the compiled scope lock goes while it
+    // waits: the activity that holds the object's lock may be waiting for it); a method that ran under its caller's
+    // locks (a nested call) takes the compiled scope lock.
+    void afterReply(bool guarded) {
+        if (guarded) {
+            { ReleaseAndReacquire released(lock_); ctx_->SetGuardOn(); }
+            if (held_) held_->hold(self_, className_);
+        }
+        if (pendingScope_) { pendingScope_->lock(); pendingScope_ = nullptr; }
+    }
     std::string forward(const std::string &selector) override {
         RexxObjectPtr result;
         { ReleaseAndReacquire released(lock_);
@@ -646,9 +700,23 @@ public:
     }
 };
 }
+#ifdef RX2CPP_HOST_API
+namespace {
+void guardImpl(int op) {
+    auto *f = dynamic_cast<Frame *>(detail::currentSender);
+    if (!f) throw std::runtime_error("GUARD outside a native method entry");
+    if (op == 2) f->guardWait();
+    else f->guardSet(op == 1);
+}
+[[maybe_unused]] const bool guardInstalled = (rx::guardHook() = &guardImpl, true);
+void replyLocksImpl(bool guarded) { if (auto *f = dynamic_cast<Frame *>(detail::currentSender)) f->afterReply(guarded); }
+[[maybe_unused]] const bool replyLocksInstalled = (rx::replyLocksHook() = &replyLocksImpl, true);
+}
+#endif
 static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObjectPtr selfObj,
                           const std::string &className, const std::string &selector,
-                          bool initializer, bool attributeSetter, int scopeIndex, bool isRoot, const std::string &rootClass, bool classSide) {
+                          bool initializer, bool attributeSetter, int scopeIndex, bool isRoot, const std::string &rootClass, bool classSide,
+                          int guardMode) {
     (void)scopeIndex;
     std::string failedInitToken;   // an INIT that throws must not leave its object registered
     try {
@@ -705,13 +773,18 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
                 token = stringValue(ctx, existing);
                 state = InstanceTable::instance().find(token);
                 if (!state) throw std::runtime_error("expired native object handle");
+            } else if (!classSide) {
+                // A mixin of an interpreter class (its own native root) whose INIT runs for an object another root's
+                // INIT has registered already: one state, this scope added to it.
+                state = InstanceTable::instance().byHandle((void *)selfObj);
+                if (state) { token = state->token; setRootToken(token); }
             }
             if (!state) {
                 state = std::make_shared<InstanceState>();
 #ifdef RX2CPP_HOST_API
                 state->dynamicClass = classSide ? className : dynamicClassOf(ctx, selfObj);
                 state->classSide = classSide;
-                state->exact = !classSide && directMethodTable().count(state->dynamicClass) > 0;
+                state->exact = !classSide && directMethodTable().count(state->dynamicClass) > 0 && !classesChanged();
 #endif
                 state->handle = (void *)selfObj;
                 state->alive = true;
@@ -744,6 +817,25 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
                 token = InstanceTable::instance().add(state);
                 state->token = token;
                 ctx->SetObjectVariable("RX2CPP_NATIVE_ID", ctx->String(token.c_str()));
+            } else if (old == NULLOBJECT && isRoot && !classSide && !ctx->CheckCondition()) {
+                // A mixin of an interpreter class (its own native root) inherited by a class of another root (or an
+                // interpreted class): the object's state, registered by its own root, gets this scope; an object with
+                // none gets one here (its INIT was not this root's).
+                state = InstanceTable::instance().byHandle((void *)selfObj);
+                if (!state) {
+                    state = std::make_shared<InstanceState>();
+#ifdef RX2CPP_HOST_API
+                    state->dynamicClass = dynamicClassOf(ctx, selfObj);
+                    state->classSide = false;
+                    state->exact = false;
+#endif
+                    state->handle = (void *)selfObj;
+                    state->alive = true;
+                    InstanceTable::instance().bind(state->handle, state);
+                    state->token = InstanceTable::instance().add(state);
+                }
+                token = state->token;
+                setRootToken(token);
             } else {
                 if (old == NULLOBJECT || ctx->CheckCondition()) {
                     // (which object and why: a missing token, or a condition raised while reading it)
@@ -761,8 +853,33 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
             if (!state) throw std::runtime_error("expired native object handle");
         }
         std::shared_ptr<CompiledObject> object = state->at(className);
-        std::lock_guard<ScopeLock> scopeHold(object->scope_lock);
+        // guardMode 1: a guarded method (the interpreter locked the object for it); 2 / 3: an unguarded / guarded
+        // method with REPLY: its reply box says whether its stub locked the object for it (a guarded method whose
+        // caller does not hold the lock) and whether the caller holds the object's locks (a nested call: the method
+        // runs under them until the reply, then takes its own, rx::replyInstruction).
+        // guardMode: bit 1 guarded, bit 2 REPLY, bit 4 GUARD statements (the method manages its lock: declared
+        // UNGUARDED, a guarded one takes the lock here).
+        const bool guardedMethod = guardMode & 1, replyMethod = guardMode & 2, managedGuard = (guardMode & 4) && !replyMethod;
+        logical_t locked = 0, nested = 0;
+        if (replyMethod && count > 0) {
+            RexxObjectPtr box = ctx->ArrayAt(args, count);
+            if (box != NULLOBJECT) {
+                RexxObjectPtr answer = ctx->SendMessage0(box, "LOCKED");
+                if (ctx->CheckCondition()) throw PendingCondition();
+                if (answer != NULLOBJECT) ctx->threadContext->Logical(answer, &locked);
+                answer = ctx->SendMessage0(box, "NESTED");
+                if (ctx->CheckCondition()) throw PendingCondition();
+                if (answer != NULLOBJECT) ctx->threadContext->Logical(answer, &nested);
+            }
+        }
+        std::unique_lock<ScopeLock> scopeHold(object->scope_lock, std::defer_lock);
+        if (!nested) scopeHold.lock();
         Frame frame(ctx, selfObj, object->scope_lock, state, className);
+        if (nested) frame.setPendingScope(&scopeHold);
+        HeldLock held;
+        frame.setHeld(&held);
+        if (managedGuard) { if (guardedMethod) frame.guardSet(true); }
+        else if ((guardedMethod && !replyMethod) || locked) held.hold(selfObj, className);
 #ifdef RX2CPP_HOST_API
         StateScope currentScope(state->exact ? state.get() : nullptr);
 #endif
@@ -904,6 +1021,19 @@ RexxMethod1(RexxObjectPtr, rx_native_token, OSELF, self)
     return context->GetObjectVariable("RX2CPP_NATIVE_ID");
 }
 
+// RX2CPP_HOLDS(scope): does this thread hold the receiver's lock for the scope of a compiled class (see HeldLock)?
+RexxMethod2(RexxObjectPtr, rx_native_holds, OSELF, self, CSTRING, scope)
+{
+    for (const auto &h : rx2cpp::heldLocks)
+        if (h.first == self && h.second == scope) return context->True();
+    // (or the compiled scope lock: a compiled method of the object running on this thread, guarded or not)
+    try {
+        if (auto st = rx2cpp::InstanceTable::instance().byHandle((void *)self))
+            if (st->at(scope)->scope_lock.heldByMe()) return context->True();
+    } catch (const std::exception &) {}
+    return context->False();
+}
+
 // COPY must be an explicit deep copy of every scope; reusing the root token
 // aliases two Rexx objects and breaks identity and lifetime semantics.
 RexxMethod0(RexxObjectPtr, rx_native_copy_reject)
@@ -934,6 +1064,7 @@ static RexxMethodEntry nativeMethods[] = {
 %METHOD_ENTRIES%
     REXX_METHOD(rx_native_uninit, rx_native_uninit),
     REXX_METHOD(rx_native_token, rx_native_token),
+    REXX_METHOD(rx_native_holds, rx_native_holds),
     REXX_METHOD(rx_native_copy_reject, rx_native_copy_reject),
     REXX_LAST_METHOD()
 };
