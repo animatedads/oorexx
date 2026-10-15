@@ -20,7 +20,8 @@ echo "PASS native routine and class interpreter parity: $(wc -l <"$OUT/native.ou
 # A failed compile never overwrites the previous successfully built native library.
 before=$(sha256sum "$OUT/lib${PACKAGE}.so" | cut -d' ' -f1)
 # (A quoted routine name is valid, upper case as interpreted: compared with the interpreter below.)
-for kind in external duplicate malformed_use_arg expose; do
+# (use arg a,,c is valid Rexx - an empty position skips an argument: native/test_use_arg.sh compares it)
+for kind in external duplicate expose; do
   file="$OUT/bad_$kind.cls"
   { cat <<'REXX'
 ::class RoutineHost public

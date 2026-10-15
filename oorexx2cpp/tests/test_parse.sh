@@ -26,8 +26,10 @@ done
 # Target templates with literal/positional patterns, commas, unknown PARSE
 # forms must not silently lower to a blank-delimited operation.
 # (An empty template is valid Rexx: examples/parse/parse_empty_templates.rex compares it with the interpreter.)
-neg_names=(missing_source missing_with invalid_relative empty_literal variable_pattern_empty oversized_position comma_template unsupported_arg_pattern)
-neg_sources=('parse var' 'parse value 3 x' 'parse var s a + b' 'parse var s a "" b' 'parse var s a ( ) b' 'parse var s a +9999999999999999999999999 b' 'parse value "a b" with x, y' 'parse arg a + b')
+# (An empty string pattern, a comma template and a position beyond DIGITS are valid Rexx: the first two are compared
+# in examples/parse/parse_commas_empty.rex; the last is error 26.4 when it runs, as interpreted.)
+neg_names=(missing_source missing_with invalid_relative variable_pattern_empty unsupported_arg_pattern)
+neg_sources=('parse var' 'parse value 3 x' 'parse var s a + b' 'parse var s a ( ) b' 'parse arg a + b')
 for i in "${!neg_names[@]}"; do
   name=${neg_names[i]}
   printf '%s\n' "${neg_sources[i]}" >"$WORK/negative_$name.rex"

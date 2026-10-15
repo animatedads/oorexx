@@ -12,7 +12,9 @@
   else if s~accept('VALUE') then arg = ctx~logicalExpr~parse(ctx)
   else do
     t = s~next
-    arg = 'rx::Value::string(' || .RxQuote~cpp(t~text) || ')'
+    text = t~text
+    if (text == '-' | text == '+') & (s~peek~kind == 'NUMBER' | s~peek~kind == 'INT') then text = text || s~next~text   /* TRACE -3 */
+    arg = 'rx::Value::string(' || .RxQuote~cpp(text) || ')'
   end
   ctx~line(depth, '(void)rx::traceSet(' || arg || ');')
   s~separator

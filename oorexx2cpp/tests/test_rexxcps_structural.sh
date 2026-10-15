@@ -32,10 +32,23 @@ reject () {
   grep -q '^// previous valid output$' "$sentinel" || { echo "FAIL overwritten $name" >&2; exit 1; }
   echo "PASS reject $name"
 }
-reject leave_outside $'leave\nsay "bad"'
-reject iterate_outside $'iterate\nsay "bad"'
-reject leave_unknown $'do i=1 to 2\n leave j\nend i'
-reject iterate_unknown $'do i=1 to 2\n iterate j\nend i'
+# LEAVE / ITERATE outside a loop or naming no active loop: error 28.x when it runs (RexxActivation::leaveLoop), as
+# interpreted - the clauses before it run, the program fails.
+runtime28 () {
+  local name=$1 source=$2
+  printf '%s\n' "$source" >"$WORK/$name.rex"
+  "$REXX_BIN" "$WORK/$name.rex" >"$WORK/$name.oracle" 2>/dev/null && { echo "FAIL interpreter accepted $name" >&2; exit 1; }
+  "$ROOT/run-compiler.sh" "$WORK/$name.rex" "$WORK/$name.cpp"
+  "$CXX" -std=c++17 -O2 -Wall -Wextra -Werror -I"$ROOT/include" "$WORK/$name.cpp" -o "$WORK/$name.native"
+  if "$WORK/$name.native" >"$WORK/$name.native.out" 2>"$WORK/$name.native.err"; then echo "FAIL runtime accepted $name" >&2; exit 1; fi
+  cmp "$WORK/$name.oracle" "$WORK/$name.native.out" || { echo "FAIL output before the error differs: $name" >&2; exit 1; }
+  grep -q '28\.' "$WORK/$name.native.err" || { echo "FAIL $name: not error 28" >&2; cat "$WORK/$name.native.err"; exit 1; }
+  echo "PASS runtime error 28 $name"
+}
+runtime28 leave_outside $'say "first"\nleave\nsay "bad"'
+runtime28 iterate_outside $'say "first"\niterate\nsay "bad"'
+runtime28 leave_unknown $'do i=1 to 2\n say i\n leave j\nend i'
+runtime28 iterate_unknown $'do i=1 to 2\n say i\n iterate j\nend i'
 reject end_name_wrong $'do i=1 to 2\n say i\nend j'
 reject end_name_on_repeat $'do 3\n say "a"\nend i'
 reject malformed_exponent $'say 1.1E+'

@@ -18,7 +18,8 @@ export LD_LIBRARY_PATH="$OO_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 # Build in isolation so bad source or a failed C++ compilation cannot
 # replace a previously qualified library or leave new partial generated files.
 TMP=$(mktemp -d "$OUT/.rx2cpp-stage.XXXXXX")
-trap 'rm -rf -- "$TMP"' EXIT
+# RX2CPP_KEEP_STAGE=1 keeps the stage directory (generated C++) for inspection
+trap '[[ -n "${RX2CPP_KEEP_STAGE:-}" ]] || rm -rf -- "$TMP"' EXIT
 # Objects: .NAME classes and message sends use the host interpreter that loads this library
 export RX2CPP_HOST_API=1
 # BIFs: same add-on root and same dispatcher as build.sh (standalone programs)

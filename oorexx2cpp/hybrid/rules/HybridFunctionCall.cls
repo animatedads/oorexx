@@ -56,8 +56,10 @@
     else code = code || '_rxArgList.emplace_back(' || expression || '); '
   end
   /* A function call that returns nothing raises 44.1, as interpreted (see rx::noResult). */
-  code = code || 'rx::noResultPending() = false; rx::pendingCallType() = "FUNCTION"; rx::Value _rxReturned = rx2cpp::makeGeneratedObject_RX2CPP_ROUTINE_IMPL()->invokeValues('
-  code = code || .RxQuote~cpp(name) || ', _rxArgList); '
+  invoke = 'rx2cpp::makeGeneratedObject_RX2CPP_ROUTINE_IMPL()->invokeValues(' || .RxQuote~cpp(name) || ', _rxArgList)'
+  /* host API lane: a RAISE that ends the routine reaches this caller (rx::runRaising) */
+  if value('RX2CPP_HOST_API', , 'ENVIRONMENT') \== '' then invoke = 'rx::runRaising([&] { return ' || invoke || '; })'
+  code = code || 'rx::noResultPending() = false; rx::pendingCallType() = "FUNCTION"; rx::Value _rxReturned = ' || invoke || '; '
   code = code || 'if (std::exchange(rx::noResultPending(), false)) { rx::SyntaxCondition _rxNone("44.1", "No data returned from function", false); '
   code = code || '_rxNone.substitutions.push_back(rx::Value::string(' || .RxQuote~cpp(name~upper) || ')); throw _rxNone; } '
   return code || 'return _rxReturned; }())'
@@ -122,7 +124,13 @@
     code = code || 'rx::Variables _rxProcVars(vars, std::vector<std::string>{' || names || '}); '
     target = '_rxProcVars'
   end
-  code = code || 'rx::noResultPending() = false; rx::InternalCallClock _rxClock; rx::Value _rxIr = _rxBody(' || entry || ', _rxIa, ' || target || ', true); '
+  /* the routine starts with this activation's trap settings and condition (MethodTraps::inheritNext); a RAISE ... RETURN
+     that ends it is raised here (rx::raisedInCaller), a RAISE without RETURN goes on to end this method too */
+  call = '_rxBody(' || entry || ', _rxIa, ' || target || ', true)'
+  if value('RX2CPP_HOST_API', , 'ENVIRONMENT') \== '' then
+    call = '[&]() -> rx::Value { try { return ' || call || '; } catch (const rx::RaiseToCaller &_rxR) { if (_rxR.exitForm || _rxR.delivered) throw; ' || -
+           'rx::noResultPending() = false; auto _rxV = rx::raisedInCaller(_rxR); return _rxV ? *_rxV : rx::noResult(); } }()'
+  code = code || 'rx::noResultPending() = false; rx::InternalCallClock _rxClock; rx::MethodTraps::inheritNext() = &_rxTrap; rx::Value _rxIr = ' || call || '; '
   code = code || 'const bool _rxNone = std::exchange(rx::noResultPending(), false); vars.numeric = _rxSavedNumeric; '
   if mode == 'FUNCTION' then do
     code = code || 'if (_rxNone) { rx::SyntaxCondition _rxNo("44.1", "No data returned from function", false); '

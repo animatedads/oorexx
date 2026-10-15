@@ -113,14 +113,32 @@
             value = value || self~move
           end
         end
-        if self~char == 'E' | self~char == 'e' then do
+        /* LanguageParser::scanSymbol: E starts an exponent only before a digit, or before a sign and a digit; otherwise it
+           and any further symbol characters make a constant symbol (1E, 1e-x is 1E - X, 1ABC, 3.X), whose value is its
+           name in upper case. */
+        signedExponent = .false
+        if (self~char == 'E' | self~char == 'e') & pos(self~char(1), '+-') > 0 & self~isDigit(self~char(2)) then do
+          /* a signed exponent must end the symbol; a symbol character after its digits (1e-5a) backs the scan up to the
+             sign: the symbol is 1E */
+          k = 3
+          do while self~isDigit(self~char(k)); k = k + 1; end
+          signedExponent = \self~isSymbolRest(self~char(k))
+          if \signedExponent then do
+            self~move
+            self~emit('NUMBER', value || 'E', markLine, markCol)
+            iterate
+          end
+        end
+        if (self~char == 'E' | self~char == 'e') & (self~isDigit(self~char(1)) | signedExponent) then do
           self~move
           value = value || 'E'
           if self~char == '+' | self~char == '-' then value = value || self~move
-          if \self~isDigit(self~char) then self~fault('decimal exponent needs a digit')
           do while self~isDigit(self~char)
             value = value || self~move
           end
+        end
+        do while self~isSymbolRest(self~char)
+          value = value || self~move~translate
         end
         self~emit('NUMBER', value, markLine, markCol)
       end
@@ -151,6 +169,11 @@
         self~emit('OP', '~~', markLine, markCol)
       end
       /* Special environment class symbols, initially only .ARRAY. */
+      /* ... alone (USE ARG a, ...): one token */
+      when c == '.' & self~char(1) == '.' & self~char(2) == '.' & \self~isSymbolRest(self~char(3)) then do
+        self~move; self~move; self~move
+        self~emit('OP', '...', markLine, markCol)
+      end
       /* .. and ... (and .._x): environment symbols whose name starts with a dot; an unknown one is its own name. */
       when c == '.' & self~char(1) == '.' then do
         self~move
@@ -249,6 +272,7 @@
     end
   end
   self~emit('EOF', '<eof>', line, col)
+  out = self~joinOperators(out)
   /* LOOP is DO's synonym when it starts a clause (a lone LOOP loops forever); elsewhere it is an ordinary symbol. */
   fixed = .array~new
   do i = 1 to out~items
@@ -263,15 +287,36 @@
       isVariable = following~kind == 'OP' & pos(following~text, '=~(,)') > 0
       if following~kind == 'STRING' | following~kind == 'EOF' & .false then isVariable = isVariable
       if atStart & \isVariable then do
+        /* DO followed by the marker <LOOP> (no source text produces it): the DO rule treats a LOOP with no repetitor
+           and no conditional as LOOP FOREVER; everything else is as DO. */
         fixed~append(.RxToken~new('IDENT', 'DO', tok~line, tok~col, tok~endLine, tok~endCol))
-        if following~kind == 'SEP' | following~kind == 'EOF' then
-          fixed~append(.RxToken~new('IDENT', 'FOREVER', tok~line, tok~col, tok~endLine, tok~endCol))
+        fixed~append(.RxToken~new('IDENT', '<LOOP>', tok~line, tok~col, tok~endLine, tok~endCol))
         iterate
       end
     end
     fixed~append(tok)
   end
   return fixed
+/* The characters of an operator may be separated by blanks and comments on the same line (`1 < /**/ > 2` is <>,
+   `'' |  | 'x'` is ||, `x + = 1` is +=): the interpreter's Scanner continues an operator with nextSpecial(), which skips
+   them. Consecutive operator tokens join when the result is an operator that Scanner builds that way. */
+::method joinOperators private
+  use arg tokens
+  joined = '::  ~~  //  **  &&  ||  ==  <<  <<= <=  <>  >>  >>= >=  ><  \=  \== \>  \>> \<  \<< ' || -
+           '+=  -=  %=  /=  //= *=  **= &=  &&= |=  ||='
+  merged = .array~new
+  do i = 1 to tokens~items
+    tok = tokens[i]
+    if tok~kind == 'OP' & merged~items > 0 then do
+      prev = merged[merged~items]
+      if prev~kind == 'OP' & prev~endLine == tok~line & wordpos(prev~text || tok~text, joined) > 0 then do
+        merged[merged~items] = .RxToken~new('OP', prev~text || tok~text, prev~line, prev~col, tok~endLine, tok~endCol)
+        iterate
+      end
+    end
+    merged~append(tok)
+  end
+  return merged
 /* After a , or - has been consumed: if only blanks/comments remain before the newline , swallow them and
    the newline and answer true (line continuation); otherwise leave the position untouched and answer false. */
 ::method continued

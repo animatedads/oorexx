@@ -165,6 +165,36 @@
   expose controlDepth
   if controlDepth <= 0 then self~stream~fail('control stack underflow')
   controlDepth -= 1
+/* processTraps for CALL ON: each queued condition whose trap is not delayed calls its handler, an internal routine,
+   with the condition object as its argument (the trap delayed meanwhile, SIGL = the clause's line, RESULT untouched). */
+::method emitCallOnDispatch
+  use arg method, calls
+  code = 'auto _rxCallOn = [&]() { while (_rxTrap.ready()) { const rx::MethodTraps::Queued _rxQ = _rxTrap.take(vars); '
+  code = code || 'struct _rxUndelay { rx::MethodTraps &m; int slot; ~_rxUndelay() { m.undelay(slot); } } _rxU{_rxTrap, _rxQ.slot}; '
+  code = code || 'rx::set(vars, "SIGL", rx::Value::string(std::to_string(_rxLine))); '
+  code = code || 'std::vector<std::optional<rx::Value>> _rxQa{std::optional<rx::Value>(rx::Value::fromObject(_rxQ.object))}; '
+  code = code || 'const rx::ActivationNumeric _rxSavedNumeric = vars.numeric; rx::InternalCallClock _rxClock; rx::noResultPending() = false; '
+  code = code || 'switch (_rxTrap.label[_rxQ.slot]) { '
+  do name over calls~allIndexes
+    info = calls[name]
+    entry = method~labels[name]
+    target = 'vars'
+    code = code || 'case ' || entry || ': { '
+    if info~procedure then do
+      names = ''
+      do n over info~expose
+        if names \== '' then names = names || ', '
+        names = names || .RxQuote~cpp(n)
+      end
+      code = code || 'rx::Variables _rxProcVars(vars, std::vector<std::string>{' || names || '}); '
+      target = '_rxProcVars'
+    end
+    code = code || '(void)_rxBody(' || entry || ', _rxQa, ' || target || ', true); break; } '
+  end
+  code = code || 'default: rx::MethodTraps::inheritNext() = nullptr; rx::MethodTraps::handing() = rx::MethodTraps::Handing(); '
+  code = code || 'throw std::runtime_error("CALL ON handler is not an internal routine of this method"); } '
+  code = code || 'rx::noResultPending() = false; vars.numeric = _rxSavedNumeric; } }; (void)_rxCallOn;'
+  method~addRaw(code)
 ::method emitStatement
   expose scopes lineOffset
   use arg depth
@@ -183,6 +213,8 @@
   .local['RX2CPP.CLAUSELINE'] = self~stream~peek~line + clauseOffset
   scopes~rexxLogic(self, depth)
   .local['RX2CPP.CLAUSEWORDS'] = saved
+  /* the clause boundary: pending CALL ON conditions call their handlers now */
+  if self~current~hasMethod('CALLON') then if self~current~callOn then self~current~addRaw('if (!_rxTrap.queue.empty()) _rxCallOn();')
   /* A clause that calls TIME or DATE starts with a fresh clause time stamp (rx::ActivationScope::clauseBoundary). */
   if value('RX2CPP_HOST_API', , 'ENVIRONMENT') \== '' then do
     code = self~current~instructions
@@ -207,7 +239,9 @@
   expose rules
   use arg depth
   s = self~stream
-  if s~peek~kind == 'EOF' | s~is('::') | s~is('ELSE') | s~is('END') then
+  /* ELSE = 1 / END = 1 are assignments: a symbol followed by = is an assignment whatever the symbol */
+  isAssignment = s~peek~kind == 'IDENT' & s~lookAheadText(1) == '=' & s~lookAheadKind(1) == 'OP'
+  if s~peek~kind == 'EOF' | s~is('::') | ((s~is('ELSE') | s~is('END')) & \isAssignment) then
     s~fail('expected executable statement')
   rule = rules~find(self)
   if rule == .nil then s~fail('unsupported class method instruction')
@@ -229,8 +263,8 @@
   s = self~stream
   s~skipSeparators
   self~enterControl
-  do while s~peek~kind \= 'EOF' & \s~is('END') & \s~is('::')
-    if s~is('ELSE') then s~fail('ELSE without matching IF')
+  do while s~peek~kind \= 'EOF' & \s~atEnd & \s~is('::')
+    if s~is('ELSE') & s~lookAheadText(1) \== '=' then s~fail('ELSE without matching IF')
     self~emitStatement(depth)
     s~skipSeparators
   end
@@ -244,8 +278,8 @@
 ::method pushLoop
   expose loopScopes
   if var('LOOPSCOPES') = 0 then loopScopes = .array~new
-  use arg name, continueLabel, exitLabel
-  loopScopes~append(.array~of(name, continueLabel, exitLabel))
+  use arg name, continueLabel, exitLabel, isLoop = .true
+  loopScopes~append(.array~of(name, continueLabel, exitLabel, isLoop))
 ::method popLoop
   expose loopScopes
   loopScopes~remove(loopScopes~items)
@@ -253,14 +287,29 @@
   expose loopScopes
   use arg kind, name
   if var('LOOPSCOPES') = 0 then loopScopes = .array~new
+  /* RexxActivation::leaveLoop / iterate: no name - the innermost repetitive loop; a name - the innermost loop or labeled
+     block with that label (ITERATE only a loop). No match is a run-time error (28.1 - 28.5), as interpreted.
+     Answers the C++ label to go to, or 'ERROR code'. */
   do i = loopScopes~items to 1 by -1
     frame = loopScopes[i]
-    if name == '' | frame[1] == name then do
+    isLoop = frame~size < 4 | frame[4] == .true
+    if name == '' then do
+      if \isLoop then iterate
       if kind == 'ITERATE' then return frame[2]
       return frame[3]
     end
+    if frame[1] == name then do
+      if kind == 'ITERATE' then do
+        if \isLoop then return 'ERROR 28.5'
+        return frame[2]
+      end
+      return frame[3]
+    end
   end
-  self~stream~fail(kind || ' has no matching active DO loop' || name)
+  if name == '' & kind == 'LEAVE' then return 'ERROR 28.1'
+  if name == '' then return 'ERROR 28.2'
+  if kind == 'LEAVE' then return 'ERROR 28.3'
+  return 'ERROR 28.4'
 ::method scope
   return .RxHybridScopeView~new
 ::method routineName
@@ -365,6 +414,7 @@
        method. Each activation has its own trap state. */
     internalCalls = s~methodBodyCalls(bodyLabels)
     current~setInternalCalls(internalCalls)
+    current~setCallOn(s~methodBodyCallOn & internalCalls~items > 0)
     if current~hasInternalCalls then do
       current~addRaw('std::function<rx::Value(int, const std::vector<std::optional<rx::Value>> &, rx::Variables &, bool)> _rxBody;')
       current~addRaw('_rxBody = [&](int _rxEntry, const std::vector<std::optional<rx::Value>> &arguments, rx::Variables &vars, bool _rxInternal) -> rx::Value {')
@@ -372,6 +422,7 @@
       /* PARSE ARG / ARG read this activation's own arguments (an internal routine's, not the method's). */
       current~addRaw('std::vector<rx::Value> _rxProgramArgs; for (const auto &_a : arguments) _rxProgramArgs.push_back(_a ? *_a : rx::Value::string(std::string())); (void)_rxProgramArgs;')
       current~addRaw('rx::MethodTraps _rxTrap; int _rxAt = _rxEntry; std::size_t _rxLine = 0; (void)_rxLine;')
+      if current~callOn then self~emitCallOnDispatch(current, internalCalls)
       current~addRaw('for (;;) { try { switch (_rxAt) { case 0: {')
     end
     else if current~trapped then do

@@ -6,7 +6,8 @@
   use arg ctx
   s = ctx~stream
   value = ctx~addExpr~parse(ctx)
-  if s~peek~kind == 'OP' & wordpos(s~peek~text, '= \= <> >< == \== < <= > >= << >> <<= >>= \< \> \<< \>>') > 0 then do
+  /* Comparisons are left-associative: a = 1 = 0 is (a = 1) = 0. */
+  do while s~peek~kind == 'OP' & wordpos(s~peek~text, '= \= <> >< == \== < <= > >= << >> <<= >>= \< \> \<< \>>') > 0
     selector = s~next~text
     rhs = ctx~addExpr~parse(ctx)
     value = .RxOperatorRules~binary(value, selector, rhs)

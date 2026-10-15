@@ -14,8 +14,9 @@
     else ctx~line(depth, 'return 0;')
   end
   else do
-    value = ctx~logicalExpr~parse(ctx)
+    value = .RxExprList~parse(ctx)
     if ctx~scope~returnsMessageResult then ctx~line(depth, 'return rx::MessageResult(' || value || ');')
     else ctx~line(depth, 'return rx::programReturnCode(' || value || ');')
   end
   s~separator
+::requires 'rules/ExprList.cls'

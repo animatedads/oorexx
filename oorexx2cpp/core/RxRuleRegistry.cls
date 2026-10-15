@@ -8,12 +8,7 @@
   rules = .array~new
   rules~append(.RxStmtNumeric~new)
   rules~append(.RxStmtSay~new)
-  rules~append(.RxStmtLoopOver~new)
-  rules~append(.RxStmtDoUntil~new)
-  rules~append(.RxStmtDoWhile~new)
-  rules~append(.RxStmtDoForever~new)
-  rules~append(.RxStmtCountedDo~new)
-  rules~append(.RxStmtRepeatDo~new)
+  rules~append(.RxStmtDo~new)
   rules~append(.RxStmtSelect~new)
   rules~append(.RxStmtLeaveIterate~new)
   rules~append(.RxStmtParse~new)
@@ -45,11 +40,7 @@
 ::requires 'rules/StmtDrop.cls'
 ::requires 'rules/StmtQueue.cls'
 ::requires 'rules/StmtAddress.cls'
-::requires 'rules/StmtDoUntil.cls'
-::requires 'rules/StmtDoWhile.cls'
-::requires 'rules/StmtDoForever.cls'
-::requires 'rules/StmtCountedDo.cls'
-::requires 'rules/StmtRepeatDo.cls'
+::requires 'rules/StmtDo.cls'
 ::requires 'rules/StmtSelect.cls'
 ::requires 'rules/StmtLeaveIterate.cls'
 ::requires 'rules/StmtParse.cls'
@@ -67,6 +58,5 @@
 ::requires 'rules/StmtIndexedAssign.cls'
 ::requires 'rules/StmtAssign.cls'
 
-::requires 'rules/StmtLoopOver.cls'
 
 ::requires 'core/RxRexxRuleSelection.cls'

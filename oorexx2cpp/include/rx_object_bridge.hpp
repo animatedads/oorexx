@@ -34,7 +34,9 @@ inline bool send(void *t, const std::string &s, const std::vector<Arg> &a, Resul
 #include <map>
 namespace rx { inline std::shared_ptr<ObjectDispatch> takeKeptCondition(); }
 namespace rxobj {
-struct Arg { void *obj = nullptr; std::string bytes; bool omitted = false; };
+// hold: a pin of obj for the life of the argument (a native instance's interpreter object, which nothing else in the
+// interpreter references, must survive a collection during the send).
+struct Arg { void *obj = nullptr; std::string bytes; bool omitted = false; std::shared_ptr<void> hold; };
 struct Result { int kind = 0; std::string bytes; void *obj = nullptr; };
 inline thread_local RexxThreadContext *current = nullptr;
 inline thread_local RexxObjectPtr currentSelf = NULLOBJECT;
@@ -53,15 +55,71 @@ struct LocalRefs {
     RexxObjectPtr operator()(RexxObjectPtr o) { objs.push_back(o); return o; }
     ~LocalRefs() { for (RexxObjectPtr o : objs) if (o != NULLOBJECT) t->ReleaseLocalReference(o); }
 };
+// References kept by compiled code. ooRexx 5.3.0's ReleaseGlobalReference adds a global reference instead of removing one
+// (InterpreterInstance::removeGlobalReference calls addGlobalReference), so an object once referenced from native code could
+// never be collected (no UNINIT, a WeakReference never cleared, memory never returned). Compiled code keeps its references
+// in an interpreter Array of its own instead (the pin table): one slot per object, counted here, emptied on the last release.
+struct PinTable {
+    std::mutex lock;
+    RexxArrayObject array = NULLOBJECT;
+    std::unordered_map<void *, std::pair<std::size_t, std::size_t>> slots;   // object -> (slot, count)
+    std::vector<std::size_t> freeSlots;
+    std::size_t nextSlot = 1;
+};
+inline PinTable &pinTable() { static PinTable *p = new PinTable; return *p; }   // never destroyed: used during exit
+inline RexxObjectPtr pinRef(RexxThreadContext *t, RexxObjectPtr o) {
+    if (o == NULLOBJECT) return o;
+    PinTable &p = pinTable();
+    std::lock_guard<std::mutex> g(p.lock);
+    if (p.array == NULLOBJECT) {
+        RexxArrayObject a = t->NewArray(1024);
+        p.array = (RexxArrayObject)t->RequestGlobalReference((RexxObjectPtr)a);   // the table itself: kept for good
+        t->ReleaseLocalReference((RexxObjectPtr)a);
+    }
+    auto it = p.slots.find((void *)o);
+    if (it != p.slots.end()) { ++it->second.second; return o; }
+    std::size_t slot;
+    if (!p.freeSlots.empty()) { slot = p.freeSlots.back(); p.freeSlots.pop_back(); } else slot = p.nextSlot++;
+    t->ArrayPut(p.array, o, slot);
+    p.slots.emplace((void *)o, std::make_pair(slot, std::size_t(1)));
+    return o;
+}
+// A pin dropped where no thread context is at hand (a destructor running outside a native call): released at the next
+// pin or unpin that has one.
+inline std::vector<void *> &deferredUnpins() { static std::vector<void *> *v = new std::vector<void *>; return *v; }
+inline void unpinRef(RexxThreadContext *t, void *h);
+inline void unpinLater(void *h) {
+    if (!h) return;
+    if (current) { unpinRef(current, h); return; }
+    std::lock_guard<std::mutex> g(pinTable().lock);
+    deferredUnpins().push_back(h);
+}
+inline void unpinRef(RexxThreadContext *t, void *h) {
+    if (!h) return;
+    PinTable &p = pinTable();
+    std::lock_guard<std::mutex> g(p.lock);
+    for (void *d : std::exchange(deferredUnpins(), std::vector<void *>())) {
+        auto dt = p.slots.find(d);
+        if (dt == p.slots.end() || --dt->second.second > 0) continue;
+        t->ArrayPut(p.array, t->Nil(), dt->second.first);
+        p.freeSlots.push_back(dt->second.first);
+        p.slots.erase(dt);
+    }
+    auto it = p.slots.find(h);
+    if (it == p.slots.end() || --it->second.second > 0) return;
+    t->ArrayPut(p.array, t->Nil(), it->second.first);
+    p.freeSlots.push_back(it->second.first);
+    p.slots.erase(it);
+}
 inline void *selfHandle() {
     if (!current || currentSelf == NULLOBJECT) return nullptr;
-    return (void *)current->RequestGlobalReference(currentSelf);
+    return (void *)rxobj::pinRef(current, currentSelf);
 }
 inline void *stringHandle(const std::string &bytes) {
     RexxThreadContext *t = current;
     if (!t) throw std::runtime_error("interpreter object used outside a native entry");
     RexxStringObject str = t->NewString(bytes.data(), bytes.size());
-    void *h = (void *)t->RequestGlobalReference((RexxObjectPtr)str);
+    void *h = (void *)rxobj::pinRef(t, (RexxObjectPtr)str);
     t->ReleaseLocalReference((RexxObjectPtr)str);
     return h;
 }
@@ -74,7 +132,7 @@ inline void *findClass(const std::string &name) {
     RexxThreadContext *t = need();
     RexxClassObject c = t->FindClass(name.c_str());
     if (c == NULLOBJECT) { t->ClearCondition(); return nullptr; }
-    void *h = (void *)t->RequestGlobalReference((RexxObjectPtr)c);
+    void *h = (void *)rxobj::pinRef(t, (RexxObjectPtr)c);
     t->ReleaseLocalReference((RexxObjectPtr)c);   // a long native call keeps every unreleased local reference
     return h;
 }
@@ -85,7 +143,7 @@ inline void *environmentObject(const std::string &name) {
     if (name == "LOCAL") d = (RexxObjectPtr)t->GetLocalEnvironment();
     else if (name == "ENVIRONMENT") d = (RexxObjectPtr)t->GetGlobalEnvironment();
     if (d == NULLOBJECT) return nullptr;
-    return (void *)t->RequestGlobalReference(d);
+    return (void *)rxobj::pinRef(t, d);
 }
 // The package that declares a native library's classes (set by its loader): .CONTEXT~PACKAGE, package-local symbols.
 inline RexxObjectPtr &libraryPackage() { static RexxObjectPtr p = NULLOBJECT; return p; }
@@ -124,7 +182,7 @@ inline void *environmentEntry(const std::string &name) {
     if (o == NULLOBJECT) o = temps(t->DirectoryAt((RexxDirectoryObject)temps((RexxObjectPtr)t->GetGlobalEnvironment()), name.c_str()));
     if (t->CheckCondition()) t->ClearCondition();
     if (o == NULLOBJECT) return nullptr;
-    return (void *)t->RequestGlobalReference(o);
+    return (void *)rxobj::pinRef(t, o);
 }
 // RX2CPP_REF_STATS=1: global references taken by sends, released, and dropped without a context (leaked); printed at exit.
 struct RefStats {
@@ -135,7 +193,7 @@ struct RefStats {
 inline RefStats &refStats() { static RefStats s; return s; }
 inline void release(void *h) {
     if (!h) return;
-    if (current) { current->ReleaseGlobalReference((RexxObjectPtr)h); if (refStats().on) ++refStats().released; }
+    if (current) { unpinRef(current, h); if (refStats().on) ++refStats().released; }
     else if (refStats().on) ++refStats().dropped;
 }
 // A value that crosses as a plain string: a .String (or the interpreter's internal integer/number forms of it). An instance of
@@ -143,7 +201,7 @@ inline void release(void *h) {
 inline bool isPlainString(RexxThreadContext *t, RexxObjectPtr o) {
     if (t->IsString(o)) return true;
     static thread_local RexxObjectPtr stringClass = NULLOBJECT;
-    if (stringClass == NULLOBJECT) stringClass = t->RequestGlobalReference((RexxObjectPtr)t->FindClass("STRING"));
+    if (stringClass == NULLOBJECT) stringClass = rxobj::pinRef(t, (RexxObjectPtr)t->FindClass("STRING"));
     // Instance test against the cached class object, not a by-name class lookup per result.
     if (!t->IsInstanceOf(o, (RexxClassObject)stringClass)) return false;
     RexxObjectPtr cls = t->SendMessage0(o, "CLASS");
@@ -158,9 +216,9 @@ inline std::vector<std::string> &lastAdditional() { static thread_local std::vec
 // the thrower attaches it to the exception (takeKeptCondition), so a compiled SIGNAL ON trap sees the real object.
 inline void *&keptCondition() { static thread_local void *h = nullptr; return h; }
 inline void keepCondition(RexxThreadContext *t) {
-    if (keptCondition()) { t->ReleaseGlobalReference((RexxObjectPtr)keptCondition()); keptCondition() = nullptr; }
+    if (keptCondition()) { unpinRef(t, keptCondition()); keptCondition() = nullptr; }
     RexxDirectoryObject info = t->GetConditionInfo();
-    if (info != NULLOBJECT) keptCondition() = (void *)t->RequestGlobalReference((RexxObjectPtr)info);
+    if (info != NULLOBJECT) keptCondition() = (void *)rxobj::pinRef(t, (RexxObjectPtr)info);
 }
 inline void captureAdditional(RexxThreadContext *t, RexxDirectoryObject info) {
     lastAdditional().clear();
@@ -187,7 +245,7 @@ inline void *newArray(std::size_t size, const std::vector<Arg> &items) {
         if (a.omitted) continue;
         t->ArrayPut(arr, a.obj ? (RexxObjectPtr)a.obj : temps((RexxObjectPtr)t->NewString(a.bytes.data(), a.bytes.size())), i + 1);
     }
-    return (void *)t->RequestGlobalReference((RexxObjectPtr)arr);
+    return (void *)rxobj::pinRef(t, (RexxObjectPtr)arr);
 }
 // Store entries into an interpreter Directory in the given order (the same as [] = for each, without a send per entry).
 inline void directoryPutAll(void *dir, const std::vector<std::string> &keys, const std::vector<Arg> &values) {
@@ -214,7 +272,7 @@ inline void *conditionObject(const std::string &code, const std::vector<Arg> &su
             "syntax: return condition('O')\n";
         RexxRoutineObject made = t->NewRoutine("rx2cpp_condition", source, sizeof(source) - 1);
         if (made == NULLOBJECT || t->CheckCondition()) { t->ClearCondition(); throw std::runtime_error("cannot build a condition object"); }
-        routine = t->RequestGlobalReference((RexxObjectPtr)made);
+        routine = rxobj::pinRef(t, (RexxObjectPtr)made);
     }
     LocalRefs temps(t);
     RexxArrayObject array = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(subs.size()));
@@ -225,7 +283,7 @@ inline void *conditionObject(const std::string &code, const std::vector<Arg> &su
     t->ArrayPut(args, (RexxObjectPtr)array, 2);
     RexxObjectPtr r = temps(t->CallRoutine((RexxRoutineObject)routine, args));
     if (t->CheckCondition() || r == NULLOBJECT) { t->ClearCondition(); throw std::runtime_error("cannot build a condition object for " + code); }
-    return (void *)t->RequestGlobalReference(r);
+    return (void *)rxobj::pinRef(t, r);
 }
 // PARSE VERSION of the interpreter running this library (asked once).
 inline std::string interpreterVersion() {
@@ -292,7 +350,7 @@ inline bool send(void *target, const std::string &selector, const std::vector<Ar
     if (isPlainString(t, r)) {
         RexxStringObject str = (RexxStringObject)temps((RexxObjectPtr)t->ObjectToString(r));
         out.kind = 1; out.bytes.assign(t->StringData(str), t->StringLength(str));
-    } else { out.kind = 2; out.obj = (void *)t->RequestGlobalReference(r); if (refStats().on) ++refStats().taken; }
+    } else { out.kind = 2; out.obj = (void *)rxobj::pinRef(t, r); if (refStats().on) ++refStats().taken; }
     return true;
 }
 // RX2CPP_BIF_STATS=1: count the BIFs/String methods that went to the interpreter (printed at exit): the next native candidates.
@@ -326,7 +384,7 @@ inline bool sendStringNumeric(const std::string &receiver, const std::string &se
     if (it == cache.end()) {
         routine = t->NewRoutine("rx2cpp_msg", source.c_str(), source.size());
         if (routine == NULLOBJECT) { code = "98.900"; text = "cannot create message routine for " + selector; t->ClearCondition(); return false; }
-        t->RequestGlobalReference((RexxObjectPtr)routine);
+        rxobj::pinRef(t, (RexxObjectPtr)routine);
         cache.emplace(source, routine);
     } else routine = it->second;
     RexxArrayObject arr = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(args.size() + 1));
@@ -348,7 +406,7 @@ inline bool sendStringNumeric(const std::string &receiver, const std::string &se
     if (isPlainString(t, r)) {
         RexxStringObject str = (RexxStringObject)temps((RexxObjectPtr)t->ObjectToString(r));
         out.kind = 1; out.bytes.assign(t->StringData(str), t->StringLength(str));
-    } else { out.kind = 2; out.obj = (void *)t->RequestGlobalReference(r); if (refStats().on) ++refStats().taken; }
+    } else { out.kind = 2; out.obj = (void *)rxobj::pinRef(t, r); if (refStats().on) ++refStats().taken; }
     return true;
 }
 inline std::string callBif(const std::string &name, const std::vector<std::pair<bool, std::string>> &args,
@@ -370,7 +428,7 @@ inline std::string callBif(const std::string &name, const std::vector<std::pair<
     if (it == cache.end()) {
         routine = t->NewRoutine("rx2cpp_bif", source.c_str(), source.size());
         if (routine == NULLOBJECT) throw std::runtime_error("cannot create BIF routine for " + name);
-        t->RequestGlobalReference((RexxObjectPtr)routine);
+        rxobj::pinRef(t, (RexxObjectPtr)routine);
         cache.emplace(source, routine);
     } else routine = it->second;
     RexxArrayObject arr = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(args.size()));
@@ -433,7 +491,7 @@ struct EnvObject final : ObjectDispatch {
         RexxThreadContext *t = rxobj::need();
         rxobj::LocalRefs temps(t);
         RexxStemObject stem = t->NewStem(st.name.c_str());
-        void *h = (void *)t->RequestGlobalReference((RexxObjectPtr)stem);
+        void *h = (void *)rxobj::pinRef(t, (RexxObjectPtr)stem);
         auto one = [&](const Value &v) -> RexxObjectPtr {
             std::vector<rxobj::Arg> c; convert({v}, c);
             return c[0].obj ? (RexxObjectPtr)c[0].obj : temps((RexxObjectPtr)t->NewString(c[0].bytes.data(), c[0].bytes.size()));
@@ -443,7 +501,7 @@ struct EnvObject final : ObjectDispatch {
             if (t->CheckCondition()) { t->ClearCondition(); throw std::runtime_error("cannot set the stem default"); }
         }
         for (const auto &e : st.tails) t->SetStemElement(stem, e.first.c_str(), one(e.second));
-        st.tails.clear(); st.dflt.reset();
+        st.tails.clear(); st.dflt.reset(); st.dropped.clear();
         st.remote = std::make_shared<EnvObject>(h);
         return h;
     }
@@ -466,6 +524,9 @@ struct EnvObject final : ObjectDispatch {
                     }
                     if (auto *n = dynamic_cast<NativeRefBase *>(v.object.get())) {
                         a.obj = n->materialize();
+                        if (a.obj && rxobj::current)
+                            a.hold = std::shared_ptr<void>((void *)rxobj::pinRef(rxobj::current, (RexxObjectPtr)a.obj),
+                                                           [](void *h) { if (rxobj::current) rxobj::unpinRef(rxobj::current, h); });
                         out.push_back(std::move(a));
                         continue;
                     }
@@ -479,10 +540,16 @@ struct EnvObject final : ObjectDispatch {
         }
     }
     MessageResult sendMessage(const std::string &selector, const std::vector<Value> &args) override {
+        if (trappedSendHook()) if (auto trapped = trappedSendHook()(handle, selector, args)) return *trapped;
         std::vector<rxobj::Arg> in; convert(args, in);
         rxobj::Result r; std::string code, text;
         if (!rxobj::send(handle, selector, in, r, code, text)) {
-            if (code == "97.1") { NoMethod missing(text); missing.conditionObject = takeKeptCondition(); throw missing; }
+            if (code == "97.1") {
+                NoMethod missing(text);
+                for (const std::string &a : rxobj::lastAdditional()) missing.substitutions.push_back(Value::string(a));
+                missing.conditionObject = takeKeptCondition();
+                throw missing;
+            }
             SyntaxCondition condition(code, text, false);
             for (const std::string &a : rxobj::lastAdditional()) condition.substitutions.push_back(Value::string(a));
             condition.conditionObject = takeKeptCondition();
@@ -543,7 +610,7 @@ inline MessageResult hostStringMessage(const Value &receiver, const std::string 
 inline const bool hostStringFallbackInstalled = (stringMessageFallback() = &hostStringMessage, true);
 inline MessageResult hostNilMessage(const std::string &selector, const std::vector<Value> &args) {
     RexxThreadContext *t = rxobj::need();
-    EnvObject nil((void *)t->RequestGlobalReference(t->Nil()));   // the interpreter's own .NIL (released with this wrapper)
+    EnvObject nil((void *)rxobj::pinRef(t, t->Nil()));   // the interpreter's own .NIL (released with this wrapper)
     return nil.sendMessage(selector, args);
 }
 inline const bool hostNilFallbackInstalled = (nilMessageFallback() = &hostNilMessage, true);
@@ -556,7 +623,7 @@ struct LibraryContext final : ObjectDispatch {
     MessageResult sendMessage(const std::string &selector, const std::vector<Value> &) override {
         if (selector == "PACKAGE" && rxobj::libraryPackage() != NULLOBJECT) {
             RexxThreadContext *t = rxobj::need();
-            return Value::fromObject(std::make_shared<EnvObject>((void *)t->RequestGlobalReference(rxobj::libraryPackage())));
+            return Value::fromObject(std::make_shared<EnvObject>((void *)rxobj::pinRef(t, rxobj::libraryPackage())));
         }
         throw SyntaxCondition("98.926", ".CONTEXT~" + selector + " is not available in compiled code", false);
     }
@@ -583,6 +650,96 @@ inline bool numericCode(const std::string &c) {
     return !c.empty() && c.find('.') != std::string::npos && c.find_first_not_of("0123456789.") == std::string::npos;
 }
 // The condition an exception from compiled code stands for (false: not a condition, e.g. EXIT).
+inline RexxObjectPtr interpreterHelper(RexxThreadContext *t, rxobj::LocalRefs &temps, RexxRoutineObject &routine,
+                                       const char *name, const char *source, const std::vector<Value> &args);
+// The condition object of a NOVALUE raised by compiled code (DESCRIPTION: the variable's name), as the interpreter makes it.
+inline std::shared_ptr<ObjectDispatch> noValueConditionObject(const std::string &variable) {
+    RexxThreadContext *t = rxobj::need();
+    rxobj::LocalRefs temps(t);
+    static thread_local RexxRoutineObject helper = NULLOBJECT;
+    // (RAISE NOVALUE does not reach a trap: an unset variable is read instead, inside INTERPRET so any name works.)
+    static const char source[] = "use arg rx2cppName\nsignal on novalue name rx2cppNovalue\n"
+                                 "interpret 'rx2cppValue =' rx2cppName\nreturn .nil\nrx2cppNovalue: return condition('O')\n";
+    RexxObjectPtr r = interpreterHelper(t, temps, helper, "rx2cpp_novalue", source, {Value::string(variable)});
+    return std::make_shared<EnvObject>((void *)rxobj::pinRef(t, r));
+}
+// LOSTDIGITS raised by native arithmetic (rx::checkLostDigits): the interpreter's own condition object for the operand.
+inline void raiseLostDigits(const Value &operand) {
+    RexxThreadContext *t = rxobj::need();
+    rxobj::LocalRefs temps(t);
+    static thread_local RexxRoutineObject helper = NULLOBJECT;
+    static const char source[] = "use arg rx2cppNumber\nsignal on lostdigits name rx2cppLost\nnumeric digits 1\n"
+                                 "rx2cppValue = rx2cppNumber + 0\nreturn .nil\nrx2cppLost: return condition('O')\n";
+    RexxObjectPtr r = interpreterHelper(t, temps, helper, "rx2cpp_lostdigits", source, {operand});
+    throw NotReadyCondition(std::make_shared<EnvObject>((void *)rxobj::pinRef(t, r)), "LOSTDIGITS");
+}
+inline const bool lostDigitsInstalled = (lostDigitsHook() = &raiseLostDigits, true);
+// RAISE of a non-SYNTAX condition, reaching the native entry of a compiled method or routine: the interpreter raises
+// it from a small routine whose caller is this native activation, which keeps it and raises it in its own caller when
+// it returns (NativeActivation::checkConditions: trapped there, or ignored; the RESULT is the method's result).
+inline std::string raiseCommand(const RaiseToCaller &r, std::vector<Value> &args) {
+    std::string cmd = "raise " + r.name;
+    args = {Value::string(r.name)};
+    auto add = [&](const std::optional<Value> &v, const char *form) {
+        if (!v) return;
+        args.push_back(*v);
+        cmd += std::string(" ") + form + " (arg(" + std::to_string(args.size()) + "))";
+    };
+    if (r.rc) { args.push_back(*r.rc); cmd += " (arg(" + std::to_string(args.size()) + "))"; }
+    add(r.description, "description");
+    add(r.additional, "additional");
+    add(r.result, "return");
+    return cmd;
+}
+// RaiseCondition (the API) makes the condition object and this native activation keeps it (willTrap: an API raise);
+// RC, which the API cannot pass, goes into the kept object. When the method returns, NativeActivation::checkConditions
+// raises it in the caller - trapped there, or ignored with the RESULT as the method's result.
+// (Known gap: an untrapped HALT / NOMETHOD is ignored here, where RexxActivation::raise makes it error 4.1 / 97.)
+inline void raiseToCaller(const RaiseToCaller &r) {
+    RexxThreadContext *t = rxobj::need();
+    rxobj::LocalRefs temps(t);
+    std::vector<rxobj::Arg> conv;
+    auto object = [&](const Value &v) -> RexxObjectPtr {
+        conv.clear(); EnvObject::convert({v}, conv);
+        return conv[0].obj ? (RexxObjectPtr)conv[0].obj : temps((RexxObjectPtr)t->NewString(conv[0].bytes.data(), conv[0].bytes.size()));
+    };
+    RexxStringObject description = NULLOBJECT;
+    if (r.description) {
+        RexxObjectPtr d = object(*r.description);
+        description = t->IsString(d) ? (RexxStringObject)d : (RexxStringObject)temps((RexxObjectPtr)t->ObjectToString(d));
+    }
+    RexxObjectPtr additional = r.additional ? object(*r.additional) : NULLOBJECT;
+    RexxObjectPtr result = r.result ? object(*r.result) : NULLOBJECT;
+    RexxObjectPtr rc = r.rc ? object(*r.rc) : NULLOBJECT;
+    t->RaiseCondition(r.name.c_str(), description, additional, result);
+    if (rc != NULLOBJECT) if (RexxDirectoryObject kept = t->GetConditionInfo()) t->DirectoryPut(kept, rc, "RC");
+}
+// The same condition as an object, for a compiled caller that traps it (describeRaised).
+inline std::shared_ptr<ObjectDispatch> raisedConditionObject(const RaiseToCaller &r) {
+    RexxThreadContext *t = rxobj::need();
+    rxobj::LocalRefs temps(t);
+    std::vector<Value> args;
+    const std::string cmd = raiseCommand(r, args) + "\n";
+    // The RAISE runs in a routine called by a helper routine, which is its caller and traps it (an internal routine
+    // would do, but the interpreter loses a condition raised in an internal routine of a routine run by CALL).
+    static const char outer[] = "use arg rx2cppInner, rx2cppArgs\nsignal on any name rx2cppCaught\n"
+                                "rx2cppIgnored = rx2cppInner~callWith(rx2cppArgs)\nreturn .nil\nrx2cppCaught: return condition('O')\n";
+    RexxRoutineObject inner = (RexxRoutineObject)temps((RexxObjectPtr)t->NewRoutine("rx2cpp_raise", cmd.c_str(), cmd.size()));
+    RexxRoutineObject routine = (RexxRoutineObject)temps((RexxObjectPtr)t->NewRoutine("rx2cpp_raised", outer, sizeof(outer) - 1));
+    RexxArrayObject innerArgs = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(args.size()));
+    std::vector<rxobj::Arg> conv;
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        conv.clear(); EnvObject::convert({args[i]}, conv);
+        t->ArrayPut(innerArgs, conv[0].obj ? (RexxObjectPtr)conv[0].obj : temps((RexxObjectPtr)t->NewString(conv[0].bytes.data(), conv[0].bytes.size())), i + 1);
+    }
+    RexxArrayObject list = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(2));
+    t->ArrayPut(list, (RexxObjectPtr)inner, 1);
+    t->ArrayPut(list, (RexxObjectPtr)innerArgs, 2);
+    RexxObjectPtr o = temps(t->CallRoutine(routine, list));
+    if (t->CheckCondition()) { t->ClearCondition(); return nullptr; }
+    if (o == NULLOBJECT || o == t->Nil()) return nullptr;
+    return std::make_shared<EnvObject>((void *)rxobj::pinRef(t, o));
+}
 inline bool describeRaised(std::exception_ptr e, RaisedCondition &out) {
     try { std::rethrow_exception(e); }
     catch (const SyntaxCondition &c) {
@@ -591,8 +748,21 @@ inline bool describeRaised(std::exception_ptr e, RaisedCondition &out) {
         else { out.code = "98.900"; out.substitutions = {Value::string(c.what())}; }
         return true;
     }
-    catch (const NoMethod &m) { out.object = m.conditionObject; out.code = "98.900"; out.substitutions = {Value::string(m.what())}; return true; }
-    catch (const NotReadyCondition &n) { out.name = "NOTREADY"; out.object = n.conditionObject; return true; }
+    catch (const NoMethod &m) {
+        out.object = m.conditionObject;
+        // The interpreter's own "does not understand" (97.1) passes through as is; a compiled object's is 98.900.
+        if (m.conditionObject) { out.code = "97.1"; out.substitutions = m.substitutions; }
+        else { out.code = "98.900"; out.substitutions = {Value::string(m.what())}; }
+        return true;
+    }
+    catch (const NotReadyCondition &n) { out.name = n.name; out.object = n.conditionObject; return true; }
+    catch (const NoValueCondition &n) { out.name = "NOVALUE"; out.object = noValueConditionObject(n.variable); return true; }
+    catch (const RaiseToCaller &r) {
+        if (!r.delivered) return false;   // RAISE ends its own activation: the condition is its caller's
+        out.name = r.name;
+        out.object = raisedConditionObject(r);
+        return true;
+    }
     catch (const SignalJump &) { return false; }
     catch (const std::exception &x) {
         if (pendingConditionHook) if (auto o = pendingConditionHook(x)) { out.object = o; return true; }
@@ -606,22 +776,103 @@ inline Value conditionEntry(const std::shared_ptr<ObjectDispatch> &object, const
     return v ? *v : nil();
 }
 struct MethodTraps {
-    enum Kind { SYNTAX, ERROR, FAILURE, NOVALUE, NOTREADY, ANY, KINDS };
-    bool on[KINDS] = {};
-    int label[KINDS] = {};
-    bool has = false;                          // a condition was trapped in this activation
+    enum Kind { SYNTAX, ERROR, FAILURE, NOVALUE, NOTREADY, LOSTDIGITS, NOSTRING, ANY, HALT, NOMETHOD, KINDS,
+                USERS = 16, SLOTS = KINDS + USERS };   // slots past KINDS: USER conditions, in the order first trapped
+    bool on[SLOTS] = {};
+    bool callMode[SLOTS] = {};                 // CALL ON (the trap stays on; the handler is called at the clause boundary)
+    bool delayed[SLOTS] = {};                  // its CALL ON handler is running (CONDITION('S') = DELAY)
+    bool novalueOn = false;                    // SIGNAL ON NOVALUE or ANY: reading an unset variable raises NOVALUE
+    const bool *savedNovalue = nullptr;
+    bool lostDigitsOn = false;                 // SIGNAL ON LOSTDIGITS or ANY: native arithmetic raises LOSTDIGITS
+    const bool *savedLostDigits = nullptr;
+    int label[SLOTS] = {};
+    std::string userName[USERS];               // "USER name" of slot KINDS + i
+    int users = 0;
+    bool has = false;                          // a condition was trapped in this activation (or its caller's, inherited)
     std::string name;
+    std::string instruction;                   // SIGNAL or CALL
     std::shared_ptr<ObjectDispatch> object;
+    struct Queued { int slot; std::string name; std::shared_ptr<ObjectDispatch> object; };
+    std::vector<Queued> queue;                 // CALL ON conditions waiting for the clause boundary (processTraps)
     MethodTraps *saved = nullptr;
+    bool internal = false;                     // an internal routine's activation (inherited from its caller)
+    // An internal routine (CALL label, label(...), a CALL ON handler) starts with a copy of its caller's trap settings
+    // and condition information (RexxActivation INTERNALCALL); the caller sets inheritNext just before entering it.
+    static MethodTraps *&inheritNext() { static thread_local MethodTraps *p = nullptr; return p; }
+    struct Handing { std::string name; std::shared_ptr<ObjectDispatch> object; bool active = false; };
+    static Handing &handing() { static thread_local Handing h; return h; }   // a CALL ON handler's condition
     // The running activation's traps are known to the stream built-ins (NOTREADY), through its ActivationScope.
-    MethodTraps() { if (ActivationScope *a = ActivationScope::current()) { saved = a->traps; a->traps = this; } }
-    ~MethodTraps() { if (ActivationScope *a = ActivationScope::current()) if (a->traps == this) a->traps = saved; }
+    MethodTraps() : savedNovalue(novalueArmed), savedLostDigits(lostDigitsArmed) {
+        if (MethodTraps *from = std::exchange(inheritNext(), nullptr)) {
+            internal = true;
+            for (int k = 0; k < SLOTS; ++k) { on[k] = from->on[k]; callMode[k] = from->callMode[k]; delayed[k] = from->delayed[k];
+                                              label[k] = from->label[k]; missing[k] = from->missing[k]; }
+            for (int u = 0; u < USERS; ++u) userName[u] = from->userName[u];
+            users = from->users; has = from->has; name = from->name; instruction = from->instruction; object = from->object;
+        }
+        Handing &h = handing();
+        if (h.active) { has = true; name = h.name; instruction = "CALL"; object = h.object; h = Handing(); }
+        if (ActivationScope *a = ActivationScope::current()) { saved = a->traps; a->traps = this; }
+        novalueArmed = &novalueOn;
+        lostDigitsArmed = &lostDigitsOn;
+        syncNovalue();
+    }
+    ~MethodTraps() {
+        if (ActivationScope *a = ActivationScope::current()) if (a->traps == this) a->traps = saved;
+        novalueArmed = savedNovalue;
+        lostDigitsArmed = savedLostDigits;
+    }
+    // The slot that traps condition c (k its slot or -1), or -1: c's own trap, else ANY (CALL ON ANY cannot take the
+    // conditions CALL ON does not trap: TrapHandler::canHandle).
+    int trapping(const std::string &c, int k) const {
+        if (k >= 0 && on[k]) return k;
+        if (!on[ANY]) return -1;
+        if (callMode[ANY] && (c == "SYNTAX" || c == "NOVALUE" || c == "LOSTDIGITS" || c == "NOSTRING" || c == "NOMETHOD")) return -1;
+        return ANY;
+    }
+    void syncNovalue() {
+        novalueOn = (on[NOVALUE] && !callMode[NOVALUE]) || (on[ANY] && !callMode[ANY]);
+        lostDigitsOn = (on[LOSTDIGITS] && !callMode[LOSTDIGITS]) || (on[ANY] && !callMode[ANY]);
+    }
     MethodTraps(const MethodTraps &) = delete;
     MethodTraps &operator=(const MethodTraps &) = delete;
-    // Is NOTREADY trapped in the running activation (SIGNAL ON NOTREADY, or ANY)?
+    // Is NOTREADY trapped in the running activation (SIGNAL / CALL ON NOTREADY, or ANY)?
     static bool notReadyArmed() {
         ActivationScope *a = ActivationScope::current();
-        return a && a->traps && (a->traps->on[NOTREADY] || a->traps->on[ANY]);
+        return a && a->traps && a->traps->trapping("NOTREADY", NOTREADY) >= 0;
+    }
+    // Which conditions raised inside the interpreter the running activation traps, as bits: 1 NOTREADY (SIGNAL ON),
+    // 8 NOTREADY (CALL ON), 2 NOSTRING, 4 LOSTDIGITS; 0 none.
+    static int interpreterConditionMode() {
+        ActivationScope *a = ActivationScope::current();
+        if (!a || !a->traps) return 0;
+        const MethodTraps &m = *a->traps;
+        int mode = 0;
+        const int notReady = m.trapping("NOTREADY", NOTREADY);
+        if (notReady >= 0) mode |= m.callMode[notReady] ? 8 : 1;
+        if (m.trapping("NOSTRING", NOSTRING) >= 0) mode |= 2;
+        if (m.trapping("LOSTDIGITS", LOSTDIGITS) >= 0) mode |= 4;
+        return mode;
+    }
+    // Which command conditions the running activation traps, as bits: 1 ERROR, 2 FAILURE, 4 ANY.
+    static int commandConditionMode() {
+        ActivationScope *a = ActivationScope::current();
+        if (!a || !a->traps) return 0;
+        const MethodTraps &m = *a->traps;
+        return (m.on[ERROR] ? 1 : 0) | (m.on[FAILURE] ? 2 : 0) | (m.on[ANY] ? 4 : 0);
+    }
+    // The running activation's traps, for INTERPRET: the conditions (not SYNTAX) the interpreted string must hand back,
+    // each with its form (true: CALL ON).
+    static std::vector<std::pair<std::string, bool>> armedConditions() {
+        std::vector<std::pair<std::string, bool>> names;
+        ActivationScope *a = ActivationScope::current();
+        if (!a || !a->traps) return names;
+        static const char *const kinds[] = {"SYNTAX", "ERROR", "FAILURE", "NOVALUE", "NOTREADY", "LOSTDIGITS", "NOSTRING", "ANY",
+                                            "HALT", "NOMETHOD"};
+        const MethodTraps &m = *a->traps;
+        for (int k = ERROR; k < KINDS; ++k) if (m.on[k]) names.emplace_back(kinds[k], m.callMode[k]);
+        for (int u = 0; u < m.users; ++u) if (m.on[KINDS + u]) names.emplace_back(m.userName[u], m.callMode[KINDS + u]);
+        return names;
     }
     static int kindOf(const std::string &c) {
         if (c == "SYNTAX") return SYNTAX;
@@ -629,31 +880,93 @@ struct MethodTraps {
         if (c == "FAILURE") return FAILURE;
         if (c == "NOVALUE") return NOVALUE;
         if (c == "NOTREADY") return NOTREADY;
+        if (c == "LOSTDIGITS") return LOSTDIGITS;
+        if (c == "NOSTRING") return NOSTRING;
         if (c == "ANY") return ANY;
+        if (c == "HALT") return HALT;
+        if (c == "NOMETHOD") return NOMETHOD;
         return -1;
     }
-    void set(const char *c, int target) { const int k = kindOf(c); on[k] = true; label[k] = target; }
-    void clear(const char *c) { on[kindOf(c)] = false; }
+    // The slot of a condition: its kind, or the slot of a USER condition (a new one when create).
+    int slotOf(const std::string &c, bool create) {
+        const int k = kindOf(c);
+        if (k >= 0) return k;
+        for (int u = 0; u < users; ++u) if (userName[u] == c) return KINDS + u;
+        if (!create) return -1;
+        if (users == USERS) throw std::runtime_error("too many USER condition traps in one activation");
+        userName[users] = c;
+        return KINDS + users++;
+    }
+    int find(const std::string &c) const { return const_cast<MethodTraps *>(this)->slotOf(c, false); }
+    std::string missing[SLOTS];                // SIGNAL ON c NAME label with no such label: 16.1 when c is raised
+    void set(const char *c, int target) { const int k = slotOf(c, true); on[k] = true; callMode[k] = false; label[k] = target; missing[k].clear(); syncNovalue(); }
+    void setMissing(const char *c, const std::string &name) { const int k = slotOf(c, true); on[k] = true; callMode[k] = false; label[k] = -1; missing[k] = name; syncNovalue(); }
+    void setCall(const char *c, int target) { const int k = slotOf(c, true); on[k] = true; callMode[k] = true; delayed[k] = false; label[k] = target; missing[k].clear(); syncNovalue(); }
+    void clear(const char *c) { const int k = slotOf(c, true); on[k] = false; callMode[k] = false; syncNovalue(); }
     // An exception reached the activation: the label to continue at (the trap is turned off), or -1 to let it go on.
     int fire(Variables &vars, std::size_t line, std::exception_ptr e) {
+        if (internal) {   // a RAISE SYNTAX without RETURN in an internal routine is for the top level only
+            try { std::rethrow_exception(e); } catch (const SyntaxCondition &c) { if (c.skipInternalTraps) return -1; } catch (...) {}
+        }
         RaisedCondition raised;
         if (!describeRaised(e, raised)) return -1;
-        const int k = kindOf(raised.name);
-        const int use = (k >= 0 && on[k]) ? k : (on[ANY] ? ANY : -1);
-        if (use < 0) return -1;
+        const int use = trapping(raised.name, find(raised.name));
+        if (use < 0 || callMode[use]) return -1;    // a CALL ON trap never unwinds (conditions reach it by deliver)
         on[use] = false;
+        syncNovalue();
         if (!raised.object) {
             std::vector<rxobj::Arg> subs; EnvObject::convert(raised.substitutions, subs);
             raised.object = std::make_shared<EnvObject>(rxobj::conditionObject(raised.code, subs));
         }
         has = true;
         name = raised.name;
+        instruction = "SIGNAL";
         object = raised.object;
-        if (name == "SYNTAX" || name == "ERROR" || name == "FAILURE") set(vars, "RC", conditionEntry(object, "RC"));
+        if (name == "SYNTAX" || name == "ERROR" || name == "FAILURE") rx::set(vars, "RC", conditionEntry(object, "RC"));
         rx::set(vars, "SIGL", Value::string(std::to_string(line)));
+        if (label[use] < 0) {
+            SyntaxCondition e("16.1", "Label \"" + missing[use] + "\" not found", false);
+            e.substitutions.push_back(Value::string(missing[use]));
+            throw e;
+        }
         return label[use];
     }
-    static void set(Variables &vars, const char *n, const Value &v) { rx::set(vars, n, v); }
+    // A condition raised in the running activation without unwinding it (RexxActivation::trap): a SIGNAL ON trap takes
+    // it now (thrown to fire); a CALL ON trap queues it for the clause boundary; otherwise it is ignored. Answers
+    // whether it was trapped.
+    static bool deliver(const std::string &c, const std::shared_ptr<ObjectDispatch> &o) {
+        ActivationScope *a = ActivationScope::current();
+        if (!a || !a->traps) return false;
+        MethodTraps &m = *a->traps;
+        const int use = m.trapping(c, m.find(c));
+        if (use < 0) return false;
+        if (!m.callMode[use]) throw NotReadyCondition(o, c);
+        o->sendMessage("PUT", {Value::string("CALL"), Value::string("INSTRUCTION")});
+        m.queue.push_back({use, c, o});
+        return true;
+    }
+    // processTraps: a queued condition whose trap is not delayed, if any (its handler is called next).
+    bool ready() const {
+        for (const Queued &q : queue) if (!delayed[q.slot]) return true;
+        return false;
+    }
+    // Take the next one: RC from its condition object, the trap delayed, and the handler's condition handed over.
+    Queued take(Variables &vars) {
+        for (auto i = queue.begin(); i != queue.end(); ++i) {
+            if (delayed[i->slot]) continue;
+            Queued q = *i;
+            queue.erase(i);
+            Value rc = conditionEntry(q.object, "RC");
+            if (!rc.isObject()) rx::set(vars, "RC", rc);
+            else if (!dynamic_cast<NilObject *>(rc.object.get())) rx::set(vars, "RC", rc);
+            delayed[q.slot] = true;
+            inheritNext() = this;
+            handing() = Handing{q.name, q.object, true};
+            return q;
+        }
+        throw std::runtime_error("no CALL ON condition is ready");
+    }
+    void undelay(int slot) { delayed[slot] = false; }
     // CONDITION([option]) of this activation.
     Value condition(const std::optional<Value> &arg) const {
         char option = 'I';
@@ -663,7 +976,7 @@ struct MethodTraps {
         case 'A': return has ? conditionEntry(object, "ADDITIONAL") : nil();
         case 'O': return has ? Value::fromObject(object) : nil();
         case 'C': return Value::string(has ? name : std::string());
-        case 'I': return Value::string(has ? "SIGNAL" : "");
+        case 'I': return Value::string(has ? instruction : std::string());
         case 'D': {
             if (!has) return Value::string(std::string());
             Value d = conditionEntry(object, "DESCRIPTION");
@@ -671,8 +984,9 @@ struct MethodTraps {
         }
         case 'S': {
             if (!has) return Value::string(std::string());
-            const int k = kindOf(name);
-            return Value::string(k >= 0 && on[k] ? "ON" : "OFF");
+            const int k = find(name);
+            if (k < 0 || !on[k]) return Value::string("OFF");
+            return Value::string(delayed[k] ? "DELAY" : "ON");
         }
         default: throw SyntaxCondition("40.904", "CONDITION option must be one of ACDIOS", false);
         }
@@ -689,6 +1003,56 @@ struct MethodTraps {
         throw again;
     }
 };
+// A RAISE that ended a compiled callee reaches its compiled caller (RexxActivation::raise: the sender's trap). A caller
+// that traps the condition with SIGNAL ON (it or ANY) gets it now: it is rethrown, delivered, to the caller's
+// MethodTraps; with CALL ON it is queued for the caller's clause boundary. Otherwise HALT is error 4.1 and NOMETHOD
+// 97.1 / 97.5, and any other condition is ignored. Unless it unwinds, the call answers the RETURN / EXIT value.
+inline std::optional<Value> raisedInCaller(const RaiseToCaller &r) {
+    if (ActivationScope *a = ActivationScope::current()) if (a->traps) {
+        MethodTraps &m = *a->traps;
+        const int use = m.trapping(r.name, m.find(r.name));
+        if (use >= 0) {
+            if (!m.callMode[use]) { RaiseToCaller d = r; d.delivered = true; throw d; }
+            if (auto o = raisedConditionObject(r)) {
+                o->sendMessage("PUT", {Value::string("CALL"), Value::string("INSTRUCTION")});
+                m.queue.push_back({use, r.name, o});
+            }
+            return r.result;
+        }
+    }
+    if (r.name == "HALT") {
+        SyntaxCondition e("4.1", "Program interrupted with HALT condition", false);
+        e.substitutions.push_back(Value::string("HALT"));
+        throw e;
+    }
+    if (r.name == "NOMETHOD") {
+        if (r.additional && r.description) {
+            SyntaxCondition e("97.1", "does not understand message", false);
+            e.substitutions = {*r.additional, *r.description};
+            throw e;
+        }
+        throw SyntaxCondition("97.5", "An unhandled NOMETHOD condition has been raised", false);
+    }
+    return r.result;
+}
+// NOSTRING (RexxObject::requestString used STRING): raised in the running activation when it traps it.
+inline void raiseNoString(const Value &text, const Value &object) {
+    ActivationScope *a = ActivationScope::current();
+    if (!a || !a->traps || a->traps->trapping("NOSTRING", MethodTraps::NOSTRING) < 0) return;
+    RaiseToCaller r;
+    r.name = "NOSTRING"; r.description = text; r.additional = object;
+    if (auto o = raisedConditionObject(r)) MethodTraps::deliver("NOSTRING", o);
+}
+inline const bool noStringInstalled = (noStringHook() = &raiseNoString, true);
+// A compiled package routine called by compiled code: a RAISE that ends it reaches this caller (raisedInCaller).
+template <class Call> Value runRaising(Call &&call) {
+    try { return call(); }
+    catch (const RaiseToCaller &r) {
+        noResultPending() = false;
+        std::optional<Value> v = raisedInCaller(r);
+        return v ? *v : noResult();
+    }
+}
 // CONDITION() in an activation that traps nothing: no condition information.
 inline Value noCondition(const std::optional<Value> &arg) {
     char option = 'I';
@@ -855,7 +1219,8 @@ struct NativeArray final : NativeRefBase, ItemSnapshot, std::enable_shared_from_
     std::size_t count = 0;                      // ITEMS
     std::optional<Value> real;
     static constexpr std::size_t maxSlots = std::size_t(1) << 20;
-    explicit NativeArray(std::size_t size = 0) : slots(size) {}
+    bool sized = true;                          // .array~new gives no dimension yet (DIMENSION 0); NEW(n) and OF give 1
+    explicit NativeArray(std::size_t size = 0, bool withSize = true) : slots(size), sized(withSize) {}
     // A positive whole number written plainly (blanks around allowed); anything else is left to the interpreter.
     static bool index(const Value &v, std::size_t &out) {
         if (v.isObject()) return false;
@@ -896,7 +1261,12 @@ struct NativeArray final : NativeRefBase, ItemSnapshot, std::enable_shared_from_
             for (const auto &s : slots) { values.push_back(s ? *s : Value::string(std::string())); holes.push_back(!s); }
             std::vector<rxobj::Arg> in; EnvObject::convert(values, in);
             for (std::size_t i = 0; i < in.size(); ++i) if (holes[i]) in[i].omitted = true;
-            real = Value::fromObject(std::make_shared<EnvObject>(rxobj::newArray(slots.size(), in)));
+            if (slots.empty() && sized) {   // an empty array with a dimension: .array~new(0) (the API's has none)
+                MessageResult made = envClass("ARRAY").object->sendMessage("NEW", {Value::string("0")});
+                if (!made) throw std::runtime_error("cannot create an array");
+                real = *made;
+            }
+            else real = Value::fromObject(std::make_shared<EnvObject>(rxobj::newArray(slots.size(), in)));
             std::vector<std::optional<Value>>().swap(slots);
             count = 0;
         }
@@ -942,7 +1312,7 @@ struct NativeArrayClass final : NativeRefBase {
     MessageResult sendMessage(const std::string &selector, const std::vector<Value> &args) override {
         if (selector == "NEW") {
             std::size_t n = 0;
-            if (args.empty()) return Value::fromObject(std::make_shared<NativeArray>());
+            if (args.empty()) return Value::fromObject(std::make_shared<NativeArray>(0, false));
             if (args.size() == 1 && !args[0].isObject()) {
                 const std::string &s = args[0].bytes;
                 const std::size_t a = s.find_first_not_of(' ');
@@ -1170,7 +1540,7 @@ inline MessageResult interpreterCall(Variables &vars, const std::string &name, c
     if (it == cache.end()) {
         routine = rxobj::packageRoutine(t, "rx2cpp_call", source);
         if (routine == NULLOBJECT) throw std::runtime_error("cannot create interpreter call for " + name);
-        t->RequestGlobalReference((RexxObjectPtr)routine);
+        rxobj::pinRef(t, (RexxObjectPtr)routine);
         cache.emplace(source, routine);
     } else routine = it->second;
     RexxArrayObject arr = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(args.size() + (dynamicName ? 1 : 0)));
@@ -1205,7 +1575,7 @@ inline MessageResult interpreterCall(Variables &vars, const std::string &name, c
     auto valueOf = [&](RexxObjectPtr o) -> Value {
         if (o == t->Nil()) return nil();
         if (rxobj::isPlainString(t, o)) return Value::string(text(o));
-        return EnvObject::adopt((void *)t->RequestGlobalReference(o));
+        return EnvObject::adopt((void *)rxobj::pinRef(t, o));
     };
     const std::size_t n = t->ArraySize(out);
     for (std::size_t i = 2; i <= n; ++i) {
@@ -1232,18 +1602,28 @@ inline void interpreterCommand(Variables &vars, const Value &environment, const 
     RexxThreadContext *t = rxobj::need();
     rxobj::LocalRefs temps(t);
     rxobj::bifStat("ADDRESS " + environment.bytes.str());
-    static thread_local RexxRoutineObject routine = NULLOBJECT;
+    // ERROR / FAILURE: when the activation traps them, the helper does too (CALL ON: the command completes, RC is set,
+    // and its condition comes back), so the interpreter decides which one a command raises (FAILURE untrapped: ERROR).
+    const int mode = MethodTraps::commandConditionMode() & 7;
+    static thread_local RexxRoutineObject routines[8] = {};
+    RexxRoutineObject &routine = routines[mode];
     if (routine == NULLOBJECT) {
-        static const char source[] = "use arg rx2cppEnvironment, rx2cppCommand\naddress value rx2cppEnvironment\n"
-                                     "rx2cppCommand\nreturn rc\n";
-        routine = t->NewRoutine("rx2cpp_address", source, sizeof(source) - 1);
+        // (the activation's TRACE setting: TRACE OFF keeps a failing command quiet, as interpreted)
+        std::string source = "use arg rx2cppEnvironment, rx2cppCommand, rx2cppTrace\ntrace value rx2cppTrace\nrx2cppQueue = .array~new\n";
+        if (mode & 1) source += "call on error name rx2cppQueued\n";
+        if (mode & 2) source += "call on failure name rx2cppQueued\n";
+        if (mode & 4) source += "call on any name rx2cppQueued\n";
+        source += "address value rx2cppEnvironment\nrx2cppCommand\nreturn .array~of(rc, rx2cppQueue)\n"
+                  "rx2cppQueued: if rx2cppQueue~append(condition('O')) > 0 then nop\nreturn\n";
+        routine = t->NewRoutine("rx2cpp_address", source.c_str(), source.size());
         if (routine == NULLOBJECT) throw std::runtime_error("cannot create interpreter ADDRESS helper");
-        t->RequestGlobalReference((RexxObjectPtr)routine);
+        rxobj::pinRef(t, (RexxObjectPtr)routine);
     }
     std::vector<rxobj::Arg> conv;
-    RexxArrayObject arr = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(2));
+    RexxArrayObject arr = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(3));
     std::size_t index = 0;
-    for (const Value *v : {&environment, &command}) {
+    const Value trace = Value::string(traceSetting());
+    for (const Value *v : {&environment, &command, &trace}) {
         conv.clear(); EnvObject::convert({*v}, conv);
         RexxObjectPtr o = conv[0].obj ? (RexxObjectPtr)conv[0].obj : temps((RexxObjectPtr)t->NewString(conv[0].bytes.data(), conv[0].bytes.size()));
         t->ArrayPut(arr, o, ++index);
@@ -1262,9 +1642,27 @@ inline void interpreterCommand(Variables &vars, const Value &environment, const 
         raised.conditionObject = takeKeptCondition();
         throw raised;
     }
-    if (r == NULLOBJECT) throw std::runtime_error("ADDRESS helper returned no RC");
-    RexxStringObject rs = (RexxStringObject)temps((RexxObjectPtr)t->ObjectToString(r));
+    if (r == NULLOBJECT || !t->IsArray(r)) throw std::runtime_error("ADDRESS helper returned no RC");
+    RexxObjectPtr rc = t->ArrayAt((RexxArrayObject)r, 1);
+    if (rc == NULLOBJECT) throw std::runtime_error("ADDRESS helper returned no RC");
+    RexxStringObject rs = (RexxStringObject)temps((RexxObjectPtr)t->ObjectToString(rc));
     set(vars, "RC", Value::string(std::string(t->StringData(rs), t->StringLength(rs))));
+    // the command's condition, raised in this activation (SIGNAL ON: now; CALL ON: at the clause boundary)
+    RexxObjectPtr queued = t->ArrayAt((RexxArrayObject)r, 2);
+    if (queued != NULLOBJECT && t->IsArray(queued)) {
+        const std::size_t n = t->ArrayItems((RexxArrayObject)queued);
+        for (std::size_t i = 1; i <= n; ++i) {
+            RexxObjectPtr cond = t->ArrayAt((RexxArrayObject)queued, i);
+            if (cond == NULLOBJECT) continue;
+            RexxObjectPtr nameObj = t->DirectoryAt((RexxDirectoryObject)cond, "CONDITION");
+            const std::string conditionName = nameObj != NULLOBJECT && t->IsString(nameObj) ? t->ObjectToStringValue(nameObj) : std::string("ERROR");
+            auto object = std::make_shared<EnvObject>((void *)rxobj::pinRef(t, cond));
+            const int use = [&] { ActivationScope *a = ActivationScope::current(); return a && a->traps ? a->traps->trapping(conditionName, a->traps->find(conditionName)) : -1; }();
+            if (use >= 0 && !ActivationScope::current()->traps->callMode[use])
+                object->sendMessage("PUT", {Value::string("SIGNAL"), Value::string("INSTRUCTION")});
+            MethodTraps::deliver(conditionName, object);
+        }
+    }
 }
 // SAY in a native library: the line goes to the interpreter's .OUTPUT (~SAY), as interpreted SAY output does, so a
 // redirected .OUTPUT (a Monitor on a stream, ...) receives it and the order with interpreted output is kept.
@@ -1290,13 +1688,20 @@ inline void hostSay(const std::string &line) {
     }
 }
 inline const bool hostSayInstalled = (sayHook() = &hostSay, true);
+inline void promoteStem(StemObject &st) { (void)EnvObject::stemHandle(st); }
+inline const bool stemPromoteInstalled = (StemObject::promoteHook() = &promoteStem, true);
+inline bool foreignStem(const Value &v) {
+    auto *e = v.isObject() ? dynamic_cast<EnvObject *>(v.object.get()) : nullptr;
+    return e && rxobj::need()->IsStem((RexxObjectPtr)e->handle);
+}
+inline const bool foreignStemInstalled = (StemObject::foreignStemHook() = &foreignStem, true);
 // Runs one small interpreter helper (source, arguments); a condition it raises is re-raised in the compiled code as is.
 inline RexxObjectPtr interpreterHelper(RexxThreadContext *t, rxobj::LocalRefs &temps, RexxRoutineObject &routine,
                                        const char *name, const char *source, const std::vector<Value> &args) {
     if (routine == NULLOBJECT) {
         routine = t->NewRoutine(name, source, std::strlen(source));
         if (routine == NULLOBJECT) throw std::runtime_error(std::string("cannot create interpreter helper ") + name);
-        t->RequestGlobalReference((RexxObjectPtr)routine);
+        rxobj::pinRef(t, (RexxObjectPtr)routine);
     }
     std::vector<rxobj::Arg> conv;
     RexxArrayObject arr = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(args.size()));
@@ -1342,15 +1747,14 @@ inline void interpreterQueue(bool lifo, const Value &line) {
     if (lifo) interpreterHelper(t, temps, push, "rx2cpp_push", "push arg(1)\nreturn\n", {line});
     else interpreterHelper(t, temps, queue, "rx2cpp_queue", "queue arg(1)\nreturn\n", {line});
 }
-// One stream method, sent by a small interpreter routine: a NOTREADY the stream raises lands in that Rexx activation
-// (as interpreted, the first Rexx activation above the stream decides), not in the interpreted caller of this compiled
-// code. With NOTREADY trapped in the running compiled activation (SIGNAL ON NOTREADY / ANY), the helper traps it and the
-// condition goes to that trap (NotReadyCondition); otherwise it is ignored, as an untrapped NOTREADY is.
-inline Value streamSend(const Value &stream, const std::string &selector, const std::vector<Value> &args) {
+// A message sent by a small interpreter routine (mode bits: 1 SIGNAL ON NOTREADY, 2 NOSTRING, 4 LOSTDIGITS, 8 CALL ON
+// NOTREADY). A condition the interpreter raises inside it lands in that Rexx activation, as interpreted it lands in the
+// method's own activation; trapped there, it goes to the running compiled activation's trap (NotReadyCondition), or -
+// CALL ON - the send completes and the condition is queued for the compiled activation's clause boundary.
+inline std::optional<Value> trappedSend(const Value &target, const std::string &selector, const std::vector<Value> &args, int mode) {
     RexxThreadContext *t = rxobj::need();
     rxobj::LocalRefs temps(t);
-    const bool armed = MethodTraps::notReadyArmed();
-    static thread_local RexxRoutineObject plain = NULLOBJECT, trapping = NULLOBJECT;
+    static thread_local RexxRoutineObject helpers[16] = {};
     RexxArrayObject list = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(args.size()));
     std::vector<rxobj::Arg> conv;
     for (std::size_t i = 0; i < args.size(); ++i) {
@@ -1359,29 +1763,283 @@ inline Value streamSend(const Value &stream, const std::string &selector, const 
         conv.clear(); EnvObject::convert({v}, conv);
         t->ArrayPut(list, conv[0].obj ? (RexxObjectPtr)conv[0].obj : temps((RexxObjectPtr)t->NewString(conv[0].bytes.data(), conv[0].bytes.size())), i + 1);
     }
-    const std::vector<Value> helperArgs{stream, Value::string(selector), EnvObject::adopt((void *)t->RequestGlobalReference((RexxObjectPtr)list))};
-    RexxObjectPtr r = armed
-        ? interpreterHelper(t, temps, trapping, "rx2cpp_stream_trap",
-              "use arg rx2cppStream, rx2cppMessage, rx2cppArgs\nsignal on notready name rx2cppNotReady\n"
-              "return .array~of(rx2cppStream~sendWith(rx2cppMessage, rx2cppArgs))\n"
-              "rx2cppNotReady: return .array~of(.nil, condition('O'))\n", helperArgs)
-        : interpreterHelper(t, temps, plain, "rx2cpp_stream",
-              "use arg rx2cppStream, rx2cppMessage, rx2cppArgs\n"
-              "return .array~of(rx2cppStream~sendWith(rx2cppMessage, rx2cppArgs))\n", helperArgs);
-    if (r == NULLOBJECT) return Value::string(std::string());
+    const std::vector<Value> helperArgs{target, Value::string(selector), EnvObject::adopt((void *)rxobj::pinRef(t, (RexxObjectPtr)list))};
+    static const char body[] = "rx2cppMsg = .message~new(rx2cppTarget, rx2cppMessage, 'A', rx2cppArgs)\nrx2cppMsg~send\n"
+                               "if rx2cppMsg~hasResult then return .array~of(rx2cppMsg~result)\nreturn .array~new(0)\n"
+                               "rx2cppCondition: return .array~of(.nil, condition('O'))\n";
+    static const char queuedBody[] = "rx2cppMsg = .message~new(rx2cppTarget, rx2cppMessage, 'A', rx2cppArgs)\nrx2cppMsg~send\n"
+                                     "rx2cppOut = .array~new(3); rx2cppOut[3] = rx2cppQueue\n"
+                                     "if rx2cppMsg~hasResult then rx2cppOut[1] = rx2cppMsg~result\nreturn rx2cppOut\n"
+                                     "rx2cppCondition: return .array~of(.nil, condition('O'))\n"
+                                     "rx2cppQueued: if rx2cppQueue~append(condition('O')) > 0 then nop\nreturn\n";
+    mode &= 15;
+    std::string source = "use arg rx2cppTarget, rx2cppMessage, rx2cppArgs\n";
+    if (mode & 8) source += "rx2cppQueue = .array~new\ncall on notready name rx2cppQueued\n";
+    else if (mode & 1) source += "signal on notready name rx2cppCondition\n";
+    if (mode & 2) source += "signal on nostring name rx2cppCondition\n";
+    if (mode & 4) source += "signal on lostdigits name rx2cppCondition\n";
+    source += (mode & 8) ? queuedBody : body;
+    const std::string helperName = "rx2cpp_send_" + std::to_string(mode);
+    RexxObjectPtr r = interpreterHelper(t, temps, helpers[mode], helperName.c_str(), source.c_str(), helperArgs);
+    if (r == NULLOBJECT) return std::nullopt;
     RexxArrayObject out = (RexxArrayObject)r;
     if (t->ArraySize(out) >= 2) {
         RexxObjectPtr cond = t->ArrayAt(out, 2);
-        if (cond != NULLOBJECT && cond != t->Nil())
-            throw NotReadyCondition(std::make_shared<EnvObject>((void *)t->RequestGlobalReference(cond)));
+        if (cond != NULLOBJECT && cond != t->Nil()) {
+            RexxObjectPtr name = t->DirectoryAt((RexxDirectoryObject)cond, "CONDITION");
+            std::string conditionName = name != NULLOBJECT && t->IsString(name) ? t->ObjectToStringValue(name) : std::string("NOTREADY");
+            throw NotReadyCondition(std::make_shared<EnvObject>((void *)rxobj::pinRef(t, cond)), conditionName);
+        }
     }
+    if (t->ArraySize(out) >= 3) if (RexxObjectPtr queued = t->ArrayAt(out, 3)) if (t->IsArray(queued)) {
+        const std::size_t n = t->ArrayItems((RexxArrayObject)queued);
+        for (std::size_t i = 1; i <= n; ++i)
+            if (RexxObjectPtr cond = t->ArrayAt((RexxArrayObject)queued, i))
+                MethodTraps::deliver("NOTREADY", std::make_shared<EnvObject>((void *)rxobj::pinRef(t, cond)));
+    }
+    if (t->ArraySize(out) == 0) return std::nullopt;
     RexxObjectPtr res = t->ArrayAt(out, 1);
-    if (res == NULLOBJECT) return Value::string(std::string());
+    if (res == NULLOBJECT) return std::nullopt;
     if (rxobj::isPlainString(t, res)) {
         RexxStringObject so = (RexxStringObject)temps((RexxObjectPtr)t->ObjectToString(res));
         return Value::string(std::string(t->StringData(so), t->StringLength(so)));
     }
-    return EnvObject::adopt((void *)t->RequestGlobalReference(res));
+    return EnvObject::adopt((void *)rxobj::pinRef(t, res));
+}
+// One stream method of a stream BIF: through trappedSend always (NOTREADY must not reach an interpreted caller).
+inline Value streamSend(const Value &stream, const std::string &selector, const std::vector<Value> &args) {
+    auto r = trappedSend(stream, selector, args, MethodTraps::interpreterConditionMode());
+    return r ? *r : Value::string(std::string());
+}
+// Message sends of compiled code to interpreter objects while the activation traps interpreter-raised conditions.
+inline std::optional<std::optional<Value>> trappedEnvSend(void *handle, const std::string &selector, const std::vector<Value> &args) {
+    const int mode = MethodTraps::interpreterConditionMode();
+    if (mode == 0) return std::nullopt;
+    RexxThreadContext *t = rxobj::need();
+    const Value target = EnvObject::adopt((void *)rxobj::pinRef(t, (RexxObjectPtr)handle));
+    return std::optional<std::optional<Value>>(trappedSend(target, selector, args, mode));
+}
+inline const bool trappedSendInstalled = (trappedSendHook() = &trappedEnvSend, true);
+// Memory pressure from compiled strings (rx::notePressure): the interpreter collects, as GC('F') does. Interpreted, the
+// same churn would also have pushed the objects made just before it out of the interpreter's save stack (a push-through
+// stack of the last 10 new objects, which the collector treats as live); a few throwaway objects do that first.
+inline void interpreterCollect() {
+    static const bool trace = std::getenv("RX2CPP_GC_TRACE") != nullptr;
+    if (trace) std::fprintf(stderr, "rx2cpp: collect requested (%s)\n", rxobj::current ? "running" : "no context");
+    if (!rxobj::current) return;
+    RexxThreadContext *t = rxobj::current;
+    rxobj::LocalRefs temps(t);
+    static thread_local RexxRoutineObject gc = NULLOBJECT;
+    (void)interpreterHelper(t, temps, gc, "rx2cpp_gc", "do 12; rx2cppJunk = .object~new; end\ncall gc 'F'\n", {});
+}
+inline const bool collectInstalled = (collectHook() = &interpreterCollect, true);
+// INTERPRET in a compiled method or routine. The interpreter runs the string as a method of SELF (a routine where there is
+// no SELF) created in the library's package, with this activation's arguments, its NUMERIC settings and a copy of every
+// variable it can see (stems are shared: they become interpreter stems both sides use). Afterwards the variables come
+// back (new, changed and DROPped ones) with the NUMERIC settings. A RETURN or EXIT in the string ends this activation:
+// the answer is then the value to return (no value: rx::noResult()), otherwise nullopt.
+inline std::atomic<unsigned long> &interpretCounter() { static std::atomic<unsigned long> n{0}; return n; }
+// INTERPRET data must not contain labels (47.1, a translation error: nothing of the string runs). A label is a symbol
+// followed by ':' where a clause starts (after ';', a line end that is not a continuation, or another label).
+inline void interpretLabelCheck(const std::string &src) {
+    auto symbolChar = [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '.' || c == '_' || c == '!' || c == '?'; };
+    bool clauseStart = true, continued = false;
+    std::size_t i = 0, n = src.size();
+    while (i < n) {
+        const char c = src[i];
+        if (c == ' ' || c == '\t' || c == '\r') { ++i; continue; }
+        if (c == '\n') { if (!continued) clauseStart = true; continued = false; ++i; continue; }
+        if (c == '/' && i + 1 < n && src[i + 1] == '*') {          // nested comments
+            int depth = 0;
+            while (i < n) {
+                if (src[i] == '/' && i + 1 < n && src[i + 1] == '*') { ++depth; i += 2; }
+                else if (src[i] == '*' && i + 1 < n && src[i + 1] == '/') { i += 2; if (--depth == 0) break; }
+                else ++i;
+            }
+            continue;
+        }
+        if (c == '-' && i + 1 < n && src[i + 1] == '-') { while (i < n && src[i] != '\n') ++i; continue; }
+        continued = false;
+        if (c == ';') { clauseStart = true; ++i; continue; }
+        if (c == '\'' || c == '"') {
+            ++i;
+            while (i < n) { if (src[i] == c) { if (i + 1 < n && src[i + 1] == c) { i += 2; continue; } ++i; break; } ++i; }
+            clauseStart = false;
+            continue;
+        }
+        if (symbolChar(c)) {
+            const std::size_t first = i;
+            while (i < n && symbolChar(src[i])) ++i;
+            if (clauseStart) {
+                std::size_t k = i;
+                while (k < n && (src[k] == ' ' || src[k] == '\t')) ++k;
+                if (k < n && src[k] == ':' && !(k + 1 < n && src[k + 1] == ':')) {
+                    std::string label = src.substr(first, i - first);
+                    for (char &ch : label) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+                    SyntaxCondition e("47.1", "INTERPRET data must not contain labels; found \"" + label + "\"", false);
+                    e.substitutions.push_back(Value::string(label));
+                    throw e;
+                }
+            }
+            clauseStart = false;
+            continue;
+        }
+        if (c == ',') {   // a comma that ends the line continues the clause
+            std::size_t k = i + 1;
+            while (k < n && (src[k] == ' ' || src[k] == '\t' || src[k] == '\r')) ++k;
+            continued = k >= n || src[k] == '\n';
+        }
+        clauseStart = false;
+        ++i;
+    }
+}
+inline std::optional<Value> interpretInActivation(Variables &vars, const Value &code,
+                                                 const std::vector<std::optional<Value>> &arguments) {
+    if (code.isObject()) throw std::runtime_error("INTERPRET of an object is not implemented");
+    interpretLabelCheck(code.bytes);
+    RexxThreadContext *t = rxobj::need();
+    rxobj::LocalRefs temps(t);
+    // the visible variables: this pool's, then exposed ones (a stem by its stem object)
+    std::vector<std::string> names;
+    std::unordered_set<std::string> stems;
+    for (const auto &kv : vars) {
+        const std::size_t dot = kv.first.find('.');
+        if (dot == std::string::npos) names.push_back(kv.first);
+        else stems.insert(kv.first.substr(0, dot + 1));
+    }
+    vars.exposed.any([&](const char *e, std::size_t len) {
+        const std::string n(e, len);
+        if (!n.empty() && n.back() == '.') stems.insert(n);
+        else if (lookup(vars, n)) names.push_back(n);
+        return false;
+    });
+    for (const std::string &st : stems) { (void)stemArg(vars, st); names.push_back(st); }
+    RexxDirectoryObject in = (RexxDirectoryObject)temps((RexxObjectPtr)t->NewDirectory());
+    std::vector<rxobj::Arg> conv;
+    for (const std::string &n : names) {
+        const Value *v = lookup(vars, n);
+        if (!v) continue;
+        conv.clear(); EnvObject::convert({*v}, conv);
+        RexxObjectPtr o = conv[0].obj ? (RexxObjectPtr)conv[0].obj : temps((RexxObjectPtr)t->NewString(conv[0].bytes.data(), conv[0].bytes.size()));
+        t->DirectoryPut(in, o, n.c_str());
+    }
+    const std::string key = "RX2CPP.INTERPRET." + std::to_string(++interpretCounter());
+    RexxDirectoryObject local = (RexxDirectoryObject)temps((RexxObjectPtr)t->GetLocalEnvironment());
+    t->DirectoryPut(local, (RexxObjectPtr)in, key.c_str());
+    const ActivationNumeric &num = vars.numeric;
+    std::string source = "rx2cppIn = .local~remove('" + key + "')\n"
+        "do rx2cppName over rx2cppIn~allIndexes; call value rx2cppName, rx2cppIn~at(rx2cppName); end\n"
+        "drop rx2cppIn rx2cppName\n"
+        "numeric digits " + std::to_string(num.digits) + "; numeric fuzz " + std::to_string(num.fuzz) +
+        "; numeric form " + (num.engineering ? "engineering" : "scientific") + "\n";
+    // the activation's condition traps apply to the string too: a trapped condition comes back to this activation
+    // (a CALL ON trap: the string's handler queues the condition, for this activation's clause boundary)
+    const std::vector<std::pair<std::string, bool>> armed = MethodTraps::armedConditions();
+    bool signalArmed = false, callArmed = false;
+    for (const auto &c : armed) {
+        if (c.second) { source += "call on " + c.first + " name rx2cppQueued\n"; callArmed = true; }
+        else { source += "signal on " + c.first + " name rx2cppTrapped\n"; signalArmed = true; }
+    }
+    const std::string queueKey = key + ".Q";
+    if (callArmed) t->DirectoryPut(local, temps((RexxObjectPtr)t->NewArray(0)), queueKey.c_str());
+    source += code.bytes.str();
+    source += "\nreturn .array~of('" + key + "', .context~variables, digits(), fuzz(), form())\n";
+    if (signalArmed)
+        source += "rx2cppTrapped: return .array~of('" + key + "', .context~variables, digits(), fuzz(), form(), condition('O'))\n";
+    if (callArmed) source += "rx2cppQueued: if .local['" + queueKey + "']~append(condition('O')) > 0 then nop\nreturn\n";
+    // hand the queued conditions to this activation (MethodTraps::deliver)
+    auto deliverQueued = [&] {
+        if (!callArmed) return;
+        RexxObjectPtr q = temps(t->SendMessage1((RexxObjectPtr)local, "REMOVE", temps((RexxObjectPtr)t->String(queueKey.c_str()))));
+        if (t->CheckCondition()) { t->ClearCondition(); return; }
+        if (q == NULLOBJECT || !t->IsArray(q)) return;
+        const std::size_t n = t->ArrayItems((RexxArrayObject)q);
+        for (std::size_t i = 1; i <= n; ++i) {
+            RexxObjectPtr cond = t->ArrayAt((RexxArrayObject)q, i);
+            if (cond == NULLOBJECT) continue;
+            RexxObjectPtr nameObj = t->DirectoryAt((RexxDirectoryObject)cond, "CONDITION");
+            const std::string conditionName = nameObj != NULLOBJECT && t->IsString(nameObj) ? t->ObjectToStringValue(nameObj) : std::string("NOTREADY");
+            MethodTraps::deliver(conditionName, std::make_shared<EnvObject>((void *)rxobj::pinRef(t, cond)));
+        }
+    };
+    // SELF when there is one: run as its method (the declaration gives every compiled class RX2CPP_INTERPRET)
+    Value self = nil();
+    if (rxobj::currentSelf != NULLOBJECT) self = selfObject();
+    std::vector<Value> args;
+    for (const auto &a : arguments) args.push_back(a ? *a : omittedArgument());
+    RexxArrayObject argArray = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(args.size()));
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        if (args[i].isObject()) if (auto *e = dynamic_cast<EnvObject *>(args[i].object.get())) if (!e->handle) continue;
+        conv.clear(); EnvObject::convert({args[i]}, conv);
+        t->ArrayPut(argArray, conv[0].obj ? (RexxObjectPtr)conv[0].obj : temps((RexxObjectPtr)t->NewString(conv[0].bytes.data(), conv[0].bytes.size())), i + 1);
+    }
+    static thread_local RexxRoutineObject helper = NULLOBJECT;
+    static const char body[] =
+        "use arg rx2cppSelf, rx2cppSource, rx2cppArgs, rx2cppPackage\n"
+        "rx2cppSource = rx2cppSource~makeArray('0a'x)\n"
+        "if rx2cppSelf \\== .nil then do\n"
+        "  rx2cppCode = .Method~new('INTERPRET', rx2cppSource, rx2cppPackage)\n"
+        "  rx2cppCode~setUnguarded\n"
+        "  rx2cppMsg = .Message~new(rx2cppSelf, 'RX2CPP_INTERPRET', 'I', rx2cppCode, rx2cppArgs)\n"
+        "end\n"
+        "else rx2cppMsg = .Message~new(.Routine~new('INTERPRET', rx2cppSource, rx2cppPackage), 'CALLWITH', 'I', rx2cppArgs)\n"
+        "rx2cppMsg~send\n"
+        "if rx2cppMsg~hasResult then return .array~of(1, rx2cppMsg~result)\n"
+        "return .array~of(0)\n";
+    Value package = nil();
+    if (rxobj::libraryPackage() != NULLOBJECT) package = EnvObject::adopt((void *)rxobj::pinRef(t, rxobj::libraryPackage()));
+    std::optional<Value> outcome;
+    try {
+        RexxObjectPtr r = interpreterHelper(t, temps, helper, "rx2cpp_interpret", body,
+            {self, Value::string(source), EnvObject::adopt((void *)rxobj::pinRef(t, (RexxObjectPtr)argArray)), package});
+        RexxArrayObject out = (RexxArrayObject)r;
+        if (t->ArraySize(out) < 2) { deliverQueued(); return Value(noResult()); }           // RETURN / EXIT without a value
+        outcome = EnvObject::wrap([&] {
+            rxobj::Result res; RexxObjectPtr item = t->ArrayAt(out, 2);
+            if (rxobj::isPlainString(t, item)) { res.kind = 1; RexxStringObject str = (RexxStringObject)temps((RexxObjectPtr)t->ObjectToString(item)); res.bytes.assign(t->StringData(str), t->StringLength(str)); }
+            else { res.kind = 2; res.obj = (void *)rxobj::pinRef(t, item); }
+            return res;
+        }());
+    } catch (...) {
+        t->SendMessage1((RexxObjectPtr)local, "REMOVE", (RexxObjectPtr)t->String(key.c_str()));
+        if (callArmed) t->SendMessage1((RexxObjectPtr)local, "REMOVE", (RexxObjectPtr)t->String(queueKey.c_str()));
+        if (t->CheckCondition()) t->ClearCondition();
+        throw;
+    }
+    // normal completion: the epilogue's array, marked with this call's key
+    auto *arr = outcome->isObject() ? dynamic_cast<EnvObject *>(outcome->object.get()) : nullptr;
+    if (!arr || !t->IsArray((RexxObjectPtr)arr->handle)) { deliverQueued(); return outcome; }
+    RexxArrayObject result = (RexxArrayObject)arr->handle;
+    RexxObjectPtr mark = t->ArrayAt(result, 1);
+    if (mark == NULLOBJECT || !t->IsString(mark) || key != t->ObjectToStringValue(mark)) { deliverQueued(); return outcome; }
+    RexxObjectPtr after = t->ArrayAt(result, 2);
+    std::unordered_set<std::string> seen;
+    RexxObjectPtr indexes = temps(t->SendMessage0(after, "ALLINDEXES"));
+    const std::size_t count = t->ArrayItems((RexxArrayObject)indexes);
+    for (std::size_t i = 1; i <= count; ++i) {
+        RexxObjectPtr nameObj = t->ArrayAt((RexxArrayObject)indexes, i);
+        const std::string name = t->ObjectToStringValue(nameObj);
+        RexxObjectPtr item = temps(t->SendMessage1(after, "AT", nameObj));
+        // (the bytes, not a C string: a value may hold '00'x)
+        Value v = rxobj::isPlainString(t, item) ? [&] { RexxStringObject so = (RexxStringObject)temps((RexxObjectPtr)t->ObjectToString(item));
+                                                        return Value::string(std::string(t->StringData(so), t->StringLength(so))); }()
+                                                 : EnvObject::adopt((void *)rxobj::pinRef(t, item));
+        seen.insert(name);
+        if (!name.empty() && name.back() == '.') assignStem(vars, name, std::move(v));
+        else set(vars, name, std::move(v));
+    }
+    for (const std::string &n : names) if (!seen.count(n)) drop(vars, n);
+    vars.numeric.digits = std::stoul(t->ObjectToStringValue(t->ArrayAt(result, 3)));
+    vars.numeric.fuzz = std::stoul(t->ObjectToStringValue(t->ArrayAt(result, 4)));
+    vars.numeric.engineering = std::string(t->ObjectToStringValue(t->ArrayAt(result, 5))) == "ENGINEERING";
+    deliverQueued();
+    if (t->ArraySize(result) >= 6) {   // a condition the activation traps: raised here
+        RexxObjectPtr cond = t->ArrayAt(result, 6);
+        RexxObjectPtr nameObj = t->DirectoryAt((RexxDirectoryObject)cond, "CONDITION");
+        const std::string conditionName = nameObj != NULLOBJECT && t->IsString(nameObj) ? t->ObjectToStringValue(nameObj) : std::string("SYNTAX");
+        throw NotReadyCondition(std::make_shared<EnvObject>((void *)rxobj::pinRef(t, cond)), conditionName);
+    }
+    return std::nullopt;
 }
 // SysFileSystem::canonicalizeName (Unix): ~ is the home directory, a relative name is under the current directory, then
 // duplicate and trailing slashes, "." and ".." are removed (whether the file exists or not). The stream table key.
@@ -1452,6 +2110,7 @@ inline Value streamBif(Variables &vars, const std::string &name, const std::vect
         RexxDecimal d; const char *err = nullptr;
         if (!tryParseRexxDecimal(*a[i], d, err)) return false;
         if (d.exponent >= 0 || d.coefficient == 0) return true;
+        if (-d.exponent > decimalDigits(d.coefficient)) return false;
         return d.coefficient % decimalPow10(-d.exponent) == 0;
     };
     auto &table = ActivationScope::streams();

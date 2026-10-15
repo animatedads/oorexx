@@ -40,6 +40,17 @@ struct ObjectDispatch;
 // than the inline limit lives in one shared buffer, so copying a Value (BIF argument, assignment, PARSE source,
 // message argument) copies a pointer, not the bytes. A writer that finds the buffer shared takes its own copy first.
 // Short strings stay inline (no allocation), as std::string's small-string storage did before.
+// Interpreter memory pressure. Compiled strings live outside the interpreter's heap, so a compiled loop that churns
+// large strings would never let the interpreter collect garbage (weak references, UNINIT): each string above the
+// inline limit is counted, and every pressureLimit bytes the interpreter is asked to collect (see the object bridge).
+inline void (*&collectHook())() { static void (*hook)() = nullptr; return hook; }
+inline void notePressure(std::size_t bytes) {
+    static constexpr std::size_t pressureLimit = std::size_t(8) << 20;
+    static thread_local std::size_t pending = 0;
+    if (!collectHook()) return;
+    pending += bytes;
+    if (pending >= pressureLimit) { pending = 0; collectHook()(); }
+}
 class RxStr {
 public:
     static constexpr std::size_t inlineLimit = 64;
@@ -91,7 +102,7 @@ public:
     void resize(size_type n, char c = '\0') { mut().resize(n, c); }
 private:
     void put(std::string &&v) {
-        if (v.size() > inlineLimit) { small_.clear(); big_ = std::make_shared<std::string>(std::move(v)); }
+        if (v.size() > inlineLimit) { notePressure(v.capacity()); small_.clear(); big_ = std::make_shared<std::string>(std::move(v)); }
         else small_ = std::move(v);
     }
     std::string small_;
@@ -137,7 +148,8 @@ using MessageResult = std::optional<Value>;
 // Thrown when an object has no such method (ooRexx error 97.1); any other failure keeps its own type.
 struct NoMethod : std::runtime_error {
     using std::runtime_error::runtime_error;
-    std::shared_ptr<ObjectDispatch> conditionObject;   // the interpreter's condition object, when it raised the error
+    std::shared_ptr<ObjectDispatch> conditionObject;   // the interpreter's condition object, when it raised the error (97.1)
+    std::vector<Value> substitutions;                  // its ADDITIONAL values
 };
 struct ObjectDispatch {
     virtual MessageResult sendMessage(const std::string &selector,
@@ -150,6 +162,8 @@ struct ObjectDispatch {
         throw NoMethod("unhandled object message: " + selector);
     }
     virtual ~ObjectDispatch() = default;
+    // True when the object has no MAKESTRING method (a Stem): its string value comes from STRING, with NOSTRING.
+    virtual bool noMakeString() const { return false; }
     // .Object defines =, ==, \=, \==, <>, >< using object identity.
     // Each is a distinct overridable method, not a synthesized negation.
     // More specialised classes (e.g. .String) provide their own comparators.
@@ -203,10 +217,19 @@ inline Value noResult() { noResultPending() = true; return Value::string(std::st
 struct MethodTraps;
 // NOTREADY raised by a stream built-in in an activation that traps it (SIGNAL ON NOTREADY / ANY): the interpreter's
 // condition object (an EnvObject) travels to the trap.
+// (Also NOSTRING / LOSTDIGITS under SIGNAL ON ANY: name says which.)
 struct NotReadyCondition : std::runtime_error {
     std::shared_ptr<ObjectDispatch> conditionObject;
-    explicit NotReadyCondition(std::shared_ptr<ObjectDispatch> o) : std::runtime_error("NOTREADY"), conditionObject(std::move(o)) {}
+    std::string name;
+    explicit NotReadyCondition(std::shared_ptr<ObjectDispatch> o, std::string n = "NOTREADY")
+        : std::runtime_error(n), conditionObject(std::move(o)), name(std::move(n)) {}
 };
+// A message send to an interpreter object while the running compiled activation traps conditions the interpreter
+// raises (see rx_object_bridge.hpp trappedSend); nullopt: send it the ordinary way.
+inline std::optional<std::optional<Value>> (*&trappedSendHook())(void *, const std::string &, const std::vector<Value> &) {
+    static std::optional<std::optional<Value>> (*hook)(void *, const std::string &, const std::vector<Value> &) = nullptr;
+    return hook;
+}
 // How compiled code is about to call a compiled package routine (SUBROUTINE / FUNCTION), for its PARSE SOURCE.
 inline std::string &pendingCallType() { static thread_local std::string type; return type; }
 // The clock of an activation (RexxActivation::getTime / getElapsed): one time stamp per clause, read at the first
@@ -217,8 +240,21 @@ struct ClauseClock {
     std::int64_t elapsed = 0;
     bool elapsedReset = false;
 };
+inline std::string &traceSetting();
+inline std::string &addressEnvironment();
+inline std::string &alternateEnvironment();
+// SIGNAL ON NOVALUE (or ANY) of the running activation: reading an unset variable raises NOVALUE while *novalueArmed.
+inline thread_local const bool *novalueArmed = nullptr;
+// SIGNAL ON LOSTDIGITS (or ANY) of the running activation: an arithmetic operand longer than DIGITS raises LOSTDIGITS.
+inline thread_local const bool *lostDigitsArmed = nullptr;
+// Raises the LOSTDIGITS condition for an operand (set by the object bridge: the condition object is the interpreter's).
+inline void (*&lostDigitsHook())(const Value &) { static void (*hook)(const Value &) = nullptr; return hook; }
 struct ActivationScope {
     enum Kind { Method, Routine };
+    std::string savedTrace;         // TRACE is a setting of the activation: a new one starts at N, the caller's comes back
+    const bool *savedNovalue;       // so is SIGNAL ON NOVALUE: a new activation starts without it
+    const bool *savedLostDigits;    // and SIGNAL ON LOSTDIGITS
+    std::string savedAddress, savedAlternate;   // and ADDRESS: a new activation starts in the default environment
     ClauseClock clockState;
     Kind kind;
     MethodTraps *traps = nullptr;   // the SIGNAL ON state of the running activation (method body or internal routine)
@@ -229,7 +265,14 @@ struct ActivationScope {
     ActivationScope *saved;
     static ActivationScope *&current() { static thread_local ActivationScope *scope = nullptr; return scope; }
     explicit ActivationScope(Kind k = Method) : kind(k), callType(std::exchange(pendingCallType(), std::string())),
-                                                 saved(current()) { current() = this; }
+                                                 saved(current()) {
+        current() = this;
+        savedTrace = std::exchange(traceSetting(), std::string("N"));
+        savedNovalue = std::exchange(novalueArmed, nullptr);
+        savedLostDigits = std::exchange(lostDigitsArmed, nullptr);
+        savedAddress = std::exchange(addressEnvironment(), std::string("sh"));
+        savedAlternate = std::exchange(alternateEnvironment(), std::string("sh"));
+    }
     // A new clause begins (compiled before every statement that calls TIME or DATE): the next one reads the clock again.
     static void clauseBoundary() { if (ActivationScope *s = current()) s->clockState.valid = false; else outsideClock().valid = false; }
     static ClauseClock &outsideClock() { static thread_local ClauseClock c; return c; }
@@ -241,7 +284,10 @@ struct ActivationScope {
             throw std::runtime_error("PARSE SOURCE: the call type of a compiled routine called by the interpreter is not known");
         return s->callType;
     }
-    ~ActivationScope() { current() = saved; }
+    ~ActivationScope() {
+        current() = saved; traceSetting() = std::move(savedTrace); novalueArmed = savedNovalue; lostDigitsArmed = savedLostDigits;
+        addressEnvironment() = std::move(savedAddress); alternateEnvironment() = std::move(savedAlternate);
+    }
     ActivationScope(const ActivationScope &) = delete;
     ActivationScope &operator=(const ActivationScope &) = delete;
     static std::unordered_map<std::string, Value> &streams() {
@@ -279,10 +325,18 @@ struct ActivationScope {
 using StreamScope = ActivationScope;
 // An internal routine call works on a copy of its caller's clock (RexxActivation settings are copied for INTERNALCALL):
 // TIME('R') there does not reset the caller's elapsed time; the caller's clause time stamp is kept.
+// An internal routine call: the routine runs with a copy of the caller's settings - the clause clock, TRACE and the
+// ADDRESS environments - and the caller's come back when it returns (RexxActivation INTERNALCALL settings copy).
 struct InternalCallClock {
     ClauseClock saved;
-    InternalCallClock() : saved(ActivationScope::clock()) { ActivationScope::clock().valid = false; }
-    ~InternalCallClock() { ActivationScope::clock() = saved; }
+    std::string savedTrace, savedAddress, savedAlternate;
+    InternalCallClock() : saved(ActivationScope::clock()), savedTrace(traceSetting()), savedAddress(addressEnvironment()),
+                          savedAlternate(alternateEnvironment()) { ActivationScope::clock().valid = false; }
+    ~InternalCallClock() {
+        ActivationScope::clock() = saved;
+        traceSetting() = std::move(savedTrace); addressEnvironment() = std::move(savedAddress);
+        alternateEnvironment() = std::move(savedAlternate);
+    }
     InternalCallClock(const InternalCallClock &) = delete;
     InternalCallClock &operator=(const InternalCallClock &) = delete;
 };
@@ -556,7 +610,7 @@ inline bool tryInteger(const Value &v, std::int64_t &out) {
     if (s.empty()) return false;
     std::size_t i = 0;
     bool minus = false;
-    if (s[0] == '+' || s[0] == '-') { minus = s[0] == '-'; ++i; }
+    if (s[0] == '+' || s[0] == '-') { minus = s[0] == '-'; ++i; while (i < s.size() && (s[i] == ' ' || s[i] == '\t')) ++i; }
     if (i == s.size()) return false;
     std::uint64_t mag = 0;
     const std::uint64_t limit = minus ? (std::uint64_t(1) << 63)
@@ -604,9 +658,19 @@ inline const Value *lookup(const Variables &vars, const std::string &name) {
 // settings that would print trace lines are refused loudly instead of silently ignored.
 inline std::string &traceSetting() { static thread_local std::string s = "N"; return s; }
 inline std::string &addressEnvironment() { static thread_local std::string s = "sh"; return s; }
+[[noreturn]] inline void raiseTraceDebug();
 inline std::string traceSet(const Value &v) {
     const std::string old = traceSetting();
     std::string t = v.bytes;
+    {   // a numeric TRACE (a debug skip count) is valid only in interactive debugging (RexxActivation::debugSkip): 24.901
+        std::size_t b = t.find_first_not_of(' '), e = t.find_last_not_of(' ');
+        if (b != std::string::npos) {
+            std::string n = t.substr(b, e - b + 1);
+            if (!n.empty() && (n[0] == '+' || n[0] == '-')) n.erase(0, 1);
+            if (!n.empty() && n.find_first_not_of("0123456789") == std::string::npos)
+                raiseTraceDebug();
+        }
+    }
     std::size_t i = 0;
     while (i < t.size() && (t[i] == '?' || t[i] == ' ' || (t[i] >= '0' && t[i] <= '9'))) ++i;
     if (i >= t.size()) { traceSetting() = "N"; return old; }
@@ -616,17 +680,25 @@ inline std::string traceSet(const Value &v) {
     traceSetting() = std::string(1, c);
     return old;
 }
-inline std::string addressSet(const Value &v) {
+// ADDRESS env (no command) makes env current and the previous one the alternate; a bare ADDRESS swaps them.
+inline std::string &alternateEnvironment() { static thread_local std::string s = "sh"; return s; }
+inline Value requestString(const Value &v);
+[[noreturn]] inline void raiseAddressName(const std::string &name);
+inline std::string addressSet(const Value &in) {
+    const Value v = in.isObject() ? requestString(in) : in;
+    // SystemInterpreter::validateAddressName (Unix): at most 250 characters, else 29.1
+    if (v.bytes.size() > 250) raiseAddressName(v.bytes);
     const std::string old = addressEnvironment();
+    alternateEnvironment() = old;
     addressEnvironment() = v.bytes;
     return old;
 }
+inline void addressToggle() { std::swap(addressEnvironment(), alternateEnvironment()); }
 // SIGNAL ON NOVALUE: while a TrapState has the trap armed, reading an unset variable raises NOVALUE.
 struct NoValueCondition : std::runtime_error {
     std::string variable;
     explicit NoValueCondition(std::string name) : std::runtime_error("NOVALUE: " + name), variable(std::move(name)) {}
 };
-inline thread_local const bool *novalueArmed = nullptr;
 inline Value get(const Variables &vars, const std::string &name) {
     const Value *v = lookup(vars, name);
     if (v) return *v;
@@ -635,6 +707,13 @@ inline Value get(const Variables &vars, const std::string &name) {
 }
 inline void set(Variables &vars, const std::string &name, Value value) {
     variableOwner(vars, name).insert_or_assign(name, std::move(value));
+}
+// An EXPOSEd variable after a SELF send (the method may have changed the object variable): the object's value, or no
+// value when it has none (never its name: an unset variable stays unset, VAR() 0, no NOVALUE).
+inline void drop(Variables &vars, const std::string &name);
+inline void refreshField(Variables &vars, const Variables &fields, const std::string &name) {
+    if (const Value *v = lookup(fields, name)) { if (&variableOwner(vars, name) != &fields) set(vars, name, *v); }
+    else if (&variableOwner(vars, name) != &fields) drop(vars, name);
 }
 inline void drop(Variables &vars, const std::string &name) {
     // Slots cache simple variables only: erasing a compound/stem entry cannot invalidate one.
@@ -698,6 +777,8 @@ struct VarSlot {
 #define RX_VGET(N) ([&]() -> ::rx::Value { static thread_local ::rx::VarSlot _rxSlot; return _rxSlot.get(vars, N); }())
 // A variable's value by reference (message receivers); an unset variable yields its name (NOVALUE rules of get()).
 #define RX_VREF(N) ([&]() -> const ::rx::Value & { static thread_local ::rx::VarSlot _rxSlot; if (const ::rx::Value *_rxP = _rxSlot.find(vars, N)) return *_rxP; static thread_local ::rx::Value _rxUnset = ::rx::Value::string(std::string()); _rxUnset = _rxSlot.get(vars, N); return _rxUnset; }())
+// A compound symbol's tail variable: an unset one is its name, with no NOVALUE (only the compound's own value can raise it).
+#define RX_VTAIL(N) ([&]() -> ::rx::Value { static thread_local ::rx::VarSlot _rxSlot; if (const ::rx::Value *_rxP = _rxSlot.find(vars, N)) return *_rxP; return ::rx::Value::string(N); }())
 #define RX_VSET(N, ...) ([&]() { static thread_local ::rx::VarSlot _rxSlot; _rxSlot.set(vars, N, __VA_ARGS__); }())
 
 
@@ -720,6 +801,14 @@ struct SyntaxCondition : std::runtime_error {
     SyntaxCondition(std::string c, const std::string &text, bool skip)
         : std::runtime_error("Error " + c + ": " + text), code(std::move(c)), skipInternalTraps(skip) {}
 };
+[[noreturn]] inline void raiseAddressName(const std::string &name) {
+    SyntaxCondition e("29.1", "Environment name exceeds 250 characters; found \"" + name + "\"", false);
+    e.substitutions = {Value::string("250"), Value::string(name)};
+    throw e;
+}
+[[noreturn]] inline void raiseTraceDebug() {
+    throw SyntaxCondition("24.901", "Numeric TRACE requests are valid only from interactive debugging", false);
+}
 // SIGNAL label in compiled code: leaves every active loop of the activation, as Rexx does.
 struct SignalJump { int target; std::size_t line; };
 struct ProgramExit { int code; };
@@ -763,6 +852,36 @@ inline std::vector<Value> additionalItems(const Value &v) {
     }
     return out;
 }
+// RAISE of a condition other than SYNTAX: the activation ends and the condition is raised in its caller.
+struct RaiseToCaller {
+    std::string name;
+    std::optional<Value> rc, description, additional, result;
+    bool exitForm = false;    // RAISE without RETURN (EXIT): an internal routine's ends the method / routine (raiseExit)
+    bool delivered = false;   // reached the caller, which traps it (raisedInCaller)
+};
+// RAISE SYNTAX expr: Interpreter::messageNumber - major 1..99, minor 0..999 (else 33.904); the code is major.minor.
+// exitForm (no RETURN): from an internal routine the error is raised in the method / routine / program (raiseExit),
+// so only that level's trap sees it.
+[[noreturn]] inline void raiseSyntaxCode(const Value &code, const std::vector<Value> &args, bool exitForm = false) {
+    auto bad = []() { throw SyntaxCondition("33.904", "Incorrect expression result following SYNTAX keyword of RAISE instruction", false); };
+    if (code.isObject()) bad();
+    const std::string c = code.bytes.str();
+    const std::size_t dot = c.find('.');
+    auto whole = [](const std::string &t, long &out) {
+        std::size_t i = 0, n = t.size();
+        while (i < n && t[i] == ' ') ++i;
+        while (n > i && t[n - 1] == ' ') --n;
+        if (i == n || n - i > 9 || t.find_first_not_of("0123456789", i) < n) return false;
+        out = std::stol(t.substr(i, n - i));
+        return true;
+    };
+    long major = 0, minor = 0;
+    if (!whole(c.substr(0, dot), major) || major < 1 || major >= 100) bad();
+    if (dot != std::string::npos && (!whole(c.substr(dot + 1), minor) || minor < 0 || minor >= 1000)) bad();
+    SyntaxCondition condition(std::to_string(major) + "." + std::to_string(minor), std::string(), exitForm);
+    condition.substitutions = args;
+    throw condition;
+}
 [[noreturn]] inline void raiseSyntax(const std::string &code, const std::vector<Value> &args, bool localTrap) {
     std::string text;
     for (std::size_t i = 0; i < args.size(); ++i) { if (i) text += ' '; text += args[i].bytes; }
@@ -800,6 +919,15 @@ struct TrapState {
         syntaxOn = false; label = syntaxLabel; return true;
     }
 };
+// A trapped SYNTAX condition sets RC to the error number (the part before the period), as the interpreter does.
+inline void setSyntaxTrapRc(Variables &vars, const std::exception &error) {
+    const auto *raised = dynamic_cast<const SyntaxCondition *>(&error);
+    if (!raised) return;
+    const std::string &c = raised->code;
+    const std::size_t dot = c.find('.');
+    if (dot == std::string::npos || dot == 0 || c.find_first_not_of("0123456789.") != std::string::npos) return;
+    set(vars, "RC", Value::number(c.substr(0, dot)));
+}
 // USE STRICT ARG: exact argument-count contract (ooRexx 5.3 Error 40.3 / 40.4);
 // optional arguments carry a constant default.
 struct StrictArg { const char *name; bool required; const char *defaultValue; };
@@ -1095,14 +1223,22 @@ inline Value logicalOr(const Value &lhs, const Value &rhs) {
 }
 // Operator dispatch on the selector bytes (switch on the first character), no string temporaries.
 // ooRexx REQUEST('STRING'): an object used where a string is needed answers MAKESTRING, else its STRING method.
+// RexxObject::requestString: MAKESTRING when the object has it; otherwise STRING, and the NOSTRING condition is raised
+// in the running activation (trapped there, or ignored: noStringHook).
+inline void (*&noStringHook())(const Value &text, const Value &object) { static void (*hook)(const Value &, const Value &) = nullptr; return hook; }
 inline Value requestString(const Value &v) {
     if (!v.isObject()) return v;
     MessageResult r;
-    try { r = v.object->sendMessage("MAKESTRING", {}); }
-    catch (const NoMethod &) { r = v.object->sendMessage("STRING", {}); }
+    bool viaString = v.object->noMakeString();
+    if (viaString) r = v.object->sendMessage("STRING", {});
+    else {
+        try { r = v.object->sendMessage("MAKESTRING", {}); }
+        catch (const NoMethod &) { r = v.object->sendMessage("STRING", {}); viaString = true; }
+    }
     if (!r) throw std::runtime_error("object has no string value");
-    if (r->isObject()) return Value::string(r->object->display());
-    return *r;
+    Value text = r->isObject() ? Value::string(r->object->display()) : *r;
+    if (viaString && noStringHook()) noStringHook()(text, v);
+    return text;
 }
 inline Value sendBinaryOp(const Value &lhs, const char *sel, std::size_t n, const Value &rhs,
                           const ActivationNumeric &numeric) {
@@ -1169,9 +1305,14 @@ inline Value sendBinary(const Value &lhs, const std::string &selector, const Val
 }
 inline Value sendUnary(const std::string &selector, const Value &operand, const ActivationNumeric &numeric) {
     if (operand.isObject()) return operand.object->sendUnary(selector);
-    if (selector == "+") return numberResult(parseRexxDecimal(operand), numeric);
+    if (selector == "+") {
+        const RexxDecimal d = parseRexxDecimal(operand);
+        checkLostDigits(d, operand, numeric);
+        return numberResult(d, numeric);
+    }
     if (selector == "-") {
         RexxDecimal result = parseRexxDecimal(operand);
+        checkLostDigits(result, operand, numeric);
         result.coefficient = -result.coefficient;
         return numberResult(result, numeric);
     }
@@ -1181,15 +1322,29 @@ inline Value sendUnary(const std::string &selector, const Value &operand, const 
 inline Value sendUnary(const std::string &selector, const Value &operand) {
     return sendUnary(selector, operand, currentNumeric ? *currentNumeric : ActivationNumeric{});
 }
-inline bool condition(const Value &v) {
+// Where a logical value is required (RexxObject::truthValue's error code): 34.1 IF, 34.2 WHEN, 34.3 WHILE, 34.4 UNTIL,
+// 34.6 an element of a logical list, 34.901 a logical operator or method (& | && \), 34.905 a SELECT CASE comparison.
+enum class Truth { If, When, While, Until, List, Method, Case };
+[[noreturn]] inline void badLogicalValue(const Value &v, Truth where) {
+    static const char *const codes[] = {"34.1", "34.2", "34.3", "34.4", "34.6", "34.901", "34.905"};
+    static const char *const lead[] = {"Value of expression following IF keyword", "Value of expression following WHEN keyword",
+                                       "Value of expression following WHILE keyword", "Value of expression following UNTIL keyword",
+                                       "Value of logical list expression element", "Logical value", "SELECT CASE comparison result"};
+    const int k = static_cast<int>(where);
+    const std::string found = v.isObject() ? v.object->display() : v.bytes.str();
+    SyntaxCondition e(codes[k], std::string(lead[k]) + " must be exactly \"0\" or \"1\"; found \"" + found + "\"", false);
+    e.substitutions.push_back(v);
+    throw e;
+}
+inline bool condition(const Value &v, Truth where) {
     // Rexx logical conditions must be exactly 0 or 1, not generic C++ truthiness.
     if (v.isObject()) throw std::runtime_error("object truth conversion not implemented");
-    // ooRexx accepts exactly "0" or "1": padded (" 1 "), zero-led ("01") and empty values are
-    // SYNTAX 34.1 in the reference interpreter (verified with IF and with & | &&), so no trimming.
+    // ooRexx accepts exactly "0" or "1": padded (" 1 "), zero-led ("01") and empty values are errors, so no trimming.
     if (v.bytes == "0") return false;
     if (v.bytes == "1") return true;
-    throw std::runtime_error("logical value must be exactly 0 or 1");
+    badLogicalValue(v, where);
 }
+inline bool condition(const Value &v) { return condition(v, Truth::Method); }
 inline bool within(std::int64_t current, std::int64_t limit, std::int64_t step) {
     if (step == 0) throw std::runtime_error("DO BY 0 unsupported");
     return step > 0 ? current <= limit : current >= limit;

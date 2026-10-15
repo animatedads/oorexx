@@ -11,17 +11,12 @@
   expose inner
   use arg ctx
   inner~emit(ctx, 0)
-::requires 'rules/StmtDoUntil.cls'
-::requires 'rules/StmtDoWhile.cls'
-::requires 'rules/StmtDoForever.cls'
-::requires 'rules/StmtCountedDo.cls'
-::requires 'rules/StmtRepeatDo.cls'
+::requires 'rules/StmtDo.cls'
 ::requires 'rules/StmtLeaveIterate.cls'
 ::requires 'rules/StmtIf.cls'
 ::requires 'rules/StmtParse.cls'
 ::requires 'rules/StmtSay.cls'
 ::requires 'rules/StmtSelect.cls'
-::requires 'rules/StmtLoopOver.cls'
 ::requires 'rules/StmtIndexedAssign.cls'
 ::requires 'rules/StmtCompoundAssign.cls'
 ::requires 'rules/StmtRaise.cls'
@@ -32,3 +27,4 @@
 ::requires 'rules/StmtQueue.cls'
 ::requires 'rules/StmtAssign.cls'
 ::requires 'rules/StmtAddress.cls'
+::requires 'rules/StmtTrace.cls'

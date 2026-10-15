@@ -10,10 +10,11 @@
   use arg ctx
   s = ctx~stream
   s~expect('IF')
+  .local['RX2CPP.CLAUSEWORDS'] = 'THEN'
   condition = ctx~compareExpr~parse(ctx)
   s~expect('THEN')
   s~skipSeparators
-  ctx~current~addInstruction('if (rx::condition(' || condition || ')) {')
+  ctx~current~addInstruction('if (rx::condition(' || condition || ', rx::Truth::If)) {')
   ctx~enterControl
   ctx~emitStatement
   ctx~leaveControl

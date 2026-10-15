@@ -1,101 +1,94 @@
-/* Independent PARSE template grammar rule.  Targets remain symbol references;
-   position and delimiter patterns are data for the native parse executor.
-   A template's dynamic delimiter values are captured before any target writes.
-   Initial coverage: blank words, absolute and relative positions, quoted
-   delimiters, and parenthesised variable delimiters. */
+/* A PARSE template, as LanguageParser::parseNew builds it: a list of triggers, each a pattern with the variables
+   written before it (the last trigger, the template's end, has no pattern). Patterns:
+     'string' | (expr)                    search (CASELESS: caseless search)
+     n | =n | =(expr)                     absolute position
+     +n | +(expr)   -n | -(expr)          relative position (- : the backward rule)
+     >n | >(expr)   <n | <(expr)          length positions
+   A variable is a symbol, a message term (d~name, a[i]) or the placeholder '.'.
+   parse answers an array of triggers; each trigger is an array: the C++ movement call on the cursor _pc (or '' for
+   the end), then the targets. emit writes the C++ that runs them in order, so a pattern's expression is evaluated
+   when its trigger runs (after the variables before it are assigned), as interpreted (RexxTarget, ParseTrigger). */
 ::class RxParseTemplateRules public
 ::method parse class
   use arg ctx, commaDelimited
   if arg(2, O) then commaDelimited = .false
   s = ctx~stream
-  operations = .array~new
-  targets = .array~new
-  patterns = 0
-  do while s~peek~kind \= 'SEP' & s~peek~kind \= 'EOF' & (\commaDelimited | \s~is(','))
+  triggers = .array~new
+  current = .array~new                  /* the targets waiting for the next pattern */
+  do while s~peek~kind \= 'SEP' & s~peek~kind \= 'EOF' & \s~is(',')
     t = s~peek
+    move = ''
     select
-      when t~kind == 'IDENT' then do
-        name = s~next~text
-        targets~append(name)
-        operations~append('rx::ParseOp::target()')
-      end
-      when s~accept('.') then do
-        targets~append('.')
-        operations~append('rx::ParseOp::target()')
-      end
-      when (t~kind == 'INT' | t~kind == 'NUMBER') & verify(t~text, '0123456789') == 0 then do
-        position = s~next~text
-        if position~length > 18 then s~fail('PARSE position outside supported int64 range')
-        operations~append('rx::ParseOp::absolute(' || position || ')')
-        patterns = patterns + 1
-      end
-      when s~accept('=') then do
+      when t~kind == 'IDENT' & .RxMessageTarget~isTarget(ctx) then current~append(.RxMessageTarget~parse(ctx))
+      when t~kind == 'IDENT' then current~append('VAR:' || s~next~text)
+      when s~accept('.') then current~append('.')
+      when t~kind == 'INT' | t~kind == 'NUMBER' then move = 'absolute(' || self~constantPosition(s~next~text) || ')'
+      when t~kind == 'OP' & wordpos(t~text, '= + - < >') > 0 then do
+        op = s~next~text
+        select
+          when op == '=' then call = 'absolute'
+          when op == '+' then call = 'forward'
+          when op == '-' then call = 'backward'
+          when op == '>' then call = 'forwardLength'
+          otherwise call = 'backwardLength'
+        end
         if s~accept('(') then do
           expr = ctx~logicalExpr~parse(ctx)
           s~expect(')')
-          operations~append('rx::ParseOp::absoluteValue(' || expr || ')')
+          move = call || '(rx::ParseCursor::position(' || expr || ', vars.numeric))'
         end
-        else if self~integerPosition(s~peek) then do
-          position = s~next~text
-          if position~length > 18 then s~fail('PARSE position outside supported int64 range')
-          operations~append('rx::ParseOp::absolute(' || position || ')')
-        end
-        else s~fail('PARSE = pattern requires an integer or (variable)')
-        patterns = patterns + 1
+        else if s~peek~kind == 'INT' | s~peek~kind == 'NUMBER' then move = call || '(' || self~constantPosition(s~next~text) || ')'
+        else if s~peek~kind == 'SEP' | s~peek~kind == 'EOF' then s~fail('PARSE: a position is expected after' op)
+        else s~fail('PARSE: a position (a number or an expression in parentheses) is expected after' op)
       end
-      when s~is('+') & s~lookAheadText(1) == '(' then do
-        s~next; s~next
-        expr = ctx~logicalExpr~parse(ctx)
-        s~expect(')')
-        operations~append('rx::ParseOp::relativeValue(' || expr || ', false)')
-        patterns = patterns + 1
-      end
-      when s~is('-') & s~lookAheadText(1) == '(' then do
-        s~next; s~next
-        expr = ctx~logicalExpr~parse(ctx)
-        s~expect(')')
-        operations~append('rx::ParseOp::relativeValue(' || expr || ', true)')
-        patterns = patterns + 1
-      end
-      when s~accept('+') then do
-        if \self~integerPosition(s~peek) then s~fail('PARSE + pattern requires an integer position')
-        offset = s~next~text
-        if offset~length > 18 then s~fail('PARSE relative position outside supported int64 range')
-        operations~append('rx::ParseOp::relative(' || offset || ')')
-        patterns = patterns + 1
-      end
-      when s~accept('-') then do
-        if \self~integerPosition(s~peek) then s~fail('PARSE - pattern requires an integer position')
-        offset = s~next~text
-        if offset~length > 18 then s~fail('PARSE relative position outside supported int64 range')
-        operations~append('rx::ParseOp::relative(-' || offset || ')')
-        patterns = patterns + 1
-      end
-      when t~kind == 'STRING' then do
-        value = s~next~text
-        if value == '' then s~fail('empty PARSE delimiter is unsupported')
-        operations~append('rx::ParseOp::literal(' || .RxQuote~cpp(value) || ')')
-        patterns = patterns + 1
-      end
+      when t~kind == 'STRING' then move = 'search(rx::Value::string(' || .RxQuote~cpp(s~next~text) || '))'
       when s~accept('(') then do
         expr = ctx~logicalExpr~parse(ctx)
         s~expect(')')
-        operations~append('rx::ParseOp::literalValue(' || expr || ')')
-        patterns = patterns + 1
+        move = 'search(' || expr || ')'
       end
       otherwise s~fail('unsupported PARSE template component')
     end
+    if move \== '' then do
+      trigger = .array~of(move)
+      do target over current; trigger~append(target); end
+      triggers~append(trigger)
+      current = .array~new
+    end
   end
-  /* No target at all (PULL alone, PARSE VAR x 'a'): valid; the source is still read. */
-  if operations~items > 64 then s~fail('PARSE template exceeds qualified 64-element limit')
-  initializer = ''
-  do i = 1 to operations~items
-    if i > 1 then initializer = initializer || ', '
-    initializer = initializer || operations[i]
+  trigger = .array~of('')
+  do target over current; trigger~append(target); end
+  triggers~append(trigger)
+  return triggers
+/* A constant symbol position: a whole number of digits is used as is; any other (1e1, 3.0) is converted when it runs. */
+::method constantPosition class private
+  use arg text
+  if verify(text, '0123456789') == 0 & text~length <= 18 then return text
+  return 'rx::ParseCursor::position(rx::Value::number(' || .RxQuote~cpp(text) || '), vars.numeric)'
+/* The C++ of one template's triggers on the cursor _pc. */
+::method emit class
+  use arg ctx, depth, triggers
+  do trigger over triggers
+    count = trigger~items - 1
+    if trigger[1] == '' then do
+      if count == 0 then iterate      /* the end with no variables: nothing to do */
+      ctx~line(depth, '_pc.toEnd();')
+    end
+    else ctx~line(depth, '_pc.' || trigger[1] || ';')
+    do i = 1 to count
+      target = trigger[i + 1]
+      last = i == count
+      if target == '.' then do
+        if last then ctx~line(depth, '_pc.skipRest();')
+        else ctx~line(depth, '_pc.skipWord();')
+        iterate
+      end
+      if last then piece = '_pc.rest()'
+      else piece = '_pc.word()'
+      if target~left(4) == 'VAR:' then ctx~line(depth, .RxCompoundSymbols~store(target~substr(5), piece))
+      else ctx~line(depth, target~changeStr('RX2CPP_TARGET_VALUE', piece))
+    end
   end
-  return .array~of(initializer, targets, patterns)
-::method integerPosition class
-  use arg token
-  return (token~kind == 'INT' | token~kind == 'NUMBER') & verify(token~text, '0123456789') == 0
 ::requires 'rules/CompoundSymbols.cls'
+::requires 'rules/MessageTarget.cls'
 ::requires 'core/RxQuote.cls'

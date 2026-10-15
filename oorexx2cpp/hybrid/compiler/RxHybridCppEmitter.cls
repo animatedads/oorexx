@@ -28,9 +28,15 @@
      host code that still calls them; they carry no arity logic. */
   lines~append('  rx::Value invokeValues(const std::string &selector, const std::vector<std::optional<rx::Value>> &arguments) override {')
   lines~append('    (void)arguments;')
-  self~dispatch(lines, unit, options)
+  /* Each method is a member function of its own: one function holding every method of a large class (a test group
+     with thousands of clauses) can exhaust the C++ compiler's memory. */
+  bodies = .array~new
+  self~dispatch(lines, unit, options, bodies)
   lines~append('    throw std::runtime_error("unsupported native selector: " + selector);')
   lines~append('  }')
+  do l over bodies
+    lines~append(l)
+  end
   lines~append('  std::string invokeArgs(const std::string &selector, const std::vector<std::optional<std::string>> &arguments) override {')
   lines~append('    std::vector<std::optional<rx::Value>> values;')
   lines~append('    for (const auto &a : arguments) { if (a) values.emplace_back(rx::Value::string(*a)); else values.emplace_back(std::nullopt); }')
@@ -67,9 +73,16 @@
   end
   return out
 ::method dispatch private
-  use arg lines, unit, options
+  use arg lines, unit, options, bodies
+  index = 0
   do method over unit~methods
-    lines~append('    if (selector == ' || .RxQuote~cpp(method~selector) || ') {')
+    index = index + 1
+    lines~append('    if (selector == ' || .RxQuote~cpp(method~selector) || ') return rxMethod' || index || '(selector, arguments);')
+    target = lines
+    lines = bodies
+    lines~append('  rx::Value rxMethod' || index || '(const std::string &selector, const std::vector<std::optional<rx::Value>> &arguments) {')
+    lines~append('    (void)selector; (void)arguments;')
+    lines~append('    {')
     /* EXPOSEd names (and stems) alias the object's fields: every writer (assignment, PARSE, USE ARG, +=, stem tails) lands there. */
     if method~exposed~items > 0 then do
       names = ''
@@ -114,6 +127,9 @@
     end
     if method~selector == 'INIT' then lines~append('      return rx::Value::string(std::string());')
     lines~append('    }')
+    lines~append('    throw std::runtime_error("unsupported native selector: " + selector);')
+    lines~append('  }')
+    lines = target
   end
 /* Vector invocation belongs only to synthetic package-routine classes.
    Each invocation owns fresh local variables; scalar byte strings are bound

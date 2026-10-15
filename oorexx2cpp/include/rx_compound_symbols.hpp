@@ -2,6 +2,8 @@
 #define RX2CPP_COMPOUND_SYMBOLS_HPP
 // Included inside namespace rx, after Value, Variables, get() and set().
 // Compound symbol resolution is a language feature, not a BIF.
+inline Value sendBinary(const Value &lhs, const std::string &selector, const Value &rhs);
+inline Value sendUnary(const std::string &selector, const Value &operand);
 inline bool compoundSymbol(const std::string &name) {
     return name.find('.') != std::string::npos;
 }
@@ -28,10 +30,7 @@ inline std::string compoundKey(const Variables &vars, const std::string &symbol)
                     if (resolved->isObject())
                         throw std::runtime_error("object-valued compound tail needs ooRexx string conversion");
                     key += resolved->bytes;
-                } else {
-                    if (novalueArmed && *novalueArmed) throw NoValueCondition(part);
-                    key += part;
-                }
+                } else key += part;   // an unset tail is its name: no NOVALUE for it (only the compound's own)
             }
         }
         if (end == symbol.size()) break;
@@ -103,14 +102,39 @@ struct StemObject final : ObjectDispatch {
             }
             return t;
         };
-        if (selector == "[]" || selector == "AT") return args.empty() ? defaultValue() : get(tailOf(0));
-        if ((selector == "[]=" || selector == "PUT") && !args.empty()) {
-            if (args.size() == 1) reset(args[0]); else set(tailOf(1), args[0]);
-            return std::nullopt;
+        bool plain = true;
+        for (const Value &a : args) if (a.isObject()) plain = false;
+        if (plain) {
+            if (selector == "[]") return args.empty() ? defaultValue() : get(tailOf(0));
+            if (selector == "[]=" && !args.empty()) {
+                if (args.size() == 1) reset(args[0]); else set(tailOf(1), args[0]);
+                return std::nullopt;
+            }
+            if (selector == "STRING") return defaultValue();
         }
-        if (selector == "STRING" || selector == "MAKESTRING") return defaultValue();
+        // Any other Stem method (AT, PUT, TODIRECTORY, ITEMS, ...) and object indexes: the stem becomes an interpreter
+        // stem holding its contents (as when it crosses), and the interpreter's Stem class answers, errors included.
+        if (promoteHook()) {
+            promoteHook()(*this);
+            if (remote) return remote->sendMessage(selector, args);
+        }
+        if (selector == "STRING") return defaultValue();
         return ObjectDispatch::sendMessage(selector, args);
     }
+    bool noMakeString() const override { return true; }   // Stem has STRING, no MAKESTRING
+    // Operators: Stem hides the Object comparison methods (s.~hasMethod('==') is 0), so every operator reaches its
+    // UNKNOWN, which forwards it to the default value (s. == t. compares two default values; S. || 'x').
+    Value sendBinary(const std::string &selector, const Value &rhs) override {
+        if (remote) return remote->sendBinary(selector, rhs);
+        return rx::sendBinary(defaultValue(), selector, rhs);
+    }
+    Value sendUnary(const std::string &selector) override {
+        if (remote) return remote->sendUnary(selector);
+        return rx::sendUnary(selector, defaultValue());
+    }
+    static void (*&promoteHook())(StemObject &) { static void (*hook)(StemObject &) = nullptr; return hook; }
+    // True for an interpreter Stem object (set by the object bridge).
+    static bool (*&foreignStemHook())(const Value &) { static bool (*hook)(const Value &) = nullptr; return hook; }
     std::string display() const override {
         if (remote) return remote->display();
         std::lock_guard<std::mutex> g(lock);
@@ -166,6 +190,13 @@ inline Value stemValue(Variables &vars, const std::string &stem) {
 }
 // Assignment to the whole stem (S. = value). A stem object rebinds the variable; any other value starts a new stem.
 inline void assignStem(Variables &vars, const std::string &stem, Value value) {
+    // An interpreter Stem object (S. = .stem~new): the variable shares it, as with a compiled stem object.
+    if (value.isObject() && !dynamic_cast<StemObject *>(value.object.get()) && StemObject::foreignStemHook() &&
+        StemObject::foreignStemHook()(value)) {
+        auto obj = std::make_shared<StemObject>(stem);
+        obj->remote = value.object;
+        value = Value::fromObject(obj);
+    }
     if (value.isObject() && dynamic_cast<StemObject *>(value.object.get())) {
         resetStem(vars, stem);
         stemObjectsInUse().store(true, std::memory_order_relaxed);

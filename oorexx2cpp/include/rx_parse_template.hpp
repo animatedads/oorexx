@@ -7,8 +7,11 @@
 inline Value parseSourceString(const Value &source) {
     if (!source.isObject()) return source;
     MessageResult r;
-    try { r = source.object->sendMessage("MAKESTRING", {}); }
-    catch (const NoMethod &) { r = source.object->sendMessage("STRING", {}); }
+    if (source.object->noMakeString()) r = source.object->sendMessage("STRING", {});   // a Stem
+    else {
+        try { r = source.object->sendMessage("MAKESTRING", {}); }
+        catch (const NoMethod &) { r = source.object->sendMessage("STRING", {}); }
+    }
     if (!r || r->isObject()) throw std::runtime_error("PARSE source: string conversion did not return a string");
     return *r;
 }
@@ -73,7 +76,18 @@ struct ParseOp {
     }
 };
 
-inline std::vector<Value> parseTemplate(const Value &sourceIn, const std::vector<ParseOp> &ops) {
+// PARSE CASELESS: a string pattern matches regardless of case (ASCII letters, as the interpreter's caseless search).
+inline std::size_t parseFindCaseless(const std::string &s, const std::string &needle, std::size_t from) {
+    auto up = [](char c) { return static_cast<char>(std::toupper(static_cast<unsigned char>(c))); };
+    if (needle.size() > s.size()) return std::string::npos;
+    for (std::size_t i = from; i + needle.size() <= s.size(); ++i) {
+        std::size_t k = 0;
+        while (k < needle.size() && up(s[i + k]) == up(needle[k])) ++k;
+        if (k == needle.size()) return i;
+    }
+    return std::string::npos;
+}
+inline std::vector<Value> parseTemplate(const Value &sourceIn, const std::vector<ParseOp> &ops, bool caseless = false) {
     std::optional<Value> converted;
     if (sourceIn.isObject()) converted = parseSourceString(sourceIn);
     const std::string &s = converted ? converted->bytes : sourceIn.bytes;
@@ -116,8 +130,9 @@ inline std::vector<Value> parseTemplate(const Value &sourceIn, const std::vector
             }
             boundary = next;
         } else {
-            if (op.delimiter.empty()) throw std::runtime_error("empty PARSE delimiter");
-            const auto found = s.find(op.delimiter, cursor);
+            // a null string pattern matches at the end of the source
+            const auto found = op.delimiter.empty() ? s.size()
+                             : caseless ? parseFindCaseless(s, op.delimiter, cursor) : s.find(op.delimiter, cursor);
             boundary = found == std::string::npos ? s.size() : found;
             next = found == std::string::npos ? s.size() : found + op.delimiter.size();
         }
@@ -134,4 +149,110 @@ inline std::vector<Value> parseTemplate(const Value &sourceIn, const std::vector
     if (values.empty()) throw std::runtime_error("PARSE requires a target");
     return values;
 }
+// PARSE as the interpreter runs it (RexxInstructionParse::execute, ParseTrigger::parse, RexxTarget): each trigger of the
+// template moves the cursor, then assigns the variables written before it (all but the last get a blank-delimited
+// word, the last the remainder). Compiled as a sequence of calls on a ParseCursor, so a trigger's expression is
+// evaluated when the trigger runs, after the variables before it are assigned (len +2 val >(len)).
+struct ParseCursor {
+    Value holder = Value::string(std::string());
+    const std::string *str = nullptr;
+    std::size_t start = 0, end = 0, patternStart = 0, patternEnd = 0, subcurrent = 0, length = 0;
+    bool caseless = false;
+    explicit ParseCursor(const Value &source, bool caselessSearch = false) : caseless(caselessSearch) { reset(source); }
+    ParseCursor(const ParseCursor &) = delete;
+    ParseCursor &operator=(const ParseCursor &) = delete;
+    // RexxTarget::next: a new string (the first, or the next one after a comma in the template)
+    void reset(const Value &source) {
+        holder = parseSourceString(source);
+        const std::string &bytes = holder.bytes;
+        str = &bytes;
+        start = end = patternStart = patternEnd = subcurrent = 0;
+        length = str->size();
+    }
+    // ParseTrigger::integerTrigger: requestUnsignedNumber under DIGITS, else 26.4
+    static std::size_t position(const Value &v, const ActivationNumeric &numeric) {
+        auto bad = [&]() {
+            const std::string found = v.isObject() ? v.object->display() : v.bytes.str();
+            SyntaxCondition e("26.4", "Positional pattern of PARSE template must be a whole number; found \"" + found + "\"", false);
+            e.substitutions.push_back(v);
+            throw e;
+        };
+        if (v.isObject()) bad();
+        RexxDecimal d; const char *err = nullptr;
+        if (!tryParseRexxDecimal(v, d, err)) bad();
+        std::int64_t n = 0;
+        if (!oorexxWholeNumber(d, static_cast<long>(numeric.digits), false, n) || n < 0) bad();
+        return static_cast<std::size_t>(n);
+    }
+    void toEnd() { start = patternEnd; patternEnd = length; patternStart = length; end = length; subcurrent = start; }
+    void forward(std::size_t offset) {
+        start = patternStart;
+        end = offset >= length - start ? length : start + offset;
+        if (end <= start) { end = length; patternStart = start; }
+        else patternStart = end;
+        patternEnd = patternStart;
+        subcurrent = start;
+    }
+    void forwardLength(std::size_t offset) {
+        start = patternStart;
+        end = offset >= length - start ? length : start + offset;
+        patternStart = end;
+        patternEnd = patternStart;
+        subcurrent = start;
+    }
+    void absolute(std::size_t offset) {
+        if (offset > 0) --offset;
+        start = patternEnd;
+        if (offset <= start) { end = length; patternStart = offset; }
+        else { end = offset >= length ? length : offset; patternStart = end; }
+        patternEnd = patternStart;
+        subcurrent = start;
+    }
+    void backward(std::size_t offset) {
+        start = patternStart;
+        end = length;
+        patternStart = offset > patternStart ? 0 : patternStart - offset;
+        patternEnd = patternStart;
+        subcurrent = start;
+    }
+    void backwardLength(std::size_t offset) {
+        start = offset > patternStart ? 0 : patternStart - offset;
+        end = patternStart;
+        patternStart = start;
+        patternEnd = patternStart;
+        subcurrent = start;
+    }
+    // RexxTarget::search / caselessSearch (RexxString::pos: a null needle is never found)
+    void search(const Value &pattern) {
+        const Value needleValue = parseSourceString(pattern);
+        const std::string &needle = needleValue.bytes;
+        start = patternEnd;
+        std::size_t found = std::string::npos;
+        if (!needle.empty() && start <= length)
+            found = caseless ? parseFindCaseless(*str, needle, start) : str->find(needle, start);
+        if (found == std::string::npos) { end = length; patternStart = length; patternEnd = length; }
+        else { end = found; patternStart = found; patternEnd = found + needle.size(); }
+        subcurrent = start;
+    }
+    static bool blank(char c) { return c == ' ' || c == '\t'; }
+    Value word() {
+        if (subcurrent >= end) return Value::string(std::string());
+        while (subcurrent < length && blank((*str)[subcurrent])) ++subcurrent;
+        if (subcurrent >= end) return Value::string(std::string());
+        const std::size_t first = subcurrent;
+        std::size_t scan = first;
+        while (scan < end && !blank((*str)[scan])) ++scan;
+        if (scan >= end) { subcurrent = end; return Value::string(str->substr(first, end - first)); }
+        subcurrent = scan + 1;
+        return Value::string(str->substr(first, scan - first));
+    }
+    Value rest() {
+        if (subcurrent >= end) return Value::string(std::string());
+        const std::size_t first = subcurrent;
+        subcurrent = end;
+        return Value::string(str->substr(first, end - first));
+    }
+    void skipWord() { (void)word(); }
+    void skipRest() { subcurrent = end; }
+};
 #endif

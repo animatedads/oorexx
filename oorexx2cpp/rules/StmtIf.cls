@@ -9,7 +9,7 @@
   use arg ctx, depth
   s = ctx~stream
   s~expect('IF')
-  cond = .RxConditionList~parse(ctx)
+  cond = .RxConditionList~parse(ctx, 'IF')
   s~skipSeparators   /* THEN may start the next line (IF x <newline> THEN ...) */
   s~expect('THEN')
   s~skipSeparators   /* THEN may be followed by a line break before its instruction */

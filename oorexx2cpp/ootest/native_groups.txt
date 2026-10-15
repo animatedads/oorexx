@@ -1,5 +1,8 @@
 # ooTest testGroups whose native compilation gives results identical to the interpreter (ootest/run_native_groups.sh).
 # base/bif: all 73 groups with directives (DELWORD is a plain program, not a library).
+# base/class: 25 of 30 groups identical (see HANDOFF_2026-10-13.md for the others).
+# base/expressions: all 10 groups identical.
+# base/keyword: every group the interpreter loads (IF, ITERATE and LEAVE fail to translate in the interpreter itself).
 bif/ABBREV
 bif/ABS
 bif/ADDRESS
@@ -73,17 +76,54 @@ bif/X2B
 bif/X2C
 bif/X2D
 bif/XRANGE
-# base/class: the groups identical so far (see HANDOFF_2026-10-13.md for the others).
+class/Array
+class/Bag
 class/CircularQueue
 class/CollectionSetlikeMethods
 class/Comparator
 class/DateTime
+class/Directory
 class/File
+class/List
 class/Method
 class/Monitor
 class/Object
 class/Orderable
 class/Package
 class/Properties
+class/Queue
+class/QueueRGF
+class/Relation
 class/Routine
+class/Set
+class/Stem
+class/Stream
+class/Table
 class/TimeSpan
+class/WeakReference
+expressions/ADDITION
+expressions/COMPOSITE
+expressions/CONCATENATION
+expressions/DIVISION
+expressions/EXPONENT
+expressions/MULTIPLICATION
+expressions/PRECEDENCE
+expressions/REMAINDER
+expressions/SPECIAL
+expressions/SUBTRACTION
+keyword/ADDRESS
+keyword/ASSIGNMENT
+keyword/CALL
+keyword/DO
+keyword/INTERPRET
+keyword/LOOP
+keyword/LOSTDIGITS
+keyword/LabelOption
+keyword/NOP
+keyword/NUMERIC
+keyword/PARSE
+keyword/RAISE
+keyword/SAY
+keyword/SELECT
+keyword/SIGNAL
+keyword/USE

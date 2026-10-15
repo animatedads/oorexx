@@ -101,6 +101,7 @@
     ctx~line(3, '} catch (const std::exception& _rxError) {')
     ctx~line(4, 'std::string _rxHandler;')
     ctx~line(4, 'if (!_rxTrap.take(_rxHandler, _rxError, false)) throw;')
+    ctx~line(4, 'rx::setSyntaxTrapRc(vars, _rxError);')
     ctx~line(4, 'return rx::invokeInternal(vars, _rxRoutines, _rxHandler, _rxProgramArgs);')
     ctx~line(3, '}')
   end

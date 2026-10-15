@@ -36,14 +36,12 @@
   select
     when t~kind == 'STRING' | t~kind == 'NUMBER' | t~kind == 'INT' | t~kind == 'DOTIDENT' then return .true
     when t~kind == 'IDENT' then do
-      /* Clause keywords end a term: the structural ones always, others only inside the clause that has them (a DO
-         header's TO/BY/FOR/WHILE/UNTIL/OVER, PARSE VALUE's WITH, RAISE's options); elsewhere they are variables. */
+      /* Keywords end a term only inside the clause that has them (IF / WHEN's THEN, a DO header's TO BY FOR WHILE UNTIL
+         OVER, PARSE VALUE's WITH, RAISE's options); elsewhere every symbol is a variable (say a else b, x = do). */
       clauseWords = .local['RX2CPP.CLAUSEWORDS']
       if clauseWords == .nil then clauseWords = ''
-      if wordpos(t~text, 'THEN ELSE END DO WHEN OTHERWISE IF' clauseWords) = 0 then return .true
-      /* A sub-keyword abutted to the previous term ('x['name) is a symbol in abuttal, not a keyword. */
-      prev = s~previous
-      return t~line == prev~endLine & t~col == prev~endCol
+      /* abutted or not ("WINDOWS"then, to'3'by'1'): the interpreter's scanner sees the keyword */
+      return wordpos(t~text, clauseWords) = 0
     end
     when t~kind == 'OP' & t~text == '(' then return .true
     otherwise return .false

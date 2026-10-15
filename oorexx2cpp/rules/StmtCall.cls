@@ -38,7 +38,7 @@
     return
   end
   /* CALL label of this compiled method: an internal routine (HybridFunctionCall~internalCall). */
-  if token~kind == 'IDENT' & ctx~hasMethod('CURRENT') then if ctx~current~hasMethod('HASINTERNALCALLS') then
+  if s~labelNameAt(0) & ctx~hasMethod('CURRENT') then if ctx~current~hasMethod('HASINTERNALCALLS') then
     if ctx~current~internalCalls~hasIndex(token~text) then do
       name = s~next~text
       args = .array~new
@@ -52,20 +52,37 @@
       return
     end
   if token~kind \= 'IDENT' then s~fail('CALL requires a literal built-in name')
-  name = s~next~text
-  if name == 'ON' | name == 'OFF' then s~fail('CALL condition traps are not yet implemented')
-  args = .array~new
-  if s~accept('(') then do
-    if \s~is(')') then do
-      do forever
-        if s~is(',') | s~is(')') then args~append('RX2CPP_OMITTED')
-        else args~append(ctx~logicalExpr~parse(ctx))
-        if \s~accept(',') then leave
-      end
+  /* CALL ON condition [NAME label] / CALL OFF condition (ERROR FAILURE HALT NOTREADY ANY USER name): the trap calls
+     the label, an internal routine, at the clause boundary after the condition (rx::MethodTraps CALL ON). */
+  if (token~text == 'ON' | token~text == 'OFF') & s~lookAheadKind(1) == 'IDENT' then do
+    how = s~next~text
+    if \ctx~hasMethod('CURRENT') | value('RX2CPP_HOST_API', , 'ENVIRONMENT') == '' then s~fail('CALL' how 'needs the native library lane')
+    condition = s~next~text
+    if wordpos(condition, 'ERROR FAILURE HALT NOTREADY ANY USER') = 0 then s~fail('CALL' how': condition' condition 'cannot be trapped by CALL')
+    label = condition
+    if condition == 'USER' then do
+      if s~peek~kind \= 'IDENT' then s~fail('CALL' how 'USER needs a condition name')
+      label = s~next~text
+      condition = 'USER' label
     end
-    s~expect(')')
+    if how == 'OFF' then do
+      ctx~line(depth, '_rxTrap.clear(' || .RxQuote~cpp(condition) || ');')
+      s~separator
+      return
+    end
+    if s~accept('NAME') then do
+      if s~peek~kind \= 'IDENT' then s~fail('CALL ON ... NAME requires a label')
+      label = s~next~text
+    end
+    if \ctx~current~internalCalls~hasIndex(label) then s~fail('CALL ON: the handler' label 'is not a label of this method (external handlers are not supported)')
+    ctx~line(depth, '_rxTrap.setCall(' || .RxQuote~cpp(condition) || ', ' || ctx~current~labels[label] || ');')
+    s~separator
+    return
   end
-  else if s~peek~kind \= 'SEP' & s~peek~kind \= 'EOF' then do
+  name = s~next~text
+  args = .array~new
+  /* CALL name (a), (b): the arguments are expressions; CALL f(1,2) passes one Array (an ooRexx 5 array term) */
+  if s~peek~kind \= 'SEP' & s~peek~kind \= 'EOF' then do
     do forever
       if s~is(',') then args~append('RX2CPP_OMITTED')
       else args~append(ctx~logicalExpr~parse(ctx))
@@ -80,7 +97,10 @@
       else code = code || '_rxCallArgs.emplace_back(' || argExpr || '); '
     end
     /* A routine that returns nothing drops RESULT, as interpreted (see rx::noResult). */
-    code = code || 'rx::noResultPending() = false; rx::pendingCallType() = "SUBROUTINE"; rx::Value _rxCalled = rx2cpp::makeGeneratedObject_RX2CPP_ROUTINE_IMPL()->invokeValues(' || .RxQuote~cpp(name) || ', _rxCallArgs); '
+    invoke = 'rx2cpp::makeGeneratedObject_RX2CPP_ROUTINE_IMPL()->invokeValues(' || .RxQuote~cpp(name) || ', _rxCallArgs)'
+    /* host API lane: a RAISE that ends the routine reaches this caller (rx::runRaising) */
+    if value('RX2CPP_HOST_API', , 'ENVIRONMENT') \== '' then invoke = 'rx::runRaising([&] { return ' || invoke || '; })'
+    code = code || 'rx::noResultPending() = false; rx::pendingCallType() = "SUBROUTINE"; rx::Value _rxCalled = ' || invoke || '; '
     code = code || 'if (std::exchange(rx::noResultPending(), false)) rx::drop(vars, "RESULT"); else rx::set(vars, "RESULT", _rxCalled); }'
     ctx~line(depth, code)
     s~separator

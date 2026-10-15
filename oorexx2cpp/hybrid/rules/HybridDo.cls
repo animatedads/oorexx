@@ -13,9 +13,9 @@
   if \s~accept('WHILE') then s~fail('native DO currently supports DO WHILE only')
   condition = ctx~compareExpr~parse(ctx)
   s~separator
-  ctx~current~addInstruction('while (rx::condition(' || condition || ')) {')
+  ctx~current~addInstruction('while (rx::condition(' || condition || ', rx::Truth::While)) {')
   ctx~enterControl
-  do while s~peek~kind \= 'EOF' & \s~is('END') & \s~is('::')
+  do while s~peek~kind \= 'EOF' & \s~atEnd & \s~is('::')
     if s~is('ELSE') then s~fail('ELSE without IF inside DO')
     ctx~emitStatement
     s~skipSeparators

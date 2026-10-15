@@ -61,7 +61,7 @@
   end
   code = code || 'rx::Value _r' || tag || ' = rx::Value::string(rx2cpp::selfSend(' || .RxQuote~cpp(selector) || ', _sa' || tag || ')); '
   do field over ctx~current~exposed
-    code = code || 'rx::set(vars, ' || .RxQuote~cpp(field) || ', rx::get(fields_, ' || .RxQuote~cpp(field) || ')); '
+    code = code || 'rx::refreshField(vars, fields_, ' || .RxQuote~cpp(field) || '); '
   end
   code = code || 'return _r' || tag || '; }())'
   /* SELF~a~b: the first send above, the rest is the shared message-send chain on its (interpreter) result. */
@@ -89,7 +89,7 @@
   else
     code = code || 'rx::Value _r' || tag || ' = rx2cpp::selfSendValue(' || .RxQuote~cpp(target) || ', _sa' || tag || '); '
   do field over ctx~current~exposed
-    code = code || 'rx::set(vars, ' || .RxQuote~cpp(field) || ', rx::get(fields_, ' || .RxQuote~cpp(field) || ')); '
+    code = code || 'rx::refreshField(vars, fields_, ' || .RxQuote~cpp(field) || '); '
   end
   code = code || 'return _r' || tag || '; }())'
   if chain then return .RxExprMessage~new~parse(ctx, outerInstruction, code)

@@ -10,7 +10,8 @@ struct RexxDecimal {
     cpp_int coefficient = 0; // signed; trailing decimal zeroes are significant
     int exponent = 0;
 };
-constexpr int kMaxRexxScale = 400000; // bounded standalone subset; fail closed
+constexpr int kMaxRexxScale = 400000; // largest power of ten ever materialized (decimalPow10); exponents are not limited by it
+constexpr long kMaxRexxExponent = 999999999;   // Numerics::MAX_EXPONENT (MIN_EXPONENT is its negative)
 inline cpp_int decimalPow10Compute(int n) {
     cpp_int base = 10, out = 1;
     while (n != 0) {
@@ -86,7 +87,10 @@ inline bool tryParseRexxDecimal(const Value &v, RexxDecimal &out, const char *&e
     if (i == n || n - i > 10000) { err = "invalid Rexx decimal number"; return false; }
     out.exponent = 0;
     bool minus = false, sawDigit = false, dot = false;
-    if (src[i] == '+' || src[i] == '-') { minus = src[i] == '-'; ++i; }
+    if (src[i] == '+' || src[i] == '-') {
+        minus = src[i] == '-'; ++i;
+        while (i < n && rexxBlank(src[i])) ++i;   // blanks may follow the sign (' - 123 ')
+    }
     const std::size_t digitsStart = i;
     std::size_t ndigits = 0;
     std::uint64_t small = 0;
@@ -108,21 +112,33 @@ inline bool tryParseRexxDecimal(const Value &v, RexxDecimal &out, const char *&e
         if (i < n && (src[i] == '+' || src[i] == '-')) { eneg = src[i] == '-'; ++i; }
         if (i == n || src[i] < '0' || src[i] > '9')
             { err = "invalid Rexx decimal exponent"; return false; }
-        int e = 0;
+        long e = 0;
+        bool invalidExponent = false;   // more than 9 nines (addExponentDigit)
         for (; i < n; ++i) {
             if (src[i] < '0' || src[i] > '9')
                 { err = "invalid Rexx decimal exponent"; return false; }
-            // A valid exponent beyond this subset's range (ooRexx allows up to 999999999): not "not a number".
-            if (e > kMaxRexxScale) {
-                for (; i < n; ++i) if (src[i] < '0' || src[i] > '9') { err = "invalid Rexx decimal exponent"; return false; }
-                err = "decimal exponent outside supported range"; return false;
+            if (!invalidExponent) {
+                const long next = e * 10 + (src[i] - '0');
+                if (next > kMaxRexxExponent) invalidExponent = true; else e = next;
             }
-            e = e * 10 + (src[i] - '0');
         }
-        out.exponent += eneg ? -e : e;
+        // NumberStringBuilder::finish: all zeros is exactly zero, whatever the exponent
+        bool nonZero = false;
+        for (std::size_t k = digitsStart; k < digitsEnd && !nonZero; ++k) nonZero = src[k] >= '1' && src[k] <= '9';
+        if (!nonZero) { out.coefficient = 0; out.exponent = 0; return true; }
+        if (invalidExponent) { err = "invalid Rexx decimal exponent"; return false; }
+        const long exponent = (eneg ? -e : e) + out.exponent;   // out.exponent holds -decimals here
+        // significant digits: leading zeros do not count
+        long significant = 0; bool lead = true;
+        for (std::size_t k = digitsStart; k < digitsEnd; ++k) {
+            if (src[k] == '.') continue;
+            if (lead && src[k] == '0') continue;
+            lead = false; ++significant;
+        }
+        if (std::labs(exponent) > kMaxRexxExponent || exponent + significant - 1 > kMaxRexxExponent)
+            { err = "invalid Rexx decimal exponent"; return false; }
+        out.exponent = static_cast<int>(exponent);
     }
-    if (out.exponent < -kMaxRexxScale || out.exponent > kMaxRexxScale)
-        { err = "decimal exponent outside supported range"; return false; }
     if (ndigits <= 18) out.coefficient = small;
     else {
         // Eighteen digits at a time: one big multiply-add per chunk instead of one per digit.
@@ -138,6 +154,9 @@ inline bool tryParseRexxDecimal(const Value &v, RexxDecimal &out, const char *&e
     if (minus) out.coefficient = -out.coefficient;
     return true;
 }
+// NumberString::checkLostDigits / prepareOperatorNumber: an operand with more significant digits than DIGITS raises
+// LOSTDIGITS when the activation traps it (otherwise the condition is ignored and the operand is truncated as usual).
+inline void checkLostDigits(const RexxDecimal &d, const Value &operand, const ActivationNumeric &ctx);
 inline RexxDecimal parseRexxDecimal(const Value &v) {
     RexxDecimal out; const char *err = nullptr;
     if (!tryParseRexxDecimal(v, out, err)) {
@@ -152,6 +171,22 @@ inline RexxDecimal parseRexxDecimal(const Value &v) {
 // Error 42.3 Arithmetic overflow; divisor must not be zero.
 [[noreturn]] inline void divisionByZero() {
     throw SyntaxCondition("42.3", "Arithmetic overflow; divisor must not be zero", false);
+}
+// NumberStringBase::checkOverflow: an arithmetic result whose adjusted exponent passes MAX_EXPONENT, or whose exponent is
+// below MIN_EXPONENT, is Error 42.901 / 42.902.
+inline void checkExponentOverflow(const RexxDecimal &v) {
+    if (v.coefficient == 0) return;
+    const long adjusted = static_cast<long>(v.exponent) + decimalDigits(v.coefficient) - 1;
+    if (adjusted > kMaxRexxExponent) {
+        SyntaxCondition e("42.901", "Arithmetic overflow; exponent (\"" + std::to_string(adjusted) + "\") exceeds 9 digits", false);
+        e.substitutions = {Value::string(std::to_string(adjusted)), Value::string("9")};
+        throw e;
+    }
+    if (v.exponent < -kMaxRexxExponent) {
+        SyntaxCondition e("42.902", "Arithmetic underflow; exponent (\"" + std::to_string(v.exponent) + "\") exceeds 9 digits", false);
+        e.substitutions = {Value::string(std::to_string(v.exponent)), Value::string("9")};
+        throw e;
+    }
 }
 inline void roundRexx(RexxDecimal &v, const ActivationNumeric &context) {
     if (context.digits < 1 || context.digits > 100000 || context.fuzz >= context.digits)
@@ -176,8 +211,6 @@ inline void roundRexx(RexxDecimal &v, const ActivationNumeric &context) {
     }
 }
 inline std::string formatRexxDecimal(const RexxDecimal &value, const ActivationNumeric &ctx, bool division = false, bool upstreamRule = false) {
-    if (value.exponent < -kMaxRexxScale || value.exponent > kMaxRexxScale)
-        throw std::runtime_error("decimal exponent outside supported range");
     if (value.coefficient == 0) return "0";
     const bool negative = value.coefficient < 0;
     std::string digits = (negative ? -value.coefficient : value.coefficient).convert_to<std::string>();
@@ -195,6 +228,12 @@ inline std::string formatRexxDecimal(const RexxDecimal &value, const ActivationN
         if (ctx.engineering) {
             // floor division into groups of three, even for negative exponents
             suffix = adjusted >= 0 ? (adjusted / 3) * 3 : -(((-adjusted + 2) / 3) * 3);
+        }
+        if (std::labs(static_cast<long>(suffix)) > kMaxRexxExponent) {   // stringValue: the adjusted exponent cannot be shown
+            SyntaxCondition e(suffix > 0 ? "42.901" : "42.902", std::string(suffix > 0 ? "Arithmetic overflow" : "Arithmetic underflow") +
+                              "; exponent (\"" + std::to_string(suffix) + "\") exceeds 9 digits", false);
+            e.substitutions = {Value::string(std::to_string(suffix)), Value::string("9")};
+            throw e;
         }
         int before = adjusted - suffix + 1;
         if (static_cast<int>(digits.size()) < before)
@@ -295,8 +334,13 @@ inline bool smallDecimalRelation(const Value &a, const Value &b, const Activatio
     rel = (x > y) - (x < y);
     return true;
 }
+inline void checkLostDigits(const RexxDecimal &d, const Value &operand, const ActivationNumeric &ctx) {
+    if (!lostDigitsArmed || !*lostDigitsArmed || !lostDigitsHook() || d.coefficient == 0) return;
+    if (decimalDigits(d.coefficient) > static_cast<int>(ctx.digits)) lostDigitsHook()(operand);
+}
 inline Value numberResult(RexxDecimal n, const ActivationNumeric &ctx) {
     roundRexx(n, ctx);
+    checkExponentOverflow(n);
     return Value::number(formatRexxDecimal(n, ctx));
 }
 // ooRexx NumberString::addSub, step for step (interpreter/classes/NumberStringMath.cpp): an operand longer than DIGITS
@@ -328,8 +372,9 @@ inline RexxDecimal make(const std::string &d, long exp, int sign) {
     cpp_int c = 0;
     for (std::size_t i = k; i < d.size(); ++i) c = c * 10 + static_cast<int>(d[i]);
     if (c == 0) return RexxDecimal{0, 0};
-    if (exp < -kMaxRexxScale || exp > kMaxRexxScale) throw std::runtime_error("decimal exponent outside supported range");
-    return RexxDecimal{sign < 0 ? cpp_int(-c) : c, static_cast<int>(exp)};
+    RexxDecimal r{sign < 0 ? cpp_int(-c) : c, static_cast<int>(exp)};
+    checkExponentOverflow(r);
+    return r;
 }
 // subtractNumbers: larger - smaller over the digit runs ending at lp / sp; out gets the least significant digit first.
 inline void subtractNumbers(const std::string &L, long lp, long adjL, const std::string &S, long sp, long adjS, std::string &out) {
@@ -475,7 +520,10 @@ inline bool oorexxWholeNumber(const RexxDecimal &v, long numDigits, bool isSigne
 }
 inline Value numericAddSub(const Value &a, const Value &b, bool minus, const ActivationNumeric &ctx) {
     if (ctx.digits < 1 || ctx.digits > 100000 || ctx.fuzz >= ctx.digits) throw std::runtime_error("unsupported NUMERIC context");
-    return Value::number(formatRexxDecimal(oorexx_addsub::addSub(parseRexxDecimal(a), parseRexxDecimal(b), minus, ctx.digits), ctx));
+    const RexxDecimal x = parseRexxDecimal(a);   // the receiver first, as the interpreter reports it (41.1 on the left operand)
+    const RexxDecimal y = parseRexxDecimal(b);
+    checkLostDigits(x, a, ctx); checkLostDigits(y, b, ctx);
+    return Value::number(formatRexxDecimal(oorexx_addsub::addSub(x, y, minus, ctx.digits), ctx));
 }
 inline Value numericAdd(const Value &a, const Value &b, const ActivationNumeric &ctx) {
     { std::int64_t p, q; if (smallInteger(a, ctx, p) && smallInteger(b, ctx, q) && fitsDigits(p + q, ctx)) return Value::number(std::to_string(p + q)); }
@@ -498,6 +546,7 @@ inline Value numericMul(const Value &a, const Value &b, const ActivationNumeric 
     { std::int64_t p, q; if (smallInteger(a, ctx, p) && smallInteger(b, ctx, q) && fitsDigits(p * q, ctx)) return Value::number(std::to_string(p * q)); }
     if (auto quick = smallDecimalMul(a, b, ctx)) return std::move(*quick);
     RexxDecimal x = parseRexxDecimal(a), y = parseRexxDecimal(b);
+    checkLostDigits(x, a, ctx); checkLostDigits(y, b, ctx);
     // ooRexx uses one guard digit of operand precision in multiplication.
     truncateGuardDigits(x, ctx); truncateGuardDigits(y, ctx);
     return numberResult({x.coefficient * y.coefficient, x.exponent + y.exponent}, ctx);
@@ -512,6 +561,7 @@ inline void chopOperand(RexxDecimal &v, const ActivationNumeric &ctx) {
 }
 inline Value numericDiv(const Value &a, const Value &b, const ActivationNumeric &ctx) {
     RexxDecimal x = parseRexxDecimal(a), y = parseRexxDecimal(b);
+    checkLostDigits(x, a, ctx); checkLostDigits(y, b, ctx);
     if (y.coefficient == 0) divisionByZero();
     chopOperand(x, ctx); chopOperand(y, ctx);
     if (x.coefficient == 0) return Value::number("0");
@@ -538,6 +588,7 @@ inline Value numericDiv(const Value &a, const Value &b, const ActivationNumeric 
     if (negative) rounded = -rounded;
     RexxDecimal output{rounded, exp};
     roundRexx(output, ctx);
+    checkExponentOverflow(output);
     return Value::number(formatRexxDecimal(output, ctx));
 }
 // NumberString::comp: different signs decide; operands both within DIGITS-FUZZ (aligned) compare exactly; otherwise the
@@ -560,7 +611,9 @@ inline int numericRelationDecimal(RexxDecimal x, RexxDecimal y, const Activation
     return (diff.coefficient > 0) - (diff.coefficient < 0);
 }
 inline int numericRelation(const Value &a, const Value &b, const ActivationNumeric &ctx) {
-    return numericRelationDecimal(parseRexxDecimal(a), parseRexxDecimal(b), ctx);
+    const RexxDecimal x = parseRexxDecimal(a);
+    const RexxDecimal y = parseRexxDecimal(b);
+    return numericRelationDecimal(x, y, ctx);
 }
 inline bool numericString(const Value &v) {
     RexxDecimal d; const char *err = nullptr;
@@ -617,7 +670,10 @@ inline Value numericCompare(const Value &a, CmpOp op, const Value &b, const Acti
     RexxDecimal dx, dy; const char *perr = nullptr; std::int64_t sp, sq;
     if (smallInteger(a, ctx, sp) && smallInteger(b, ctx, sq)) rel = (sp > sq) - (sp < sq);
     else if (smallDecimalRelation(a, b, ctx, rel)) {}
-    else if (tryParseRexxDecimal(a, dx, perr) && tryParseRexxDecimal(b, dy, perr)) rel = numericRelationDecimal(dx, dy, ctx);
+    else if (tryParseRexxDecimal(a, dx, perr) && tryParseRexxDecimal(b, dy, perr)) {
+        checkLostDigits(dx, a, ctx); checkLostDigits(dy, b, ctx);
+        rel = numericRelationDecimal(dx, dy, ctx);
+    }
     else rel = rexxPaddedCompare(a.bytes, b.bytes);
     switch (op) {
     case CmpOp::Eq: return truthValue(rel == 0);
@@ -633,9 +689,17 @@ inline Value numericCompare(const Value &a, const std::string &op, const Value &
 }
 inline Value numericWholeDivide(const Value &a, const Value &b, const ActivationNumeric &ctx) {
     RexxDecimal x = parseRexxDecimal(a), y = parseRexxDecimal(b);
+    checkLostDigits(x, a, ctx); checkLostDigits(y, b, ctx);
     if (y.coefficient == 0) divisionByZero();
     if (x.coefficient == 0) return Value::number("0");
     chopOperand(x, ctx); chopOperand(y, ctx);
+    // Magnitudes far apart (exponents up to 999999999): the quotient is 0, or has more than DIGITS digits; decided
+    // without aligning the operands.
+    const long magX = static_cast<long>(x.exponent) + decimalDigits(x.coefficient);
+    const long magY = static_cast<long>(y.exponent) + decimalDigits(y.coefficient);
+    if (magX < magY) return Value::number("0");
+    if (magX - magY > static_cast<long>(ctx.digits) + 1)
+        throw SyntaxCondition("26.11", "Result of % operation did not result in a whole number", false);
     const int e = std::min(x.exponent, y.exponent);
     const cpp_int xc = x.coefficient * decimalPow10(x.exponent - e);
     const cpp_int yc = y.coefficient * decimalPow10(y.exponent - e);
@@ -647,9 +711,17 @@ inline Value numericWholeDivide(const Value &a, const Value &b, const Activation
 // x // y : remainder of the truncated integer quotient (sign of the dividend).
 inline Value numericRemainder(const Value &a, const Value &b, const ActivationNumeric &ctx) {
     RexxDecimal x = parseRexxDecimal(a), y = parseRexxDecimal(b);
+    checkLostDigits(x, a, ctx); checkLostDigits(y, b, ctx);
     if (y.coefficient == 0) divisionByZero();
     if (x.coefficient == 0) return Value::number("0");
     chopOperand(x, ctx); chopOperand(y, ctx);
+    {   // magnitudes far apart: |x| < |y| gives x itself; a quotient of more than DIGITS digits is the error (see %)
+        const long magX = static_cast<long>(x.exponent) + decimalDigits(x.coefficient);
+        const long magY = static_cast<long>(y.exponent) + decimalDigits(y.coefficient);
+        if (magX < magY) return numberResult(x, ctx);
+        if (magX - magY > static_cast<long>(ctx.digits) + 1)
+            throw SyntaxCondition("26.12", "Result of // operation did not result in a whole number", false);
+    }
     const int e = std::min(x.exponent, y.exponent);
     cpp_int xc = x.coefficient * decimalPow10(x.exponent - e);
     cpp_int yc = y.coefficient * decimalPow10(y.exponent - e);
@@ -677,6 +749,7 @@ inline Value numericPower(const Value &a, const Value &b, const ActivationNumeri
     const std::uint64_t power = static_cast<std::uint64_t>(negativePower ? -powerValue : powerValue);
     const int digits = static_cast<int>(ctx.digits);
     RexxDecimal left = parseRexxDecimal(a);
+    checkLostDigits(left, a, ctx);
     // operand truncated (not rounded) to digits+1 digits
     {
         const int len = decimalDigits(left.coefficient);
@@ -688,6 +761,14 @@ inline Value numericPower(const Value &a, const Value &b, const ActivationNumeri
     if (left.coefficient == 0) {
         if (negativePower) throw SyntaxCondition("42.903", "Arithmetic underflow; zero raised to a negative power", false);
         return Value::number(power == 0 ? "1" : "0");
+    }
+    // NumberString::power: the result's exponent magnitude is known in advance; too large is Error 42.1.
+    if (std::labs(static_cast<long>(left.exponent) + decimalDigits(left.coefficient) - 1) * static_cast<long double>(power) >
+        static_cast<long double>(kMaxRexxExponent)) {
+        const std::string lhs = a.isObject() ? std::string() : a.bytes.str(), rhs = b.isObject() ? std::string() : b.bytes.str();
+        SyntaxCondition e("42.1", "Arithmetic overflow detected at:  \"" + lhs + "**" + rhs + "\"", false);
+        e.substitutions = {a, Value::string("**"), b};
+        throw e;
     }
     if (power == 0) return Value::number("1");
     int extra = 0;
@@ -718,6 +799,7 @@ inline Value numericPower(const Value &a, const Value &b, const ActivationNumeri
         acc = {q, qe};
     }
     roundRexx(acc, ctx);
+    checkExponentOverflow(acc);
     while (acc.coefficient != 0 && acc.coefficient % 10 == 0) { acc.coefficient /= 10; ++acc.exponent; }
     return Value::number(formatRexxDecimal(acc, ctx, false, true));
 }
@@ -745,7 +827,10 @@ inline bool numericSettingValue(const Value &v, const ActivationNumeric &ctx, st
     out = static_cast<std::uint64_t>(n);
     return true;
 }
-inline void setNumericDigits(ActivationNumeric &ctx, const Value &v) {
+inline Value requestString(const Value &v);
+// (an object operand of NUMERIC DIGITS / FUZZ / FORM VALUE gives its string value: RexxObject::requestString)
+inline void setNumericDigits(ActivationNumeric &ctx, const Value &in) {
+    const Value v = in.isObject() ? requestString(in) : in;
     std::uint64_t n = 0;
     if (!numericSettingValue(v, ctx, n) || n < 1) {
         SyntaxCondition bad("26.5", "DIGITS value must be a positive whole number; found \"" + v.bytes.str() + "\"", false);
@@ -758,10 +843,11 @@ inline void setNumericDigits(ActivationNumeric &ctx, const Value &v) {
         bad.substitutions.push_back(Value::string(std::to_string(ctx.fuzz)));
         throw bad;
     }
-    if (n > 100000) throw std::runtime_error("NUMERIC DIGITS outside supported range 1..100000");
+    // (any whole number the interpreter takes: 999999999 is accepted; arithmetic then works to that precision)
     ctx.digits = static_cast<std::size_t>(n);
 }
-inline void setNumericFuzz(ActivationNumeric &ctx, const Value &v) {
+inline void setNumericFuzz(ActivationNumeric &ctx, const Value &in) {
+    const Value v = in.isObject() ? requestString(in) : in;
     std::uint64_t n = 0;
     if (!numericSettingValue(v, ctx, n)) {
         SyntaxCondition bad("26.6", "FUZZ value must be zero or a positive whole number; found \"" + v.bytes.str() + "\"", false);
@@ -780,7 +866,8 @@ inline void setNumericForm(ActivationNumeric &ctx, bool engineering) {
     ctx.engineering = engineering;
 }
 // NUMERIC FORM VALUE expr: exactly SCIENTIFIC or ENGINEERING (upper case), else 25.11 with the value, as interpreted.
-inline void setNumericFormValue(ActivationNumeric &ctx, const Value &v) {
+inline void setNumericFormValue(ActivationNumeric &ctx, const Value &in) {
+    const Value v = in.isObject() ? requestString(in) : in;
     if (!v.isObject() && v.bytes == "ENGINEERING") { setNumericForm(ctx, true); return; }
     if (!v.isObject() && v.bytes == "SCIENTIFIC") { setNumericForm(ctx, false); return; }
     SyntaxCondition bad("25.11", "NUMERIC FORM must be followed by one of the keywords SCIENTIFIC or ENGINEERING", false);
@@ -795,4 +882,24 @@ struct ScopedNumericActivation {
     ScopedNumericActivation(const ScopedNumericActivation &) = delete;
     ScopedNumericActivation &operator=(const ScopedNumericActivation &) = delete;
 };
+// ForLoop::setup: a DO / LOOP repetition count (forKeyword false: DO exprr) or FOR count, a whole number >= 0 under
+// DIGITS after a prefix plus; anything else is 26.2 / 26.3 with the value.
+inline std::uint64_t loopCount(const Value &in, bool forKeyword, const ActivationNumeric &ctx) {
+    const Value v = in.isObject() ? requestString(in) : in;   // an object's string value (a stem: its default value)
+    auto bad = [&]() {
+        const std::string found = v.isObject() ? v.object->display() : v.bytes.str();
+        SyntaxCondition e(forKeyword ? "26.3" : "26.2",
+                          std::string(forKeyword ? "Value of FOR expression" : "Value of repetition count expression") +
+                          " in DO or LOOP instruction must be zero or a positive whole number; found \"" + found + "\"", false);
+        e.substitutions.push_back(v);
+        throw e;
+    };
+    if (v.isObject()) bad();
+    RexxDecimal d; const char *err = nullptr;
+    if (!tryParseRexxDecimal(v, d, err)) bad();
+    roundRexx(d, ctx);                                   // the prefix plus
+    std::int64_t count = 0;
+    if (!oorexxWholeNumber(d, static_cast<long>(ctx.digits), true, count) || count < 0) bad();
+    return static_cast<std::uint64_t>(count);
+}
 #endif

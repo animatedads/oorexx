@@ -7,7 +7,7 @@
   use arg ctx
   s = ctx~stream
   if \s~is('ADDRESS') then return .false
-  following = s~lookAheadText(1)
+  following = s~lookAheadOp(1)
   if wordpos(following, '= ~ ~~ [') > 0 then return .false
   if .RxCompoundAssignmentOps~isSupported(following) then return .false
   return .true
@@ -15,9 +15,20 @@
   use arg ctx, depth
   s = ctx~stream
   s~expect('ADDRESS')
+  /* a bare ADDRESS swaps the current and the alternate environment */
+  if s~peek~kind == 'SEP' | s~peek~kind == 'EOF' then do
+    ctx~line(depth, 'rx::addressToggle();')
+    s~separator
+    return
+  end
   if s~accept('VALUE') then arg = ctx~logicalExpr~parse(ctx)
   else if s~peek~kind == 'IDENT' | s~peek~kind == 'STRING' then arg = 'rx::Value::string(' || .RxQuote~cpp(s~next~text) || ')'
-  else s~fail('ADDRESS requires VALUE expr or an environment name')
+  /* ADDRESS (expr): anything else than a symbol or string starts the VALUE form's expression (addressNew) */
+  else do
+    ctx~line(depth, '(void)rx::addressSet(' || ctx~logicalExpr~parse(ctx) || ');')
+    s~separator
+    return
+  end
   if s~peek~kind \= 'SEP' & s~peek~kind \= 'EOF' then do
     if value('RX2CPP_HOST_API', , 'ENVIRONMENT') == '' then s~fail('ADDRESS environment command is not supported in compiled programs')
     command = ctx~logicalExpr~parse(ctx)

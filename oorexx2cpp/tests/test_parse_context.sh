@@ -47,8 +47,8 @@ negatives=(
   'parse lower'
   'parse upper unknown x'
   'parse arg a + x'
-  'parse source x, y'
 )
+# ('parse source x, y' is valid: the second template parses the null string.)
 for i in "${!negatives[@]}"; do
   printf '%s\n' "${negatives[i]}" > "$WORK/negative_$i.rex"
   rm -f "$WORK/negative_$i.cpp"

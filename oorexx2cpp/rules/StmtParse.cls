@@ -23,12 +23,18 @@
     s~expect('PULL')
     uppercase = .true
   end
-  else do
-    s~expect('PARSE')
-    uppercase = s~accept('UPPER')
+  else s~expect('PARSE')
+  /* PARSE [UPPER | LOWER] [CASELESS], in either order */
+  lowercase = .false; caseless = .false
+  if \bare & \barePull then do
+    uppercase = .false
+    do while (s~is('UPPER') | s~is('LOWER') | s~is('CASELESS')) & wordpos(s~lookAheadText(1), '= ~') = 0
+      option = s~next~text
+      if option == 'UPPER' then uppercase = .true
+      else if option == 'LOWER' then lowercase = .true
+      else caseless = .true
+    end
   end
-  lowercase = .false
-  if \uppercase then lowercase = s~accept('LOWER')
   pullMode = ''
   if barePull then pullMode = 'PULL'
   else if \bare then if s~is('PULL') | s~is('LINEIN') then pullMode = s~next~text
@@ -51,7 +57,9 @@
     end
     when s~accept('VALUE') then do
       mode = 'VALUE'
-      source = ctx~logicalExpr~parse(ctx)
+      /* PARSE VALUE WITH: no expression parses the null string */
+      if s~is('WITH') then source = 'rx::Value::string(std::string())'
+      else source = ctx~logicalExpr~parse(ctx)
       s~expect('WITH')
     end
     when s~accept('ARG') then do
@@ -68,32 +76,25 @@
     end
     otherwise s~fail('supported PARSE forms: VAR, VALUE WITH, ARG, PULL, LINEIN, SOURCE, VERSION')
   end
+  /* The templates of the clause, separated by commas: PARSE ARG takes the next argument for each, any other source
+     the null string (RexxTarget::next). */
+  transform = ''
+  if uppercase then transform = 'rx::parseUpper'
+  if lowercase then transform = 'rx::parseLower'
+  ctx~line(depth, '{')
   index = 0
   do forever
     if mode == 'ARG' then source = .RxParseSourceModes~expression(ctx, mode, index)
-    spec = .RxParseTemplateRules~parse(ctx, mode == 'ARG')
-    elements = spec[1]
-    targets = spec[2]
-    suffix = ctx~label
-    ctx~line(depth, '{')
-    inputExpr = source
-    if uppercase then inputExpr = 'rx::parseUpper(' || source || ')'
-    if lowercase then inputExpr = 'rx::parseLower(' || source || ')'
-    ctx~line(depth + 1, 'const rx::Value _parseInput' || suffix || ' = ' || inputExpr || ';')
-    /* A template with only constant positions/literals is built once, not per execution. */
-    if elements~pos('Value(') = 0 then planDecl = 'static const std::vector<rx::ParseOp> _parsePlan'
-    else planDecl = 'const std::vector<rx::ParseOp> _parsePlan'
-    ctx~line(depth + 1, planDecl || suffix || ' = {' || elements || '};')
-    ctx~line(depth + 1, 'const auto _parseParts' || suffix || ' = rx::parseTemplate(_parseInput' || suffix || ', _parsePlan' || suffix || ');')
-    do i = 1 to targets~items
-      name = targets[i]
-      if name \== '.' then ctx~line(depth + 1, .RxCompoundSymbols~store(name, '_parseParts' || suffix || '[' || (i - 1) || ']'))
-    end
-    ctx~line(depth, '}')
-    if mode \== 'ARG' then leave
+    else if index > 0 then source = 'rx::Value::string(std::string())'
+    input = source
+    if transform \== '' then input = transform || '(' || source || ')'
+    if index == 0 then ctx~line(depth + 1, 'rx::ParseCursor _pc(' || input || ', ' || word('false true', caseless + 1) || ');')
+    else ctx~line(depth + 1, '_pc.reset(' || input || ');')
+    .RxParseTemplateRules~emit(ctx, depth + 1, .RxParseTemplateRules~parse(ctx))
     if \s~accept(',') then leave
     index = index + 1
   end
+  ctx~line(depth, '}')
   s~separator
 ::requires 'rules/CompoundSymbols.cls'
 ::requires 'rules/ParseTemplateRules.cls'

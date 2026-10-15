@@ -108,7 +108,7 @@
     /* FORWARD returns whatever the target returns, including no result. */
     value = '([&]() -> rx::Value { std::vector<rx::Value> _fa; _fa.push_back(rx::Value::string(' || .RxQuote~cpp(selector~upper) || ')); _fa.push_back(' || arrayExpr || '); std::optional<rx::Value> _fr = rx2cpp::selfSendValues(' || .RxQuote~cpp(helper) || ', _fa); '
     do field over ctx~current~exposed
-      value = value || 'rx::set(vars, ' || .RxQuote~cpp(field) || ', rx::get(fields_, ' || .RxQuote~cpp(field) || ')); '
+      value = value || 'rx::refreshField(vars, fields_, ' || .RxQuote~cpp(field) || '); '
     end
     value = value || 'if (!_fr) return rx::noResult(); return *_fr; }())'
   end
@@ -138,7 +138,7 @@
   end
   code = '{ std::vector<rx::Value> _fa; _fa.push_back(' || first || '); _fa.push_back(' || arrayExpr || '); std::optional<rx::Value> _fr = ' || send || '; '
   do field over ctx~current~exposed
-    code = code || 'rx::set(vars, ' || .RxQuote~cpp(field) || ', rx::get(fields_, ' || .RxQuote~cpp(field) || ')); '
+    code = code || 'rx::refreshField(vars, fields_, ' || .RxQuote~cpp(field) || '); '
   end
   code = code || 'if (_fr) rx::set(vars, "RESULT", *_fr); else rx::drop(vars, "RESULT"); }'
   ctx~line(0, code)

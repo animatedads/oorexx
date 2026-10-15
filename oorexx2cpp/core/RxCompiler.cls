@@ -57,8 +57,8 @@
    Frame slots: control name, continue-label, exit-label. */
 ::method pushLoop
   expose loopScopes
-  use arg name, continueLabel, exitLabel
-  loopScopes~append(.array~of(name, continueLabel, exitLabel))
+  use arg name, continueLabel, exitLabel, isLoop = .true
+  loopScopes~append(.array~of(name, continueLabel, exitLabel, isLoop))
 ::method popLoop
   expose loopScopes
   if loopScopes~items == 0 then raise syntax 40.1 array ('rx2cpp: loop stack underflow')
@@ -66,14 +66,30 @@
 ::method loopTarget
   expose loopScopes
   use arg kind, name
+  if var('LOOPSCOPES') = 0 then loopScopes = .array~new
+  /* RexxActivation::leaveLoop / iterate: no name - the innermost repetitive loop; a name - the innermost loop or labeled
+     block with that label (ITERATE only a loop). No match is a run-time error (28.1 - 28.5), as interpreted.
+     Answers the C++ label to go to, or 'ERROR code'. */
   do i = loopScopes~items to 1 by -1
     frame = loopScopes[i]
-    if name == '' | frame[1] == name then do
+    isLoop = frame~size < 4 | frame[4] == .true
+    if name == '' then do
+      if \isLoop then iterate
       if kind == 'ITERATE' then return frame[2]
       return frame[3]
     end
+    if frame[1] == name then do
+      if kind == 'ITERATE' then do
+        if \isLoop then return 'ERROR 28.5'
+        return frame[2]
+      end
+      return frame[3]
+    end
   end
-  self~stream~fail(kind || ' has no matching active DO loop' || name)
+  if name == '' & kind == 'LEAVE' then return 'ERROR 28.1'
+  if name == '' then return 'ERROR 28.2'
+  if kind == 'LEAVE' then return 'ERROR 28.3'
+  return 'ERROR 28.4'
 ::attribute methodExposes get
 /* Hosted tier (hosted_tier/README.md): environment classes the native runtime lacks are loaded from an embedded
    interpreter session. RX2CPP_HOSTED=0 restores the fail-closed rejection. */
@@ -189,8 +205,8 @@
   if arg(3, 'O') then expectedName = '' 
   s = self~stream
   s~skipSeparators
-  do while s~peek~kind \= 'EOF' & \s~is('END') & (hasEnd | (\s~atLabel & \s~atDirective))
-    if s~is('ELSE') then s~fail('ELSE without matching IF')
+  do while s~peek~kind \= 'EOF' & \s~atEnd & (hasEnd | (\s~atLabel & \s~atDirective))
+    if s~is('ELSE') & s~lookAheadText(1) \== '=' then s~fail('ELSE without matching IF')
     if \hasEnd & depth == 2 then lastMainInstruction = s~peek~text
     self~statement(depth)
     s~skipSeparators
@@ -239,6 +255,7 @@
     self~line(2, '} catch (const std::exception& _rxError) {')
     self~line(3, 'std::string _rxHandler;')
     self~line(3, 'if (!_rxTrap.take(_rxHandler, _rxError, true)) throw;')
+    self~line(3, 'rx::setSyntaxTrapRc(vars, _rxError);')
     self~line(3, 'const rx::MessageResult _rxHandled = rx::invokeInternal(vars, _rxRoutines, _rxHandler, _rxProgramArgs);')
     self~line(3, 'return _rxHandled ? rx::programReturnCode(*_rxHandled) : 0;')
     self~line(2, '}')

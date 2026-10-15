@@ -12,13 +12,16 @@
         return ctx~builtinExpr~parseQuoted(ctx, t~text)
       return 'rx::Value::string(' || .RxQuote~cpp(t~text) || ')'
     end
-    /* A lone period is a constant symbol: its value is "." (xrange(., .)). */
-    when t~kind == 'OP' & t~text == '.' then do
+    /* A lone period is a constant symbol: its value is "." (xrange(., .)); so is ... outside USE ARG (length(...) is 3). */
+    when t~kind == 'OP' & (t~text == '.' | t~text == '...') then do
       s~next
-      return 'rx::Value::string(".")'
+      return 'rx::Value::string(' || .RxQuote~cpp(t~text) || ')'
     end
     when t~kind == 'NUMBER' | t~kind == 'INT' then do
       s~next
+      /* Any symbol abutting "(" names a function, a constant symbol too (5A() calls 5A). */
+      if s~is('(') & s~peek~line == t~endLine & s~peek~col == t~endCol then -
+        return ctx~builtinExpr~parse(ctx, t~text)
       return 'rx::Value::number(' || .RxQuote~cpp(t~text) || ')'
     end
     when t~kind == 'DOTIDENT' then do
@@ -80,18 +83,29 @@
       return 'rx::selfObject()'
     end
     when t~kind == 'IDENT' then do
-      if wordpos(t~text, 'THEN DO ELSE END IF EXIT') > 0 then s~fail('reserved word in expression')
       s~next
       /* Rexx function invocation requires abuttal: F(3) differs from F (3). */
       if s~is('(') & s~peek~line == t~endLine & s~peek~col == t~endCol then -
         return ctx~builtinExpr~parse(ctx, t~text)
-      /* A bare stem as an argument (or a whole clause value) is passed as the stem object (shared, not copied): see StemObject. */
-      if right(t~text, 1) == '.' & pos('.', t~text) == length(t~text) & (s~is(',') | s~is(')') | s~peek~kind == 'SEP' | s~peek~kind == 'EOF') then
+      /* A bare stem symbol is the stem object wherever it appears (shared, not copied: see StemObject); its string
+         value, where one is needed, is its default value through STRING, with NOSTRING (s. || 'x'). */
+      if right(t~text, 1) == '.' & pos('.', t~text) == length(t~text) then
         return 'rx::stemArg(vars, ' || .RxQuote~cpp(t~text) || ')'
       return .RxCompoundSymbols~load(t~text)
     end
     when s~accept('(') then do
       value = ctx~logicalExpr~parse(ctx)
+      /* (a, b, ...): an Array term (ooRexx 5), as .array~of(a, b, ...) */
+      if s~is(',') then do
+        items = value
+        do while s~accept(',')
+          items = items || ', ' || ctx~logicalExpr~parse(ctx)
+        end
+        s~expect(')')
+        if value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' then arrayClass = 'rx::nativeArrayClass()'
+        else arrayClass = 'rx::arrayClass()'
+        return 'rx::messageValue(' || arrayClass || ', "OF", std::vector<rx::Value>{' || items || '}, false)'
+      end
       s~expect(')')
       return value
     end

@@ -87,6 +87,15 @@ static void raiseSyntaxIn(RexxThreadContext *t, const rx::SyntaxCondition &e) {
     }
     t->RaiseException(number, subs);
 }
+// The interpreter's "does not understand" (97.1) passing through compiled code: raised again as itself.
+static bool raiseNoMethodIn(RexxThreadContext *t, const rx::NoMethod &e) {
+    if (!e.conditionObject) return false;
+    rx::SyntaxCondition again("97.1", e.what(), false);
+    again.substitutions = e.substitutions;
+    again.conditionObject = e.conditionObject;
+    raiseSyntaxIn(t, again);
+    return true;
+}
 static void report(RexxMethodContext *ctx, const char *message) {
     ctx->RaiseException1(Rexx_Error_Execution_user_defined, ctx->String(message));
 }
@@ -134,6 +143,16 @@ struct InstanceState : std::enable_shared_from_this<InstanceState> {
     std::mutex gate;
     void *handle = nullptr;          // interpreter object, valid while alive
     bool alive = false;
+    // Compiled code's references (NativeInstanceRef objects) are invisible to the interpreter's collector: while there
+    // are any, the interpreter object is pinned, so it is not collected (and its UNINIT does not run) under them.
+    int nativeRefs = 0;
+    void *pin = nullptr;
+    void notePin() {   // (gate held)
+#ifdef RX2CPP_HOST_API
+        if (nativeRefs > 0 && alive && handle && !pin && rxobj::current)
+            pin = (void *)rxobj::pinRef(rxobj::current, (RexxObjectPtr)handle);
+#endif
+    }
     std::string token;
     std::vector<std::pair<std::string, std::shared_ptr<CompiledObject>>> scopes;   // instances have a handful of scopes: a scan beats hashing
     std::shared_ptr<CompiledObject> at(const std::string &cls) {
@@ -223,9 +242,22 @@ Resolved *lookupMethod(const std::string &cls, const std::string &selector) {
     auto jt = it->second.find(selector);
     return jt == it->second.end() ? nullptr : &*jt;
 }
+/* The interpreter object of a native state stays alive while compiled code sends it a message: nothing in the
+   interpreter may reference it (a native instance's proxy), so a collection during the send (an argument string, the
+   method's own work) would run its UNINIT and leave the send on an object without its token. A pin for that time. */
+struct ProxyHold {
+    void *h = nullptr;
+    ProxyHold() = default;
+    ProxyHold(const ProxyHold &) = delete;
+    ProxyHold &operator=(const ProxyHold &) = delete;
+    ~ProxyHold() { if (h && rxobj::current) rxobj::unpinRef(rxobj::current, h); }
+};
 /* An interpreter object for a native state: a new instance of the class whose first INIT adopts the state. */
-void *materializeState(const std::shared_ptr<InstanceState> &st) {
-    if (st->alive && st->handle) return st->handle;
+void *materializeState(const std::shared_ptr<InstanceState> &st, ProxyHold *hold = nullptr) {
+    if (st->alive && st->handle) {
+        if (hold) hold->h = (void *)rxobj::pinRef(rxobj::need(), (RexxObjectPtr)st->handle);
+        return st->handle;
+    }
     void *cls = rxobj::findClass(st->dynamicClass);
     if (!cls) throw std::runtime_error("native class is not registered: " + st->dynamicClass);
     pendingAdopt = st;
@@ -234,17 +266,25 @@ void *materializeState(const std::shared_ptr<InstanceState> &st) {
     pendingAdopt.reset();
     rxobj::release(cls);
     if (!ok) throw rx::SyntaxCondition(code, text, false);
-    if (r.kind == 2) rxobj::release(r.obj);
+    // (the new object's own reference: kept for the caller's send, else released)
+    if (r.kind == 2) { if (hold) hold->h = r.obj; else rxobj::release(r.obj); }
     if (!st->alive) throw std::runtime_error("cannot create the interpreter object for a native instance");
+    { std::lock_guard<std::mutex> lock(st->gate); st->notePin(); }   // compiled code holds it: keep it
     return st->handle;
 }
 std::optional<rx::Value> interpreterSend(const std::shared_ptr<InstanceState> &st, const std::string &selector,
                                          const std::vector<rx::Value> &args) {
-    void *h = materializeState(st);
+    ProxyHold hold;
+    void *h = materializeState(st, &hold);
     std::vector<rxobj::Arg> in; rx::EnvObject::convert(args, in);
     rxobj::Result r; std::string code, text;
     if (!rxobj::send(h, selector, in, r, code, text)) {
-        if (code == "97.1") { rx::NoMethod missing(text); missing.conditionObject = rx::takeKeptCondition(); throw missing; }
+        if (code == "97.1") {
+            rx::NoMethod missing(text);
+            for (const std::string &a : rxobj::lastAdditional()) missing.substitutions.push_back(rx::Value::string(a));
+            missing.conditionObject = rx::takeKeptCondition();
+            throw missing;
+        }
         rx::SyntaxCondition raised(code, text, false);
         for (const std::string &a : rxobj::lastAdditional()) raised.substitutions.push_back(rx::Value::string(a));
         raised.conditionObject = rx::takeKeptCondition();
@@ -320,7 +360,8 @@ bool objectIdentityOp(const std::shared_ptr<InstanceState> &st, const std::strin
             if (object && rxobj::send(object, "NEW", {}, r, code, text) && r.kind == 2) plainObject = r.obj;
             if (object) rxobj::release(object);
         }
-        void *mine = materializeState(st);
+        ProxyHold hold;
+        void *mine = materializeState(st, &hold);
         if (plainObject && mine) {
             std::vector<rxobj::Arg> name(1); name[0].bytes = op;
             rxobj::Result a, b; std::string code, text;
@@ -339,7 +380,17 @@ class NativeInstanceRef final : public rx::NativeRefBase {
     std::shared_ptr<rx::EnvObject> keep_;   // adopted from the interpreter: holds its global reference (no early UNINIT)
 public:
     explicit NativeInstanceRef(std::shared_ptr<InstanceState> st, std::shared_ptr<rx::EnvObject> keep = nullptr)
-        : st_(std::move(st)), keep_(std::move(keep)) {}
+        : st_(std::move(st)), keep_(std::move(keep)) {
+        std::lock_guard<std::mutex> lock(st_->gate);
+        ++st_->nativeRefs;
+        st_->notePin();
+    }
+    ~NativeInstanceRef() override {
+        std::lock_guard<std::mutex> lock(st_->gate);
+        if (--st_->nativeRefs == 0 && st_->pin) { rxobj::unpinLater(st_->pin); st_->pin = nullptr; }
+    }
+    NativeInstanceRef(const NativeInstanceRef &) = delete;
+    NativeInstanceRef &operator=(const NativeInstanceRef &) = delete;
     void *materialize() override { return materializeState(st_); }
     rx::MessageResult sendMessage(const std::string &selector, const std::vector<rx::Value> &args) override {
         // ISA of a compiled instance whose class does not define ISA: the answer depends on its class and the class asked
@@ -430,7 +481,13 @@ std::optional<rx::Value> runNative(const std::shared_ptr<InstanceState> &st, Res
     NativeFrame frame(st, info.definingClass, args);
     StateScope current(st.get());
     rx::noResultPending() = false;
+#ifdef RX2CPP_HOST_API
+    rx::Value result = rx::Value::string(std::string());
+    try { result = obj->invokeValues(method.first, args); }
+    catch (const rx::RaiseToCaller &r) { rx::noResultPending() = false; return rx::raisedInCaller(r); }
+#else
     rx::Value result = obj->invokeValues(method.first, args);
+#endif
     const bool noValue = std::exchange(rx::noResultPending(), false);
     if (info.noResult || noValue) return std::nullopt;
     return result;
@@ -547,7 +604,7 @@ public:
         if (ctx_->CheckCondition()) throw PendingCondition();
         if (result == NULLOBJECT) return std::nullopt;
         if (rxobj::isPlainString(ctx_->threadContext, result)) return rx::Value::string(stringValue(ctx_, result));
-        return rx::EnvObject::adopt((void *)ctx_->threadContext->RequestGlobalReference(result));
+        return rx::EnvObject::adopt((void *)rxobj::pinRef(ctx_->threadContext, result));
     }
     std::optional<rx::Value> sendValues(const std::string &selector, const std::vector<rx::Value> &args) override {
         if (state_ && state_->exact) {
@@ -575,7 +632,7 @@ public:
         if (result == NULLOBJECT) return std::nullopt;
         temps(result);
         if (rxobj::isPlainString(ctx_->threadContext, result)) return rx::Value::string(stringValue(ctx_, result));
-        return rx::EnvObject::adopt((void *)ctx_->threadContext->RequestGlobalReference(result));
+        return rx::EnvObject::adopt((void *)rxobj::pinRef(ctx_->threadContext, result));
     }
 #endif
     std::string send(const std::string &selector, const std::vector<std::string> &args) override {
@@ -688,8 +745,16 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
                 state->token = token;
                 ctx->SetObjectVariable("RX2CPP_NATIVE_ID", ctx->String(token.c_str()));
             } else {
-                if (old == NULLOBJECT || ctx->CheckCondition())
-                    throw std::runtime_error("native object not initialized or root token inaccessible");
+                if (old == NULLOBJECT || ctx->CheckCondition()) {
+                    // (which object and why: a missing token, or a condition raised while reading it)
+                    std::string why = old == NULLOBJECT ? "no token" : "condition pending";
+                    if (ctx->CheckCondition()) {
+                        RexxCondition cd; ctx->DecodeConditionInfo(ctx->GetConditionInfo(), &cd);
+                        why += " (condition " + std::to_string(cd.code) + ")";
+                    }
+                    throw std::runtime_error("native object not initialized or root token inaccessible: " + className + " " +
+                                             selector + (isRoot ? " root" : " derived from " + rootClass) + ", " + why);
+                }
                 token = stringValue(ctx, old);
                 state = InstanceTable::instance().find(token);
             }
@@ -709,7 +774,7 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
 #ifdef RX2CPP_HOST_API
             // Strings stay scalar values; every other interpreter object is passed as itself (no marshalling).
             if (!rxobj::isPlainString(ctx->threadContext, item))
-                positional.emplace_back(rx::EnvObject::adopt((void *)ctx->threadContext->RequestGlobalReference(item)));
+                positional.emplace_back(rx::EnvObject::adopt((void *)rxobj::pinRef(ctx->threadContext, item)));
             else
 #endif
             positional.emplace_back(rx::Value::string(stringValue(ctx, item)));
@@ -741,6 +806,16 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
         if (!failedInitToken.empty()) InstanceTable::instance().remove(failedInitToken);
         raiseSyntaxIn(ctx->threadContext, e);
         return NULLOBJECT;
+    } catch (const rx::NoMethod &e) {
+        if (!failedInitToken.empty()) InstanceTable::instance().remove(failedInitToken);
+        if (!raiseNoMethodIn(ctx->threadContext, e)) report(ctx, e.what());
+        return NULLOBJECT;
+#ifdef RX2CPP_HOST_API
+    } catch (const rx::RaiseToCaller &r) {
+        rxobj::Scope raiseScope(ctx->threadContext);   // the entry's scope has ended: the raise needs the interpreter
+        rx::raiseToCaller(r);
+        return NULLOBJECT;
+#endif
     } catch (const std::exception &e) {
         if (!failedInitToken.empty()) InstanceTable::instance().remove(failedInitToken);
         report(ctx, e.what());
@@ -773,7 +848,7 @@ static RexxObjectPtr rx2cpp_routine_entry(RexxCallContext *context, RexxArrayObj
             if (item == NULLOBJECT) positional.emplace_back(std::nullopt);
             else if (rxobj::isPlainString(context->threadContext, item)) positional.emplace_back(rx::Value::string(rx2cpp_routine_string(context, item)));
             else if (item == context->Nil()) positional.emplace_back(rx::nil());
-            else positional.emplace_back(rx::EnvObject::adopt((void *)context->threadContext->RequestGlobalReference(item)));
+            else positional.emplace_back(rx::EnvObject::adopt((void *)rxobj::pinRef(context->threadContext, item)));
         }
         rx::noResultPending() = false;
         rx::Value outcome = obj->invokeValues(name, positional);
@@ -803,6 +878,16 @@ static RexxObjectPtr rx2cpp_routine_entry(RexxCallContext *context, RexxArrayObj
     } catch (const rx::SyntaxCondition &e) {
         rx2cpp::raiseSyntaxIn(context->threadContext, e);
         return NULLOBJECT;
+    } catch (const rx::NoMethod &e) {
+        if (!rx2cpp::raiseNoMethodIn(context->threadContext, e))
+            context->RaiseException1(Rexx_Error_Execution_user_defined, context->String(e.what()));
+        return NULLOBJECT;
+#ifdef RX2CPP_HOST_API
+    } catch (const rx::RaiseToCaller &r) {
+        rxobj::Scope raiseScope(context->threadContext);   // the entry's scope has ended: the raise needs the interpreter
+        rx::raiseToCaller(r);
+        return NULLOBJECT;
+#endif
     } catch (const std::exception &e) {
         context->RaiseException1(Rexx_Error_Execution_user_defined, context->String(e.what()));
         return NULLOBJECT;
@@ -944,7 +1029,7 @@ static void RexxEntry loadPackage(RexxThreadContext *ctx) {
     auto pkg = ctx->LoadPackageFromData(%INTERNAL_NAME%, declarationData, declarationSize);
     if (pkg == NULLOBJECT || ctx->CheckCondition()) return;
 #ifdef RX2CPP_HOST_API
-    rxobj::libraryPackage() = ctx->RequestGlobalReference((RexxObjectPtr)pkg);
+    rxobj::libraryPackage() = rxobj::pinRef(ctx, (RexxObjectPtr)pkg);
 #endif
     // Package scope as interpreted: the declaration packages of the rx2cpp libraries this one requires are imported, so
     // their public classes resolve before .LOCAL / .ENVIRONMENT (e.g. a public class ERROR before the .ERROR stream).

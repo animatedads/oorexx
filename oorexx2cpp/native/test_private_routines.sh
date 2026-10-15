@@ -44,7 +44,8 @@ LD_LIBRARY_PATH="$OO_ROOT/lib:$OUT/instrumented${LD_LIBRARY_PATH:+:$LD_LIBRARY_P
 cmp "$OUT/oracle.out" "$OUT/instrumented/native.out"
 echo "PASS $CXX ooRexx GetPackageRoutines/GetPackagePublicRoutines + CallRoutine private handle"
 prior=$(sha256sum "$OUT/librx2cpp_private_test.so" | cut -d' ' -f1)
-for bad in duplicate conflicting_visibility external alias_collision malformed_use_arg same_line; do
+# (use arg a,,c is valid Rexx - an empty position skips an argument: native/test_use_arg.sh compares it)
+for bad in duplicate conflicting_visibility external alias_collision same_line; do
   src="$OUT/reject_$bad.cls"
   cat > "$src" <<'REXX'
 ::class RoutineHost public

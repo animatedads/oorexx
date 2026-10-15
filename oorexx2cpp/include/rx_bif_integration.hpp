@@ -234,8 +234,10 @@ inline Value argBifSlots(const std::vector<Slot>& args, const std::vector<BifSlo
     RexxDecimal d; const char *perr=nullptr;
     if(nv.isObject() || !tryParseRexxDecimal(nv,d,perr)) fail("40.12","ARG argument must be a whole number",{argName,Value::string("1"),nv});
     cpp_int value=d.coefficient;
-    if(d.exponent>0) value*=decimalPow10Compute(d.exponent);
+    if(d.exponent>40) value*=decimalPow10Compute(40);           // beyond any argument count either way (exponents reach 999999999)
+    else if(d.exponent>0) value*=decimalPow10Compute(d.exponent);
     else if(d.exponent<0) {
+        if(-d.exponent>decimalDigits(d.coefficient)) fail("40.12","ARG argument must be a whole number",{argName,Value::string("1"),nv});
         const cpp_int p=decimalPow10Compute(-d.exponent);
         if(value % p != 0) fail("40.12","ARG argument must be a whole number",{argName,Value::string("1"),nv});
         value/=p;
@@ -288,7 +290,8 @@ inline Value formatBifFixed(const std::vector<BifSlot>& a, const ActivationNumer
     if(!gb && !ga) return numberResult(d,num);
     if(ga) {
         const int want=-static_cast<int>(after);
-        if(d.exponent<want) {                       // round off excess decimals, half up
+        if(d.exponent<want && want-d.exponent>decimalDigits(d.coefficient)+1) { d.coefficient=0; d.exponent=want; }   // below half a unit
+        else if(d.exponent<want) {                  // round off excess decimals, half up
             const cpp_int p=decimalPow10(want-d.exponent);
             const bool neg=d.coefficient<0; cpp_int n=neg?-d.coefficient:d.coefficient;
             cpp_int q=n/p; if((n%p)*2>=p) ++q;
@@ -453,6 +456,7 @@ inline std::optional<Value> numericBif(const std::string &name, const std::vecto
             // A whole number must also be expressible without exponent under DIGITS (12345678901 is not, at DIGITS 9).
             if (d.exponent + decimalDigits(d.coefficient) - 1 >= static_cast<int>(num.digits)) return Value::string("0");
             if (d.exponent >= 0) return Value::string("1");
+            if (-d.exponent > decimalDigits(d.coefficient)) return Value::string("0");   // a fraction
             const cpp_int &p = decimalPow10Ref(-d.exponent);
             return Value::string((d.coefficient % p) == 0 ? "1" : "0");
         }
@@ -475,8 +479,10 @@ inline std::optional<Value> numericBif(const std::string &name, const std::vecto
         RexxDecimal d; const char *err = nullptr;
         if (!tryParseRexxDecimal(v, d, err)) return false;
         roundRexx(d, num);
-        if (d.exponent >= 0) { out = d.coefficient * decimalPow10Ref(d.exponent); return true; }
-        const cpp_int &p = decimalPow10Ref(-d.exponent);
+        if (d.exponent > kMaxRexxScale) return false;
+        if (d.exponent >= 0) { out = d.coefficient * decimalPow10(d.exponent); return true; }
+        if (-d.exponent > decimalDigits(d.coefficient)) return false;
+        const cpp_int p = decimalPow10(-d.exponent);
         if (d.coefficient % p != 0) return false;
         out = d.coefficient / p;
         return true;

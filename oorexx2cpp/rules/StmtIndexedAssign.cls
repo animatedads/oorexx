@@ -4,7 +4,7 @@
 ::class RxStmtIndexedAssign public
 ::method accepts
   use arg ctx
-  return ctx~stream~peek~kind == 'IDENT' & ctx~stream~lookAheadText(1) == '['
+  return ctx~stream~peek~kind == 'IDENT' & ctx~stream~lookAheadOp(1) == '['
 ::method emit
   use arg ctx, depth
   s = ctx~stream

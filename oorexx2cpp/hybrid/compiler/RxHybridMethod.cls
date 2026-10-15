@@ -23,6 +23,14 @@
   return .directory~new
 ::method hasInternalCalls
   return self~internalCalls~items > 0
+/* The body has CALL ON: its handlers are called at clause boundaries (_rxCallOn after each statement). */
+::method setCallOn
+  expose callOn
+  use arg callOn
+::method callOn
+  expose callOn
+  if var('CALLON') then return callOn
+  return .false
 ::method setTraps
   expose labels trapped
   use arg names, trapped

@@ -21,7 +21,7 @@
     if p = 0 then do; part = rest; rest = ''; end
     else do; part = left(rest, p - 1); rest = substr(rest, p + 1); end
     if part == '' | verify(left(part, 1), '0123456789') = 0 then code = code || ', rx::TailLiteral{' || .RxQuote~cpp(part) || '}'
-    else code = code || ', RX_VGET(' || .RxQuote~cpp(part) || ')'
+    else code = code || ', RX_VTAIL(' || .RxQuote~cpp(part) || ')'   /* an unset tail is its name, no NOVALUE */
     if p = 0 then leave
   end
   return code || ')'

@@ -124,10 +124,14 @@
       source = source || '  use arg selector, args' || '0a'x
       source = source || '  forward message (selector) arguments (args) class (super)' || '0a'x
     end
+    usesInterpret = .false
     do method over unit~methods
       selector = method~selector
       classOption = ''
       if classSide then classOption = ' class'
+      do line over method~instructions
+        if line~pos('interpretInActivation') > 0 then usesInterpret = .true
+      end
       isSetter = selector~right(1) == '='
       selectorBase = selector
       if isSetter then selectorBase = selector~left(selector~length - 1)
@@ -179,7 +183,31 @@
       if isOperator | isSetter | selector == '[]' then declared = '"' || selector || '"'
       else if verify(selector, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_!?.') > 0 then
         declared = '"' || selector~changeStr('"', '""') || '"'
-      source = source || '::method ' || declared || classOption || guardOption || ' external "LIBRARY ' || packageName || ' ' || symbol || '"' || '0a'x
+      /* A method that talks to the interpreter is a small Rexx method that forwards to the native entry (a private,
+         unguarded method), so a compiled method again has a Rexx activation of its own: a non-SYNTAX condition raised
+         inside the interpreter during the method (NOSTRING, NOTREADY, ...) stops there, as it would in the
+         interpreted method, instead of reaching the interpreted caller. Costs one Rexx activation per call from
+         interpreted code. */
+      if self~needsRexxFrame(method) then do
+        /* The entry's name is unique to this library, class and method: FORWARD MESSAGE looks it up from the receiver's
+           class, so a subclass that overrides the same method (a SUPER chain) must not find its own entry first. */
+        hidden = '"RX2CPP_N_' || (packageName || ':' || name || ':' || selector)~upper~changeStr('"', '""') || '"'
+        source = source || '::method ' || hidden || classOption || ' private unguarded external "LIBRARY ' || packageName || ' ' || symbol || '"' || '0a'x
+        source = source || '::method ' || declared || classOption || guardOption || '0a'x
+        /* FORWARD CONTINUE: the stub stays a real frame (a plain FORWARD makes it a phantom that conditions pass). */
+        source = source || '  forward message (' || hidden || ') continue' || '0a'x
+        source = source || '  if var("RESULT") then return result' || '0a'x
+      end
+      else source = source || '::method ' || declared || classOption || guardOption || ' external "LIBRARY ' || packageName || ' ' || symbol || '"' || '0a'x
+    end
+    /* INTERPRET runs its string as a method of SELF (rx::interpretInActivation): RUN is private, so the class lends a
+       hidden method that forwards to it. */
+    if usesInterpret then do
+      hiddenOption = ''
+      if classSide then hiddenOption = ' class'
+      source = source || '::method "RX2CPP_INTERPRET"' || hiddenOption || ' unguarded' || '0a'x
+      source = source || '  use arg rx2cppMethod, rx2cppArgs' || '0a'x
+      source = source || "  forward message ('RUN') class (.Object) arguments (.array~of(rx2cppMethod, 'A', rx2cppArgs))" || '0a'x
     end
     /* ::CONSTANT creates a getter on the class and instance. Delegate its
        declaration to ooRexx itself, not to the native instance registry. */
@@ -331,6 +359,27 @@
   use arg v
   if v == 1 then return 'true'
   return 'false'
+/* Does this method get a Rexx frame (see the method declarations)? RX2CPP_REXX_FRAMES=0: never; 1: always; otherwise
+   (the default) when its code can reach the interpreter (message sends, built-ins, environment objects, commands):
+   a method that only computes on values raises no interpreter condition and keeps the direct native entry. */
+::method needsRexxFrame private
+  use arg method
+  mode = value('RX2CPP_REXX_FRAMES', , 'ENVIRONMENT')
+  if mode == '0' then return .false
+  if mode == '1' then return .true
+  do line over method~instructions
+    /* RAISE of a condition other than SYNTAX goes to the caller: a Rexx frame would be that caller and ignore it */
+    if line~pos('rx::RaiseToCaller _rxRaise;') > 0 then return .false   /* (a catch of one from a callee is no reason) */
+  end
+  do line over method~instructions
+    /* (Operators on values, rx::sendBinary / sendUnary, are arithmetic and comparison: not a reason.) */
+    do probe over .array~of('sendMessage', 'messageValue', 'messageInstruction', 'selfSend', 'forwardMessage', 'interpreter', -
+                            'envClass', 'dispatchBif', 'Class(', 'libraryContext', 'selfObject', 'say(', 'argumentArray', -
+                            'callInstruction', 'stemArg', 'useStemArgument', 'interpretInActivation')
+      if line~pos(probe) > 0 then return .true
+    end
+  end
+  return .false
 ::method identifier private
   use arg value, kind
   allowed = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_'

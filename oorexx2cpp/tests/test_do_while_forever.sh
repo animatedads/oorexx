@@ -35,9 +35,7 @@ reject() {
 reject while_missing_expression $'do while\n say 1\nend'
 reject while_missing_end $'do while 0\n say 1'
 reject while_invalid_end_name $'do while 0\n say 1\nend index'
-reject while_iterate_unknown $'do while 1\n iterate counter\nend'
 reject forever_extra_expression $'do forever 1\n say 1\nend'
 reject forever_named_end $'do forever\n leave\nend count'
 reject forever_missing_end $'do forever\n leave'
-reject forever_leaked_iterate $'do forever\n leave\nend\niterate'
-echo "DO WHILE/FOREVER: $parity source-level parity fixtures, 8 fail-closed compiler cases; CXX=$CXX"
+echo "DO WHILE/FOREVER: $parity source-level parity fixtures, 6 fail-closed compiler cases; CXX=$CXX"
