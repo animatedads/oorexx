@@ -5,6 +5,7 @@
 // NOT the ooRexx runtime, nor an implementation of the complete Rexx semantics.
 #include <boost/multiprecision/cpp_int.hpp>
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cerrno>
 #include <cmath>
@@ -60,7 +61,13 @@ inline void notePressure(std::size_t bytes) {
 // meta: 0 not known yet; else bit 0 known, bit 1 a short plain decimal (coef, exponent), bit 2 a plain whole number as
 // smallInteger reads it (value coef), bits 8..15 the exponent + 128. Atomic so a string shared between threads (a
 // constant, a value in a shared object) can be classified by either: coef is written before meta (release).
+// The other direction, as NumberString makes its string only when asked (NumberString::stringValue): an arithmetic
+// result is made as its numeric form only (pending, bit 3) and its characters are written the first time anything reads
+// them (str(), and everything built on it). Only results whose characters the parse above gives back exactly: fixed
+// notation, exponent <= 0 (a whole number's trailing zeros are digits of coef), at most 18 digits and 20 characters.
+// Bit 4: another thread is writing the characters.
 struct NumCache {
+    static constexpr std::uint32_t known = 1, decimal = 2, integer = 4, pending = 8, busy = 16;
     std::atomic<std::int64_t> coef{0};
     std::atomic<std::uint32_t> meta{0};
     NumCache() = default;
@@ -79,8 +86,9 @@ public:
     using size_type = std::string::size_type;
     static constexpr size_type npos = std::string::npos;
     RxStr() = default;
-    RxStr(const RxStr &) = default;
-    RxStr &operator=(const RxStr &) = default;
+    // A pending number is copied as its numeric form (its characters may be being written by another thread).
+    RxStr(const RxStr &o) { copyFrom(o); }
+    RxStr &operator=(const RxStr &o) { if (this != &o) copyFrom(o); return *this; }
     // A moved-from string is empty: its numeric form goes with the characters.
     RxStr(RxStr &&o) noexcept : small_(std::move(o.small_)), big_(std::move(o.big_)), num_(o.num_) { o.small_.clear(); o.num_.reset(); }
     RxStr &operator=(RxStr &&o) noexcept {
@@ -93,12 +101,36 @@ public:
     RxStr &operator=(const std::string &v) { big_.reset(); put(std::string(v)); return *this; }
     RxStr &operator=(std::string &&v) { big_.reset(); put(std::move(v)); return *this; }
     RxStr &operator=(const char *v) { big_.reset(); put(std::string(v)); return *this; }
-    const std::string &str() const { return big_ ? *big_ : small_; }
+    const std::string &str() const {
+        if (num_.meta.load(std::memory_order_acquire) & NumCache::pending) materialize();
+        return big_ ? *big_ : small_;
+    }
+    // A number made as its numeric form only (see NumCache): the caller has checked it is one (rx_rexx_number.hpp
+    // pendingNumber).
+    void setPendingNumber(std::int64_t coef, std::uint32_t meta) {   // meta: the classification, exponent included
+        big_.reset(); small_.clear();
+        num_.coef.store(coef, std::memory_order_relaxed);
+        num_.meta.store(meta | NumCache::pending, std::memory_order_release);
+    }
+    // The characters of a short plain number: digits of |coef|, a '.' before the last -exp of them (exp <= 0).
+    static std::string plainNumber(std::int64_t coef, int exp) {
+        char d[24]; int n = 0;
+        std::uint64_t u = coef < 0 ? 0 - static_cast<std::uint64_t>(coef) : static_cast<std::uint64_t>(coef);
+        do { d[n++] = static_cast<char>('0' + u % 10); u /= 10; } while (u);
+        char out[48]; int k = 0;
+        if (coef < 0) out[k++] = '-';
+        const int point = n + exp;   // digits before the '.'
+        if (exp == 0) { while (n) out[k++] = d[--n]; }
+        else if (point <= 0) { out[k++] = '0'; out[k++] = '.'; for (int i = 0; i < -point; ++i) out[k++] = '0'; while (n) out[k++] = d[--n]; }
+        else { for (int i = 0; i < point; ++i) out[k++] = d[--n]; out[k++] = '.'; while (n) out[k++] = d[--n]; }
+        return std::string(out, static_cast<std::size_t>(k));
+    }
     operator const std::string &() const { return str(); }
     // The numeric form (rx_rexx_number.hpp numMeta fills it); const: it is a cache of the characters.
     NumCache &numCache() const { return num_; }
     // Write access: unshare first. The characters may change: the numeric form is dropped.
     std::string &mut() {
+        str();
         num_.reset();
         if (big_) {
             if (big_.use_count() != 1) big_ = std::make_shared<std::string>(*big_);
@@ -139,7 +171,32 @@ private:
         if (v.size() > inlineLimit) { notePressure(v.capacity()); small_.clear(); big_ = std::make_shared<std::string>(std::move(v)); }
         else small_ = std::move(v);
     }
-    std::string small_;
+    void copyFrom(const RxStr &o) {
+        const std::uint32_t m = o.num_.meta.load(std::memory_order_acquire);
+        if (m & NumCache::pending) {
+            big_.reset(); small_.clear();
+            num_.coef.store(o.num_.coef.load(std::memory_order_relaxed), std::memory_order_relaxed);
+            num_.meta.store(m & ~NumCache::busy, std::memory_order_relaxed);
+            // (written by now after all: its characters are there to copy, the pending bit stays off)
+            if (o.num_.meta.load(std::memory_order_acquire) & NumCache::pending) return;
+        }
+        small_ = o.small_; big_ = o.big_;
+        num_.copyFrom(o.num_);
+    }
+    // Writes a pending number's characters (once; a second thread waits for the first).
+    void materialize() const {
+        std::uint32_t m = num_.meta.load(std::memory_order_acquire);
+        while (m & NumCache::pending) {
+            if (!(m & NumCache::busy) &&
+                num_.meta.compare_exchange_weak(m, m | NumCache::busy, std::memory_order_acquire)) {
+                small_ = plainNumber(num_.coef.load(std::memory_order_relaxed), static_cast<int>((m >> 8) & 0xff) - 128);
+                num_.meta.store(m & ~(NumCache::pending | NumCache::busy), std::memory_order_release);
+                return;
+            }
+            m = num_.meta.load(std::memory_order_acquire);
+        }
+    }
+    mutable std::string small_;   // (written once by materialize for a pending number)
     std::shared_ptr<std::string> big_;
     mutable NumCache num_;
 };
@@ -170,6 +227,9 @@ struct Value {
     RxStr bytes;
     std::shared_ptr<ObjectDispatch> object;
     explicit Value(std::string v) : bytes(std::move(v)) {}
+    // A pending number (rx_rexx_number.hpp pendingNumber): no characters yet.
+    struct PendingTag {};
+    Value(PendingTag, std::int64_t coef, std::uint32_t meta) { bytes.setPendingNumber(coef, meta); }
     explicit Value(std::shared_ptr<ObjectDispatch> target) : object(std::move(target)) {
         if (!object) throw std::invalid_argument("null ooRexx object");
     }
@@ -205,6 +265,11 @@ struct ObjectDispatch {
     // asked for with REQUEST('STRING'), which the class may override, then STRING (RexxInternalObject::requestString).
     virtual bool requestsString() const { return false; }
     virtual bool isNilObject() const { return false; }
+    // receiver[index] and receiver[index] = value with one index, done without the message when the object answers them
+    // itself exactly as its [] / []= methods would (a native Array): false = send the message. indexAt sets slot to
+    // the item, or to nullptr for .nil; indexPut takes the value only when it returns true.
+    virtual bool indexAt(const Value &, const Value *&) { return false; }
+    virtual bool indexPut(Value &, const Value &) { return false; }
     // .Object defines =, ==, \=, \==, <>, >< using object identity.
     // Each is a distinct overridable method, not a synthesized negation.
     // More specialised classes (e.g. .String) provide their own comparators.
@@ -1193,10 +1258,29 @@ inline MessageResult sendStringBuiltin(const Value &receiver, const std::string 
 }
 inline Value messageValue(const Value &receiver, const std::string &selector,
                           const std::vector<Value> &args, bool cascade) {
-    const MessageResult outcome = sendMessage(receiver, selector, args);
+    MessageResult outcome = sendMessage(receiver, selector, args);
     if (cascade) return receiver;
     if (!outcome) throw std::runtime_error("message " + selector + " did not return a result");
-    return *outcome;
+    return std::move(*outcome);
+}
+// receiver[index] (one index): the object's own answer when it has one (ObjectDispatch::indexAt), else the message.
+inline Value indexValue(const Value &receiver, const Value &index) {
+    const Value *slot = nullptr;
+    if (receiver.isObject() && receiver.object->indexAt(index, slot)) return slot ? *slot : nil();
+    static const std::string selector("[]");
+    std::vector<Value> args;
+    args.push_back(index);
+    return messageValue(receiver, selector, args, false);
+}
+// receiver[index] = value (one index): []=(value, index), the same way.
+inline void indexAssign(const Value &receiver, Value value, const Value &index) {
+    if (receiver.isObject() && receiver.object->indexPut(value, index)) return;
+    static const std::string selector("[]=");
+    std::vector<Value> args;
+    args.reserve(2);
+    args.push_back(std::move(value));
+    args.push_back(index);
+    (void)sendMessage(receiver, selector, args);
 }
 inline void messageInstruction(Variables &vars, const Value &receiver,
                                const std::string &selector, const std::vector<Value> &args,

@@ -116,16 +116,44 @@
       end
       s~expect(')')
     end
+    /* receiver[i] and receiver[i] = v with one index: rx::indexValue / rx::indexAssign (a native Array answers without
+       the message; anything else gets it). The value is evaluated before the index, as the argument list is. */
+    fastIndex = .false
+    if indexed & \cascade & args~items == (1 + attrAssign) then
+      fastIndex = args[args~items] \== 'rx::omittedArgument()' & args[1] \== 'rx::omittedArgument()'
+    if fastIndex then do
+      if attrAssign then do
+        t = ctx~label
+        code = code || 'rx::Value _val' || t || ' = ' || args[1] || '; '
+        ix = args[2]
+        if ix~left(9) == 'RX_VGET("' & ix~right(2) == '")' & pos('(', ix, 9) == 0 then ix = 'RX_VREF(' || ix~substr(9)
+        code = code || 'rx::indexAssign(' || recv || ', std::move(_val' || t || '), ' || ix || '); '
+        recv = current
+        iterate
+      end
+      if \asInstruction | s~is('~') | s~is('~~') | s~is('[') then do
+        /* a plain variable index is read in place (nothing runs between reading it and the access) */
+        ix = args[1]
+        if ix~left(9) == 'RX_VGET("' & ix~right(2) == '")' & pos('(', ix, 9) == 0 then ix = 'RX_VREF(' || ix~substr(9)
+        code = code || current || ' = rx::indexValue(' || recv || ', ' || ix || '); '
+        recv = current
+        iterate
+      end
+    end
     argVar = '_args' || ctx~label
     code = code || 'std::vector<rx::Value> ' || argVar || '; '
+    if args~items > 1 then code = code || argVar || '.reserve(' || args~items || '); '
     do expr over args
       code = code || argVar || '.push_back(' || expr || '); '
     end
     cascading = 'false'
     if cascade then cascading = 'true'
-    callExpr = recv || ', ' || .RxQuote~cpp(selector) || ', ' || argVar || ', ' || cascading
+    /* the selector string made once */
+    selVar = '_sel' || ctx~label
+    code = code || 'static const std::string ' || selVar || '(' || .RxQuote~cpp(selector) || '); '
+    callExpr = recv || ', ' || selVar || ', ' || argVar || ', ' || cascading
     if attrAssign then
-      code = code || 'rx::sendMessage(' || recv || ', ' || .RxQuote~cpp(selector) || ', ' || argVar || '); '
+      code = code || 'rx::sendMessage(' || recv || ', ' || selVar || ', ' || argVar || '); '
     else if asInstruction & \s~is('~') & \s~is('~~') & \s~is('[') then
       code = code || 'rx::messageInstruction(vars, ' || callExpr || '); '
     else

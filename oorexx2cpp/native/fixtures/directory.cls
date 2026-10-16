@@ -18,7 +18,22 @@
   return r
 ::method order
   d = self~build
-  return d~allIndexes~makestring('L', ',')
+  return d~allIndexes~makestring('L', ',') d~allItems~makestring('L', ',')
+-- ALLINDEXES / ALLITEMS asked while the directory is still being filled, then again after more keys and a replaced
+-- value; the items are the entries themselves
+::method grow
+  d = .directory~new
+  a = .array~of(1, 2)
+  d['first'] = a
+  r = d~allIndexes~makestring('L', ',') (d~allItems[1] == a)
+  do i = 1 to 40
+    d['g' || (i * 37 // 23) || i] = i * i
+  end
+  r = r '|' d~allIndexes~makestring('L', ',')
+  d['first'] = 'replaced'
+  d['late'] = 'x'
+  r = r '|' d~allIndexes~makestring('L', ',') '|' d~allItems~makestring('L', ',') d~allItems~class~id d~items
+  return r
 ::method loop
   d = .directory~new
   do i = 1 to 20

@@ -1497,6 +1497,14 @@ struct NativeArray final : NativeRefBase, ItemSnapshot, std::enable_shared_from_
     // A positive whole number written plainly (blanks around allowed); anything else is left to the interpreter.
     static bool index(const Value &v, std::size_t &out) {
         if (v.isObject()) return false;
+        // its numeric form when it is a plain whole number written in at most 9 characters (a number made by arithmetic
+        // has no leading zeros: its characters are not needed)
+        const std::uint32_t m = numMeta(v);
+        if (m & NumCache::integer) {
+            const std::int64_t c = v.bytes.numCache().coef.load(std::memory_order_relaxed);
+            if (c <= 0) return false;
+            if ((m & NumCache::pending) || v.bytes.size() <= 9) { out = static_cast<std::size_t>(c); return true; }
+        }
         const std::string &s = v.bytes;
         std::size_t a = s.find_first_not_of(' '), b = s.find_last_not_of(' ');
         if (a == std::string::npos || b - a + 1 > 9) return false;
@@ -1516,6 +1524,24 @@ struct NativeArray final : NativeRefBase, ItemSnapshot, std::enable_shared_from_
     std::size_t lastIndex() const {
         for (std::size_t i = slots.size(); i > 0; --i) if (slots[i - 1]) return i;
         return 0;
+    }
+    // [] / []= with a plain index, as sendMessage answers them (rx::indexValue / indexAssign)
+    bool indexAt(const Value &ix, const Value *&slot) override {
+        std::size_t i = 0;
+        if (real || !index(ix, i)) return false;
+        slot = i <= slots.size() && slots[i - 1] ? &*slots[i - 1] : nullptr;
+        return true;
+    }
+    bool indexPut(Value &v, const Value &ix) override {
+        std::size_t i = 0;
+        if (real || omitted(v) || !index(ix, i)) return false;
+        if (i > slots.size()) {
+            if (i > maxSlots) return false;
+            slots.resize(i);
+        }
+        if (!slots[i - 1]) ++count;
+        slots[i - 1] = std::move(v);
+        return true;
     }
     bool place(std::size_t i, const Value &v) {      // false: too sparse to keep natively
         if (i > slots.size()) {
@@ -1616,15 +1642,53 @@ inline Value nativeArrayClass() {
 }
 // .DIRECTORY in compiled library code. Native while it stays in compiled code: [] []= AT PUT HASINDEX ITEMS ISEMPTY ISA
 // CLASS and the identity comparisons, with plain string indexes. Iteration order is the interpreter's hash order, which
-// depends on insertion history: anything that shows order (ALLINDEXES, MAKEARRAY, SUPPLIER, DO OVER, ...), REMOVE,
-// any other message, or leaving compiled code creates the interpreter's Directory by replaying the first insertions in
-// their original order (the same history gives the same table) and forwards to it from then on.
+// depends on insertion history: ALLINDEXES and ALLITEMS ask it of a scratch interpreter Directory given the same keys
+// in the same order (the same history gives the same table; the values play no part), and answer native arrays of the
+// native entries in that order. Anything else that shows order (MAKEARRAY, SUPPLIER, DO OVER, ...), REMOVE, any other
+// message, or leaving compiled code creates the interpreter's Directory by replaying the first insertions in their
+// original order and forwards to it from then on.
 struct NativeDirectoryClass;
 inline Value nativeDirectoryClass();
 struct NativeDirectory final : NativeRefBase, std::enable_shared_from_this<NativeDirectory> {
     std::vector<std::string> order;                       // first-insertion order
     std::unordered_map<std::string, Value> entries;
     std::optional<Value> real;
+    std::vector<std::size_t> hashOrder;                   // positions in order, in the interpreter's order (when asked)
+    // The interpreter's ALLINDEXES order of these keys (no entry is ever removed while native: a new key is what makes
+    // it stale).
+    const std::vector<std::size_t> &interpreterOrder() {
+        if (hashOrder.size() == order.size()) return hashOrder;
+        MessageResult made = envClass("DIRECTORY").object->sendMessage("NEW", {});
+        auto *env = made && made->isObject() ? dynamic_cast<EnvObject *>(made->object.get()) : nullptr;
+        if (!env) throw std::runtime_error(".Directory~new is not an interpreter object");
+        std::vector<rxobj::Arg> in(order.size());
+        rxobj::directoryPutAll(env->handle, order, in);   // (empty strings: only the keys matter)
+        std::unordered_map<std::string, std::size_t> position;
+        for (std::size_t i = 0; i < order.size(); ++i) position.emplace(order[i], i);
+        RexxThreadContext *t = rxobj::need();
+        rxobj::LocalRefs temps(t);
+        RexxObjectPtr indexes = temps(t->SendMessage0((RexxObjectPtr)env->handle, "ALLINDEXES"));
+        if (indexes == NULLOBJECT || t->CheckCondition() || !t->IsArray(indexes)) throw std::runtime_error("Directory ALLINDEXES failed");
+        const std::size_t count = t->ArrayItems((RexxArrayObject)indexes);
+        std::vector<std::size_t> out;
+        out.reserve(count);
+        for (std::size_t i = 1; i <= count; ++i) {
+            RexxStringObject s = t->ObjectToString(temps(t->ArrayAt((RexxArrayObject)indexes, i)));
+            temps((RexxObjectPtr)s);
+            auto it = position.find(std::string(t->StringData(s), t->StringLength(s)));
+            if (it == position.end()) throw std::runtime_error("Directory ALLINDEXES: unknown index");
+            out.push_back(it->second);
+        }
+        if (out.size() != order.size()) throw std::runtime_error("Directory ALLINDEXES: wrong count");
+        hashOrder = std::move(out);
+        return hashOrder;
+    }
+    static Value arrayOf(std::vector<Value> items) {
+        auto a = std::make_shared<NativeArray>(items.size());
+        for (std::size_t i = 0; i < items.size(); ++i) a->slots[i] = std::move(items[i]);
+        a->count = items.size();
+        return Value::fromObject(a);
+    }
     Value &promote() {
         if (!real) {
             MessageResult made = envClass("DIRECTORY").object->sendMessage("NEW", {});
@@ -1694,6 +1758,13 @@ struct NativeDirectory final : NativeRefBase, std::enable_shared_from_this<Nativ
         }
         if (selector == "ITEMS" && n == 0) return Value::string(std::to_string(entries.size()));
         if (selector == "ISEMPTY" && n == 0) return Value::string(entries.empty() ? "1" : "0");
+        if ((selector == "ALLINDEXES" || selector == "ALLITEMS") && n == 0) {
+            const std::vector<std::size_t> &at = interpreterOrder();
+            std::vector<Value> items;
+            items.reserve(at.size());
+            for (std::size_t i : at) items.push_back(selector == "ALLINDEXES" ? Value::string(order[i]) : entries.at(order[i]));
+            return arrayOf(std::move(items));
+        }
         if (selector == "CLASS" && n == 0) return nativeDirectoryClass();
         if (selector == "ISA" && n == 1 && args[0].isObject()) {
             if (args[0].object.get() == nativeDirectoryClass().object.get()) return Value::string("1");

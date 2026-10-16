@@ -22,7 +22,8 @@
       /* Any symbol abutting "(" names a function, a constant symbol too (5A() calls 5A). */
       if s~is('(') & s~peek~line == t~endLine & s~peek~col == t~endCol then -
         return ctx~builtinExpr~parse(ctx, t~text)
-      return 'rx::Value::number(' || .RxQuote~cpp(t~text) || ')'
+      /* made once (its numeric form classified with it) and read by every evaluation, as the interpreter's literal */
+      return '([]() -> const rx::Value & { static const rx::Value _rxLit = rx::Value::number(' || .RxQuote~cpp(t~text) || '); return _rxLit; }())'
     end
     when t~kind == 'DOTIDENT' then do
       s~next

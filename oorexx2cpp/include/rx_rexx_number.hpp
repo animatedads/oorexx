@@ -47,7 +47,7 @@ inline bool fitsDigits(std::int64_t r, const ActivationNumeric &ctx) {
 //   short plain decimal (smallDecimal): optional sign, digits, at most one '.', at most 20 characters, at most 18
 //     significant digits; coef the digits as an integer (signed), exponent minus the digits after the '.'.
 //   plain whole number (smallInteger): optional '-', digits only, at most 10 characters, at most 999999999.
-constexpr std::uint32_t kNumKnown = 1, kNumDecimal = 2, kNumInteger = 4;
+constexpr std::uint32_t kNumKnown = NumCache::known, kNumDecimal = NumCache::decimal, kNumInteger = NumCache::integer;
 inline std::uint32_t numClassify(const RxStr &str) {
     NumCache &cache = str.numCache();
     const std::string &t = str.str();
@@ -83,6 +83,39 @@ inline std::uint32_t numMeta(const Value &v) {
     return m ? m : numClassify(v.bytes);
 }
 inline int numExponent(std::uint32_t meta) { return static_cast<int>((meta >> 8) & 0xff) - 128; }
+// 10**n for n in 0..38, and the digit count of a 128-bit magnitude by comparison (no division per digit).
+struct Pow10Table {
+    unsigned __int128 v[39];
+    constexpr Pow10Table() : v() { v[0] = 1; for (int i = 1; i < 39; ++i) v[i] = v[i - 1] * 10; }
+};
+inline constexpr Pow10Table kPow10{};
+inline unsigned __int128 pow10x(int n) { return kPow10.v[n]; }
+// digits of a magnitude: from its bit length (log10 2 ~ 1233/4096), corrected by one comparison
+inline int digitCount(unsigned __int128 u) {
+    const std::uint64_t hi = static_cast<std::uint64_t>(u >> 64), lo = static_cast<std::uint64_t>(u);
+    const int bits = hi ? 128 - __builtin_clzll(hi) : 64 - __builtin_clzll(lo | 1);
+    const int t = (bits * 1233) >> 12;   // floor(log10(2**bits)) <= digits - 1 + 1
+    const int d = t + 1 - (u < kPow10.v[t] ? 1 : 0);
+    return d > 0 ? d : 1;   // ("0" has one digit)
+}
+// A short plain number result, coef * 10**exp in fixed notation (the caller has checked the notation and that it has at
+// most 18 digits written out): made as its numeric form, its characters only when asked for (NumCache pending). The
+// characters are the ones formatRexxDecimal writes for it; their parse (numClassify) gives back this coef and exponent.
+inline Value pendingNumber(std::int64_t coef, int exp) {
+    if (coef == 0) exp = 0;
+    std::string zeros;
+    while (exp > 0) {
+        if (coef > 99999999999999999LL || coef < -99999999999999999LL) { zeros.append(static_cast<std::size_t>(exp), '0'); exp = 0; break; }
+        coef *= 10; --exp;
+    }
+    const std::uint64_t u = coef < 0 ? 0 - static_cast<std::uint64_t>(coef) : static_cast<std::uint64_t>(coef);
+    const int nd = digitCount(u);
+    const int len = (coef < 0 ? 1 : 0) + (exp < 0 ? std::max(nd, -exp + 1) + 1 : nd);
+    if (!zeros.empty() || nd > 18 || len > 20) return Value::number(RxStr::plainNumber(coef, exp) + zeros);
+    std::uint32_t meta = kNumKnown | kNumDecimal | (static_cast<std::uint32_t>(exp + 128) << 8);
+    if (exp == 0 && u <= 999999999) meta |= kNumInteger;
+    return Value(Value::PendingTag{}, coef, meta);
+}
 inline bool smallInteger(const Value &v, const ActivationNumeric &ctx, std::int64_t &out) {
     if (v.isObject() || ctx.digits < 1 || ctx.fuzz != 0) return false;   // NUMERIC FUZZ changes comparisons: full path
     if (!(numMeta(v) & kNumInteger)) return false;
@@ -294,22 +327,14 @@ inline bool smallDecimal(const Value &v, std::int64_t &coef, int &exp) {
     coef = v.bytes.numCache().coef.load(std::memory_order_relaxed); exp = numExponent(m);
     return true;
 }
-inline int smallDigits(unsigned __int128 v) { int d = 1; while (v >= 10) { v /= 10; ++d; } return d; }
+inline int smallDigits(unsigned __int128 v) { return digitCount(v); }   // (by comparison: no 128-bit division per digit)
 // Exact fixed-notation result (exponent in [-2*DIGITS, 0], significant digits within DIGITS), else nullopt.
 inline std::optional<Value> smallDecimalResult(__int128 c, int e, const ActivationNumeric &ctx) {
-    if (c == 0) return Value::number("0");
+    if (c == 0) return pendingNumber(0, 0);
     const bool neg = c < 0;
     unsigned __int128 u = neg ? static_cast<unsigned __int128>(-c) : static_cast<unsigned __int128>(c);
-    if (e > 0 || e < -2 * static_cast<int>(ctx.digits) || smallDigits(u) > static_cast<int>(ctx.digits)) return std::nullopt;
-    char buf[64]; int k = 0;
-    const int frac = -e;
-    int pos = 0;
-    do { buf[k++] = static_cast<char>('0' + static_cast<int>(u % 10)); u /= 10; ++pos; if (pos == frac && frac > 0) buf[k++] = '.'; } while (u || pos < frac);
-    if (frac > 0 && pos == frac) buf[k++] = '0';
-    std::string out; out.reserve(static_cast<std::size_t>(k) + 1);
-    if (neg) out += '-';
-    while (k) out += buf[--k];
-    return Value::number(out);
+    if (e > 0 || e < -2 * static_cast<int>(ctx.digits) || digitCount(u) > static_cast<int>(ctx.digits)) return std::nullopt;
+    return pendingNumber(static_cast<std::int64_t>(c), e);   // (digits <= 18: fits)
 }
 inline std::optional<Value> smallDecimalAdd(const Value &a, const Value &b, bool subtract, const ActivationNumeric &ctx) {
     if (ctx.digits > 18 || ctx.digits < 1) return std::nullopt;
@@ -529,15 +554,34 @@ inline bool format(bool negative, unsigned __int128 u, long exp, const Activatio
 }
 // roundRexx: DIGITS significant digits, round half up on the magnitude, a carry out drops one more digit.
 inline void round(unsigned __int128 &u, long &exp, long digits) {
-    char d[40]; const int len = digitsOf(u, d);
+    const int len = digitCount(u);
     if (len <= digits) return;
     const int discard = len - static_cast<int>(digits);
-    const unsigned __int128 p = pow10u(discard);
+    const unsigned __int128 p = pow10x(discard);
     unsigned __int128 q = u / p;
-    if ((u % p) * 2 >= p) ++q;
+    if ((u - q * p) * 2 >= p) ++q;
     exp += discard;
-    if (q >= pow10u(static_cast<int>(digits))) { q /= 10; ++exp; }
+    if (q >= pow10x(static_cast<int>(digits))) { q /= 10; ++exp; }
     u = q;
+}
+// A result: coef * 10**exp, fixed notation (ok false: exponential, the general path makes it). The caller makes the
+// Value (pendingNumber), so it is built once, in place.
+struct Fixed { bool ok = false; std::int64_t coef = 0; int exp = 0; };
+inline Fixed zero() { return Fixed{true, 0, 0}; }
+// format's notation check
+inline Fixed fixedResult(bool negative, unsigned __int128 u, long exp, const ActivationNumeric &ctx) {
+    if (u == 0) return zero();
+    const long adjusted = digitCount(u) - 1 + exp;
+    if (adjusted >= static_cast<long>(ctx.digits) || std::labs(exp) > 2 * static_cast<long>(ctx.digits)) return Fixed{};
+    const std::int64_t c = static_cast<std::int64_t>(u);   // u < 10**DIGITS <= 10**18
+    return Fixed{true, negative ? -c : c, static_cast<int>(exp)};
+}
+// digits of a 64-bit magnitude, most significant first
+inline int digitsOf64(std::uint64_t u, char *out) {
+    char tmp[24]; int n = 0;
+    do { tmp[n++] = static_cast<char>(u % 10); u /= 10; } while (u);
+    for (int i = 0; i < n; ++i) out[i] = tmp[n - 1 - i];
+    return n;
 }
 inline bool operand(const Value &v, const ActivationNumeric &ctx, std::int64_t &c, int &e, int &len) {
     if (!smallDecimal(v, c, e)) return false;
@@ -546,135 +590,68 @@ inline bool operand(const Value &v, const ActivationNumeric &ctx, std::int64_t &
     return len <= static_cast<int>(ctx.digits);
 }
 // numericMul: no operand longer than DIGITS (no guard truncation, no LOSTDIGITS), product rounded (numberResult).
-inline std::optional<Value> mul(const Value &a, const Value &b, const ActivationNumeric &ctx) {
-    if (ctx.digits > 18 || ctx.digits < 1 || ctx.fuzz >= ctx.digits) return std::nullopt;
+inline Fixed mul(const Value &a, const Value &b, const ActivationNumeric &ctx) {
+    if (ctx.digits > 18 || ctx.digits < 1 || ctx.fuzz >= ctx.digits) return Fixed{};
     std::int64_t x, y; int ex, ey, lx, ly;
-    if (!operand(a, ctx, x, ex, lx) || !operand(b, ctx, y, ey, ly)) return std::nullopt;
-    if (x == 0 || y == 0) return std::nullopt;
+    if (!operand(a, ctx, x, ex, lx) || !operand(b, ctx, y, ey, ly)) return Fixed{};
+    if (x == 0 || y == 0) return Fixed{};
     const bool neg = (x < 0) != (y < 0);
     unsigned __int128 u = static_cast<unsigned __int128>(x < 0 ? -x : x) * static_cast<unsigned __int128>(y < 0 ? -y : y);
     long exp = static_cast<long>(ex) + ey;
     round(u, exp, static_cast<long>(ctx.digits));
-    std::string s;
-    if (!format(neg, u, exp, ctx, s)) return std::nullopt;
-    return Value::number(s);
+    return fixedResult(neg, u, exp, ctx);
 }
-// oorexx_addsub::addSub step for step, operands of at most DIGITS digits (so never truncated to DIGITS+1 on entry).
-inline std::optional<Value> addSub(const Value &a, const Value &b, bool minus, const ActivationNumeric &ctx) {
-    if (ctx.digits > 18 || ctx.digits < 1 || ctx.fuzz >= ctx.digits) return std::nullopt;
+// oorexx_addsub::addSub for operands of at most DIGITS digits (so never truncated to DIGITS+1 on entry), on 128-bit
+// integers instead of digit arrays: the same steps, each as arithmetic on the aligned coefficients.
+//   A copy of one operand when the other is zero or too small to reach the result's DIGITS+1 window.
+//   Equal magnitudes of opposite sign: 0.
+//   Aligned to the smaller exponent; when the aligned operands are longer than DIGITS+1, both lose the same number of
+//   low digits (truncated, not rounded: the other operand's padding zeros first), the exponent going up as much.
+//   Sum or difference of the magnitudes; its digit positions are the longer aligned operand's (a difference keeps its
+//   leading zeros) plus one for a final carry.
+//   Rounded to DIGITS counted on those positions (first dropped digit >= 5; nine-carry gives one more exponent), then
+//   leading zeros stripped.
+// (Truncation with the exponent past the padding of the other operand, the general path's second case, needs an operand
+// longer than DIGITS: never here.)
+inline Fixed addSub(const Value &a, const Value &b, bool minus, const ActivationNumeric &ctx) {
+    if (ctx.digits > 18 || ctx.digits < 1 || ctx.fuzz >= ctx.digits) return Fixed{};
     std::int64_t x, y; int ex, ey, lx, ly;
-    if (!operand(a, ctx, x, ex, lx) || !operand(b, ctx, y, ey, ly)) return std::nullopt;
-    const long digits = static_cast<long>(ctx.digits), maxLength = digits + 1;
-    char ld[24], rd[24];
-    const long leftLength0 = digitsOf(static_cast<unsigned __int128>(x < 0 ? -x : x), ld);
-    const long rightLength0 = digitsOf(static_cast<unsigned __int128>(y < 0 ? -y : y), rd);
+    if (!operand(a, ctx, x, ex, lx) || !operand(b, ctx, y, ey, ly)) return Fixed{};
+    const long digits = static_cast<long>(ctx.digits);
+    const std::uint64_t ux = static_cast<std::uint64_t>(x < 0 ? -x : x), uy = static_cast<std::uint64_t>(y < 0 ? -y : y);
     const int leftSign = x < 0 ? -1 : (x == 0 ? 0 : 1);
     const int rightSign0 = y < 0 ? -1 : (y == 0 ? 0 : 1);
-    long leftExp = ex, rightExp = ey, leftLength = leftLength0, rightLength = rightLength0;
-    const long minExp = std::min(leftExp, rightExp);
-    long adjL = leftExp - minExp, adjR = rightExp - minExp;
-    if (adjL > 36 || adjR > 36) return std::nullopt;   // (operands far apart: the general path)
-    auto result = [&](const char *d, long n, long exp, int sign) -> std::optional<Value> {
-        // roundTo (adjustPrecision) then make (strip leading zeros), then format
-        char buf[80]; std::memcpy(buf, d, static_cast<std::size_t>(n));
-        if (n > digits) {
-            exp += n - digits;
-            const bool up = buf[digits] >= 5;
-            n = digits;
-            if (up) {
-                long i = digits - 1;
-                for (; i >= 0; --i) { if (buf[i] == 9) buf[i] = 0; else { ++buf[i]; break; } }
-                if (i < 0) { buf[0] = 1; exp += 1; }
-            }
-        }
-        long k = 0;
-        while (k + 1 < n && buf[k] == 0) ++k;
-        unsigned __int128 u = 0;
-        for (long i = k; i < n; ++i) u = u * 10 + static_cast<unsigned>(buf[i]);
-        if (u == 0) return Value::number("0");
-        std::string s;
-        if (!format(sign < 0, u, exp, ctx, s)) return std::nullopt;
-        return Value::number(s);
-    };
-    if (leftSign == 0) {
-        if (rightSign0 == 0) return Value::number("0");
-        return result(rd, rightLength0, ey, minus ? -rightSign0 : rightSign0);
-    }
-    if (rightSign0 == 0) return result(ld, leftLength0, ex, leftSign);
-    if (adjL + leftLength > rightLength + digits) return result(ld, leftLength0, ex, leftSign);
-    if (adjR + rightLength > leftLength + digits) return result(rd, rightLength0, ey, minus ? -rightSign0 : rightSign0);
     const int rightSign = minus ? -rightSign0 : rightSign0;
-    bool plus = true;
-    if (rightSign != leftSign) {
-        if (leftLength == rightLength && leftExp == rightExp && std::memcmp(ld, rd, static_cast<std::size_t>(leftLength)) == 0)
-            return Value::number("0");
-        plus = false;
+    if (leftSign == 0) return rightSign0 == 0 ? zero() : fixedResult(rightSign < 0, uy, ey, ctx);
+    if (rightSign0 == 0) return fixedResult(leftSign < 0, ux, ex, ctx);
+    const long minExp = std::min(ex, ey);
+    const long adjL = ex - minExp, adjR = ey - minExp;
+    if (adjL > 36 || adjR > 36) return Fixed{};   // (operands far apart: the general path)
+    if (adjL + lx > ly + digits) return fixedResult(leftSign < 0, ux, ex, ctx);
+    if (adjR + ly > lx + digits) return fixedResult(rightSign < 0, uy, ey, ctx);
+    if (rightSign != leftSign && lx == ly && ex == ey && ux == uy) return zero();
+    unsigned __int128 A = static_cast<unsigned __int128>(ux) * kPow10.v[adjL], B = static_cast<unsigned __int128>(uy) * kPow10.v[adjR];
+    long positions = std::max(lx + adjL, ly + adjR), exp = minExp;
+    const long over = positions - (digits + 1);
+    if (over > 0) { A /= kPow10.v[over]; B /= kPow10.v[over]; exp += over; positions -= over; }
+    unsigned __int128 S;
+    int sign;
+    if (rightSign == leftSign) {
+        S = A + B; sign = leftSign;
+        if (S >= kPow10.v[positions]) ++positions;   // carry out
+    } else if (A >= B) { S = A - B; sign = leftSign; }
+    else { S = B - A; sign = rightSign; }
+    if (positions > digits) {   // roundTo, on the positions (leading zeros of a difference included)
+        const long drop = positions - digits;
+        const unsigned __int128 p = kPow10.v[drop];
+        unsigned __int128 q = S / p;
+        if ((S - q * p) * 2 >= p) ++q;
+        exp += drop;
+        if (q == kPow10.v[digits]) { q = kPow10.v[digits - 1]; ++exp; }
+        S = q;
     }
-    long lp = leftLength - 1, rp = rightLength - 1;
-    const long adjustedLeftDigits = (leftLength + adjL) - maxLength;
-    const long adjustedRightDigits = (rightLength + adjR) - maxLength;
-    if (adjustedLeftDigits > 0 || adjustedRightDigits > 0) {
-        long adjustDigits = adjustedLeftDigits >= adjustedRightDigits ? adjustedLeftDigits : adjustedRightDigits;
-        if (adjL != 0) {
-            if (adjustDigits < adjL) { adjL -= adjustDigits; rp -= adjustDigits; rightExp += adjustDigits; rightLength -= adjustDigits; adjustDigits = 0; }
-            else { rp -= adjL; rightExp += adjL; rightLength -= adjustDigits; adjustDigits -= adjL; adjL = 0; }
-        } else if (adjR != 0) {
-            if (adjustDigits < adjR) { adjR -= adjustDigits; lp -= adjustDigits; leftExp += adjustDigits; leftLength -= adjustDigits; adjustDigits = 0; }
-            else { lp -= adjR; leftExp += adjR; leftLength -= adjustDigits; adjustDigits -= adjR; adjR = 0; }
-        }
-        if (adjustDigits) { leftExp += adjustDigits; lp -= adjustDigits; rightExp += adjustDigits; rp -= adjustDigits; }
-    }
-    char out[80]; long on = 0;   // least significant digit first
-    long exp = 0; int sign = 0;
-    auto subtract = [&](const char *L, long lpos, long aL, const char *S, long spos, long aS) {
-        int borrow = 0;
-        while (aL-- > 0) {
-            int sub = spos >= 0 ? S[spos--] : 0;
-            sub = borrow + 10 - sub;
-            if (sub == 10) { sub = 0; borrow = 0; } else borrow = -1;
-            out[on++] = static_cast<char>(sub);
-        }
-        while (aS-- > 0) out[on++] = lpos >= 0 ? L[lpos--] : 0;
-        while (spos >= 0) {
-            int sub = borrow + L[lpos--] - S[spos--];
-            if (sub < 0) { borrow = -1; sub += 10; } else borrow = 0;
-            out[on++] = static_cast<char>(sub);
-        }
-        while (lpos >= 0) {
-            int sub = borrow + L[lpos--];
-            if (sub < 0) { borrow = -1; sub += 10; } else borrow = 0;
-            out[on++] = static_cast<char>(sub);
-        }
-    };
-    if (plus) {
-        int carry = 0;
-        sign = leftSign;
-        if (adjL != 0) { for (long k = adjL; k-- > 0;) out[on++] = rp >= 0 ? rd[rp--] : 0; exp = rightExp; }
-        else if (adjR != 0) { for (long k = adjR; k-- > 0;) out[on++] = lp >= 0 ? ld[lp--] : 0; exp = leftExp; }
-        else exp = leftExp;
-        auto put = [&](int v) { v += carry; if (v >= 10) { carry = 1; v -= 10; } else carry = 0; out[on++] = static_cast<char>(v); };
-        while (lp >= 0 && rp >= 0) put(ld[lp--] + rd[rp--]);
-        while (lp >= 0) put(ld[lp--]);
-        while (rp >= 0) put(rd[rp--]);
-        if (carry) out[on++] = 1;
-    } else if (adjL + leftLength > adjR + rightLength) {
-        subtract(ld, lp, adjL, rd, rp, adjR); exp = adjL != 0 ? rightExp : leftExp; sign = leftSign;
-    } else if (adjL + leftLength < adjR + rightLength) {
-        subtract(rd, rp, adjR, ld, lp, adjL); exp = adjL != 0 ? rightExp : leftExp; sign = rightSign;
-    } else if (rightLength < leftLength) {
-        if (std::memcmp(rd, ld, static_cast<std::size_t>(rightLength)) > 0) { subtract(rd, rp, adjR, ld, lp, adjL); sign = rightSign; }
-        else { subtract(ld, lp, adjL, rd, rp, adjR); sign = leftSign; }
-        exp = leftExp;
-    } else {
-        const int rc = std::memcmp(ld, rd, static_cast<std::size_t>(leftLength));
-        if (rc > 0) { subtract(ld, lp, adjL, rd, rp, adjR); exp = rightExp; sign = leftSign; }
-        else if (rc != 0) { subtract(rd, rp, adjR, ld, lp, adjL); exp = rightExp; sign = rightSign; }
-        else if (leftLength < rightLength) { subtract(rd, rp, adjR, ld, lp, adjL); exp = rightExp; sign = rightSign; }
-        else return Value::number("0");
-    }
-    char d[80];
-    for (long i = 0; i < on; ++i) d[i] = out[on - 1 - i];
-    return result(d, on, exp, sign);
+    if (S == 0) return zero();
+    return fixedResult(sign < 0, S, exp, ctx);
 }
 }  // namespace small_math
 // NumberString::numberValue (signed) / unsignedNumberValue (unsigned): a whole number under DIGITS (first excluded digit
@@ -727,15 +704,13 @@ inline Value numericAddSub(const Value &a, const Value &b, bool minus, const Act
     return Value::number(formatRexxDecimal(oorexx_addsub::addSub(x, y, minus, ctx.digits), ctx));
 }
 inline Value numericAdd(const Value &a, const Value &b, const ActivationNumeric &ctx) {
-    { std::int64_t p, q; if (smallInteger(a, ctx, p) && smallInteger(b, ctx, q) && fitsDigits(p + q, ctx)) return Value::number(std::to_string(p + q)); }
-    if (auto quick = smallDecimalAdd(a, b, false, ctx)) return std::move(*quick);
-    if (auto quick = small_math::addSub(a, b, false, ctx)) return std::move(*quick);
+    { std::int64_t p, q; if (smallInteger(a, ctx, p) && smallInteger(b, ctx, q) && fitsDigits(p + q, ctx)) return pendingNumber(p + q, 0); }
+    if (const small_math::Fixed r = small_math::addSub(a, b, false, ctx); r.ok) return pendingNumber(r.coef, r.exp);
     return numericAddSub(a, b, false, ctx);
 }
 inline Value numericSub(const Value &a, const Value &b, const ActivationNumeric &ctx) {
-    { std::int64_t p, q; if (smallInteger(a, ctx, p) && smallInteger(b, ctx, q) && fitsDigits(p - q, ctx)) return Value::number(std::to_string(p - q)); }
-    if (auto quick = smallDecimalAdd(a, b, true, ctx)) return std::move(*quick);
-    if (auto quick = small_math::addSub(a, b, true, ctx)) return std::move(*quick);
+    { std::int64_t p, q; if (smallInteger(a, ctx, p) && smallInteger(b, ctx, q) && fitsDigits(p - q, ctx)) return pendingNumber(p - q, 0); }
+    if (const small_math::Fixed r = small_math::addSub(a, b, true, ctx); r.ok) return pendingNumber(r.coef, r.exp);
     return numericAddSub(a, b, true, ctx);
 }
 inline void truncateGuardDigits(RexxDecimal &v, const ActivationNumeric &ctx) {
@@ -746,9 +721,8 @@ inline void truncateGuardDigits(RexxDecimal &v, const ActivationNumeric &ctx) {
     }
 }
 inline Value numericMul(const Value &a, const Value &b, const ActivationNumeric &ctx) {
-    { std::int64_t p, q; if (smallInteger(a, ctx, p) && smallInteger(b, ctx, q) && fitsDigits(p * q, ctx)) return Value::number(std::to_string(p * q)); }
-    if (auto quick = smallDecimalMul(a, b, ctx)) return std::move(*quick);
-    if (auto quick = small_math::mul(a, b, ctx)) return std::move(*quick);
+    { std::int64_t p, q; if (smallInteger(a, ctx, p) && smallInteger(b, ctx, q) && fitsDigits(p * q, ctx)) return pendingNumber(p * q, 0); }
+    if (const small_math::Fixed r = small_math::mul(a, b, ctx); r.ok) return pendingNumber(r.coef, r.exp);
     RexxDecimal x = parseRexxDecimal(a), y = parseRexxDecimal(b);
     checkLostDigits(x, a, ctx); checkLostDigits(y, b, ctx);
     // ooRexx uses one guard digit of operand precision in multiplication.
