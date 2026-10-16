@@ -148,31 +148,75 @@
   count = 0
   rewritten = .array~new
   do line over instructions
-    do m over macros
-      start = 1
-      do forever
-        p = line~pos(m, start)
-        if p = 0 then leave
-        nameStart = p + length(m)
-        q = line~pos('"', nameStart)
-        if q = 0 then leave
-        name = line~substr(nameStart, q - nameStart)
-        if \slot~hasEntry(name) then do
-          slot[name] = count
-          count += 1
-        end
-        repl = m~left(length(m) - 2) || 'K(' || slot[name] || ', "'
-        line = line~left(p - 1) || repl || line~substr(nameStart)
-        start = p + length(repl)
-      end
-    end
+    if line~pos('RX_V') > 0 then line = self~slotLine(line, macros, slot)
     rewritten~append(line)
   end
+  count = slot~items
   if count == 0 then return
   declaration = 'rx::LocalSlots<' || count || '> _rxL{}; (void)_rxL;'
   instructions = .array~of(declaration)
   do line over rewritten
     instructions~append(line)
+  end
+/* One line of generated C++ with its variable macros numbered: only macros in the code, not text inside a C++ string or
+   character literal (a compiled Rexx literal 'RX_VGET(' is C++ "RX_VGET(" and stays as it is). */
+::method slotLine private
+  use arg line, macros, slot
+  at = 1          /* scanned up to here, outside any literal */
+  do forever
+    /* the next macro start after at */
+    p = 0
+    do m over macros
+      q = line~pos(m, at)
+      if q > 0 & (p = 0 | q < p) then do; p = q; found = m; end
+    end
+    if p = 0 then return line
+    /* is p inside a literal? walk the quotes between at and p */
+    inString = .false
+    i = at
+    do forever
+      q = line~pos('"', i)
+      if q = 0 | q >= p then leave
+      if \inString & q > 1 & line~substr(q - 1, 1) == "'" & line~substr(q + 1, 1) == "'" then do; i = q + 2; iterate; end
+      if \inString & q > 2 & line~substr(q - 2, 2) == "'\" & line~substr(q + 1, 1) == "'" then do; i = q + 2; iterate; end
+      if inString then do
+        backslashes = 0
+        k = q - 1
+        do while k >= i - 1 & k > 0 & line~substr(k, 1) == '\'
+          backslashes += 1
+          k -= 1
+        end
+        if backslashes // 2 = 1 then do; i = q + 1; iterate; end
+      end
+      inString = \inString
+      i = q + 1
+    end
+    if inString then do
+      /* skip to the end of this literal: the next unescaped quote after p */
+      q = p
+      do forever
+        q = line~pos('"', q)
+        if q = 0 then return line
+        backslashes = 0
+        k = q - 1
+        do while k > 0 & line~substr(k, 1) == '\'
+          backslashes += 1
+          k -= 1
+        end
+        if backslashes // 2 = 0 then leave
+        q += 1
+      end
+      at = q + 1
+      iterate
+    end
+    nameStart = p + length(found)
+    q = line~pos('"', nameStart)
+    if q = 0 then return line
+    name = line~substr(nameStart, q - nameStart)
+    if \slot~hasEntry(name) then slot[name] = slot~items
+    repl = found~left(length(found) - 2) || 'K(' || slot[name] || ', "'
+    line = line~left(p - 1) || repl || line~substr(nameStart)
+    at = p + length(repl) + (q - nameStart) + 1     /* past the name's closing quote */
   end
 /* Generated scaffolding (trap loop, SIGL line markers): not a Rexx statement (EXPOSE / USE ARG may still follow). */
 ::method addRaw
