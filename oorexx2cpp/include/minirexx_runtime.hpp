@@ -1452,6 +1452,17 @@ inline Value sendBinary(const Value &lhs, const std::string &selector, const Val
 }
 inline Value sendUnary(const std::string &selector, const Value &operand, const ActivationNumeric &numeric) {
     if (operand.isObject()) return operand.object->sendUnary(selector);
+    // + / - of a short plain number of at most DIGITS digits: nothing to round, so the result is the operand's numeric
+    // form (sign changed), fixed notation when formatRexxDecimal would write it so
+    if ((selector == "-" || selector == "+") && numeric.digits <= 18 && numeric.digits >= 1) {
+        std::int64_t c; int e;
+        if (smallDecimal(operand, c, e)) {
+            const int nd = digitCount(static_cast<unsigned __int128>(c < 0 ? -c : c));
+            if (nd <= static_cast<int>(numeric.digits) &&
+                (c == 0 || (nd - 1 + e < static_cast<int>(numeric.digits) && -e <= 2 * static_cast<int>(numeric.digits))))
+                return pendingNumber(selector == "-" ? -c : c, e);
+        }
+    }
     if (selector == "+") {
         const RexxDecimal d = parseRexxDecimal(operand);
         checkLostDigits(d, operand, numeric);
@@ -1463,7 +1474,7 @@ inline Value sendUnary(const std::string &selector, const Value &operand, const 
         result.coefficient = -result.coefficient;
         return numberResult(result, numeric);
     }
-    if (selector == "\\") return Value::string(condition(operand) ? "0" : "1");
+    if (selector == "\\") return truthValue(!condition(operand));
     throw std::runtime_error("unknown unary operator message: " + selector);
 }
 inline Value sendUnary(const std::string &selector, const Value &operand) {
@@ -1500,6 +1511,12 @@ inline bool condition(const Value &v, Truth where) {
     badLogicalValue(v, where);
 }
 inline bool condition(const Value &v) { return condition(v, Truth::Method); }
+// v.bytes == "1" (a loop's TO / FOR test), without writing the characters of a number made by a comparison.
+inline bool isOne(const Value &v) {
+    const std::uint32_t m = v.bytes.numCache().meta.load(std::memory_order_acquire);
+    if ((m & NumCache::pending) && (m & NumCache::integer)) return v.bytes.numCache().coef.load(std::memory_order_relaxed) == 1;
+    return v.bytes == "1";
+}
 inline bool within(std::int64_t current, std::int64_t limit, std::int64_t step) {
     if (step == 0) throw std::runtime_error("DO BY 0 unsupported");
     return step > 0 ? current <= limit : current >= limit;

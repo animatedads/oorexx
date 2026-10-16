@@ -90,7 +90,7 @@
           when keyword == 'BY' then do
             hasBy = .true
             setup~append('const rx::Value _rxBy' || suffix || ' = rx::sendUnary("+", ' || expr || ', vars.numeric);')
-            setup~append('const char *_rxCmp' || suffix || ' = rx::sendBinary(_rxBy' || suffix || ', "<", rx::Value::number("0"), vars.numeric).bytes == "1" ? "<" : ">";')
+            setup~append('const char *_rxCmp' || suffix || ' = rx::isOne(rx::sendBinary(_rxBy' || suffix || ', "<", rx::Value::number("0"), vars.numeric)) ? "<" : ">";')
           end
           otherwise do
             hasFor = .true
@@ -106,7 +106,7 @@
       setup~append(.RxCompoundSymbols~store(control, '_rxStart' || suffix))
       increment~append(.RxCompoundSymbols~store(control, 'rx::sendBinary(' || .RxCompoundSymbols~load(control) || ', "+", _rxBy' || suffix || ', vars.numeric)'))
       if hasTo then
-        test~append('if (rx::sendBinary(' || .RxCompoundSymbols~load(control) || ', _rxCmp' || suffix || ', _rxTo' || suffix || ', vars.numeric).bytes == "1") break;')
+        test~append('if (rx::isOne(rx::sendBinary(' || .RxCompoundSymbols~load(control) || ', _rxCmp' || suffix || ', _rxTo' || suffix || ', vars.numeric))) break;')
     end
     when form == 'OVER' then do
       control = s~next~text

@@ -594,7 +594,7 @@ inline Fixed mul(const Value &a, const Value &b, const ActivationNumeric &ctx) {
     if (ctx.digits > 18 || ctx.digits < 1 || ctx.fuzz >= ctx.digits) return Fixed{};
     std::int64_t x, y; int ex, ey, lx, ly;
     if (!operand(a, ctx, x, ex, lx) || !operand(b, ctx, y, ey, ly)) return Fixed{};
-    if (x == 0 || y == 0) return Fixed{};
+    if (x == 0 || y == 0) return zero();   // (numberResult of a zero product: "0")
     const bool neg = (x < 0) != (y < 0);
     unsigned __int128 u = static_cast<unsigned __int128>(x < 0 ? -x : x) * static_cast<unsigned __int128>(y < 0 ? -y : y);
     long exp = static_cast<long>(ex) + ey;
