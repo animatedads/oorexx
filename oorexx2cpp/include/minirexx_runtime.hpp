@@ -51,12 +51,42 @@ inline void notePressure(std::size_t bytes) {
     pending += bytes;
     if (pending >= pressureLimit) { pending = 0; collectHook()(); }
 }
+// The numeric form of a string, kept with it as RexxString keeps its NumberString (RexxString::numberString): parsed
+// once, then every arithmetic operation, comparison and whole-number conversion on the same value (a variable, an array
+// item, a copy of either) uses it instead of reading the characters again. Only short plain numbers are kept (what
+// rx_rexx_number.hpp's smallDecimal / smallInteger accept: at most 20 characters, at most 18 significant digits, no
+// blanks or exponent); any other string is marked as not one. Arithmetic results are classified when they are made
+// (Value::number), so a result stored in a variable or a collection already carries it.
+// meta: 0 not known yet; else bit 0 known, bit 1 a short plain decimal (coef, exponent), bit 2 a plain whole number as
+// smallInteger reads it (value coef), bits 8..15 the exponent + 128. Atomic so a string shared between threads (a
+// constant, a value in a shared object) can be classified by either: coef is written before meta (release).
+struct NumCache {
+    std::atomic<std::int64_t> coef{0};
+    std::atomic<std::uint32_t> meta{0};
+    NumCache() = default;
+    NumCache(const NumCache &o) noexcept { copyFrom(o); }
+    NumCache &operator=(const NumCache &o) noexcept { if (this != &o) copyFrom(o); return *this; }
+    void copyFrom(const NumCache &o) noexcept {
+        const std::uint32_t m = o.meta.load(std::memory_order_acquire);
+        coef.store(o.coef.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        meta.store(m, std::memory_order_relaxed);
+    }
+    void reset() noexcept { meta.store(0, std::memory_order_relaxed); }
+};
 class RxStr {
 public:
     static constexpr std::size_t inlineLimit = 64;
     using size_type = std::string::size_type;
     static constexpr size_type npos = std::string::npos;
     RxStr() = default;
+    RxStr(const RxStr &) = default;
+    RxStr &operator=(const RxStr &) = default;
+    // A moved-from string is empty: its numeric form goes with the characters.
+    RxStr(RxStr &&o) noexcept : small_(std::move(o.small_)), big_(std::move(o.big_)), num_(o.num_) { o.small_.clear(); o.num_.reset(); }
+    RxStr &operator=(RxStr &&o) noexcept {
+        if (this != &o) { small_ = std::move(o.small_); big_ = std::move(o.big_); num_ = o.num_; o.small_.clear(); o.num_.reset(); }
+        return *this;
+    }
     RxStr(const std::string &v) { put(std::string(v)); }
     RxStr(std::string &&v) { put(std::move(v)); }
     RxStr(const char *v) { put(std::string(v)); }
@@ -65,8 +95,11 @@ public:
     RxStr &operator=(const char *v) { big_.reset(); put(std::string(v)); return *this; }
     const std::string &str() const { return big_ ? *big_ : small_; }
     operator const std::string &() const { return str(); }
-    // Write access: unshare first.
+    // The numeric form (rx_rexx_number.hpp numMeta fills it); const: it is a cache of the characters.
+    NumCache &numCache() const { return num_; }
+    // Write access: unshare first. The characters may change: the numeric form is dropped.
     std::string &mut() {
+        num_.reset();
         if (big_) {
             if (big_.use_count() != 1) big_ = std::make_shared<std::string>(*big_);
             return *big_;
@@ -97,17 +130,21 @@ public:
     template <class... A> RxStr &insert(A &&...a) { mut().insert(std::forward<A>(a)...); return *this; }
     template <class T> RxStr &operator+=(const T &t) { mut() += t; return *this; }
     void push_back(char c) { mut().push_back(c); }
-    void clear() { big_.reset(); small_.clear(); }
+    void clear() { big_.reset(); small_.clear(); num_.reset(); }
     void reserve(size_type n) { mut().reserve(n); }
     void resize(size_type n, char c = '\0') { mut().resize(n, c); }
 private:
     void put(std::string &&v) {
+        num_.reset();
         if (v.size() > inlineLimit) { notePressure(v.capacity()); small_.clear(); big_ = std::make_shared<std::string>(std::move(v)); }
         else small_ = std::move(v);
     }
     std::string small_;
     std::shared_ptr<std::string> big_;
+    mutable NumCache num_;
 };
+// Classifies a string's numeric form now (rx_rexx_number.hpp): used for arithmetic results.
+inline std::uint32_t numClassify(const RxStr &s);
 inline bool operator==(const RxStr &a, const RxStr &b) {
     return (a.size() == b.size()) && (a.data() == b.data() || a.str() == b.str());
 }
@@ -137,7 +174,7 @@ struct Value {
         if (!object) throw std::invalid_argument("null ooRexx object");
     }
     static Value string(const std::string &s) { return Value(s); }
-    static Value number(const std::string &s) { return Value(s); }
+    static Value number(const std::string &s) { Value v(s); numClassify(v.bytes); return v; }
     static Value fromObject(std::shared_ptr<ObjectDispatch> target) {
         return Value(std::move(target));
     }

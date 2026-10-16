@@ -43,18 +43,50 @@ inline bool fitsDigits(std::int64_t r, const ActivationNumeric &ctx) {
         10000000000000000LL,100000000000000000LL,1000000000000000000LL};
     return (r < 0 ? -r : r) < pow10[ctx.digits];
 }
+// The numeric form of a string (RxStr's NumCache, read once and kept with the characters).
+//   short plain decimal (smallDecimal): optional sign, digits, at most one '.', at most 20 characters, at most 18
+//     significant digits; coef the digits as an integer (signed), exponent minus the digits after the '.'.
+//   plain whole number (smallInteger): optional '-', digits only, at most 10 characters, at most 999999999.
+constexpr std::uint32_t kNumKnown = 1, kNumDecimal = 2, kNumInteger = 4;
+inline std::uint32_t numClassify(const RxStr &str) {
+    NumCache &cache = str.numCache();
+    const std::string &t = str.str();
+    std::uint32_t meta = kNumKnown;
+    std::int64_t coef = 0;
+    const std::size_t n = t.size();
+    if (n != 0 && n <= 20) {
+        std::size_t i = 0;
+        bool neg = false, plus = false;
+        if (t[0] == '-' || t[0] == '+') { neg = t[0] == '-'; plus = !neg; i = 1; }
+        std::int64_t c = 0; int e = 0; bool dot = false, digit = false, ok = true; int nd = 0;
+        for (; i < n; ++i) {
+            const char ch = t[i];
+            if (ch >= '0' && ch <= '9') {
+                if (c || ch != '0') { if (++nd > 18) { ok = false; break; } }
+                c = c * 10 + (ch - '0'); digit = true;
+                if (dot) --e;
+            } else if (ch == '.' && !dot) dot = true;
+            else { ok = false; break; }
+        }
+        if (ok && digit) {
+            coef = neg ? -c : c;
+            meta |= kNumDecimal | (static_cast<std::uint32_t>(e + 128) << 8);
+            if (!plus && !dot && n <= 10 && c <= 999999999) meta |= kNumInteger;
+        }
+    }
+    cache.coef.store(coef, std::memory_order_relaxed);
+    cache.meta.store(meta, std::memory_order_release);
+    return meta;
+}
+inline std::uint32_t numMeta(const Value &v) {
+    const std::uint32_t m = v.bytes.numCache().meta.load(std::memory_order_acquire);
+    return m ? m : numClassify(v.bytes);
+}
+inline int numExponent(std::uint32_t meta) { return static_cast<int>((meta >> 8) & 0xff) - 128; }
 inline bool smallInteger(const Value &v, const ActivationNumeric &ctx, std::int64_t &out) {
     if (v.isObject() || ctx.digits < 1 || ctx.fuzz != 0) return false;   // NUMERIC FUZZ changes comparisons: full path
-    const std::string &s = v.bytes;
-    std::size_t i = 0, n = s.size();
-    if (n == 0 || n > 10) return false;
-    bool neg = false;
-    if (s[0] == '-') { neg = true; i = 1; }
-    if (i >= n) return false;
-    std::int64_t r = 0;
-    for (; i < n; ++i) { if (s[i] < '0' || s[i] > '9') return false; r = r * 10 + (s[i] - '0'); }
-    if (r > 999999999) return false;
-    out = neg ? -r : r;
+    if (!(numMeta(v) & kNumInteger)) return false;
+    out = v.bytes.numCache().coef.load(std::memory_order_relaxed);
     return fitsDigits(out, ctx);
 }
 inline int decimalDigits(const cpp_int &c) {
@@ -79,6 +111,9 @@ inline int decimalDigits(const cpp_int &c) {
 inline bool rexxBlank(char c) { return c == ' ' || c == '\t'; }
 inline bool tryParseRexxDecimal(const Value &v, RexxDecimal &out, const char *&err) {
     if (v.isObject()) { err = "numeric operation on an object requires message dispatch"; return false; }
+    // A short plain decimal: its numeric form (the same coefficient and exponent the scan below gives).
+    { const std::uint32_t m = numMeta(v);
+      if (m & kNumDecimal) { out.coefficient = v.bytes.numCache().coef.load(std::memory_order_relaxed); out.exponent = numExponent(m); return true; } }
     // No copies: scan the bytes between leading and trailing blanks in place.
     const std::string &src = v.bytes;
     std::size_t i = 0, n = src.size();
@@ -254,23 +289,9 @@ inline std::string formatRexxDecimal(const RexxDecimal &value, const ActivationN
 // Used only where the result is exact within DIGITS, so no rounding rule is involved.
 inline bool smallDecimal(const Value &v, std::int64_t &coef, int &exp) {
     if (v.isObject()) return false;
-    const std::string &t = v.bytes;
-    std::size_t i = 0, n = t.size();
-    if (n == 0 || n > 20) return false;
-    bool neg = false;
-    if (t[0] == '-' || t[0] == '+') { neg = t[0] == '-'; i = 1; }
-    std::int64_t c = 0; int e = 0; bool dot = false, digit = false; int nd = 0;
-    for (; i < n; ++i) {
-        const char ch = t[i];
-        if (ch >= '0' && ch <= '9') {
-            if (c || ch != '0') { if (++nd > 18) return false; }
-            c = c * 10 + (ch - '0'); digit = true;
-            if (dot) --e;
-        } else if (ch == '.' && !dot) dot = true;
-        else return false;
-    }
-    if (!digit) return false;
-    coef = neg ? -c : c; exp = e;
+    const std::uint32_t m = numMeta(v);
+    if (!(m & kNumDecimal)) return false;
+    coef = v.bytes.numCache().coef.load(std::memory_order_relaxed); exp = numExponent(m);
     return true;
 }
 inline int smallDigits(unsigned __int128 v) { int d = 1; while (v >= 10) { v /= 10; ++d; } return d; }
