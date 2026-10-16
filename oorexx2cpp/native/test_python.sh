@@ -20,6 +20,6 @@ cp "$F/py_demo.cls" "$OUT/"
 (cd "$OUT" && "$REXX_BIN" interpreted.rex > expected.txt 2>&1)
 RX2CPP_KEEP_INTERPRETED="python.cls" "$ROOT/native/build.sh" "$OUT/py_demo.cls" "$OUT" rxpydemo > "$OUT/build.log" 2>&1 || { echo "FAIL build"; tail -30 "$OUT/build.log"; exit 1; }
 (cd "$OUT" && "$REXX_BIN" compiled.rex > actual.txt 2>&1) || true
-[[ -n "${PY_SHOW:-}" ]] && cat "$OUT/actual.txt"
+if [[ -n "${PY_SHOW:-}" ]]; then cat "$OUT/actual.txt"; fi
 diff -u "$OUT/expected.txt" "$OUT/actual.txt" || { echo "FAIL output differs from the interpreter"; exit 1; }
 echo "PASS python: $(wc -l < "$OUT/expected.txt") lines identical to the interpreter (Python via oorexxpython, and back)"

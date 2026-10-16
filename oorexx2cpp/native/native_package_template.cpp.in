@@ -947,6 +947,41 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
     auto s = ctx->ObjectToString(object);
     return std::string(ctx->StringData(s), ctx->StringLength(s));
 }
+// A PUBLIC EXTERNAL ::ROUTINE of the package: the library exports an entry that calls the declaration package's routine
+// (the one the external library implements) with the same arguments; its result and any condition are the caller's.
+[[maybe_unused]] static RexxObjectPtr rx2cpp_external_forward(RexxCallContext *context, RexxArrayObject args, const char *name) {
+#ifdef RX2CPP_HOST_API
+    RexxObjectPtr pkg = rxobj::libraryPackage();
+    RexxObjectPtr routine = pkg == NULLOBJECT ? NULLOBJECT : context->SendMessage1(pkg, "FINDROUTINE", context->String(name));
+    if (context->CheckCondition()) return NULLOBJECT;
+    if (routine != NULLOBJECT && routine != context->Nil()) {
+        // under the caller's NUMERIC settings (an external function reads its caller's: rxmath's precision), through a
+        // small Rexx routine that sets them and calls the routine (CallRoutine alone would start at the defaults)
+        static RexxRoutineObject helper = NULLOBJECT;
+        if (helper == NULLOBJECT) {
+            const char *source =
+                "use arg rx2cppRoutine, rx2cppDigits, rx2cppFuzz, rx2cppForm, rx2cppArgs\n"
+                "numeric digits rx2cppDigits; numeric fuzz rx2cppFuzz; numeric form value rx2cppForm\n"
+                "rx2cppRoutine~callWith(rx2cppArgs)\n"
+                "if var('RESULT') then return result\n";
+            helper = context->NewRoutine("rx2cpp_external_forward", source, std::strlen(source));
+            if (helper == NULLOBJECT) return NULLOBJECT;
+            context->RequestGlobalReference((RexxObjectPtr)helper);
+        }
+        RexxArrayObject call = context->NewArray(5);
+        context->ArrayPut(call, routine, 1);
+        context->ArrayPut(call, context->WholeNumber((wholenumber_t)context->GetContextDigits()), 2);
+        context->ArrayPut(call, context->WholeNumber((wholenumber_t)context->GetContextFuzz()), 3);
+        context->ArrayPut(call, context->String(context->GetContextForm() == 0 ? "SCIENTIFIC" : "ENGINEERING"), 4);
+        context->ArrayPut(call, (RexxObjectPtr)args, 5);
+        return context->CallRoutine(helper, call);
+    }
+#else
+    (void)args;
+#endif
+    context->RaiseException1(Rexx_Error_Routine_not_found_name, context->String(name));
+    return NULLOBJECT;
+}
 %ROUTINE_DEFINITIONS%
 #ifdef RX2CPP_HAS_ROUTINES
 // A package ::ROUTINE called by the interpreter. With the host API, arguments and result are values (objects included:

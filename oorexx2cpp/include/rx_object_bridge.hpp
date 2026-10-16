@@ -563,7 +563,79 @@ struct EnvObject final : ObjectDispatch {
         known[(void *)cls] = user;
         return user;
     }
+    // .Array [] / []= with one index, for an object of the Array class itself (a subclass may override them) that is
+    // one-dimensional with items (only an empty array can become multi-dimensional): ArrayClass::getRexx / putRexx
+    // for a positive whole-number index written plainly ("17"), done through the native API's ArrayAt / ArrayPut
+    // instead of a message (no index or selector string, no index parsing, two interpreter entries instead of six).
+    // An empty slot, any other index, or any other array goes through the message.
+    mutable signed char plainArray = -1;     // -1 not known yet, 0 no, 1 yes
+    static bool plainIndex(const Value &v, std::size_t &index) {
+        if (v.isObject()) return false;
+        const std::string &s = v.bytes.str();
+        if (s.empty() || s.size() > 8 || s[0] < '1' || s[0] > '9') return false;
+        std::size_t n = 0;
+        for (char c : s) { if (c < '0' || c > '9') return false; n = n * 10 + static_cast<std::size_t>(c - '0'); }
+        index = n;
+        return true;
+    }
+    bool isPlainArray() const {
+        if (plainArray >= 0) return plainArray == 1;
+        RexxThreadContext *t = rxobj::need();
+        bool yes = false;
+        if (t->IsArray((RexxObjectPtr)handle)) {
+            static thread_local RexxObjectPtr arrayClass = NULLOBJECT;
+            if (arrayClass == NULLOBJECT) arrayClass = rxobj::pinRef(t, (RexxObjectPtr)t->FindClass("ARRAY"));
+            rxobj::LocalRefs temps(t);
+            RexxObjectPtr cls = temps(t->SendMessage0((RexxObjectPtr)handle, "CLASS"));
+            if (t->CheckCondition()) t->ClearCondition();
+            else yes = cls == arrayClass && t->ArraySize((RexxArrayObject)handle) > 0 &&
+                       t->ArrayDimension((RexxArrayObject)handle) == 1;
+            // (an empty array is asked again next time: it may still get items, or dimensions)
+            if (!yes && cls == arrayClass && t->ArraySize((RexxArrayObject)handle) == 0) return false;
+        }
+        plainArray = yes ? 1 : 0;
+        return yes;
+    }
+    std::optional<MessageResult> arrayAccess(const std::string &selector, const std::vector<Value> &args) const {
+        std::size_t index = 0;
+        if (selector.size() == 2 && selector == "[]" && args.size() == 1) {
+            if (!plainIndex(args[0], index) || !isPlainArray()) return std::nullopt;
+            RexxThreadContext *t = rxobj::need();
+            RexxObjectPtr r = t->ArrayAt((RexxArrayObject)handle, index);
+            if (r == NULLOBJECT) return std::nullopt;       // empty or beyond the end: the message answers .nil
+            if (t->IsString(r)) {
+                Value v = Value::string(std::string(t->StringData((RexxStringObject)r), t->StringLength((RexxStringObject)r)));
+                t->ReleaseLocalReference(r);
+                return MessageResult(std::move(v));
+            }
+            rxobj::Result out;
+            if (rxobj::isPlainString(t, r)) {
+                RexxStringObject s = t->ObjectToString(r);
+                out.kind = 1; out.bytes.assign(t->StringData(s), t->StringLength(s));
+                t->ReleaseLocalReference((RexxObjectPtr)s);
+            } else { out.kind = 2; out.obj = (void *)rxobj::pinRef(t, r); }
+            t->ReleaseLocalReference(r);
+            return MessageResult(wrap(out));
+        }
+        if (selector.size() == 3 && selector == "[]=" && args.size() == 2) {
+            if (!plainIndex(args[1], index) || !isPlainArray()) return std::nullopt;
+            const Value &v = args[0];
+            if (v.isObject()) {
+                auto *e = dynamic_cast<EnvObject *>(v.object.get());
+                if (!e || !e->handle) return std::nullopt;   // native objects, omitted: the message path converts them
+                rxobj::need()->ArrayPut((RexxArrayObject)handle, (RexxObjectPtr)e->handle, index);
+                return MessageResult(std::nullopt);
+            }
+            RexxThreadContext *t = rxobj::need();
+            RexxObjectPtr s = (RexxObjectPtr)t->NewString(v.bytes.str().data(), v.bytes.size());
+            t->ArrayPut((RexxArrayObject)handle, s, index);
+            t->ReleaseLocalReference(s);
+            return MessageResult(std::nullopt);
+        }
+        return std::nullopt;
+    }
     MessageResult sendMessage(const std::string &selector, const std::vector<Value> &args) override {
+        if (!selector.empty() && selector[0] == '[') if (auto fast = arrayAccess(selector, args)) return *fast;
         if (trappedSendHook()) if (auto trapped = trappedSendHook()(handle, selector, args)) return *trapped;
         std::vector<rxobj::Arg> in; convert(args, in);
         rxobj::Result r; std::string code, text;
@@ -1571,6 +1643,25 @@ struct NativeDirectory final : NativeRefBase, std::enable_shared_from_this<Nativ
         return *real;
     }
     void *materialize() override { return static_cast<EnvObject *>(promote().object.get())->handle; }
+    // Whether a Directory understands the selector itself (a method of Directory or an ancestor), asked once per
+    // selector of an interpreter Directory kept for the purpose.
+    static bool directoryMethod(const std::string &selector) {
+        static std::mutex gate;
+        static std::unordered_map<std::string, bool> known;
+        static std::optional<Value> probe;
+        std::lock_guard<std::mutex> g(gate);
+        auto it = known.find(selector);
+        if (it != known.end()) return it->second;
+        if (!probe) {
+            MessageResult made = envClass("DIRECTORY").object->sendMessage("NEW", {});
+            if (!made) return true;
+            probe = *made;
+        }
+        MessageResult has = probe->object->sendMessage("HASMETHOD", {Value::string(selector)});
+        const bool yes = !has || has->isObject() || has->bytes.str() != "0";
+        known.emplace(selector, yes);
+        return yes;
+    }
     MessageResult sendMessage(const std::string &selector, const std::vector<Value> &args) override {
         if (real) return real->object->sendMessage(selector, args);
         const std::size_t n = args.size();
@@ -1587,6 +1678,20 @@ struct NativeDirectory final : NativeRefBase, std::enable_shared_from_this<Nativ
             return std::nullopt;
         }
         if (selector == "HASINDEX" && n == 1 && key0) return Value::string(entries.count(args[0].bytes) ? "1" : "0");
+        // DirectoryClass::unknown: a message that is no Directory method names an entry: NAME= sets it, NAME answers
+        // it (.nil when absent). (d~w1 = x; d~w1)
+        if (!selector.empty() && ((n == 0 && selector.back() != '=') || (n == 1 && selector.size() > 1 && selector.back() == '=' &&
+                                  !NativeArray::omitted(args[0]))) && !directoryMethod(selector)) {
+            if (n == 0) {
+                auto it = entries.find(selector);
+                return it == entries.end() ? nil() : it->second;
+            }
+            const std::string k = selector.substr(0, selector.size() - 1);
+            auto it = entries.find(k);
+            if (it == entries.end()) { order.push_back(k); entries.emplace(k, args[0]); }
+            else it->second = args[0];
+            return std::nullopt;
+        }
         if (selector == "ITEMS" && n == 0) return Value::string(std::to_string(entries.size()));
         if (selector == "ISEMPTY" && n == 0) return Value::string(entries.empty() ? "1" : "0");
         if (selector == "CLASS" && n == 0) return nativeDirectoryClass();
@@ -1657,6 +1762,12 @@ inline MessageResult NativeArray::sendMessage(const std::string &selector, const
         if (selector == "CLASS" && n == 0) return nativeArrayClass();
         break;
     case 'F':
+        // ArrayClass::fillRexx: every slot of the array's size, the receiver back
+        if (selector == "FILL" && n == 1 && !omitted(args[0])) {
+            for (auto &s : slots) s = args[0];
+            count = slots.size();
+            return self();
+        }
         if (selector == "FIRST" && n == 0) {
             for (std::size_t k = 0; k < slots.size(); ++k) if (slots[k]) return number(k + 1);
             return nil();

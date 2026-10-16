@@ -28,5 +28,5 @@ for demo in bsf_demo bsf_callback; do
   (cd "$OUT" && "$REXX_BIN" c_$demo.rex 2>&1 | grep -v '^Picked up JAVA_TOOL_OPTIONS' > a_$demo.txt) || true
   diff -u "$OUT/e_$demo.txt" "$OUT/a_$demo.txt" || { echo "FAIL $demo: output differs from the interpreter"; exit 1; }
   echo "PASS bsf $demo: $(wc -l < "$OUT/e_$demo.txt") lines identical to the interpreter"
-  [[ -n "${BSF_SHOW:-}" ]] && cat "$OUT/a_$demo.txt"
+  if [[ -n "${BSF_SHOW:-}" ]]; then cat "$OUT/a_$demo.txt"; fi
 done

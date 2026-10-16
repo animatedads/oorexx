@@ -352,6 +352,13 @@
     do externalHeader over routines~externalDeclarations
       source = source || externalHeader || '0a'x
     end
+    /* PUBLIC EXTERNAL: the library exports it too (an entry forwarding to the declaration package's routine) */
+    do externalName over routines~publicExternals
+      symbol = 'rx_native_extfwd_' || .RxQuote~identifier(externalName~lower)
+      routineDefs = routineDefs || 'RexxRoutine1(RexxObjectPtr, ' || symbol || ', ARGLIST, args)' || '0a'x
+      routineDefs = routineDefs || '{ return rx2cpp_external_forward(context, args, ' || .RxQuote~cpp(externalName~upper) || '); }' || '0a'x
+      routineEntries = routineEntries || '    { ROUTINE_TYPED_STYLE, 0, ' || .RxQuote~cpp(externalName~upper) || ', (void *)' || symbol || ', 0, 0 },' || '0a'x
+    end
   end
   /* The reply box of methods with REPLY: REPLY (or the method's end) sets it, the caller's stub waits on it. */
   if replyUsed then do

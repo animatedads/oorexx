@@ -8,8 +8,9 @@
 ::attribute names get
 ::attribute visibilities get
 ::attribute externalDeclarations get
+::attribute publicExternals get       /* PUBLIC EXTERNAL routine names: exported by forwarding entries */
 ::method parse
-  expose sanitized implementation names visibilities externalDeclarations
+  expose sanitized implementation names visibilities externalDeclarations publicExternals
   use arg source
   lines = source~makeArray('0a'x)
   tokens = .RxLexer~new(source)~scan
@@ -32,6 +33,7 @@
   end
   names = .array~new
   externalDeclarations = .array~new
+  publicExternals = .array~new
   visibilities = .directory~new
   ignored = .directory~new
   if starts~items == 0 then do
@@ -72,8 +74,8 @@
     end
     isExternal = header[optionIndex]~text == 'EXTERNAL'
     if isExternal then do
-      if visibility == 'PUBLIC' then
-        self~reject(start, 'PUBLIC EXTERNAL needs a native forwarding registration (not implemented)')
+      /* (PUBLIC too: the directive goes to the declaration package as written, which exports it like any public
+         routine of the library's package) */
       if header[optionIndex+1]~kind \= 'STRING' | ,
          header[optionIndex+2]~kind \= 'SEP' | header[optionIndex+3]~kind \= 'EOF' then
         self~reject(start, 'EXTERNAL needs one standalone quoted library specification')
@@ -103,6 +105,7 @@
           self~reject(start, 'EXTERNAL routine must not have an executable body')
       end
       externalDeclarations~append(line)
+      if visibility == 'PUBLIC' then publicExternals~append(name)
       if \.local~rx2cpp.externals~isA(.directory) then .local~put(.directory~new, "RX2CPP.EXTERNALS")
       .local~rx2cpp.externals[name~upper] = line
     end

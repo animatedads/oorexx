@@ -16,6 +16,18 @@ source = extras~sanitized
 .local['RX2CPP.INPUTNAME'] = input   /* PARSE SOURCE of a routine outside any combine marker */
 routines = .RxNativePackageRoutines~new~parse(source)
 source = routines~sanitized
+/* A package of routines only (no ::CLASS): a private class of no use stands in for the class the native package needs. */
+if routines~names~items > 0 | routines~externalDeclarations~items > 0 then do
+  hasClass = .false
+  scanned = .RxLexer~new(source)~scan          /* (comments and strings are not directives) */
+  do k = 1 to scanned~items - 1
+    if scanned[k]~text == '::' & scanned[k]~kind == 'OP' & scanned[k+1]~text~upper == 'CLASS' then do
+      hasClass = .true
+      leave
+    end
+  end
+  if \hasClass then source = source || '0a'x || '::class RX2CPP_ROUTINES_ONLY' || '0a'x
+end
 gateOK = .RxNativeSourceGate~new~validate(source)
 parser = .RxNativePackageParser~new
 parser~inputName = input
