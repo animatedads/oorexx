@@ -1,9 +1,10 @@
-# ooRexx 5.3.0 native API: two bug reports and a performance issue
+# ooRexx 5.3.0: interpreter bug reports (native API, rexxutil) and a performance issue
 
 Status (2026-10-16): bugs 1 and 2 confirmed still present on r13271 by Josep Maria Blasco: to be filed. Issue 3 was
 already fixed upstream in r13267 (bug #2106, "Linux: entering the interpreter is slow (pthread_getattr_np)": a
 thread_local cache in currentThreadStack; stackbench 1.7 us per call on the r13271 portable build): not to be filed.
-Our interpreter source stops at de1db87 (r13196), older than that fix.
+Our interpreter source stops at de1db87 (r13196), older than that fix. Bug 4 (SysStemSort crash, found 2026-10-16)
+not yet checked against r13271.
 
 Found while testing rx2cpp (ooRexx-to-C++ compiler) against ooRexx 5.3.0 r13196 (Linux, 64-bit), built from the head of
 the 5.3 source (last commit de1db87, "Fix for [#bugs:2090]"); both are present at head.
@@ -170,4 +171,42 @@ compute the value once per thread and keep it in a `thread_local` (the existing 
 `computeStackBase()` / `computeStackSize()`). Windows (platform/windows/SysActivity.cpp) is not touched.
 One behavior change, theoretical: a `setrlimit(RLIMIT_STACK)` made by the process after the first call on the main
 thread is no longer seen (the main thread's reported stack size follows the soft limit).
+
+---
+
+## Bug 4: SysStemSort on a stem without a valid count crashes the interpreter
+
+Two lines, no native code of one's own (`stemsort/stemsort_unset.rex`; `stemsort_badcount.rex` has `s.0 = 'x'`):
+
+```
+call SysStemSort 's.'
+say 'rc' result
+```
+
+Expected: Error 40.922 "Stem argument does not have a valid count for element 0". Actual (5.3.0 r13196, Linux):
+segmentation fault.
+
+```
+#0 Activity::cleanupStackFrame (poppedStackFrame=0x0)          Activity.cpp:1685
+#1 Activity::popStackFrame (target=<SysStemSort's activation>)  Activity.cpp:1705
+#2 NativeActivation::callNativeRoutine                          NativeActivation.cpp
+#3 NativeRoutine::call
+#4 RoutineClass::call
+#5 PackageManager::callNativeRoutine
+```
+
+Cause: StemClass::sort reports Error_Incorrect_call_stem_size (40.922). It is called through RexxStemSort, an API
+entry with a NativeContextBlock instead of an ApiContext, so nothing turns this activation's condition trap on, and
+the trap is off: SysStemSort's previous API call (ResolveStemVariable) went through an ApiContext, whose destructor
+calls disableConditionTraps(). The untrapped condition propagates (Activity::raisePropagate pops SysStemSort's
+native activation and the calling Rexx activation) up to the stack base, which traps it and throws. The C++ unwind
+then reaches NativeActivation::callNativeRoutine for the activation that is no longer on the stack; its
+`activity->popStackFrame(this)` pops past the bottom of the stack: a null frame.
+
+**Fix** (`ooRexx-stemsort-trap.patch`, NativeActivation::stemSort): turn the condition trap on around
+`stem->sort`, catch `NativeActivation *`, and let `checkConditions()` raise the trapped condition when the routine
+returns, as for every ApiContext stub. With it both programs end with Error 40.922 at the CALL line, as expected;
+sorting a valid stem, directly and through CallRoutine from native code, is unchanged.
+Other old-style entries that raise inside a NativeContextBlock (RexxVariablePool catches ActivityException only) may
+have the same exposure; not checked.
 

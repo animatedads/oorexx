@@ -800,22 +800,33 @@ inline bool numericString(const Value &v) {
 // Comparison operators, decoded once from the selector text.
 enum class CmpOp { Eq, Ne, StrictEq, StrictNe, Lt, Le, Gt, Ge, SLt, SLe, SGt, SGe, None };
 inline CmpOp cmpOpOf(const char *op, std::size_t n) {
-    auto is = [&](const char *t) { return std::strlen(t) == n && std::memcmp(op, t, n) == 0; };
-    if (is("=")) return CmpOp::Eq;
-    if (is("\\=") || is("<>") || is("><")) return CmpOp::Ne;
-    if (is("==")) return CmpOp::StrictEq;
-    if (is("\\==")) return CmpOp::StrictNe;
-    if (is("<")) return CmpOp::Lt;
-    if (is("<=") || is("\\>")) return CmpOp::Le;
-    if (is(">")) return CmpOp::Gt;
-    if (is(">=") || is("\\<")) return CmpOp::Ge;
-    if (is("<<")) return CmpOp::SLt;
-    if (is("<<=") || is("\\>>")) return CmpOp::SLe;
-    if (is(">>")) return CmpOp::SGt;
-    if (is(">>=") || is("\\<<")) return CmpOp::SGe;
+    const char a = n > 0 ? op[0] : 0, b = n > 1 ? op[1] : 0, c = n > 2 ? op[2] : 0;
+    switch (n) {
+    case 1:
+        if (a == '=') return CmpOp::Eq;
+        if (a == '<') return CmpOp::Lt;
+        if (a == '>') return CmpOp::Gt;
+        break;
+    case 2:
+        if (a == '=' && b == '=') return CmpOp::StrictEq;
+        if ((a == '\\' && b == '=') || (a == '<' && b == '>') || (a == '>' && b == '<')) return CmpOp::Ne;
+        if ((a == '<' && b == '=') || (a == '\\' && b == '>')) return CmpOp::Le;
+        if ((a == '>' && b == '=') || (a == '\\' && b == '<')) return CmpOp::Ge;
+        if (a == '<' && b == '<') return CmpOp::SLt;
+        if (a == '>' && b == '>') return CmpOp::SGt;
+        break;
+    case 3:
+        if (a == '\\' && b == '=' && c == '=') return CmpOp::StrictNe;
+        if ((a == '<' && b == '<' && c == '=') || (a == '\\' && b == '>' && c == '>')) return CmpOp::SLe;
+        if ((a == '>' && b == '>' && c == '=') || (a == '\\' && b == '<' && c == '<')) return CmpOp::SGe;
+        break;
+    }
     return CmpOp::None;
 }
-inline Value truthValue(bool b) { return Value::string(b ? "1" : "0"); }
+// "1" or "0", made as a number (its characters when asked for)
+inline Value truthValue(bool b) {
+    return Value(Value::PendingTag{}, b ? 1 : 0, kNumKnown | kNumDecimal | kNumInteger | (128u << 8));
+}
 // Non-strict string comparison: leading/trailing blanks ignored, the shorter string padded with blanks.
 inline int rexxPaddedCompare(const std::string &a, const std::string &b) {
     std::size_t ai = 0, an = a.size(), bi = 0, bn = b.size();

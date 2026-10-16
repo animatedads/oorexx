@@ -1,0 +1,29 @@
+diff --git a/interpreter/execution/NativeActivation.cpp b/interpreter/execution/NativeActivation.cpp
+index fb868e6..ac27769 100644
+--- a/interpreter/execution/NativeActivation.cpp
++++ b/interpreter/execution/NativeActivation.cpp
+@@ -3567,8 +3567,22 @@ int NativeActivation::stemSort(StemClass *stem, const char *tailExtension, int o
+         tail = new_upper_string(tailExtension);
+     }
+ 
+-    // go perform the sort operation.
+-    return stem->sort(tail, order, type, (size_t)start, (size_t)end, (size_t)firstcol, (size_t)lastcol);
++    // go perform the sort operation. An error it reports (a missing or invalid stem.0) must be trapped by this
++    // activation, as an ApiContext stub traps it, and raised when the native routine returns: RexxStemSort is entered
++    // without an ApiContext, so traps may be off (the previous API call's ApiContext turned them off), and an untrapped
++    // error pops this activation (and its callers) off the stack while callNativeRoutine is still running for it.
++    enableConditionTraps();
++    try
++    {
++        bool sorted = stem->sort(tail, order, type, (size_t)start, (size_t)end, (size_t)firstcol, (size_t)lastcol);
++        disableConditionTraps();
++        return sorted;
++    }
++    catch (NativeActivation *)
++    {
++        disableConditionTraps();
++        return true;     // (the trapped condition is raised by checkConditions() when the routine returns)
++    }
+ }
+ 
+ 

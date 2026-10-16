@@ -1938,33 +1938,101 @@ inline MessageResult interpreterCall(Variables &vars, const std::string &name, c
     RexxThreadContext *t = rxobj::need();
     rxobj::LocalRefs temps(t);
     rxobj::bifStat("CALL " + name);
-    std::string call = dynamicName ? "call (arg(" + std::to_string(args.size() + 1) + ")) " : "call " + name + " ";
-    for (std::size_t i = 0; i < args.size(); ++i) {
-        if (i) call += ",";
-        if (args[i]) call += "arg(" + std::to_string(i + 1) + ")";
+    // The stem copy-back below is needed only when an argument may name a stem (a string ending in '.', or an object,
+    // whose string value the helper reads); without one the helper is the call alone.
+    bool stemArgs = false;
+    auto mayNameStem = [](const Value &a) {
+        if (a.isObject()) return true;
+        if (a.bytes.numCache().meta.load(std::memory_order_acquire) & NumCache::pending) return false;   // a number: no '.' at the end
+        const std::string &s = a.bytes.str();
+        return !s.empty() && s.back() == '.';
+    };
+    for (const auto &a : args) if (a && mayNameStem(*a)) stemArgs = true;
+    if (dynamicName && mayNameStem(*dynamicName)) stemArgs = true;   // (the routine name is an argument of the helper too)
+    // A stem the caller has, named by an argument ('S.'): the callee works on it in place (SysStemSort, SysStemInsert,
+    // SysFileTree into an existing stem, ...), as interpreted it would on the caller's own stem. The compiled stem is
+    // bound to a stem object shared with the interpreter (stemArg, stemHandle) and passed to the helper, which makes it
+    // its own variable of that name (USE ARG); no copy back for it after the call.
+    std::vector<std::pair<std::string, void *>> sharedStems;
+    if (stemArgs) {
+        auto stemName = [](const std::string &s) {   // a plain stem name: a symbol, one period, at the end
+            if (s.size() < 2 || s.back() != '.') return std::string();
+            std::string u;
+            for (std::size_t i = 0; i + 1 < s.size(); ++i) {
+                const unsigned char c = static_cast<unsigned char>(s[i]);
+                if (!(std::isalnum(c) || c == '_' || c == '!' || c == '?')) return std::string();
+                u += static_cast<char>(std::toupper(c));
+            }
+            if (std::isdigit(static_cast<unsigned char>(u[0]))) return std::string();
+            return u + '.';
+        };
+        for (const auto &a : args) {
+            if (!a || a->isObject()) continue;
+            const std::string name = stemName(a->bytes.str());
+            if (name.empty()) continue;
+            bool have = boundStem(vars, name) != nullptr || lookup(vars, name) != nullptr;
+            if (!have) {
+                const Variables &owner = variableOwner(vars, name);
+                for (const auto &e : owner)
+                    if (e.first.size() > name.size() && e.first.compare(0, name.size(), name) == 0) { have = true; break; }
+            }
+            if (!have) continue;
+            bool seen = false;
+            for (const auto &s : sharedStems) if (s.first == name) seen = true;
+            if (seen) continue;
+            Value obj = stemArg(vars, name);
+            auto *so = dynamic_cast<StemObject *>(obj.object.get());
+            if (!so) continue;
+            sharedStems.emplace_back(name, EnvObject::stemHandle(*so));
+        }
     }
-    // End the clause explicitly: a trailing omitted argument leaves a final comma, which at the end of a line would
-    // continue the clause into the next one (f(a,) has 2 arguments, the second omitted).
-    call += ";";
-    const std::string source =
-        "numeric digits " + std::to_string(vars.numeric.digits) + "; numeric fuzz " + std::to_string(vars.numeric.fuzz) +
-        "; numeric form " + (vars.numeric.engineering ? "engineering" : "scientific") + "\n" + call +
-        "\nout = .array~new; if var('RESULT') then out[1] = result\n"
-        "do i = 1 to arg(); if \\arg(i, 'E') then iterate; a = arg(i)\n"
-        "  if \\a~isA(.string) then iterate; if right(a, 1) \\== '.' | symbol(a) \\== 'VAR' then iterate\n"
-        "  interpret 'st =' a; if st~isA(.stem) then out~append(.array~of(translate(a), st))\n"
-        "end\nreturn out\n";
+    // One helper per call shape (NUMERIC settings, routine, which arguments are present, stem copy-back): looked up by
+    // the shape, its source written only the first time.
+    std::string key;
+    key.reserve(name.size() + args.size() + 24);
+    key += std::to_string(vars.numeric.digits); key += ','; key += std::to_string(vars.numeric.fuzz);
+    key += vars.numeric.engineering ? 'E' : 'S'; key += stemArgs ? '.' : '-'; key += dynamicName ? '(' : ' ';
+    key += sharedStems.empty() ? ' ' : 'U';
+    for (const auto &a : args) key += a ? 'a' : '_';
+    key += name;
     struct Helper { RexxRoutineObject routine; std::size_t merged; };
     static thread_local std::unordered_map<std::string, Helper> cache;
-    auto it = cache.find(source);
+    auto it = cache.find(key);
     if (it == cache.end()) {
+        std::string call = dynamicName ? "call (arg(" + std::to_string(args.size() + 1) + ")) " : "call " + name + " ";
+        for (std::size_t i = 0; i < args.size(); ++i) {
+            if (i) call += ",";
+            if (args[i]) call += "arg(" + std::to_string(i + 1) + ")";
+        }
+        // End the clause explicitly: a trailing omitted argument leaves a final comma, which at the end of a line would
+        // continue the clause into the next one (f(a,) has 2 arguments, the second omitted).
+        call += ";";
+        // shared stems: (name, stem) pairs after the arguments, each made the helper's variable of that name
+        const std::string shared = sharedStems.empty() ? std::string() :
+            "do rx2cppJ = " + std::to_string(args.size() + (dynamicName ? 1 : 0) + 1) +
+            " to arg() by 2; interpret 'use arg' copies(',', rx2cppJ) arg(rx2cppJ); end\n";
+        std::string source =
+            "numeric digits " + std::to_string(vars.numeric.digits) + "; numeric fuzz " + std::to_string(vars.numeric.fuzz) +
+            "; numeric form " + (vars.numeric.engineering ? "engineering" : "scientific") + "\n" + shared + call +
+            "\nout = .array~new; if var('RESULT') then out[1] = result\n";
+        if (stemArgs)
+            source += "do i = 1 to " + std::to_string(args.size() + (dynamicName ? 1 : 0)) + "; if \\arg(i, 'E') then iterate; a = arg(i)\n"
+                      "  if \\a~isA(.string) then iterate; if right(a, 1) \\== '.' | symbol(a) \\== 'VAR' then iterate\n"
+                      "  interpret 'st =' a; if st~isA(.stem) then out~append(.array~of(translate(a), st))\n"
+                      "end\n";
+        source += "return out\n";
         RexxRoutineObject made = rxobj::packageRoutine(t, "rx2cpp_call", source);
         if (made == NULLOBJECT) throw std::runtime_error("cannot create interpreter call for " + name);
         rxobj::pinRef(t, (RexxObjectPtr)made);
-        it = cache.emplace(source, Helper{made, 0}).first;
+        it = cache.emplace(key, Helper{made, 0}).first;
     }
     RexxRoutineObject routine = it->second.routine;
-    RexxArrayObject arr = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(args.size() + (dynamicName ? 1 : 0)));
+    const std::size_t base = args.size() + (dynamicName ? 1 : 0);
+    RexxArrayObject arr = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(base + 2 * sharedStems.size()));
+    for (std::size_t k = 0; k < sharedStems.size(); ++k) {
+        t->ArrayPut(arr, temps((RexxObjectPtr)t->NewStringFromAsciiz(sharedStems[k].first.c_str())), base + 2 * k + 1);
+        t->ArrayPut(arr, (RexxObjectPtr)sharedStems[k].second, base + 2 * k + 2);
+    }
     std::vector<rxobj::Arg> conv;
     for (std::size_t i = 0; i < args.size(); ++i) {
         if (!args[i]) continue;
@@ -2004,6 +2072,9 @@ inline MessageResult interpreterCall(Variables &vars, const std::string &name, c
         RexxArrayObject pair = (RexxArrayObject)t->ArrayAt(out, i);
         const std::string stem = text(t->ArrayAt(pair, 1));
         RexxObjectPtr st = t->ArrayAt(pair, 2);
+        bool inPlace = false;
+        for (const auto &s : sharedStems) if (s.first == stem) inPlace = true;
+        if (inPlace) continue;   // (the caller's own stem object: already changed)
         resetStem(vars, stem);
         RexxArrayObject tails = (RexxArrayObject)temps(t->SendMessage0(st, "ALLINDEXES"));
         const std::size_t m = tails ? t->ArraySize(tails) : 0;

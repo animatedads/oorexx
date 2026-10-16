@@ -87,7 +87,7 @@ public:
     static constexpr size_type npos = std::string::npos;
     RxStr() = default;
     // A pending number is copied as its numeric form (its characters may be being written by another thread).
-    RxStr(const RxStr &o) { copyFrom(o); }
+    RxStr(const RxStr &o) : RxStr(o, o.num_.meta.load(std::memory_order_acquire)) {}
     RxStr &operator=(const RxStr &o) { if (this != &o) copyFrom(o); return *this; }
     // A moved-from string is empty: its numeric form goes with the characters.
     RxStr(RxStr &&o) noexcept : small_(std::move(o.small_)), big_(std::move(o.big_)), num_(o.num_) { o.small_.clear(); o.num_.reset(); }
@@ -170,6 +170,14 @@ private:
         num_.reset();
         if (v.size() > inlineLimit) { notePressure(v.capacity()); small_.clear(); big_ = std::make_shared<std::string>(std::move(v)); }
         else small_ = std::move(v);
+    }
+    // Copy construction on one reading of the source's state: a pending number as its numeric form (its characters may
+    // be being written), anything else with its characters (stable once the state says so).
+    RxStr(const RxStr &o, std::uint32_t m)
+        : small_((m & NumCache::pending) ? std::string() : o.small_),
+          big_((m & NumCache::pending) ? std::shared_ptr<std::string>() : o.big_) {
+        num_.coef.store(o.num_.coef.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        num_.meta.store(m & ~NumCache::busy, std::memory_order_relaxed);
     }
     void copyFrom(const RxStr &o) {
         const std::uint32_t m = o.num_.meta.load(std::memory_order_acquire);
@@ -1479,6 +1487,13 @@ enum class Truth { If, When, While, Until, List, Method, Case, Guard };
 inline bool condition(const Value &v, Truth where) {
     // Rexx logical conditions must be exactly 0 or 1, not generic C++ truthiness.
     if (v.isObject()) throw std::runtime_error("object truth conversion not implemented");
+    // a number made by arithmetic or a comparison: its characters are exactly its digits
+    { const std::uint32_t m = v.bytes.numCache().meta.load(std::memory_order_acquire);
+      if ((m & NumCache::pending) && (m & NumCache::integer)) {
+          const std::int64_t c = v.bytes.numCache().coef.load(std::memory_order_relaxed);
+          if (c == 0) return false;
+          if (c == 1) return true;
+      } }
     // ooRexx accepts exactly "0" or "1": padded (" 1 "), zero-led ("01") and empty values are errors, so no trimming.
     if (v.bytes == "0") return false;
     if (v.bytes == "1") return true;
