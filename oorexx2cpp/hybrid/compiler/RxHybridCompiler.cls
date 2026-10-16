@@ -427,6 +427,12 @@
     else scopes~setScope('::method ' || methodName, 'METHOD')
     current = .RxHybridMethod~new(methodName)
     current~setOptions(directive[3])
+    /* a package routine is numbered as the file it came from (the combine marker before it: NativePackageRoutines) */
+    if className == 'RX2CPP_ROUTINE_IMPL' & .local['RX2CPP.ROUTINEOFFSETS']~isA(.directory) then do
+      routineOffset = .local['RX2CPP.ROUTINEOFFSETS'][methodName~upper]
+      if routineOffset == .nil then routineOffset = 0
+      self~setLineOffset(routineOffset)
+    end
     s~skipSeparators
     /* Labels or SIGNAL: the body runs in a trap loop. Each label starts a case; SIGNAL label and a trapped condition
        continue the loop at that case (all active DO loops end, as in Rexx). */

@@ -199,7 +199,7 @@
     /* SIGL is a line of the original file: a combined package marks where each file starts. */
     markerLine = 0
     do m = start - 1 to 1 by -1
-      if lines[m]~left(25) == '/* ---- rx2cpp combined: ' then do
+      if lines[m]~pos('/* ---- rx2cpp combined: ') > 0 then do
         markerLine = m
         leave
       end

@@ -14,6 +14,10 @@
       /* A method of a native library: the interpreter's system name, METHOD, the class's original source file. A package
          routine: its call type, SUBROUTINE or FUNCTION, as its compiled caller called it (a routine called by the
          interpreter cannot know it: a run-time error). */
+      /* a compiled program's main code (compile_program.sh): COMMAND, as the program it was */
+      if ctx~className == 'RX2CPP_ROUTINE_IMPL' & ctx~hasMethod('CURRENT') then if ctx~current \== .nil then
+        if ctx~current~selector == 'RX2CPP_MAIN' then
+          return 'rx::Value::string(rx::interpreterSystem() + ' || .RxQuote~cpp(' COMMAND ' || ctx~sourceName) || ')'
       if ctx~className == 'RX2CPP_ROUTINE_IMPL' then
         return 'rx::Value::string(rx::interpreterSystem() + " " + rx::ActivationScope::routineCallType() + ' || .RxQuote~cpp(' ' || ctx~sourceName) || ')'
       return 'rx::Value::string(rx::interpreterSystem() + ' || .RxQuote~cpp(' METHOD ' || ctx~sourceName) || ')'

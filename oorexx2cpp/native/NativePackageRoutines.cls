@@ -117,14 +117,20 @@
       /* PARSE SOURCE names the routine's original file: the combine marker before it, else the compiled file. */
       sourcePath = .local['RX2CPP.INPUTNAME']
       if sourcePath == .nil then sourcePath = ''
-      do m = start - 1 to 1 by -1
-        if lines[m]~left(25) == '/* ---- rx2cpp combined: ' then do
+      /* (the marker may also end the routine's own directive line: a compiled program's main code, compile_program.sh)
+         Its lines are numbered as in that file: line L here is line L - m there (SIGL, .LINE, SOURCELINE). */
+      markerAt = 0
+      do m = start to 1 by -1
+        if lines[m]~pos('/* ---- rx2cpp combined: ') > 0 then do
           parse value lines[m] with '/* ---- rx2cpp combined: ' sourcePath ' ----'
+          markerAt = m
           leave
         end
       end
       if \.local['RX2CPP.ROUTINESOURCES']~isA(.directory) then .local['RX2CPP.ROUTINESOURCES'] = .directory~new
       .local['RX2CPP.ROUTINESOURCES'][name~upper] = sourcePath
+      if \.local['RX2CPP.ROUTINEOFFSETS']~isA(.directory) then .local['RX2CPP.ROUTINEOFFSETS'] = .directory~new
+      .local['RX2CPP.ROUTINEOFFSETS'][name~upper] = -markerAt
       do j = start + 1 to finish
         synthetic[j] = lines[j]
       end
