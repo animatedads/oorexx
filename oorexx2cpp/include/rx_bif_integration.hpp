@@ -348,8 +348,8 @@ inline std::optional<Value> quickBif(const std::string &name, const std::vector<
     const std::string &s = a[0]->bytes;
     switch (name[0]) {
     case 'L':
-        if (name == "LENGTH" && a.size() == 1) return fromInteger(static_cast<std::int64_t>(s.size()));
-        if (name == "LASTPOS" && (a.size() == 2 || a.size() == 3)) {
+        if (rx::eqLit(name, "LENGTH") && a.size() == 1) return fromInteger(static_cast<std::int64_t>(s.size()));
+        if (rx::eqLit(name, "LASTPOS") && (a.size() == 2 || a.size() == 3)) {
             if (!quickText(a[1])) return std::nullopt;
             const std::string &hay = a[1]->bytes;
             std::size_t start = hay.size();
@@ -361,7 +361,7 @@ inline std::optional<Value> quickBif(const std::string &name, const std::vector<
             const auto at = hay.rfind(s, lastStart);
             return fromInteger(at == std::string::npos ? 0 : static_cast<std::int64_t>(at + 1));
         }
-        if (name == "LEFT" && (a.size() == 2 || a.size() == 3)) {
+        if (rx::eqLit(name, "LEFT") && (a.size() == 2 || a.size() == 3)) {
             std::size_t n; char pad;
             if (!quickCount(a[1], n, false) || !quickPad(a, 2, pad)) return std::nullopt;
             std::string out = s.substr(0, std::min(n, s.size()));
@@ -370,7 +370,7 @@ inline std::optional<Value> quickBif(const std::string &name, const std::vector<
         }
         break;
     case 'P':
-        if (name == "POS" && (a.size() == 2 || a.size() == 3)) {
+        if (rx::eqLit(name, "POS") && (a.size() == 2 || a.size() == 3)) {
             if (!quickText(a[1])) return std::nullopt;
             const std::string &hay = a[1]->bytes;
             std::size_t start = 1;
@@ -381,7 +381,7 @@ inline std::optional<Value> quickBif(const std::string &name, const std::vector<
         }
         break;
     case 'R':
-        if (name == "RIGHT" && (a.size() == 2 || a.size() == 3)) {
+        if (rx::eqLit(name, "RIGHT") && (a.size() == 2 || a.size() == 3)) {
             std::size_t n; char pad;
             if (!quickCount(a[1], n, false) || !quickPad(a, 2, pad)) return std::nullopt;
             if (n <= s.size()) return Value(s.substr(s.size() - n));
@@ -389,7 +389,7 @@ inline std::optional<Value> quickBif(const std::string &name, const std::vector<
         }
         break;
     case 'S':
-        if (name == "SUBSTR" && a.size() >= 2 && a.size() <= 4) {
+        if (rx::eqLit(name, "SUBSTR") && a.size() >= 2 && a.size() <= 4) {
             std::size_t start, len; char pad;
             if (!quickCount(a[1], start, true) || !quickPad(a, 3, pad)) return std::nullopt;
             const std::size_t from = start - 1;
@@ -401,7 +401,7 @@ inline std::optional<Value> quickBif(const std::string &name, const std::vector<
         }
         break;
     case 'W':
-        if ((name == "WORD" && a.size() == 2) || (name == "WORDS" && a.size() == 1)) {
+        if ((rx::eqLit(name, "WORD") && a.size() == 2) || (rx::eqLit(name, "WORDS") && a.size() == 1)) {
             if (!quickBlanksOnly(s)) return std::nullopt;
             std::size_t want = 0;
             if (a.size() == 2 && !quickCount(a[1], want, true)) return std::nullopt;
@@ -432,7 +432,7 @@ inline boost::multiprecision::cpp_int byteRange(std::size_t n) {
 inline std::optional<Value> numericBif(const std::string &name, const std::vector<BifSlot> &a, const ActivationNumeric &num) {
     for (const auto &x : a) if (!x || x->isObject()) return std::nullopt;
     if (num.digits < 1 || num.digits > 100000 || num.fuzz >= num.digits) return std::nullopt;
-    if (name == "DATATYPE" && (a.size() == 1 || a.size() == 2)) {
+    if (rx::eqLit(name, "DATATYPE") && (a.size() == 1 || a.size() == 2)) {
         const std::string &v = a[0]->bytes;
         RexxDecimal d; const char *err = nullptr;
         if (a.size() == 1) return Value::string(tryParseRexxDecimal(*a[0], d, err) ? "NUM" : "CHAR");
@@ -463,14 +463,14 @@ inline std::optional<Value> numericBif(const std::string &name, const std::vecto
         default: return std::nullopt;
         }
     }
-    if ((name == "MAX" || name == "MIN") && !a.empty()) {
+    if ((rx::eqLit(name, "MAX") || rx::eqLit(name, "MIN")) && !a.empty()) {
         std::vector<RexxDecimal> ds(a.size());
         const char *err = nullptr;
         for (std::size_t i = 0; i < a.size(); ++i) if (!tryParseRexxDecimal(*a[i], ds[i], err)) return std::nullopt;
         std::size_t best = 0;
         for (std::size_t i = 1; i < ds.size(); ++i) {
             const int rel = numericRelationDecimal(ds[i], ds[best], num);
-            if (name == "MAX" ? rel > 0 : rel < 0) best = i;
+            if (rx::eqLit(name, "MAX") ? rel > 0 : rel < 0) best = i;
         }
         return numberResult(ds[best], num);
     }
@@ -520,14 +520,14 @@ inline std::optional<Value> numericBif(const std::string &name, const std::vecto
         while (v > 0) { out.insert(out.begin(), static_cast<char>(static_cast<unsigned>(v & 0xFF))); v >>= 8; }
         return out;
     };
-    if (name == "C2D" && (a.size() == 1 || a.size() == 2)) {
+    if (rx::eqLit(name, "C2D") && (a.size() == 1 || a.size() == 2)) {
         cpp_int v;
         if (a.size() == 1) v = unsignedOf(a[0]->bytes);
         else { std::size_t n; if (!lengthOf(1, n)) return std::nullopt; v = n ? signedOf(a[0]->bytes, n) : cpp_int(0); }
         if (!fits(v)) return std::nullopt;
         return Value::string(v.convert_to<std::string>());
     }
-    if (name == "X2D" && (a.size() == 1 || a.size() == 2)) {
+    if (rx::eqLit(name, "X2D") && (a.size() == 1 || a.size() == 2)) {
         std::string hex = a[0]->bytes, bytes;
         if (hex.find_first_of(" \t") != std::string::npos) return std::nullopt;
         cpp_int v;
@@ -545,13 +545,13 @@ inline std::optional<Value> numericBif(const std::string &name, const std::vecto
         if (!fits(v)) return std::nullopt;
         return Value::string(v.convert_to<std::string>());
     }
-    if (name == "D2C" && (a.size() == 1 || a.size() == 2)) {
+    if (rx::eqLit(name, "D2C") && (a.size() == 1 || a.size() == 2)) {
         cpp_int v; if (!wholeOf(*a[0], v)) return std::nullopt;
         if (a.size() == 1) { if (v < 0) return std::nullopt; return Value(bytesOf(v, 0, false)); }
         std::size_t n; if (!lengthOf(1, n)) return std::nullopt;
         return Value(bytesOf(v, n, true));
     }
-    if (name == "D2X" && (a.size() == 1 || a.size() == 2)) {
+    if (rx::eqLit(name, "D2X") && (a.size() == 1 || a.size() == 2)) {
         cpp_int v; if (!wholeOf(*a[0], v)) return std::nullopt;
         static const char *hexd = "0123456789ABCDEF";
         std::string out;
@@ -566,7 +566,7 @@ inline std::optional<Value> numericBif(const std::string &name, const std::vecto
         for (std::size_t i = 0; i < n; ++i) { out.insert(out.begin(), hexd[static_cast<unsigned>(v & 0xF)]); v >>= 4; }
         return Value(std::move(out));
     }
-    if (name == "ABS" && a.size() == 1) {
+    if (rx::eqLit(name, "ABS") && a.size() == 1) {
         RexxDecimal d; const char *err = nullptr;
         if (!tryParseRexxDecimal(*a[0], d, err)) return std::nullopt;
         if (d.coefficient < 0) d.coefficient = -d.coefficient;
@@ -578,10 +578,10 @@ inline std::optional<Value> numericBif(const std::string &name, const std::vecto
 // blanks between groups, their placement rules and every invalid character are the interpreter's (exact results and
 // error numbers 93.931 / 93.933 / 93.976 ... with their substitutions).
 inline bool plainRadixDigits(const std::string &name, const std::string &s) {
-    if (name == "B2X") return s.find_first_not_of("01") == std::string::npos;
+    if (rx::eqLit(name, "B2X")) return s.find_first_not_of("01") == std::string::npos;
     return s.find_first_not_of("0123456789abcdefABCDEF") == std::string::npos;
 }
-inline bool radixBifName(const std::string &name) { return name == "X2C" || name == "X2B" || name == "X2D" || name == "B2X"; }
+inline bool radixBifName(const std::string &name) { return rx::eqLit(name, "X2C") || rx::eqLit(name, "X2B") || rx::eqLit(name, "X2D") || rx::eqLit(name, "B2X"); }
 // The native number / radix code covers the ordinary inputs only; anything else is the interpreter's (its results,
 // NUMERIC DIGITS limits and errors, e.g. 93.929 for D2C(209) under DIGITS 1). True when this call must go there.
 inline bool numericEdgeForInterpreter(const std::string &name, const std::vector<BifSlot> &a, const ActivationNumeric &num) {
@@ -596,20 +596,20 @@ inline bool numericEdgeForInterpreter(const std::string &name, const std::vector
     }
     if (a.empty() || !a[0] || a[0]->isObject()) return false;
     const std::string first = a[0]->bytes.str();
-    if (name == "D2C" || name == "D2X") {
+    if (rx::eqLit(name, "D2C") || rx::eqLit(name, "D2X")) {
         if (a.size() > 1) return true;   // the signed form (with a length) is the interpreter's
         return first.empty() || first.size() > static_cast<std::size_t>(num.digits) ||
                first.find_first_not_of("0123456789") != std::string::npos;
     }
     // FORMAT: exponent places (expp / expt), or a number with more digits than DIGITS (rounded first, possibly to
     // exponential form): the interpreter's NumberString::formatInternal.
-    if (name == "FORMAT") {
+    if (rx::eqLit(name, "FORMAT")) {
         if (a.size() > 3) return true;
         RexxDecimal d; const char *err = nullptr;
         return tryParseRexxDecimal(*a[0], d, err) && decimalDigits(d.coefficient) > static_cast<int>(num.digits);
     }
-    if (name == "C2D") return a.size() > 1 || first.size() > 3;
-    if (name == "X2D") return a.size() > 1 || first.size() > 7;
+    if (rx::eqLit(name, "C2D")) return a.size() > 1 || first.size() > 3;
+    if (rx::eqLit(name, "X2D")) return a.size() > 1 || first.size() > 7;
     return false;
 }
 // SOURCELINE([n]) of compiled code: the lines of its original source file, embedded when it was compiled (the package
@@ -639,8 +639,8 @@ inline Value sourceLineBif(const std::vector<std::string> &lines, const std::vec
 }
 // BIFs that read or set the caller's own state stay compiled whatever their arguments are.
 inline bool languageStateBif(const std::string &name) {
-    return name == "VALUE" || name == "VAR" || name == "SYMBOL" || name == "TRACE" || name == "ADDRESS" || name == "ARG" ||
-           name == "DIGITS" || name == "FUZZ" || name == "FORM" || name == "CONDITION";
+    return rx::eqLit(name, "VALUE") || rx::eqLit(name, "VAR") || rx::eqLit(name, "SYMBOL") || rx::eqLit(name, "TRACE") || rx::eqLit(name, "ADDRESS") || rx::eqLit(name, "ARG") ||
+           rx::eqLit(name, "DIGITS") || rx::eqLit(name, "FUZZ") || rx::eqLit(name, "FORM") || rx::eqLit(name, "CONDITION");
 }
 inline Value dispatchBifNative(BifRuntime& bif, Variables& vars, const std::string& name,
                                const std::vector<BifSlot>& slots);
@@ -680,7 +680,7 @@ inline Value dispatchBifNative(BifRuntime& bif, Variables& vars, const std::stri
         }
     }
     // ERRORTEXT: the interpreter's own message table (its texts differ from the condition-message table compiled in).
-    if (name == "ERRORTEXT" || numericEdgeForInterpreter(name, slots, vars.numeric) ||
+    if (rx::eqLit(name, "ERRORTEXT") || numericEdgeForInterpreter(name, slots, vars.numeric) ||
         (radixBifName(name) && !slots.empty() && slots[0] && !slots[0]->isObject() && !plainRadixDigits(name, slots[0]->bytes.str()))) {
         auto result = interpreterCall(vars, name, slots);
         if (!result) throw std::runtime_error("BIF " + name + ": no result");
@@ -691,19 +691,19 @@ inline Value dispatchBifNative(BifRuntime& bif, Variables& vars, const std::stri
     if(auto numeric=numericBif(name,slots,vars.numeric)) return std::move(*numeric);
 #ifdef RX2CPP_HOST_API
     if(streamBifName(name)) return streamBif(vars,name,slots);
-    if(name=="RANDOM") return randomBif(vars,slots);
-    if(name=="TIME" || name=="DATE") return timeDateBif(vars,name,slots);
+    if(rx::eqLit(name, "RANDOM")) return randomBif(vars,slots);
+    if(rx::eqLit(name, "TIME") || rx::eqLit(name, "DATE")) return timeDateBif(vars,name,slots);
 #endif
-    if(name=="TRACE" || name=="ADDRESS") {   // language state owned by the compiled program, not by a BIF
+    if(rx::eqLit(name, "TRACE") || rx::eqLit(name, "ADDRESS")) {   // language state owned by the compiled program, not by a BIF
         if(slots.size()>1 || (slots.size()==1 && (!slots[0] || slots[0]->isObject())))
             throw std::runtime_error("BIF "+name+": invalid arguments");
-        if(name=="TRACE") return Value::string(slots.empty() ? traceSetting() : traceSet(*slots[0]));
+        if(rx::eqLit(name, "TRACE")) return Value::string(slots.empty() ? traceSetting() : traceSet(*slots[0]));
         return Value::string(slots.empty() ? addressEnvironment() : addressSet(*slots[0]));
     }
 #ifdef RX2CPP_HOST_API
     // VALUE(name, [new], selector): ENVIRONMENT, '' (.environment) and every other selector belong to the interpreter
     // that loaded this library, so its own VALUE runs (same results, same errors); the local pool stays compiled.
-    if(name=="VALUE" && slots.size()>=3 && slots[2]) {
+    if(rx::eqLit(name, "VALUE") && slots.size()>=3 && slots[2]) {
         auto result=interpreterCall(vars,"VALUE",slots);
         if(!result) throw std::runtime_error("BIF VALUE: no result");
         return std::move(*result);
@@ -711,7 +711,7 @@ inline Value dispatchBifNative(BifRuntime& bif, Variables& vars, const std::stri
 #endif
 #ifdef RX2CPP_HOST_API
     // An environment symbol (.name) is looked up by the interpreter (the library's package scope), not in the pool.
-    if((name=="SYMBOL" || name=="VAR" || name=="VALUE") && !slots.empty() && slots[0] && !slots[0]->isObject() &&
+    if((rx::eqLit(name, "SYMBOL") || rx::eqLit(name, "VAR") || rx::eqLit(name, "VALUE")) && !slots.empty() && slots[0] && !slots[0]->isObject() &&
        slots[0]->bytes.size()>1 && slots[0]->bytes[0]=='.' && scanSymbol(slots[0]->bytes.str())==SymbolScan::Literal) {
         auto result=interpreterCall(vars,name,slots);
         if(!result) throw std::runtime_error("BIF "+name+": no result");
@@ -719,7 +719,7 @@ inline Value dispatchBifNative(BifRuntime& bif, Variables& vars, const std::stri
     }
     // VALUE of a string that is not a symbol, or assigning a constant symbol: the interpreter's error (40.26, ...),
     // raised before anything is assigned.
-    if(name=="VALUE" && !slots.empty() && slots[0] && !slots[0]->isObject()) {
+    if(rx::eqLit(name, "VALUE") && !slots.empty() && slots[0] && !slots[0]->isObject()) {
         std::string canonical; bool literal=false;
         if(!splitBifSymbol(slots[0]->bytes.str(),canonical,literal) || (literal && slots.size()>1 && slots[1])) {
             auto result=interpreterCall(vars,name,slots);
@@ -728,7 +728,7 @@ inline Value dispatchBifNative(BifRuntime& bif, Variables& vars, const std::stri
         }
     }
 #endif
-    if(name=="SYMBOL" || name=="VAR" || name=="VALUE") {
+    if(rx::eqLit(name, "SYMBOL") || rx::eqLit(name, "VAR") || rx::eqLit(name, "VALUE")) {
         rxbif_variables::VariableRouter router(bif.native,
             [&vars]{return frameNumeric(vars);},
             [&vars](const rxbif_variables::Request& req,
@@ -738,7 +738,7 @@ inline Value dispatchBifNative(BifRuntime& bif, Variables& vars, const std::stri
         return router.invoke(name,slots);
     }
 #ifndef RX2CPP_KERNEL
-    if(name=="FORMAT") return formatBifFixed(slots, vars.numeric);
+    if(rx::eqLit(name, "FORMAT")) return formatBifFixed(slots, vars.numeric);
 #endif
 #ifdef RX2CPP_KERNEL
     // The compiled-in ooRexx kernel runs the REAL handler: validation, defaults, omitted arguments and error text included.
@@ -831,7 +831,7 @@ inline std::optional<std::string> fastRadix(const std::string &name, const Value
     for (const Value &a : args) if (a.isObject()) return std::nullopt;
     const std::string &r = recv.bytes;
     static const char *hexd = "0123456789ABCDEF";
-    if (name == "C2D" && args.empty()) {
+    if (rx::eqLit(name, "C2D") && args.empty()) {
         if (r.size() > 16) return std::nullopt;
         unsigned __int128 v = 0;
         for (unsigned char c : r) v = (v << 8) | c;
@@ -839,7 +839,7 @@ inline std::optional<std::string> fastRadix(const std::string &name, const Value
         if (d.size() > digits) return std::nullopt;
         return d;
     }
-    if (name == "D2C" && args.size() == 1) {
+    if (rx::eqLit(name, "D2C") && args.size() == 1) {
         auto v = decimalToU128(r);
         auto len = decimalToU128(args[0].bytes);
         if (!v || !len || *len > 16 || *len == 0 || r.size() > digits) return std::nullopt;
@@ -849,7 +849,7 @@ inline std::optional<std::string> fastRadix(const std::string &name, const Value
         for (unsigned i = 0; i < bytes; i++) { raw[bytes - 1 - i] = static_cast<char>(x & 0xFF); x >>= 8; }
         return raw;
     }
-    if (name == "D2X" && args.size() == 1) {   // the length counts hexadecimal digits
+    if (rx::eqLit(name, "D2X") && args.size() == 1) {   // the length counts hexadecimal digits
         auto v = decimalToU128(r);
         auto len = decimalToU128(args[0].bytes);
         if (!v || !len || *len > 32 || *len == 0 || r.size() > digits) return std::nullopt;
@@ -859,7 +859,7 @@ inline std::optional<std::string> fastRadix(const std::string &name, const Value
         for (unsigned i = 0; i < nibbles; i++) { hex[nibbles - 1 - i] = hexd[static_cast<unsigned>(x & 15)]; x >>= 4; }
         return hex;
     }
-    if (name == "X2D" && args.empty()) {
+    if (rx::eqLit(name, "X2D") && args.empty()) {
         if (r.empty() || r.size() > 32) return std::nullopt;
         unsigned __int128 v = 0;
         for (char c : r) {
@@ -893,21 +893,21 @@ inline std::optional<std::string> quickStringBif(const std::string &name, const 
     const std::string &s = receiver.bytes;
     switch (name.size()) {
     case 6:
-        if (name == "LENGTH" && args.empty()) return std::to_string(s.size());
-        if (name == "BITXOR" || name == "BITAND") {
+        if (rx::eqLit(name, "LENGTH") && args.empty()) return std::to_string(s.size());
+        if (rx::eqLit(name, "BITXOR") || rx::eqLit(name, "BITAND")) {
             if (args.size() != 1 || args[0].isObject()) return std::nullopt;
             const std::string &t = args[0].bytes;
             const std::string &longer = s.size() >= t.size() ? s : t;
             const std::size_t m = s.size() < t.size() ? s.size() : t.size();
             std::string r = longer;                       // BITXOR keeps the longer operand's tail; BITAND likewise (no pad)
-            if (name == "BITXOR") for (std::size_t i = 0; i < m; i++) r[i] = static_cast<char>(s[i] ^ t[i]);
+            if (rx::eqLit(name, "BITXOR")) for (std::size_t i = 0; i < m; i++) r[i] = static_cast<char>(s[i] ^ t[i]);
             else for (std::size_t i = 0; i < m; i++) r[i] = static_cast<char>(s[i] & t[i]);
             return r;
         }
         return std::nullopt;
     default: break;
     }
-    if (name == "BITOR" && args.size() == 1 && !args[0].isObject()) {
+    if (rx::eqLit(name, "BITOR") && args.size() == 1 && !args[0].isObject()) {
         const std::string &t = args[0].bytes;
         const std::string &longer = s.size() >= t.size() ? s : t;
         const std::size_t m = s.size() < t.size() ? s.size() : t.size();
@@ -915,8 +915,8 @@ inline std::optional<std::string> quickStringBif(const std::string &name, const 
         for (std::size_t i = 0; i < m; i++) r[i] = static_cast<char>(s[i] | t[i]);
         return r;
     }
-    if (name == "REVERSE" && args.empty()) return std::string(s.rbegin(), s.rend());
-    if (name == "SUBSTR" && (args.size() == 1 || args.size() == 2)) {
+    if (rx::eqLit(name, "REVERSE") && args.empty()) return std::string(s.rbegin(), s.rend());
+    if (rx::eqLit(name, "SUBSTR") && (args.size() == 1 || args.size() == 2)) {
         std::size_t n, len = 0;
         if (!plainCount(args[0], n) || n < 1) return std::nullopt;
         const std::size_t start = n - 1, avail = start < s.size() ? s.size() - start : 0;
@@ -925,13 +925,13 @@ inline std::optional<std::string> quickStringBif(const std::string &name, const 
         const std::size_t take = len < avail ? len : avail;
         return (avail ? s.substr(start, take) : std::string()) + std::string(len - take, ' ');
     }
-    if ((name == "LEFT" || name == "RIGHT") && args.size() == 1) {
+    if ((rx::eqLit(name, "LEFT") || rx::eqLit(name, "RIGHT")) && args.size() == 1) {
         std::size_t len;
         if (!plainCount(args[0], len)) return std::nullopt;
-        if (name == "LEFT") return len <= s.size() ? s.substr(0, len) : s + std::string(len - s.size(), ' ');
+        if (rx::eqLit(name, "LEFT")) return len <= s.size() ? s.substr(0, len) : s + std::string(len - s.size(), ' ');
         return len <= s.size() ? s.substr(s.size() - len) : std::string(len - s.size(), ' ') + s;
     }
-    if (name == "C2X" && args.empty()) {
+    if (rx::eqLit(name, "C2X") && args.empty()) {
         static const char hex[] = "0123456789ABCDEF";
         std::string r; r.reserve(s.size() * 2);
         for (unsigned char c : s) { r.push_back(hex[c >> 4]); r.push_back(hex[c & 15]); }
@@ -953,13 +953,13 @@ inline std::optional<MessageResult> quickStringMethod(const std::string &name, c
         if (v.isObject() || v.bytes.empty() || v.bytes.size() > 9 || v.bytes.find_first_not_of("0123456789") != std::string::npos) return false;
         out = std::stoul(v.bytes); return !(positive && out == 0);
     };
-    if (name == "[]" && (args.size() == 1 || args.size() == 2)) {
+    if (rx::eqLit(name, "[]") && (args.size() == 1 || args.size() == 2)) {
         std::size_t n, len = 1;
         if (!count(args[0], n, true) || (args.size() == 2 && !count(args[1], len, false))) return std::nullopt;
         if (n > s.size()) return MessageResult(Value::string(std::string()));
         return MessageResult(Value::string(s.substr(n - 1, len)));
     }
-    if (name == "VERIFY" && !args.empty() && args.size() <= 4) {
+    if (rx::eqLit(name, "VERIFY") && !args.empty() && args.size() <= 4) {
         for (const Value &a : args) if (a.isObject() && !(dynamic_cast<EnvObject *>(a.object.get()) && static_cast<EnvObject *>(a.object.get())->handle == nullptr)) return std::nullopt;
         auto omitted = [&](std::size_t i) { return i >= args.size() || (args[i].isObject()); };
         static const std::string rxEmptyRef; const std::string &ref = args[0].isObject() ? rxEmptyRef : args[0].bytes.str();
@@ -981,7 +981,7 @@ inline std::optional<MessageResult> quickStringMethod(const std::string &name, c
             if (in[static_cast<unsigned char>(s[i])] == match) return MessageResult(Value::string(std::to_string(i + 1)));
         return MessageResult(Value::string("0"));
     }
-    if (name == "ISA" && args.size() == 1 && args[0].isObject()) {
+    if (rx::eqLit(name, "ISA") && args.size() == 1 && args[0].isObject()) {
         // Every plain string has class String: the answer depends only on the class object asked about.
         void *h = stringIsAKey(args[0]);
         if (!h) return std::nullopt;
@@ -991,28 +991,28 @@ inline std::optional<MessageResult> quickStringMethod(const std::string &name, c
     }
     auto plainArgs = [&]() { for (const Value &a : args) if (a.isObject()) return false; return true; };
     // A string's STRING / MAKESTRING / REQUEST('STRING') is the string itself.
-    if ((name == "STRING" || name == "MAKESTRING") && args.empty()) return MessageResult(receiver);
-    if (name == "REQUEST" && args.size() == 1 && !args[0].isObject()) {
+    if ((rx::eqLit(name, "STRING") || rx::eqLit(name, "MAKESTRING")) && args.empty()) return MessageResult(receiver);
+    if (rx::eqLit(name, "REQUEST") && args.size() == 1 && !args[0].isObject()) {
         std::string w = args[0].bytes;
         for (char &c : w) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
         if (w == "STRING") return MessageResult(receiver);
         return std::nullopt;
     }
     // hay~POS(needle [, start]) / ~LASTPOS: the POS / LASTPOS built-ins with the receiver as haystack.
-    if ((name == "POS" || name == "LASTPOS") && (args.size() == 1 || args.size() == 2) && plainArgs()) {
+    if ((rx::eqLit(name, "POS") || rx::eqLit(name, "LASTPOS")) && (args.size() == 1 || args.size() == 2) && plainArgs()) {
         std::vector<BifSlot> a{args[0], receiver};
         if (args.size() == 2) a.emplace_back(args[1]);
         if (auto r = quickBif(name, a)) return MessageResult(std::move(*r));
         return std::nullopt;
     }
-    if (name == "COUNTSTR" && args.size() == 1 && plainArgs()) {
+    if (rx::eqLit(name, "COUNTSTR") && args.size() == 1 && plainArgs()) {
         const std::string &needle = args[0].bytes;
         std::size_t n = 0;
         if (!needle.empty())
             for (std::size_t at = s.find(needle); at != std::string::npos; at = s.find(needle, at + needle.size())) ++n;
         return MessageResult(Value::string(std::to_string(n)));
     }
-    if (name == "CHANGESTR" && (args.size() == 2 || args.size() == 3) && plainArgs()) {
+    if (rx::eqLit(name, "CHANGESTR") && (args.size() == 2 || args.size() == 3) && plainArgs()) {
         const std::string &needle = args[0].bytes, &repl = args[1].bytes;
         std::size_t limit = std::string::npos;
         if (args.size() == 3 && !count(args[2], limit, false)) return std::nullopt;
@@ -1046,25 +1046,25 @@ inline MessageResult hostStringBif(const Value &receiver, const std::string &sel
         const ActivationNumeric def0;
         if (numericEdgeForInterpreter(name, asSlots, currentNumeric ? *currentNumeric : def0)) return fallback();
     }
-    if (name == "C2D" || name == "D2C" || name == "X2D" || name == "D2X") {
+    if (rx::eqLit(name, "C2D") || rx::eqLit(name, "D2C") || rx::eqLit(name, "X2D") || rx::eqLit(name, "D2X")) {
         const ActivationNumeric def0;
         const ActivationNumeric &n0 = currentNumeric ? *currentNumeric : def0;
         if (auto fast = fastRadix(name, receiver, args, n0.digits)) return MessageResult(Value::string(*fast));
     }
     if (auto quick = quickStringBif(name, receiver, args)) return MessageResult(Value::string(*quick));
     if (auto quick = quickStringMethod(name, receiver, args)) return std::move(*quick);
-    if (name == "ISA" && args.size() == 1 && args[0].isObject())
+    if (rx::eqLit(name, "ISA") && args.size() == 1 && args[0].isObject())
         if (void *h = stringIsAKey(args[0])) {
             MessageResult r = fallback();   // the interpreter answers once per class object; plain strings all share class String
             if (r && !r->isObject()) stringIsACache()[h] = r->bytes == "1";
             return r;
         }
-    if (name == "SUBCHAR" && args.size() == 1 && !args[0].isObject() && !args[0].bytes.empty() && args[0].bytes.size() < 10 &&
+    if (rx::eqLit(name, "SUBCHAR") && args.size() == 1 && !args[0].isObject() && !args[0].bytes.empty() && args[0].bytes.size() < 10 &&
         args[0].bytes.find_first_not_of("0123456789") == std::string::npos) {
         const unsigned long n = std::stoul(args[0].bytes);   // SUBCHAR(n): the n-th character, "" beyond the end
         if (n >= 1) return MessageResult(Value::string(n <= receiver.bytes.size() ? std::string(1, receiver.bytes[n - 1]) : std::string()));
     }
-    if (name == "DATATYPE" || name == "ABS" || name == "MAX" || name == "MIN" || name == "C2D" || name == "D2C" || name == "X2D" || name == "D2X") {
+    if (rx::eqLit(name, "DATATYPE") || rx::eqLit(name, "ABS") || rx::eqLit(name, "MAX") || rx::eqLit(name, "MIN") || rx::eqLit(name, "C2D") || rx::eqLit(name, "D2C") || rx::eqLit(name, "X2D") || rx::eqLit(name, "D2X")) {
         std::vector<BifSlot> ns; ns.emplace_back(receiver);
         bool plain = true;
         for (const Value &a : args) { if (a.isObject()) { plain = false; break; } ns.emplace_back(a); }

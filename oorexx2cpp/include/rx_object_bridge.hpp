@@ -140,8 +140,8 @@ inline void *findClass(const std::string &name) {
 inline void *environmentObject(const std::string &name) {
     RexxThreadContext *t = need();
     RexxObjectPtr d = NULLOBJECT;
-    if (name == "LOCAL") d = (RexxObjectPtr)t->GetLocalEnvironment();
-    else if (name == "ENVIRONMENT") d = (RexxObjectPtr)t->GetGlobalEnvironment();
+    if (rx::eqLit(name, "LOCAL")) d = (RexxObjectPtr)t->GetLocalEnvironment();
+    else if (rx::eqLit(name, "ENVIRONMENT")) d = (RexxObjectPtr)t->GetGlobalEnvironment();
     if (d == NULLOBJECT) return nullptr;
     return (void *)rxobj::pinRef(t, d);
 }
@@ -598,7 +598,7 @@ struct EnvObject final : ObjectDispatch {
     }
     std::optional<MessageResult> arrayAccess(const std::string &selector, const std::vector<Value> &args) const {
         std::size_t index = 0;
-        if (selector.size() == 2 && selector == "[]" && args.size() == 1) {
+        if (selector.size() == 2 && rx::eqLit(selector, "[]") && args.size() == 1) {
             if (!plainIndex(args[0], index) || !isPlainArray()) return std::nullopt;
             RexxThreadContext *t = rxobj::need();
             RexxObjectPtr r = t->ArrayAt((RexxArrayObject)handle, index);
@@ -617,7 +617,7 @@ struct EnvObject final : ObjectDispatch {
             t->ReleaseLocalReference(r);
             return MessageResult(wrap(out));
         }
-        if (selector.size() == 3 && selector == "[]=" && args.size() == 2) {
+        if (selector.size() == 3 && rx::eqLit(selector, "[]=") && args.size() == 2) {
             if (!plainIndex(args[1], index) || !isPlainArray()) return std::nullopt;
             const Value &v = args[0];
             if (v.isObject()) {
@@ -717,7 +717,7 @@ inline Value envClass(const std::string &name);
 // (a compiled method has no interpreter activation to describe).
 struct LibraryContext final : ObjectDispatch {
     MessageResult sendMessage(const std::string &selector, const std::vector<Value> &) override {
-        if (selector == "PACKAGE" && rxobj::libraryPackage() != NULLOBJECT) {
+        if (rx::eqLit(selector, "PACKAGE") && rxobj::libraryPackage() != NULLOBJECT) {
             RexxThreadContext *t = rxobj::need();
             return Value::fromObject(std::make_shared<EnvObject>((void *)rxobj::pinRef(t, rxobj::libraryPackage())));
         }
@@ -901,9 +901,10 @@ struct MethodTraps {
     MethodTraps() : savedNovalue(novalueArmed), savedLostDigits(lostDigitsArmed) {
         if (MethodTraps *from = std::exchange(inheritNext(), nullptr)) {
             internal = true;
-            for (int k = 0; k < SLOTS; ++k) { on[k] = from->on[k]; callMode[k] = from->callMode[k]; delayed[k] = from->delayed[k];
-                                              label[k] = from->label[k]; missing[k] = from->missing[k]; }
-            for (int u = 0; u < USERS; ++u) userName[u] = from->userName[u];
+            std::memcpy(on, from->on, sizeof on); std::memcpy(callMode, from->callMode, sizeof callMode);
+            std::memcpy(delayed, from->delayed, sizeof delayed); std::memcpy(label, from->label, sizeof label);
+            for (int k = 0; k < SLOTS; ++k) if (!from->missing[k].empty()) missing[k] = from->missing[k];
+            for (int u = 0; u < from->users; ++u) userName[u] = from->userName[u];   // (only the slots in use)
             users = from->users; has = from->has; name = from->name; instruction = from->instruction; object = from->object;
         }
         Handing &h = handing();
@@ -1018,7 +1019,7 @@ struct MethodTraps {
         name = raised.name;
         instruction = "SIGNAL";
         object = raised.object;
-        if (name == "SYNTAX" || name == "ERROR" || name == "FAILURE") rx::set(vars, "RC", conditionEntry(object, "RC"));
+        if (rx::eqLit(name, "SYNTAX") || rx::eqLit(name, "ERROR") || rx::eqLit(name, "FAILURE")) rx::set(vars, "RC", conditionEntry(object, "RC"));
         rx::set(vars, "SIGL", Value::string(std::to_string(line)));
         if (label[use] < 0) {
             SyntaxCondition e("16.1", "Label \"" + missing[use] + "\" not found", false);
@@ -1116,12 +1117,12 @@ inline std::optional<Value> raisedInCaller(const RaiseToCaller &r) {
             return r.result;
         }
     }
-    if (r.name == "HALT") {
+    if (rx::eqLit(r.name, "HALT")) {
         SyntaxCondition e("4.1", "Program interrupted with HALT condition", false);
         e.substitutions.push_back(Value::string("HALT"));
         throw e;
     }
-    if (r.name == "NOMETHOD") {
+    if (rx::eqLit(r.name, "NOMETHOD")) {
         if (r.additional && r.description) {
             SyntaxCondition e("97.1", "does not understand message", false);
             e.substitutions = {*r.additional, *r.description};
@@ -1376,7 +1377,7 @@ inline Value envClass(const std::string &name) {
     auto it = cache.find(name);
     if (it != cache.end()) return it->second;
     if (packageClassHook) if (auto v = packageClassHook(name)) { cache.emplace(name, *v); return *v; }
-    void *h = (name == "LOCAL" || name == "ENVIRONMENT") ? rxobj::environmentObject(name) : rxobj::findClass(name);
+    void *h = (rx::eqLit(name, "LOCAL") || rx::eqLit(name, "ENVIRONMENT")) ? rxobj::environmentObject(name) : rxobj::findClass(name);
     if (!h) {
         // Not a class: an environment entry (.REXXINFO, .OUTPUT, an application's .local['X']), looked up each time.
         if (void *entry = rxobj::environmentEntry(name)) {
@@ -1426,12 +1427,12 @@ struct NativeMutableBuffer final : NativeRefBase, std::enable_shared_from_this<N
     }
     MessageResult sendMessage(const std::string &selector, const std::vector<Value> &args) override {
         if (!real) {
-            if (selector == "APPEND" && !args.empty() && plain(args)) {
+            if (rx::eqLit(selector, "APPEND") && !args.empty() && plain(args)) {
                 for (const Value &a : args) data.append(a.bytes.data(), a.bytes.size());
                 return Value::fromObject(shared_from_this());
             }
-            if ((selector == "STRING" || selector == "MAKESTRING") && args.empty()) return Value::string(data);
-            if (selector == "LENGTH" && args.empty()) return Value::string(std::to_string(data.size()));
+            if ((rx::eqLit(selector, "STRING") || rx::eqLit(selector, "MAKESTRING")) && args.empty()) return Value::string(data);
+            if (rx::eqLit(selector, "LENGTH") && args.empty()) return Value::string(std::to_string(data.size()));
         }
         return promote().object->sendMessage(selector, args);
     }
@@ -1456,7 +1457,7 @@ struct NativeMutableBufferClass final : NativeRefBase {
     }
     MessageResult sendMessage(const std::string &selector, const std::vector<Value> &args) override {
         // NEW([string] [, buffersize]): the initial content; the size is only a capacity hint.
-        if (selector == "NEW" && args.size() <= 2 && NativeMutableBuffer::plain(args)) {
+        if (rx::eqLit(selector, "NEW") && args.size() <= 2 && NativeMutableBuffer::plain(args)) {
             if (args.size() == 2) {
                 const std::string &n = args[1].bytes;
                 if (n.empty() || n.find_first_not_of("0123456789") != std::string::npos)
@@ -1592,9 +1593,9 @@ struct NativeArray final : NativeRefBase, ItemSnapshot, std::enable_shared_from_
     }
     MessageResult sendMessage(const std::string &selector, const std::vector<Value> &args) override;
     Value sendBinary(const std::string &selector, const Value &rhs) override {
-        if (!real && (selector == "==" || selector == "=" || selector == "\\==" || selector == "\\=" || selector == "<>" || selector == "><")) {
+        if (!real && (rx::eqLit(selector, "==") || rx::eqLit(selector, "=") || rx::eqLit(selector, "\\==") || rx::eqLit(selector, "\\=") || rx::eqLit(selector, "<>") || rx::eqLit(selector, "><"))) {
             const bool same = rhs.isObject() && rhs.object.get() == this;
-            const bool positive = selector == "==" || selector == "=";
+            const bool positive = rx::eqLit(selector, "==") || rx::eqLit(selector, "=");
             return Value::string(same == positive ? "1" : "0");
         }
         return promote().object->sendBinary(selector, rhs);
@@ -1609,7 +1610,7 @@ struct NativeArrayClass final : NativeRefBase {
     static Value interpreterClass() { return envClass("ARRAY"); }
     void *materialize() override { return static_cast<EnvObject *>(interpreterClass().object.get())->handle; }
     MessageResult sendMessage(const std::string &selector, const std::vector<Value> &args) override {
-        if (selector == "NEW") {
+        if (rx::eqLit(selector, "NEW")) {
             std::size_t n = 0;
             if (args.empty()) return Value::fromObject(std::make_shared<NativeArray>(0, false));
             if (args.size() == 1 && !args[0].isObject()) {
@@ -1620,7 +1621,7 @@ struct NativeArrayClass final : NativeRefBase {
                 if (NativeArray::index(args[0], n) && n <= NativeArray::maxSlots)
                     return Value::fromObject(std::make_shared<NativeArray>(n));
             }
-        } else if (selector == "OF") {
+        } else if (rx::eqLit(selector, "OF")) {
             auto a = std::make_shared<NativeArray>(args.size());
             for (std::size_t i = 0; i < args.size(); ++i) {
                 if (NativeArray::omitted(args[i])) continue;
@@ -1730,18 +1731,18 @@ struct NativeDirectory final : NativeRefBase, std::enable_shared_from_this<Nativ
         if (real) return real->object->sendMessage(selector, args);
         const std::size_t n = args.size();
         const bool key0 = n >= 1 && !args[n == 2 ? 1 : 0].isObject();
-        if ((selector == "[]" || selector == "AT") && n == 1 && key0) {
+        if ((rx::eqLit(selector, "[]") || rx::eqLit(selector, "AT")) && n == 1 && key0) {
             auto it = entries.find(args[0].bytes);
             return it == entries.end() ? nil() : it->second;
         }
-        if ((selector == "[]=" || selector == "PUT") && n == 2 && key0 && !NativeArray::omitted(args[0])) {
+        if ((rx::eqLit(selector, "[]=") || rx::eqLit(selector, "PUT")) && n == 2 && key0 && !NativeArray::omitted(args[0])) {
             const std::string &k = args[1].bytes;
             auto it = entries.find(k);
             if (it == entries.end()) { order.push_back(k); entries.emplace(k, args[0]); }
             else it->second = args[0];
             return std::nullopt;
         }
-        if (selector == "HASINDEX" && n == 1 && key0) return Value::string(entries.count(args[0].bytes) ? "1" : "0");
+        if (rx::eqLit(selector, "HASINDEX") && n == 1 && key0) return Value::string(entries.count(args[0].bytes) ? "1" : "0");
         // DirectoryClass::unknown: a message that is no Directory method names an entry: NAME= sets it, NAME answers
         // it (.nil when absent). (d~w1 = x; d~w1)
         if (!selector.empty() && ((n == 0 && selector.back() != '=') || (n == 1 && selector.size() > 1 && selector.back() == '=' &&
@@ -1756,17 +1757,17 @@ struct NativeDirectory final : NativeRefBase, std::enable_shared_from_this<Nativ
             else it->second = args[0];
             return std::nullopt;
         }
-        if (selector == "ITEMS" && n == 0) return Value::string(std::to_string(entries.size()));
-        if (selector == "ISEMPTY" && n == 0) return Value::string(entries.empty() ? "1" : "0");
-        if ((selector == "ALLINDEXES" || selector == "ALLITEMS") && n == 0) {
+        if (rx::eqLit(selector, "ITEMS") && n == 0) return Value::string(std::to_string(entries.size()));
+        if (rx::eqLit(selector, "ISEMPTY") && n == 0) return Value::string(entries.empty() ? "1" : "0");
+        if ((rx::eqLit(selector, "ALLINDEXES") || rx::eqLit(selector, "ALLITEMS")) && n == 0) {
             const std::vector<std::size_t> &at = interpreterOrder();
             std::vector<Value> items;
             items.reserve(at.size());
-            for (std::size_t i : at) items.push_back(selector == "ALLINDEXES" ? Value::string(order[i]) : entries.at(order[i]));
+            for (std::size_t i : at) items.push_back(rx::eqLit(selector, "ALLINDEXES") ? Value::string(order[i]) : entries.at(order[i]));
             return arrayOf(std::move(items));
         }
-        if (selector == "CLASS" && n == 0) return nativeDirectoryClass();
-        if (selector == "ISA" && n == 1 && args[0].isObject()) {
+        if (rx::eqLit(selector, "CLASS") && n == 0) return nativeDirectoryClass();
+        if (rx::eqLit(selector, "ISA") && n == 1 && args[0].isObject()) {
             if (args[0].object.get() == nativeDirectoryClass().object.get()) return Value::string("1");
             Value cls = envClass("DIRECTORY");
             if (auto *e = dynamic_cast<EnvObject *>(args[0].object.get()))
@@ -1776,9 +1777,9 @@ struct NativeDirectory final : NativeRefBase, std::enable_shared_from_this<Nativ
         return promote().object->sendMessage(selector, args);
     }
     Value sendBinary(const std::string &selector, const Value &rhs) override {
-        if (!real && (selector == "==" || selector == "=" || selector == "\\==" || selector == "\\=" || selector == "<>" || selector == "><")) {
+        if (!real && (rx::eqLit(selector, "==") || rx::eqLit(selector, "=") || rx::eqLit(selector, "\\==") || rx::eqLit(selector, "\\=") || rx::eqLit(selector, "<>") || rx::eqLit(selector, "><"))) {
             const bool same = rhs.isObject() && rhs.object.get() == this;
-            const bool positive = selector == "==" || selector == "=";
+            const bool positive = rx::eqLit(selector, "==") || rx::eqLit(selector, "=");
             return Value::string(same == positive ? "1" : "0");
         }
         return promote().object->sendBinary(selector, rhs);
@@ -1793,7 +1794,7 @@ struct NativeDirectoryClass final : NativeRefBase {
     void *materialize() override { return static_cast<EnvObject *>(envClass("DIRECTORY").object.get())->handle; }
     MessageResult sendMessage(const std::string &selector, const std::vector<Value> &args) override {
         // Only .Directory~new without arguments: an initial size changes the interpreter's table layout (and order).
-        if (selector == "NEW" && args.empty()) return Value::fromObject(std::make_shared<NativeDirectory>());
+        if (rx::eqLit(selector, "NEW") && args.empty()) return Value::fromObject(std::make_shared<NativeDirectory>());
         return envClass("DIRECTORY").object->sendMessage(selector, args);
     }
     Value sendBinary(const std::string &selector, const Value &rhs) override {
@@ -1811,51 +1812,51 @@ inline MessageResult NativeArray::sendMessage(const std::string &selector, const
     const std::size_t n = args.size();
     switch (selector.empty() ? 0 : selector[0]) {
     case '[':
-        if (selector == "[]" && n == 1 && index(args[0], i))
+        if (rx::eqLit(selector, "[]") && n == 1 && index(args[0], i))
             return i <= slots.size() && slots[i - 1] ? *slots[i - 1] : nil();
-        if (selector == "[]=" && n == 2 && !omitted(args[0]) && index(args[1], i) && place(i, args[0])) return std::nullopt;
+        if (rx::eqLit(selector, "[]=") && n == 2 && !omitted(args[0]) && index(args[1], i) && place(i, args[0])) return std::nullopt;
         break;
     case 'A':
-        if (selector == "AT" && n == 1 && index(args[0], i))
+        if (rx::eqLit(selector, "AT") && n == 1 && index(args[0], i))
             return i <= slots.size() && slots[i - 1] ? *slots[i - 1] : nil();
-        if (selector == "APPEND" && n == 1 && !omitted(args[0])) {
+        if (rx::eqLit(selector, "APPEND") && n == 1 && !omitted(args[0])) {
             const std::size_t at = lastIndex() + 1;
             if (place(at, args[0])) return number(at);
         }
-        if (selector == "ALLITEMS" && n == 0) return newArrayOf(*snapshotItems());
-        if (selector == "ALLINDEXES" && n == 0) {
+        if (rx::eqLit(selector, "ALLITEMS") && n == 0) return newArrayOf(*snapshotItems());
+        if (rx::eqLit(selector, "ALLINDEXES") && n == 0) {
             std::vector<Value> ix;
             for (std::size_t k = 0; k < slots.size(); ++k) if (slots[k]) ix.push_back(number(k + 1));
             return newArrayOf(std::move(ix));
         }
         break;
     case 'C':
-        if (selector == "CLASS" && n == 0) return nativeArrayClass();
+        if (rx::eqLit(selector, "CLASS") && n == 0) return nativeArrayClass();
         break;
     case 'F':
         // ArrayClass::fillRexx: every slot of the array's size, the receiver back
-        if (selector == "FILL" && n == 1 && !omitted(args[0])) {
+        if (rx::eqLit(selector, "FILL") && n == 1 && !omitted(args[0])) {
             for (auto &s : slots) s = args[0];
             count = slots.size();
             return self();
         }
-        if (selector == "FIRST" && n == 0) {
+        if (rx::eqLit(selector, "FIRST") && n == 0) {
             for (std::size_t k = 0; k < slots.size(); ++k) if (slots[k]) return number(k + 1);
             return nil();
         }
-        if (selector == "FIRSTITEM" && n == 0) {
+        if (rx::eqLit(selector, "FIRSTITEM") && n == 0) {
             for (const auto &s : slots) if (s) return *s;
             return nil();
         }
         break;
     case 'H':
-        if (selector == "HASINDEX" && n == 1 && index(args[0], i))
+        if (rx::eqLit(selector, "HASINDEX") && n == 1 && index(args[0], i))
             return Value::string(i <= slots.size() && slots[i - 1] ? "1" : "0");
         break;
     case 'I':
-        if (selector == "ITEMS" && n == 0) return number(count);
-        if (selector == "ISEMPTY" && n == 0) return Value::string(count == 0 ? "1" : "0");
-        if (selector == "ISA" && n == 1 && args[0].isObject()) {
+        if (rx::eqLit(selector, "ITEMS") && n == 0) return number(count);
+        if (rx::eqLit(selector, "ISEMPTY") && n == 0) return Value::string(count == 0 ? "1" : "0");
+        if (rx::eqLit(selector, "ISA") && n == 1 && args[0].isObject()) {
             if (dynamic_cast<NativeArrayClass *>(args[0].object.get())) return Value::string("1");
             // An Array instance: isA(c) is c == .Array or .Array~isSubclassOf(c) (no promotion needed).
             Value cls = NativeArrayClass::interpreterClass();
@@ -1865,17 +1866,17 @@ inline MessageResult NativeArray::sendMessage(const std::string &selector, const
         }
         break;
     case 'L':
-        if (selector == "LAST" && n == 0) { const std::size_t l = lastIndex(); return l ? number(l) : nil(); }
-        if (selector == "LASTITEM" && n == 0) { const std::size_t l = lastIndex(); return l ? *slots[l - 1] : nil(); }
+        if (rx::eqLit(selector, "LAST") && n == 0) { const std::size_t l = lastIndex(); return l ? number(l) : nil(); }
+        if (rx::eqLit(selector, "LASTITEM") && n == 0) { const std::size_t l = lastIndex(); return l ? *slots[l - 1] : nil(); }
         break;
     case 'M':
-        if (selector == "MAKEARRAY" && n == 0) return newArrayOf(*snapshotItems());
+        if (rx::eqLit(selector, "MAKEARRAY") && n == 0) return newArrayOf(*snapshotItems());
         break;
     case 'P':
-        if (selector == "PUT" && n == 2 && !omitted(args[0]) && index(args[1], i) && place(i, args[0])) return std::nullopt;
+        if (rx::eqLit(selector, "PUT") && n == 2 && !omitted(args[0]) && index(args[1], i) && place(i, args[0])) return std::nullopt;
         break;
     case 'R':
-        if (selector == "REMOVE" && n == 1 && index(args[0], i)) {
+        if (rx::eqLit(selector, "REMOVE") && n == 1 && index(args[0], i)) {
             if (i > slots.size() || !slots[i - 1]) return nil();
             Value out = std::move(*slots[i - 1]);
             slots[i - 1].reset();
@@ -1884,7 +1885,7 @@ inline MessageResult NativeArray::sendMessage(const std::string &selector, const
         }
         break;
     case 'S':
-        if (selector == "SIZE" && n == 0) return number(slots.size());
+        if (rx::eqLit(selector, "SIZE") && n == 0) return number(slots.size());
         break;
     default: break;
     }
@@ -2634,26 +2635,26 @@ inline Value streamBif(Variables &vars, const std::string &name, const std::vect
         return streamSend(stream, selector, args);
     };
     auto arg = [&](std::size_t i) { return i < argc && a[i] ? *a[i] : omittedArgument(); };
-    if (name == "LINEIN" || name == "CHARIN") {
+    if (rx::eqLit(name, "LINEIN") || rx::eqLit(name, "CHARIN")) {
         if (argc > 3 || !whole(1) || !whole(2)) return delegate();
         Value stream = resolve(true, true);
         if (argc <= 1) return send(stream, name, {});
         if (argc == 2) return send(stream, name, {arg(1)});
         return send(stream, name, {arg(1), arg(2)});
     }
-    if (name == "LINEOUT" || name == "CHAROUT") {
+    if (rx::eqLit(name, "LINEOUT") || rx::eqLit(name, "CHAROUT")) {
         if (argc > 3 || !whole(2)) return delegate();
         Value stream = resolve(false, true);
         if (argc == 0) return send(stream, name, {});
         if (argc == 1) {
             Value r = send(stream, name, {});
-            if (name == "LINEOUT") table.erase(fullName);   // a close request: removeFileName
+            if (rx::eqLit(name, "LINEOUT")) table.erase(fullName);   // a close request: removeFileName
             return r;
         }
         if (argc == 2) return send(stream, name, {arg(1)});
         return send(stream, name, {arg(1), arg(2)});
     }
-    if (name == "LINES") {
+    if (rx::eqLit(name, "LINES")) {
         if (argc > 2) return delegate();
         std::string option = "NORMAL";
         if (auto o = text(1)) { if (o->empty()) return delegate(); option = *o; }
@@ -2667,11 +2668,11 @@ inline Value streamBif(Variables &vars, const std::string &name, const std::vect
         }
         return r;
     }
-    if (name == "CHARS") {
+    if (rx::eqLit(name, "CHARS")) {
         if (argc > 1) return delegate();
         return send(resolve(true, true), "CHARS", {});
     }
-    if (name == "STREAM") {
+    if (rx::eqLit(name, "STREAM")) {
         if (argc < 1 || argc > 3 || !streamName || streamName->empty()) return delegate();
         char action = 'S';
         if (auto op = text(1)) { if (op->empty()) return delegate(); action = static_cast<char>(std::toupper(static_cast<unsigned char>((*op)[0]))); }
@@ -2783,7 +2784,7 @@ inline Value timeDateBif(Variables &vars, const std::string &name, const std::ve
         style = static_cast<char>(std::toupper(static_cast<unsigned char>(a[0]->bytes[0])));
     }
     ClauseClock &c = clauseTime();
-    if (name == "TIME" && (style == 'E' || style == 'R')) {
+    if (rx::eqLit(name, "TIME") && (style == 'E' || style == 'R')) {
         if (c.elapsed == 0) c.elapsed = c.utc;                               // getElapsed: the first call starts it
         const std::int64_t threshold = c.utc - c.elapsed;
         std::string out = "0";
@@ -2803,8 +2804,8 @@ inline Value timeDateBif(Variables &vars, const std::string &name, const std::ve
     return delegate(args);
 }
 inline bool streamBifName(const std::string &name) {
-    return name == "LINEIN" || name == "LINEOUT" || name == "LINES" || name == "CHARIN" || name == "CHAROUT" ||
-           name == "CHARS" || name == "STREAM";
+    return rx::eqLit(name, "LINEIN") || rx::eqLit(name, "LINEOUT") || rx::eqLit(name, "LINES") || rx::eqLit(name, "CHARIN") || rx::eqLit(name, "CHAROUT") ||
+           rx::eqLit(name, "CHARS") || rx::eqLit(name, "STREAM");
 }
 #endif
 }

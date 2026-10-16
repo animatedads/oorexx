@@ -31,6 +31,11 @@
 #include <random>
 
 namespace rx {
+// s == "literal" without strlen at run time: the literal's length is known, so a different length is one comparison
+// (selector and built-in name tests run on every message and every built-in call).
+template <std::size_t N> inline bool eqLit(const std::string &s, const char (&lit)[N]) {
+    return s.size() == N - 1 && std::memcmp(s.data(), lit, N - 1) == 0;
+}
 // The interpreter implements operators as messages to the LEFT operand.
 // All ooRexx instances inherit .Object's comparison methods. The native
 // prototype mirrors its identity-based defaults here, while keeping each
@@ -68,6 +73,7 @@ inline void notePressure(std::size_t bytes) {
 // Bit 4: another thread is writing the characters.
 struct NumCache {
     static constexpr std::uint32_t known = 1, decimal = 2, integer = 4, pending = 8, busy = 16;
+    static constexpr std::uint32_t notNumber = 32;   // the characters are no Rexx number at all (tryParseRexxDecimal)
     std::atomic<std::int64_t> coef{0};
     std::atomic<std::uint32_t> meta{0};
     NumCache() = default;
@@ -82,7 +88,7 @@ struct NumCache {
 };
 class RxStr {
 public:
-    static constexpr std::size_t inlineLimit = 64;
+    static constexpr std::size_t inlineLimit = 15;   // (std::string keeps up to 15 characters without allocating)
     using size_type = std::string::size_type;
     static constexpr size_type npos = std::string::npos;
     RxStr() = default;
@@ -260,9 +266,9 @@ struct ObjectDispatch {
     virtual MessageResult sendMessage(const std::string &selector,
                                       const std::vector<Value> &args) {
         if (args.size() == 1 &&
-            (selector == "=" || selector == "\\=" || selector == "==" || selector == "\\==" ||
-             selector == "<>" || selector == "><" || selector == "<" || selector == ">" ||
-             selector == "<=" || selector == ">="))
+            (rx::eqLit(selector, "=") || rx::eqLit(selector, "\\=") || rx::eqLit(selector, "==") || rx::eqLit(selector, "\\==") ||
+             rx::eqLit(selector, "<>") || rx::eqLit(selector, "><") || rx::eqLit(selector, "<") || rx::eqLit(selector, ">") ||
+             rx::eqLit(selector, "<=") || rx::eqLit(selector, ">=")))
             return sendBinary(selector, args.front());
         throw NoMethod("unhandled object message: " + selector);
     }
@@ -283,8 +289,8 @@ struct ObjectDispatch {
     // More specialised classes (e.g. .String) provide their own comparators.
     virtual Value sendBinary(const std::string &selector, const Value &rhs) {
         const bool same = rhs.isObject() && rhs.object.get() == this;
-        if (selector == "=" || selector == "==") return Value::string(same ? "1" : "0");
-        if (selector == "\\=" || selector == "\\==" || selector == "<>" || selector == "><")
+        if (rx::eqLit(selector, "=") || rx::eqLit(selector, "==")) return Value::string(same ? "1" : "0");
+        if (rx::eqLit(selector, "\\=") || rx::eqLit(selector, "\\==") || rx::eqLit(selector, "<>") || rx::eqLit(selector, "><"))
             return Value::string(same ? "0" : "1");
         throw std::runtime_error("unhandled binary operator message: " + selector);
     }
@@ -308,15 +314,15 @@ struct NilObject final : ObjectDispatch {
         std::string canonical = selector;
         std::transform(canonical.begin(), canonical.end(), canonical.begin(),
                        [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
-        if (canonical == "STRING" && args.empty()) return Value::string(display());
+        if (rx::eqLit(canonical, "STRING") && args.empty()) return Value::string(display());
         if (nilMessageFallback()) return nilMessageFallback()(canonical, args);
         return ObjectDispatch::sendMessage(canonical, args);
     }
     // Object's concatenation operators (||, blank, abuttal) use the string value.
     Value sendBinary(const std::string &selector, const Value &rhs) override {
-        if (selector == "||" || selector == "" || selector == " ") {
+        if (rx::eqLit(selector, "||") || rx::eqLit(selector, "") || rx::eqLit(selector, " ")) {
             const std::string right = rhs.isObject() ? rhs.object->display() : rhs.bytes.str();
-            return Value::string(display() + (selector == " " ? " " : "") + right);
+            return Value::string(display() + (rx::eqLit(selector, " ") ? " " : "") + right);
         }
         return ObjectDispatch::sendBinary(selector, rhs);
     }
@@ -486,24 +492,24 @@ struct ArrayObject final : ObjectDispatch {
     }
     MessageResult sendMessage(const std::string &selector,
                               const std::vector<Value> &args) override {
-        if (selector == "[]" && args.size() == 1) {
+        if (rx::eqLit(selector, "[]") && args.size() == 1) {
             const auto at = elements.find(index(args[0]));
             if (at == elements.end()) throw std::runtime_error("undefined array element is not yet supported");
             return at->second;
         }
-        if (selector == "[]=" && args.size() == 2) {
+        if (rx::eqLit(selector, "[]=") && args.size() == 2) {
             auto at = index(args[1]);
             elements.insert_or_assign(at, args[0]);
             if (at > last) last = at;
             return std::nullopt;
         }
-        if (selector == "APPEND" && args.size() == 1) {
+        if (rx::eqLit(selector, "APPEND") && args.size() == 1) {
             if (last == std::numeric_limits<std::size_t>::max())
                 throw std::runtime_error("array index overflow");
             elements.insert_or_assign(++last, args[0]);
             return Value::string(std::to_string(last));
         }
-        if (selector == "MAKESTRING" && args.size() <= 2) {
+        if (rx::eqLit(selector, "MAKESTRING") && args.size() <= 2) {
             const std::string format = args.empty() ? "L" : args[0].bytes;
             const std::string separator = args.size() == 2 ? args[1].bytes : " ";
             if (format != "L")
@@ -526,9 +532,9 @@ struct ArrayObject final : ObjectDispatch {
 struct ArrayClass final : ObjectDispatch {
     MessageResult sendMessage(const std::string &selector,
                               const std::vector<Value> &args) override {
-        if (selector == "NEW" && args.empty())
+        if (rx::eqLit(selector, "NEW") && args.empty())
             return Value::fromObject(std::make_shared<ArrayObject>());
-        if (selector == "OF") {
+        if (rx::eqLit(selector, "OF")) {
             auto array = std::make_shared<ArrayObject>();
             for (const auto &arg : args) array->sendMessage("APPEND", {arg});
             return Value::fromObject(array);
@@ -668,7 +674,7 @@ struct NativeClass final : ObjectDispatch, std::enable_shared_from_this<NativeCl
     std::unordered_set<std::string> attributes;
     MessageResult sendMessage(const std::string &selector,
                               const std::vector<Value> &args) override {
-        if (selector == "NEW") {
+        if (rx::eqLit(selector, "NEW")) {
             auto instance = std::make_shared<NativeInstance>(shared_from_this());
             auto found = methods.find("INIT");
             if (found != methods.end()) found->second(*instance, args);
@@ -1205,12 +1211,12 @@ inline MessageResult sendStringBuiltin(const Value &receiver, const std::string 
                                        const std::vector<Value> &args) {
     const std::string &s = receiver.bytes;
     if (args.size() == 1 &&
-        (selector == "+" || selector == "-" || selector == "*" || selector == "/" ||
-         selector == "=" || selector == "\\=" || selector == "==" || selector == "\\==" ||
-         selector == "<>" || selector == "><" || selector == "<" || selector == ">" ||
-         selector == "<=" || selector == ">="))
+        (rx::eqLit(selector, "+") || rx::eqLit(selector, "-") || rx::eqLit(selector, "*") || rx::eqLit(selector, "/") ||
+         rx::eqLit(selector, "=") || rx::eqLit(selector, "\\=") || rx::eqLit(selector, "==") || rx::eqLit(selector, "\\==") ||
+         rx::eqLit(selector, "<>") || rx::eqLit(selector, "><") || rx::eqLit(selector, "<") || rx::eqLit(selector, ">") ||
+         rx::eqLit(selector, "<=") || rx::eqLit(selector, ">=")))
         return sendBinary(receiver, selector, args.front());
-    if (selector == "COPIES" && args.size() == 1) {
+    if (rx::eqLit(selector, "COPIES") && args.size() == 1) {
         const auto repetitions = integer(args[0]);
         if (repetitions < 0 || repetitions > 1000000 ||
             (!s.empty() && static_cast<std::size_t>(repetitions) > (1 << 24) / s.size()))
@@ -1220,20 +1226,20 @@ inline MessageResult sendStringBuiltin(const Value &receiver, const std::string 
         for (std::int64_t i = 0; i < repetitions; ++i) out += s;
         return Value::string(out);
     }
-    if (selector == "LENGTH" && args.empty()) return fromInteger(static_cast<std::int64_t>(s.size()));
-    if (selector == "REVERSE" && args.empty())
+    if (rx::eqLit(selector, "LENGTH") && args.empty()) return fromInteger(static_cast<std::int64_t>(s.size()));
+    if (rx::eqLit(selector, "REVERSE") && args.empty())
         return Value::string(std::string(s.rbegin(), s.rend()));
-    if ((selector == "UPPER" || selector == "LOWER") && args.empty()) {
+    if ((rx::eqLit(selector, "UPPER") || rx::eqLit(selector, "LOWER")) && args.empty()) {
         std::string output = s;
         // Deliberately ASCII-only; locale-sensitive mappings are not yet qualified.
         for (char &ch : output) {
             unsigned char c = static_cast<unsigned char>(ch);
-            if (selector == "UPPER" && c >= 'a' && c <= 'z') ch = static_cast<char>(c - 32);
-            if (selector == "LOWER" && c >= 'A' && c <= 'Z') ch = static_cast<char>(c + 32);
+            if (rx::eqLit(selector, "UPPER") && c >= 'a' && c <= 'z') ch = static_cast<char>(c - 32);
+            if (rx::eqLit(selector, "LOWER") && c >= 'A' && c <= 'Z') ch = static_cast<char>(c + 32);
         }
         return Value::string(output);
     }
-    if (selector == "COPIES" && args.size() == 1) {
+    if (rx::eqLit(selector, "COPIES") && args.size() == 1) {
         auto n = integer(args[0]);
         if (n < 0 || (n > 0 && static_cast<std::uint64_t>(n) >
             std::numeric_limits<std::size_t>::max() / (s.empty() ? 1 : s.size())))
@@ -1243,7 +1249,7 @@ inline MessageResult sendStringBuiltin(const Value &receiver, const std::string 
         for (std::int64_t i = 0; i < n; ++i) output += s;
         return Value::string(output);
     }
-    if (selector == "SUBSTR" && (args.size() == 1 || args.size() == 2)) {
+    if (rx::eqLit(selector, "SUBSTR") && (args.size() == 1 || args.size() == 2)) {
         auto start = integer(args[0]);
         if (start < 1) throw std::runtime_error("SUBSTR position must be positive");
         std::size_t offset = static_cast<std::uint64_t>(start) > s.size()
@@ -1454,27 +1460,27 @@ inline Value sendUnary(const std::string &selector, const Value &operand, const 
     if (operand.isObject()) return operand.object->sendUnary(selector);
     // + / - of a short plain number of at most DIGITS digits: nothing to round, so the result is the operand's numeric
     // form (sign changed), fixed notation when formatRexxDecimal would write it so
-    if ((selector == "-" || selector == "+") && numeric.digits <= 18 && numeric.digits >= 1) {
+    if ((rx::eqLit(selector, "-") || rx::eqLit(selector, "+")) && numeric.digits <= 18 && numeric.digits >= 1) {
         std::int64_t c; int e;
         if (smallDecimal(operand, c, e)) {
             const int nd = digitCount(static_cast<unsigned __int128>(c < 0 ? -c : c));
             if (nd <= static_cast<int>(numeric.digits) &&
                 (c == 0 || (nd - 1 + e < static_cast<int>(numeric.digits) && -e <= 2 * static_cast<int>(numeric.digits))))
-                return pendingNumber(selector == "-" ? -c : c, e);
+                return pendingNumber(rx::eqLit(selector, "-") ? -c : c, e);
         }
     }
-    if (selector == "+") {
+    if (rx::eqLit(selector, "+")) {
         const RexxDecimal d = parseRexxDecimal(operand);
         checkLostDigits(d, operand, numeric);
         return numberResult(d, numeric);
     }
-    if (selector == "-") {
+    if (rx::eqLit(selector, "-")) {
         RexxDecimal result = parseRexxDecimal(operand);
         checkLostDigits(result, operand, numeric);
         result.coefficient = -result.coefficient;
         return numberResult(result, numeric);
     }
-    if (selector == "\\") return truthValue(!condition(operand));
+    if (rx::eqLit(selector, "\\")) return truthValue(!condition(operand));
     throw std::runtime_error("unknown unary operator message: " + selector);
 }
 inline Value sendUnary(const std::string &selector, const Value &operand) {

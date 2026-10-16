@@ -146,13 +146,16 @@ inline bool tryParseRexxDecimal(const Value &v, RexxDecimal &out, const char *&e
     if (v.isObject()) { err = "numeric operation on an object requires message dispatch"; return false; }
     // A short plain decimal: its numeric form (the same coefficient and exponent the scan below gives).
     { const std::uint32_t m = numMeta(v);
-      if (m & kNumDecimal) { out.coefficient = v.bytes.numCache().coef.load(std::memory_order_relaxed); out.exponent = numExponent(m); return true; } }
+      if (m & kNumDecimal) { out.coefficient = v.bytes.numCache().coef.load(std::memory_order_relaxed); out.exponent = numExponent(m); return true; }
+      if (m & NumCache::notNumber) { err = "invalid Rexx decimal number"; return false; } }
+    // not a number: remembered with the characters (the next comparison or BIF reading them does not scan again)
+    auto notNumber = [&]() { v.bytes.numCache().meta.fetch_or(NumCache::notNumber, std::memory_order_relaxed); err = "invalid Rexx decimal number"; return false; };
     // No copies: scan the bytes between leading and trailing blanks in place.
     const std::string &src = v.bytes;
     std::size_t i = 0, n = src.size();
     while (i < n && rexxBlank(src[i])) ++i;
     while (n > i && rexxBlank(src[n - 1])) --n;
-    if (i == n || n - i > 10000) { err = "invalid Rexx decimal number"; return false; }
+    if (i == n || n - i > 10000) return notNumber();
     out.exponent = 0;
     bool minus = false, sawDigit = false, dot = false;
     if (src[i] == '+' || src[i] == '-') {
@@ -172,9 +175,9 @@ inline bool tryParseRexxDecimal(const Value &v, RexxDecimal &out, const char *&e
         else break;
     }
     const std::size_t digitsEnd = i;
-    if (!sawDigit) { err = "invalid Rexx decimal number"; return false; }
+    if (!sawDigit) return notNumber();
     if (i < n) {
-        if (src[i] != 'E' && src[i] != 'e') { err = "invalid Rexx decimal number"; return false; }
+        if (src[i] != 'E' && src[i] != 'e') return notNumber();
         ++i;
         bool eneg = false;
         if (i < n && (src[i] == '+' || src[i] == '-')) { eneg = src[i] == '-'; ++i; }

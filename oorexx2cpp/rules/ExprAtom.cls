@@ -10,7 +10,8 @@
       /* "NAME"(args): a function call by literal name (no internal-label search), library lane. */
       if s~is('(') & s~peek~line == t~endLine & s~peek~col == t~endCol & ctx~builtinExpr~hasMethod('PARSEQUOTED') then
         return ctx~builtinExpr~parseQuoted(ctx, t~text)
-      return 'rx::Value::string(' || .RxQuote~cpp(t~text) || ')'
+      /* made once and read by every evaluation (its numeric form, once known, kept with it) */
+      return '([]() -> const rx::Value & { static const rx::Value _rxLit = rx::Value::string(' || .RxQuote~cpp(t~text) || '); return _rxLit; }())'
     end
     /* A lone period is a constant symbol: its value is "." (xrange(., .)); so is ... outside USE ARG (length(...) is 3). */
     when t~kind == 'OP' & (t~text == '.' | t~text == '...') then do
