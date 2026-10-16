@@ -1,4 +1,4 @@
-# ooRexx 5.3.0 native API: two bug reports
+# ooRexx 5.3.0 native API: two bug reports and a performance issue
 
 Found while testing rx2cpp (ooRexx-to-C++ compiler) against ooRexx 5.3.0 r13196 (Linux, 64-bit), built from the head of
 the 5.3 source (last commit de1db87, "Fix for [#bugs:2090]"); both are present at head.
@@ -13,7 +13,12 @@ g++ -std=c++17 -O0 -shared -fPIC -I$OOREXX/include -o libstalecrash.so stalecras
 g++ -std=c++17 -O0 -shared -fPIC -I$OOREXX/include -o libvalidgc.so validgc.cpp
 LD_LIBRARY_PATH=.:$OOREXX/lib rexx stalecrash.rex
 LD_LIBRARY_PATH=.:$OOREXX/lib rexx validgc.rex
+cd ../stackbase
+g++ -std=c++17 -O2 -shared -fPIC -I$OOREXX/include -o libstackbench.so stackbench.cpp
+LD_LIBRARY_PATH=.:$OOREXX/lib rexx stackbench.rex 100000
 ```
+
+Patches (against de1db87): `ooRexx-native-api-fixes.patch` (bugs 1 and 2), `ooRexx-stack-base-cache.patch` (issue 3).
 
 ---
 
@@ -123,3 +128,38 @@ BSF4ooRexx.
 
 **Possible fixes.** Call `processArguments` inside the `try` with the activation fully set up, or pop the activation
 (and clear `argList`/`argCount`) when an exception leaves `NativeActivation::run` before the method is called.
+
+---
+
+## Issue 3 (performance): every API dispatch into the interpreter re-reads /proc/self/maps
+
+`Activity::run(ActivityDispatcher &)` starts with
+
+```
+stackLimit = currentThread.getStackBase() + errorRecoveryStack;
+```
+
+and `SysActivity::getStackBase()` (platform/unix/SysActivity.cpp) asks the system each time: on Linux
+`pthread_getattr_np`, which for the process's main thread (where a `rexx` program runs) opens `/proc/self/maps`,
+reads it line by line through `sscanf` and calls `getrlimit`. `Activity::run(ActivityDispatcher &)` is entered by
+every `CallRoutine` and `CallProgram` from native code, every call to a registered command handler, every system exit
+call, library package loading and uninit dispatch. A native library that calls back into Rexx pays this on every call.
+
+`stackbase/stackbench.cpp` calls an empty Rexx routine N times through `CallRoutine` (5.3.0 at de1db87, Release build,
+Linux x86-64, 3 runs each):
+
+| Build | 100000 calls | per call |
+|---|---|---|
+| unpatched | 4.39 to 4.51 s | 44 us |
+| patched | 0.22 to 0.24 s | 2.3 us |
+
+Nineteen times faster per call. A larger program: Josep Maria Blasco's grok.rex compiled by rx2cpp to a native library
+(calls back into Rexx code through `CallRoutine`), 10 epochs: 17.8 to 18.9 s unpatched, 16.3 to 16.7 s patched (about
+10%), output identical. The same program interpreted (no API dispatches): 3.8 to 4.0 s either way.
+
+**Fix** (`ooRexx-stack-base-cache.patch`): a thread's stack does not move, so `getStackBase()` and `getStackSize()`
+compute the value once per thread and keep it in a `thread_local` (the existing code moved unchanged to
+`computeStackBase()` / `computeStackSize()`). Windows (platform/windows/SysActivity.cpp) is not touched.
+One behavior change, theoretical: a `setrlimit(RLIMIT_STACK)` made by the process after the first call on the main
+thread is no longer seen (the main thread's reported stack size follows the soft limit).
+

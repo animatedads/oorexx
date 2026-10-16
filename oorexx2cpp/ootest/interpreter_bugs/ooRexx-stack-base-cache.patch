@@ -1,0 +1,69 @@
+diff --git a/interpreter/platform/unix/SysActivity.cpp b/interpreter/platform/unix/SysActivity.cpp
+index d07e4fb..b72e583 100644
+--- a/interpreter/platform/unix/SysActivity.cpp
++++ b/interpreter/platform/unix/SysActivity.cpp
+@@ -133,6 +133,26 @@ void SysActivity::useCurrentThread()
+  * @return The character pointer for the stack base.
+  */
+ char* SysActivity::getStackBase()
++{
++    // A thread's stack does not move: ask the system once per thread. Activity::run asks on every entry (every
++    // CallRoutine and CallProgram from native code, every command handler and exit call), and on Linux pthread_getattr_np reads
++    // /proc/self/maps through sscanf for the main thread.
++    static thread_local char *cachedStackBase = NULL;
++    if (cachedStackBase != NULL)
++    {
++        return cachedStackBase;
++    }
++    cachedStackBase = computeStackBase();
++    return cachedStackBase;
++}
++
++
++/**
++ * Ask the system for the base of the current thread's stack (getStackBase caches it per thread).
++ *
++ * @return The character pointer for the stack base.
++ */
++char* SysActivity::computeStackBase()
+ {
+ // The interpreter assumes a downwards-growing stack, which is true for most
+ // modern ABIs resp. CPU architectures.  Fixes will be needed for a CPU with
+@@ -189,6 +209,24 @@ char* SysActivity::getStackBase()
+  * @return The size of the current stack
+  */
+ size_t SysActivity::getStackSize()
++{
++    // per thread, as getStackBase
++    static thread_local size_t cachedStackSize = 0;
++    if (cachedStackSize != 0)
++    {
++        return cachedStackSize;
++    }
++    cachedStackSize = computeStackSize();
++    return cachedStackSize;
++}
++
++
++/**
++ * Ask the system for the size of the current thread's stack (getStackSize caches it per thread).
++ *
++ * @return The size of the current stack
++ */
++size_t SysActivity::computeStackSize()
+ {
+ #ifdef HAVE_PTHREAD_GETATTR_NP
+     // Linux
+diff --git a/interpreter/platform/unix/SysActivity.hpp b/interpreter/platform/unix/SysActivity.hpp
+index cf6389f..963a6f9 100644
+--- a/interpreter/platform/unix/SysActivity.hpp
++++ b/interpreter/platform/unix/SysActivity.hpp
+@@ -76,6 +76,8 @@ public:
+     static thread_id_t queryThreadID();
+     static char* getStackBase();
+     static size_t getStackSize();
++    static char* computeStackBase();
++    static size_t computeStackSize();
+ 
+ protected:
+     bool          valid;      // indicates whether opaque threadId is valid
