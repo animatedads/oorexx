@@ -10,7 +10,7 @@ N=${ARITH_CASES:-20000}; SEED=${ARITH_SEED:-1}
 OUT=$(mktemp -d)
 trap 'rm -rf -- "$OUT"' EXIT
 F="$ROOT/native/fixtures/arith_oracle"
-for fam in addsub ops; do
+for fam in addsub ops small; do
   g++ -std=c++17 -O1 -I"$ROOT/include" "$F/drv_$fam.cpp" -o "$OUT/drv_$fam"
   (cd "$OUT" && "$REXX_BIN" "$F/gen_$fam.rex" "$N" "$SEED")
   "$OUT/drv_$fam" < "$OUT/cases_$fam.txt" > "$OUT/actual_$fam.txt"
@@ -20,4 +20,4 @@ for fam in addsub ops; do
     exit 1
   fi
 done
-echo "PASS arithmetic oracle: $((2 * N)) random cases identical to the interpreter (seed $SEED)"
+echo "PASS arithmetic oracle: $((3 * N)) random cases identical to the interpreter (seed $SEED)"

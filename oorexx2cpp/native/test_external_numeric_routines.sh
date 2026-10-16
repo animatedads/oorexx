@@ -42,7 +42,8 @@ cmp "$OUT/oracle.out" "$OUT/probe/native.out"
 echo "PASS $CXX PRIVATE external routine callable from ooRexx package handle"
 # Rejections cannot overwrite a previously accepted shared library.
 prior=$(sha256sum "$OUT/lib${PKG}.so" | cut -d' ' -f1)
-for kind in public_external malformed_external unknown_carrier external_body duplicate_external numeric_invalid_form; do
+# (PUBLIC EXTERNAL is accepted and exported, as interpreted: native/test_public_external.sh)
+for kind in malformed_external unknown_carrier external_body duplicate_external numeric_invalid_form; do
   bad="$OUT/reject_$kind.cls"
   cat >"$bad" <<'REXX'
 ::class RoutineHost public
@@ -51,7 +52,6 @@ for kind in public_external malformed_external unknown_carrier external_body dup
   marker = 'present'
 REXX
   case "$kind" in
-   public_external) printf '\n::routine bad public external "LIBRARY rxmath RxCalcSin"\n' >>"$bad";;
    malformed_external) printf '\n::routine bad external "LIBRARY rxmath"\n' >>"$bad";;
    unknown_carrier) printf '\n::routine bad external "SYSTEM rxmath RxCalcSin"\n' >>"$bad";;
    external_body) printf '\n::routine bad external "LIBRARY rxmath RxCalcSin"\n say 1\n' >>"$bad";;
