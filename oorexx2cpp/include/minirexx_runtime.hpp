@@ -102,7 +102,7 @@ public:
         return *this;
     }
     RxStr(const std::string &v) { put(std::string(v)); }
-    RxStr(std::string &&v) { put(std::move(v)); }
+    RxStr(std::string &&v) : RxStr(std::move(v), v.size() <= inlineLimit) {}
     RxStr(const char *v) { put(std::string(v)); }
     RxStr &operator=(const std::string &v) { big_.reset(); put(std::string(v)); return *this; }
     RxStr &operator=(std::string &&v) { big_.reset(); put(std::move(v)); return *this; }
@@ -184,6 +184,10 @@ private:
           big_((m & NumCache::pending) ? std::shared_ptr<std::string>() : o.big_) {
         num_.coef.store(o.num_.coef.load(std::memory_order_relaxed), std::memory_order_relaxed);
         num_.meta.store(m & ~NumCache::busy, std::memory_order_relaxed);
+    }
+    // (built in place: a short string moved straight into small_, a longer one into its shared buffer)
+    RxStr(std::string &&v, bool inlined) : small_(inlined ? std::move(v) : std::string()) {
+        if (!inlined) { notePressure(v.capacity()); big_ = std::make_shared<std::string>(std::move(v)); }
     }
     void copyFrom(const RxStr &o) {
         const std::uint32_t m = o.num_.meta.load(std::memory_order_acquire);
@@ -1405,10 +1409,12 @@ inline Value requestString(const Value &v) {
 }
 inline Value sendBinaryOp(const Value &lhs, const char *sel, std::size_t n, const Value &rhs,
                           const ActivationNumeric &numeric) {
-    if (lhs.isObject()) return lhs.object->sendBinary(std::string(sel, n), rhs);
+    // (the receiver held while its method runs: an operand may be a variable's value read in place, and the method
+    // could assign that variable)
+    if (lhs.isObject()) { const std::shared_ptr<ObjectDispatch> receiver = lhs.object; return receiver->sendBinary(std::string(sel, n), rhs); }
     // A string receiver with an object argument (s = obj, s || obj, 1 + obj): the String method requests the
     // argument's string value, as the interpreter's String class does.
-    if (rhs.isObject()) return sendBinaryOp(lhs, sel, n, requestString(rhs), numeric);
+    if (rhs.isObject()) { const Value argument = rhs; return sendBinaryOp(lhs, sel, n, requestString(argument), numeric); }
     const char c0 = n ? sel[0] : '\0', c1 = n > 1 ? sel[1] : '\0';
     switch (c0) {
     case ' ':

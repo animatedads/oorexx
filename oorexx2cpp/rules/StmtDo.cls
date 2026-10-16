@@ -104,9 +104,12 @@
       end
       setup~append('(void)_rxCmp' || suffix || ';')
       setup~append(.RxCompoundSymbols~store(control, '_rxStart' || suffix))
-      increment~append(.RxCompoundSymbols~store(control, 'rx::sendBinary(' || .RxCompoundSymbols~load(control) || ', "+", _rxBy' || suffix || ', vars.numeric)'))
+      /* the control variable read in place (nothing runs between reading it and the operator) */
+      current = .RxCompoundSymbols~load(control)
+      if current~left(8) == 'RX_VGET(' then current = 'RX_VREF(' || current~substr(9)
+      increment~append(.RxCompoundSymbols~store(control, 'rx::sendBinary(' || current || ', "+", _rxBy' || suffix || ', vars.numeric)'))
       if hasTo then
-        test~append('if (rx::isOne(rx::sendBinary(' || .RxCompoundSymbols~load(control) || ', _rxCmp' || suffix || ', _rxTo' || suffix || ', vars.numeric))) break;')
+        test~append('if (rx::isOne(rx::sendBinary(' || current || ', _rxCmp' || suffix || ', _rxTo' || suffix || ', vars.numeric))) break;')
     end
     when form == 'OVER' then do
       control = s~next~text
