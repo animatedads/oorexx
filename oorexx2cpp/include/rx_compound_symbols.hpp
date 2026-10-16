@@ -254,10 +254,13 @@ inline void appendTails(std::string &key, const First &first, const Rest &...res
     appendTail(key, first);
     if constexpr (sizeof...(rest) > 0) { key += '.'; appendTails(key, rest...); }
 }
+// The derived name, built in a per-thread buffer that keeps its capacity (no allocation per access): valid until the
+// next compoundKeyOf on this thread, which is after the lookup or assignment it was built for (a compound's tails are
+// simple symbols and constants, read before the name is built).
 template <typename... Tails>
-inline std::string compoundKeyOf(const char *stem, const Tails &...tails) {
-    std::string key;
-    key.reserve(32);
+inline const std::string &compoundKeyOf(const char *stem, const Tails &...tails) {
+    static thread_local std::string key;
+    key.clear();
     key += stem;
     appendTails(key, tails...);
     return key;

@@ -4,6 +4,12 @@
 // All positions are ooRexx's 1-based positions. Parsing is binary-safe.
 // PARSE works on the string value of its source: an object is asked MAKESTRING, then STRING (the interpreter's
 // REQUEST('STRING') order, verified against ooRexx 5.3.0: toString is ignored). USE ARG keeps the object itself.
+inline Value parseSourceString(const Value &source);
+// (a string source is the source itself, moved)
+inline Value parseSourceString(Value &&source) {
+    if (!source.isObject()) return std::move(source);
+    return parseSourceString(static_cast<const Value &>(source));
+}
 inline Value parseSourceString(const Value &source) {
     if (!source.isObject()) return source;
     MessageResult r;
@@ -158,7 +164,7 @@ struct ParseCursor {
     const std::string *str = nullptr;
     std::size_t start = 0, end = 0, patternStart = 0, patternEnd = 0, subcurrent = 0, length = 0;
     bool caseless = false;
-    explicit ParseCursor(const Value &source, bool caselessSearch = false) : holder(parseSourceString(source)), caseless(caselessSearch) { bind(); }
+    explicit ParseCursor(Value source, bool caselessSearch = false) : holder(parseSourceString(std::move(source))), caseless(caselessSearch) { bind(); }
     ParseCursor(const ParseCursor &) = delete;
     ParseCursor &operator=(const ParseCursor &) = delete;
     // RexxTarget::next: a new string (the first, or the next one after a comma in the template)
@@ -226,8 +232,8 @@ struct ParseCursor {
     }
     // RexxTarget::search / caselessSearch (RexxString::pos: a null needle is never found)
     void search(const Value &pattern) {
-        const Value needleValue = parseSourceString(pattern);
-        const std::string &needle = needleValue.bytes;
+        Value converted = Value::string(std::string());
+        const std::string &needle = (pattern.isObject() ? (converted = parseSourceString(pattern)) : pattern).bytes.str();
         start = patternEnd;
         std::size_t found = std::string::npos;
         if (!needle.empty() && start <= length)

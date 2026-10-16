@@ -918,7 +918,7 @@ struct VarSlot {
 template <std::size_t K> struct LocalSlots { VarSlot s[K]; };
 #define RX_VGETK(K, N) (_rxL.s[K].get(vars, N))
 #define RX_VREFK(K, N) ([&]() -> const ::rx::Value & { if (const ::rx::Value *_rxP = _rxL.s[K].find(vars, N)) return *_rxP; static thread_local ::rx::Value _rxUnset = ::rx::Value::string(std::string()); _rxUnset = _rxL.s[K].get(vars, N); return _rxUnset; }())
-#define RX_VTAILK(K, N) ([&]() -> ::rx::Value { if (const ::rx::Value *_rxP = _rxL.s[K].find(vars, N)) return *_rxP; return ::rx::Value::string(N); }())
+#define RX_VTAILK(K, N) ([&]() -> const ::rx::Value & { if (const ::rx::Value *_rxP = _rxL.s[K].find(vars, N)) return *_rxP; static thread_local ::rx::Value _rxName = ::rx::Value::string(N); return _rxName; }())
 #define RX_VSETK(K, N, ...) (_rxL.s[K].set(vars, N, __VA_ARGS__))
 
 
