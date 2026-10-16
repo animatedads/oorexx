@@ -4,7 +4,8 @@ Status (2026-10-16): bugs 1 and 2 confirmed still present on r13271 by Josep Mar
 already fixed upstream in r13267 (bug #2106, "Linux: entering the interpreter is slow (pthread_getattr_np)": a
 thread_local cache in currentThreadStack; stackbench 1.7 us per call on the r13271 portable build): not to be filed.
 Our interpreter source stops at de1db87 (r13196), older than that fix. Bug 4 (SysStemSort crash, found 2026-10-16)
-not yet checked against r13271.
+confirmed on r13271 (trunk HEAD, Ubuntu 24.04 package) by Josep Maria: to be filed with its patch
+(`TICKET_bug4.md` has the ticket text).
 
 Found while testing rx2cpp (ooRexx-to-C++ compiler) against ooRexx 5.3.0 r13196 (Linux, 64-bit), built from the head of
 the 5.3 source (last commit de1db87, "Fix for [#bugs:2090]"); both are present at head.
