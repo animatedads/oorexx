@@ -493,6 +493,7 @@
       current~addRaw('try { return _rxBody(0, arguments, vars, false); }')
       current~addRaw('catch (const rx::MethodExit &_rxExit) { if (_rxExit.value) return *_rxExit.value; return rx::noResult(); }')
     end
+    current~useLocalSlots(current~hasInternalCalls)
     if directive[3]~isClass then classMethods~append(current)
     else methods~append(current)
     scopes~endScope

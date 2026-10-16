@@ -911,6 +911,15 @@ struct VarSlot {
 // A compound symbol's tail variable: an unset one is its name, with no NOVALUE (only the compound's own value can raise it).
 #define RX_VTAIL(N) ([&]() -> ::rx::Value { static thread_local ::rx::VarSlot _rxSlot; if (const ::rx::Value *_rxP = _rxSlot.find(vars, N)) return *_rxP; return ::rx::Value::string(N); }())
 #define RX_VSET(N, ...) ([&]() { static thread_local ::rx::VarSlot _rxSlot; _rxSlot.set(vars, N, __VA_ARGS__); }())
+// The same accesses through the activation's own slot table (rx::LocalSlots _rxL, one slot per variable name of the
+// method body, numbered by the compiler: RxHybridMethod~useLocalSlots): no thread-local storage, and every access site
+// of one name shares the slot. The slot is checked against the pool and erase generation as before, so semantics are
+// those of get()/set() (EXPOSE, PROCEDURE pools, DROP).
+template <std::size_t K> struct LocalSlots { VarSlot s[K]; };
+#define RX_VGETK(K, N) (_rxL.s[K].get(vars, N))
+#define RX_VREFK(K, N) ([&]() -> const ::rx::Value & { if (const ::rx::Value *_rxP = _rxL.s[K].find(vars, N)) return *_rxP; static thread_local ::rx::Value _rxUnset = ::rx::Value::string(std::string()); _rxUnset = _rxL.s[K].get(vars, N); return _rxUnset; }())
+#define RX_VTAILK(K, N) ([&]() -> ::rx::Value { if (const ::rx::Value *_rxP = _rxL.s[K].find(vars, N)) return *_rxP; return ::rx::Value::string(N); }())
+#define RX_VSETK(K, N, ...) (_rxL.s[K].set(vars, N, __VA_ARGS__))
 
 
 // USE ARG drops an omitted target instead of assigning the empty string;

@@ -135,6 +135,45 @@
   if hasReturn & \trapped then raise syntax 40.1 array('rx2cpp: statement after RETURN is not supported')
   instructions~append(line)
   seenStatement = .true
+/* Variable access sites read and write through the activation's slot table (rx::LocalSlots _rxL): each variable
+   name of the body gets a slot number, RX_VGET("N") becomes RX_VGETK(k, "N") (and RX_VREF, RX_VTAIL, RX_VSET), and
+   the table is declared first in the body. Internal routines (the body function entered again) share it: one that
+   shares its caller's variables finds its slots filled; a PROCEDURE pool is another pool, so its slots are found
+   again (each slot is checked against the pool). */
+::method useLocalSlots
+  expose instructions
+  use arg internalCalls
+  macros = .array~of('RX_VGET("', 'RX_VREF("', 'RX_VTAIL("', 'RX_VSET("')
+  slot = .directory~new
+  count = 0
+  rewritten = .array~new
+  do line over instructions
+    do m over macros
+      start = 1
+      do forever
+        p = line~pos(m, start)
+        if p = 0 then leave
+        nameStart = p + length(m)
+        q = line~pos('"', nameStart)
+        if q = 0 then leave
+        name = line~substr(nameStart, q - nameStart)
+        if \slot~hasEntry(name) then do
+          slot[name] = count
+          count += 1
+        end
+        repl = m~left(length(m) - 2) || 'K(' || slot[name] || ', "'
+        line = line~left(p - 1) || repl || line~substr(nameStart)
+        start = p + length(repl)
+      end
+    end
+    rewritten~append(line)
+  end
+  if count == 0 then return
+  declaration = 'rx::LocalSlots<' || count || '> _rxL{}; (void)_rxL;'
+  instructions = .array~of(declaration)
+  do line over rewritten
+    instructions~append(line)
+  end
 /* Generated scaffolding (trap loop, SIGL line markers): not a Rexx statement (EXPOSE / USE ARG may still follow). */
 ::method addRaw
   expose instructions
