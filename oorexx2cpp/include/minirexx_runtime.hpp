@@ -107,8 +107,8 @@ public:
     RxStr &operator=(const std::string &v) { big_.reset(); put(std::string(v)); return *this; }
     RxStr &operator=(std::string &&v) { big_.reset(); put(std::move(v)); return *this; }
     RxStr &operator=(const char *v) { big_.reset(); put(std::string(v)); return *this; }
-    const std::string &str() const {
-        if (num_.meta.load(std::memory_order_acquire) & NumCache::pending) materialize();
+    __attribute__((always_inline)) const std::string &str() const {
+        if (__builtin_expect(num_.meta.load(std::memory_order_acquire) & NumCache::pending, 0)) materialize();
         return big_ ? *big_ : small_;
     }
     // A number made as its numeric form only (see NumCache): the caller has checked it is one (rx_rexx_number.hpp
@@ -198,7 +198,7 @@ private:
         num_.copyFrom(o.num_);
     }
     // Writes a pending number's characters (once; a second thread waits for the first).
-    void materialize() const {
+    __attribute__((noinline, cold)) void materialize() const {
         std::uint32_t m = num_.meta.load(std::memory_order_acquire);
         while (m & NumCache::pending) {
             if (!(m & NumCache::busy) &&
@@ -768,7 +768,8 @@ inline std::int64_t repeatCount(const Value &v) {
     if (count < 0) throw std::runtime_error("DO repetition count must be nonnegative");
     return count;
 }
-inline Value fromInteger(std::int64_t x) { return Value::number(std::to_string(x)); }
+inline Value pendingNumber(std::int64_t coef, int exp);   // (rx_rexx_number.hpp)
+inline Value fromInteger(std::int64_t x) { return pendingNumber(x, 0); }   // (its characters: std::to_string(x))
 // The current pool can redirect named variables and whole stems through
 // exposure chains. All symbol accesses must pass this boundary.
 inline Variables &variableOwner(Variables &vars, const std::string &name) {

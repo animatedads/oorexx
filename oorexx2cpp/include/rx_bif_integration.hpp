@@ -325,6 +325,14 @@ inline Value formatBifFixed(const std::vector<BifSlot>& a, const ActivationNumer
 // nullopt and goes the full catalogue route, which owns validation and error text.
 inline bool quickCount(const BifSlot &slot, std::size_t &out, bool positive) {
     if (!slot || slot->isObject()) return false;
+    {   // a number made by arithmetic: its characters are its digits (no sign, no leading zero), not written out here
+        const std::uint32_t m = slot->bytes.numCache().meta.load(std::memory_order_acquire);
+        if ((m & NumCache::pending) && (m & NumCache::integer)) {
+            const std::int64_t c = slot->bytes.numCache().coef.load(std::memory_order_relaxed);
+            if (c < 0 || (positive && c == 0)) return false;
+            out = static_cast<std::size_t>(c); return true;
+        }
+    }
     const std::string &t = slot->bytes;
     if (t.empty() || t.size() > 9) return false;
     std::size_t v = 0;
@@ -584,10 +592,17 @@ inline bool plainRadixDigits(const std::string &name, const std::string &s) {
 inline bool radixBifName(const std::string &name) { return rx::eqLit(name, "X2C") || rx::eqLit(name, "X2B") || rx::eqLit(name, "X2D") || rx::eqLit(name, "B2X"); }
 // The native number / radix code covers the ordinary inputs only; anything else is the interpreter's (its results,
 // NUMERIC DIGITS limits and errors, e.g. 93.929 for D2C(209) under DIGITS 1). True when this call must go there.
-inline bool numericEdgeForInterpreter(const std::string &name, const std::vector<BifSlot> &a, const ActivationNumeric &num) {
+inline bool numericEdgeName(const std::string &name) {
     static const std::unordered_set<std::string> numeric{"DATATYPE","ABS","SIGN","MAX","MIN","TRUNC","FORMAT","D2C","D2X",
         "C2D","X2D","DIGITS","FUZZ"};
-    if (!numeric.count(name)) return false;
+    return numeric.count(name) != 0;
+}
+// (name is one of numericEdgeName's)
+inline bool numericEdgeArgs(const std::string &name, const std::vector<BifSlot> &a, const ActivationNumeric &num);
+inline bool numericEdgeForInterpreter(const std::string &name, const std::vector<BifSlot> &a, const ActivationNumeric &num) {
+    return numericEdgeName(name) && numericEdgeArgs(name, a, num);
+}
+inline bool numericEdgeArgs(const std::string &name, const std::vector<BifSlot> &a, const ActivationNumeric &num) {
     for (const auto &s : a) if (s && !s->isObject() && s->bytes.size() > 1000) return true;
     // A number this subset cannot hold (exponent beyond its range) is still a number to the interpreter.
     for (const auto &s : a) if (s && !s->isObject()) {
@@ -652,11 +667,28 @@ inline bool pureBif(const std::string &name) {
         "DIRECTORY","FILESPEC","QUALIFY","RXQUEUE","BEEP","USERID","ERRORTEXT","SOURCELINE"};
     return impure.count(name) == 0;
 }
-inline Value dispatchBif(BifRuntime& bif, Variables& vars, const std::string& name,
-                         const std::vector<BifSlot>& slots) {
+// What the interpreter's own BIF runs instead of the compiled-in breadth catalogue (see dispatchBifNative).
+inline bool isolatedBif(const std::string &name) {
+    static const std::unordered_set<std::string> isolated{"C2D","TRUNC","X2D","D2X","D2C","TRANSLATE","VERIFY",
+        "DATATYPE","SIGN","FORMAT","MAX","MIN","XRANGE","USERID","ERRORTEXT","QUALIFY"};
+    return isolated.count(name) != 0;
+}
+// A built-in function's name with what dispatch asks about it, worked out once: a compiled call site keeps one
+// (static), so a call does not look its name up in the tables again (as the interpreter binds a built-in when it
+// parses the clause).
+struct BifName {
+    std::string name;
+    bool pure, languageState, numericEdge, radix, isolated;
+    explicit BifName(std::string n)
+        : name(std::move(n)), pure(pureBif(name)), languageState(languageStateBif(name)), numericEdge(numericEdgeName(name)),
+          radix(radixBifName(name)), isolated(isolatedBif(name)) {}
+};
+inline Value dispatchBifNative(BifRuntime& bif, Variables& vars, const BifName& n, const std::vector<BifSlot>& slots);
+inline Value dispatchBif(BifRuntime& bif, Variables& vars, const BifName& n, const std::vector<BifSlot>& slots) {
 #ifdef RX2CPP_HOST_API
-    if (pureBif(name)) {
-        try { return dispatchBifNative(bif, vars, name, slots); }
+    const std::string &name = n.name;
+    if (n.pure) {
+        try { return dispatchBifNative(bif, vars, n, slots); }
         catch (const std::runtime_error &) {
             auto result = interpreterCall(vars, name, slots);
             if (!result) throw std::runtime_error("BIF " + name + ": no result");
@@ -664,14 +696,22 @@ inline Value dispatchBif(BifRuntime& bif, Variables& vars, const std::string& na
         }
     }
 #endif
-    return dispatchBifNative(bif, vars, name, slots);
+    return dispatchBifNative(bif, vars, n, slots);
+}
+inline Value dispatchBif(BifRuntime& bif, Variables& vars, const std::string& name,
+                         const std::vector<BifSlot>& slots) {
+    return dispatchBif(bif, vars, BifName(name), slots);
 }
 inline Value dispatchBifNative(BifRuntime& bif, Variables& vars, const std::string& name,
                                const std::vector<BifSlot>& slots) {
+    return dispatchBifNative(bif, vars, BifName(name), slots);
+}
+inline Value dispatchBifNative(BifRuntime& bif, Variables& vars, const BifName& n, const std::vector<BifSlot>& slots) {
+    const std::string &name = n.name;
 #ifdef RX2CPP_HOST_API
     // An object argument (other than a String, which is a value) goes to the interpreter's own BIF: its ~STRING / ~REQUEST
     // rules and its errors, exactly.
-    if (!languageStateBif(name)) {
+    if (!n.languageState) {
         for (const auto &slot : slots) {
             if (!slot || !slot->isObject()) continue;
             auto result = interpreterCall(vars, name, slots);
@@ -680,8 +720,8 @@ inline Value dispatchBifNative(BifRuntime& bif, Variables& vars, const std::stri
         }
     }
     // ERRORTEXT: the interpreter's own message table (its texts differ from the condition-message table compiled in).
-    if (rx::eqLit(name, "ERRORTEXT") || numericEdgeForInterpreter(name, slots, vars.numeric) ||
-        (radixBifName(name) && !slots.empty() && slots[0] && !slots[0]->isObject() && !plainRadixDigits(name, slots[0]->bytes.str()))) {
+    if (rx::eqLit(name, "ERRORTEXT") || (n.numericEdge && numericEdgeArgs(name, slots, vars.numeric)) ||
+        (n.radix && !slots.empty() && slots[0] && !slots[0]->isObject() && !plainRadixDigits(name, slots[0]->bytes.str()))) {
         auto result = interpreterCall(vars, name, slots);
         if (!result) throw std::runtime_error("BIF " + name + ": no result");
         return std::move(*result);
@@ -760,9 +800,7 @@ inline Value dispatchBifNative(BifRuntime& bif, Variables& vars, const std::stri
     // What the breadth catalogue would run in an isolated second interpreter instance, the interpreter that loaded this
     // library runs itself (its exact results and errors, e.g. XRANGE 40.23).
     {
-        static const std::unordered_set<std::string> isolated{"C2D","TRUNC","X2D","D2X","D2C","TRANSLATE","VERIFY",
-            "DATATYPE","SIGN","FORMAT","MAX","MIN","XRANGE","USERID","ERRORTEXT","QUALIFY"};
-        if(isolated.count(name)) {
+        if(n.isolated) {
             auto result=interpreterCall(vars,name,slots);
             if(!result) throw std::runtime_error("BIF "+name+": no result");
             return std::move(*result);

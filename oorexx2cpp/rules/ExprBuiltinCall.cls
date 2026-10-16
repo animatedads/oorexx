@@ -40,7 +40,9 @@
   if hosted then return code || 'return rx::host::callValue(' || .RxQuote~cpp(name) || ', ' || var || '); }())'
   if external then return code || 'return rx::ext::callValue(vars, ' || .RxQuote~cpp(name) || ', ' || var || '); }())'
   if internal then return code || 'return rx::internalRoutineValue(vars, _rxRoutines, ' || .RxQuote~cpp(name) || ', ' || var || '); }())'
-  if .RxBuiltinRules~externalEnabled then return code || 'return rx::dispatchBif(_rxBifRuntime, vars, ' || .RxQuote~cpp(name) || ', ' || var || '); }())'
+  /* the built-in bound once per call site (rx::BifName) */
+  bifName = '([]() -> const rx::BifName & { static const rx::BifName _rxBif(' || .RxQuote~cpp(name) || '); return _rxBif; }())'
+  if .RxBuiltinRules~externalEnabled then return code || 'return rx::dispatchBif(_rxBifRuntime, vars, ' || bifName || ', ' || var || '); }())'
   return code || 'return rx::builtinValue(' || .RxQuote~cpp(name) || ', ' || var || '); }())'
 ::requires 'rules/RxBuiltinRules.cls'
 ::requires 'core/RxQuote.cls'

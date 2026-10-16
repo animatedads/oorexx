@@ -158,14 +158,16 @@ struct ParseCursor {
     const std::string *str = nullptr;
     std::size_t start = 0, end = 0, patternStart = 0, patternEnd = 0, subcurrent = 0, length = 0;
     bool caseless = false;
-    explicit ParseCursor(const Value &source, bool caselessSearch = false) : caseless(caselessSearch) { reset(source); }
+    explicit ParseCursor(const Value &source, bool caselessSearch = false) : holder(parseSourceString(source)), caseless(caselessSearch) { bind(); }
     ParseCursor(const ParseCursor &) = delete;
     ParseCursor &operator=(const ParseCursor &) = delete;
     // RexxTarget::next: a new string (the first, or the next one after a comma in the template)
     void reset(const Value &source) {
         holder = parseSourceString(source);
-        const std::string &bytes = holder.bytes;
-        str = &bytes;
+        bind();
+    }
+    void bind() {
+        str = &holder.bytes.str();
         start = end = patternStart = patternEnd = subcurrent = 0;
         length = str->size();
     }
@@ -250,6 +252,7 @@ struct ParseCursor {
         if (subcurrent >= end) return Value::string(std::string());
         const std::size_t first = subcurrent;
         subcurrent = end;
+        if (first == 0 && end == length) return holder;   // the whole string: the same string (shared, not copied)
         return Value::string(str->substr(first, end - first));
     }
     void skipWord() { (void)word(); }

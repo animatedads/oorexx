@@ -197,6 +197,8 @@
   /* TIME / DATE in a DO header: the header is evaluated again on every iteration, each time a new clause. */
   if (name == 'TIME' | name == 'DATE') & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \== '' then
     if wordpos('WHILE', .local['RX2CPP.CLAUSEWORDS']) > 0 then code = code || 'rx::ActivationScope::clauseBoundary(); '
-  return code || 'return rx::dispatchBif(rx2cppBif(), vars, ' || .RxQuote~cpp(name) || ', _rxSlots); }())'
+  /* the built-in bound once per call site (rx::BifName: what dispatch asks about its name, worked out once) */
+  bifName = '([]() -> const rx::BifName & { static const rx::BifName _rxBif(' || .RxQuote~cpp(name) || '); return _rxBif; }())'
+  return code || 'return rx::dispatchBif(rx2cppBif(), vars, ' || bifName || ', _rxSlots); }())'
 ::requires 'core/RxQuote.cls'
 ::requires 'rules/RxBuiltinRules.cls'
