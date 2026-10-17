@@ -143,7 +143,7 @@
 ::method useLocalSlots
   expose instructions
   use arg internalCalls
-  macros = .array~of('RX_VGET("', 'RX_VREF("', 'RX_VTAIL("', 'RX_VSET("')
+  macros = .array~of('RX_VGET("', 'RX_VREF("', 'RX_VTAIL("', 'RX_VSET("', 'RX_VSTEM("')
   slot = .directory~new
   count = 0
   rewritten = .array~new

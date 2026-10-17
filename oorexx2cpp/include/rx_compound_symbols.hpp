@@ -45,50 +45,122 @@ inline std::string compoundKey(const Variables &vars, const std::string &symbol)
 // a called method are seen by the caller, while S. = .stem~new in the method only rebinds the method's own variable.
 // When the object crosses into the hosted interpreter it becomes a real interpreter stem and the native object forwards
 // to it from then on (one source of truth, also for methods running on other threads).
+// A short critical section's lock (a stem's elements): uncontended it is one atomic exchange, not a mutex call; a
+// waiter yields.
+struct SpinLock {
+    std::atomic<bool> flag{false};
+    void lock() {
+        while (flag.exchange(true, std::memory_order_acquire))
+            while (flag.load(std::memory_order_relaxed)) std::this_thread::yield();
+    }
+    void unlock() { flag.store(false, std::memory_order_release); }
+};
 struct StemObject final : ObjectDispatch {
     std::string name;                                   // e.g. "S." (names the missing element: "S.TAIL")
     std::optional<Value> dflt;
     std::unordered_map<std::string, Value> tails;
+    // Elements whose tail is a whole number written plainly ("0", "1", "17": digits, no sign, no leading zero), kept as
+    // an array indexed by that number while they stay dense (an index at most denseSlack past the end; beyond, the
+    // element goes to tails, where get looks for it too). Same tails, same values: only where they are kept.
+    std::vector<std::optional<Value>> dense;
+    static constexpr std::size_t denseSlack = 1024, denseMax = std::size_t(1) << 24;
     std::unordered_set<std::string> dropped;            // DROPped elements under a default
     std::shared_ptr<ObjectDispatch> remote;             // interpreter stem, once the object has crossed
-    mutable std::mutex lock;
+    mutable SpinLock lock;
     explicit StemObject(std::string n) : name(std::move(n)) {}
+    StemObject *asStem() override { return this; }
+    // The array index of a tail written as a plain whole number (at most 8 digits).
+    static bool denseTail(const std::string &t, std::size_t &i) {
+        const std::size_t n = t.size();
+        if (n == 0 || n > 8) return false;
+        if (t[0] == '0') { if (n != 1) return false; i = 0; return true; }
+        std::size_t v = 0;
+        for (char c : t) { if (c < '0' || c > '9') return false; v = v * 10 + static_cast<std::size_t>(c - '0'); }
+        i = v; return true;
+    }
+    // (lock held) the element's slot, or null
+    const Value *findLocked(const std::string &tail, bool haveIndex, std::size_t i) const {
+        if (haveIndex && i < dense.size() && dense[i]) return &*dense[i];
+        if (tails.empty()) return nullptr;
+        auto it = tails.find(tail);
+        return it == tails.end() ? nullptr : &it->second;
+    }
+    // (lock held) store an element
+    void placeLocked(const std::string &tail, Value v, bool haveIndex, std::size_t i) {
+        if (!dropped.empty()) dropped.erase(tail);
+        if (haveIndex && i < denseMax && i <= dense.size() + denseSlack) {
+            if (i >= dense.size()) dense.resize(i + 1);
+            dense[i] = std::move(v);
+            if (!tails.empty()) tails.erase(tail);
+            return;
+        }
+        tails.insert_or_assign(tail, std::move(v));
+    }
+    void place(const std::string &tail, Value v) {   // (no lock: the object is not shared yet)
+        std::size_t i = 0; const bool d = denseTail(tail, i);
+        placeLocked(tail, std::move(v), d, i);
+    }
+    // Every element (dense ones with their tail written out), then none left.
+    template <typename F> void takeElements(F &&each) {
+        for (std::size_t i = 0; i < dense.size(); ++i) if (dense[i]) each(std::to_string(i), *dense[i]);
+        for (const auto &t : tails) each(t.first, t.second);
+        dense.clear(); tails.clear();
+    }
     Value get(const std::string &tail) {
         if (remote) { auto r = remote->sendMessage("[]", {Value::string(tail)}); return r ? *r : Value::string(name + tail); }
-        std::lock_guard<std::mutex> g(lock);
-        auto it = tails.find(tail);
-        if (it != tails.end()) return it->second;
+        std::size_t i = 0; const bool d = denseTail(tail, i);
+        std::lock_guard<SpinLock> g(lock);
+        if (const Value *v = findLocked(tail, d, i)) return *v;
         if (dflt && !dropped.count(tail)) return *dflt;
         return Value::string(name + tail);
+    }
+    // An element by array index (the tail written as that whole number): its value, the default, or the derived name.
+    Value getIndex(std::size_t i) {
+        {
+            std::lock_guard<SpinLock> g(lock);
+            if (i < dense.size() && dense[i]) return *dense[i];
+            if (tails.empty() && dropped.empty()) return dflt ? *dflt : Value::string(name + std::to_string(i));
+        }
+        return get(std::to_string(i));
+    }
+    void setIndex(std::size_t i, Value v) {
+        {
+            std::lock_guard<SpinLock> g(lock);
+            if (i < dense.size() && dropped.empty() && tails.empty()) { dense[i] = std::move(v); return; }
+        }
+        set(std::to_string(i), std::move(v));
     }
     // True when the element has a value (its own or the stem default, unless DROPped).
     bool has(const std::string &tail) {
         if (remote) { auto r = remote->sendMessage("HASINDEX", {Value::string(tail)}); return r && !r->isObject() && r->bytes == "1"; }
-        std::lock_guard<std::mutex> g(lock);
-        return tails.count(tail) || (dflt && !dropped.count(tail));
+        std::size_t i = 0; const bool d = denseTail(tail, i);
+        std::lock_guard<SpinLock> g(lock);
+        return findLocked(tail, d, i) || (dflt && !dropped.count(tail));
     }
     void set(const std::string &tail, Value v) {
         if (remote) { remote->sendMessage("[]=", {std::move(v), Value::string(tail)}); return; }
-        std::lock_guard<std::mutex> g(lock);
-        dropped.erase(tail);
-        tails.insert_or_assign(tail, std::move(v));
+        std::size_t i = 0; const bool d = denseTail(tail, i);
+        std::lock_guard<SpinLock> g(lock);
+        placeLocked(tail, std::move(v), d, i);
     }
     // DROP stem.tail: uninitialized even under a stem default.
     void drop(const std::string &tail) {
         if (remote) { remote->sendMessage("REMOVE", {Value::string(tail)}); return; }
-        std::lock_guard<std::mutex> g(lock);
+        std::size_t i = 0; const bool d = denseTail(tail, i);
+        std::lock_guard<SpinLock> g(lock);
+        if (d && i < dense.size()) dense[i].reset();
         tails.erase(tail);
         if (dflt) dropped.insert(tail);
     }
     // S. = value: new default, every element dropped (same object).
     void reset(Value v) {
         if (remote) { remote->sendMessage("[]=", {std::move(v)}); return; }
-        std::lock_guard<std::mutex> g(lock);
-        tails.clear(); dropped.clear(); dflt = std::move(v);
+        std::lock_guard<SpinLock> g(lock);
+        tails.clear(); dense.clear(); dropped.clear(); dflt = std::move(v);
     }
     Value defaultValue() {
         if (remote) { auto r = remote->sendMessage("[]", {}); return r ? *r : Value::string(name); }
-        std::lock_guard<std::mutex> g(lock);
+        std::lock_guard<SpinLock> g(lock);
         return dflt ? *dflt : Value::string(name);
     }
     MessageResult sendMessage(const std::string &selector, const std::vector<Value> &args) override {
@@ -137,7 +209,7 @@ struct StemObject final : ObjectDispatch {
     static bool (*&foreignStemHook())(const Value &) { static bool (*hook)(const Value &) = nullptr; return hook; }
     std::string display() const override {
         if (remote) return remote->display();
-        std::lock_guard<std::mutex> g(lock);
+        std::lock_guard<SpinLock> g(lock);
         if (!dflt) return name;
         return dflt->isObject() ? dflt->object->display() : dflt->bytes.str();
     }
@@ -160,7 +232,7 @@ inline Value stemArg(Variables &vars, const std::string &stem) {
     for (auto it = owner.begin(); it != owner.end();) {
         if (it->first == stem) { obj->dflt = it->second; ++it; }
         else if (it->first.size() > stem.size() && it->first.compare(0, stem.size(), stem) == 0) {
-            obj->tails.emplace(it->first.substr(stem.size()), std::move(it->second));
+            obj->place(it->first.substr(stem.size()), std::move(it->second));
             it = owner.erase(it);
         } else ++it;
     }
@@ -292,6 +364,44 @@ inline void compoundSet(Variables &vars, const std::string &key, Value value) {
         if (StemObject *bound = boundStem(vars, stem)) { bound->set(key.substr(stem.size()), std::move(value)); return; }
     }
     set(vars, key, std::move(value));
+}
+// S.tail with one tail (a symbol's value or a constant), compiled: a stem bound to a stem object keeps tails written
+// as plain whole numbers in an array (StemObject::dense), so S.I is an index into it: no derived name, no hash. A stem
+// still kept flat is bound to an object at its first S.tail assignment (as when the stem is used as a value: same
+// elements, same default), so loops filling a stem use the array from then on. Anything else takes the derived name.
+inline bool denseTailValue(const Value &v, std::size_t &i) {
+    if (v.isObject()) return false;
+    const std::uint32_t m = v.bytes.numCache().meta.load(std::memory_order_acquire);
+    if ((m & NumCache::pending) && (m & NumCache::integer)) {   // a number made by arithmetic: written plainly
+        const std::int64_t c = v.bytes.numCache().coef.load(std::memory_order_relaxed);
+        if (c < 0 || c > 99999999) return false;
+        i = static_cast<std::size_t>(c); return true;
+    }
+    return StemObject::denseTail(v.bytes.str(), i);
+}
+inline bool denseTailValue(const TailLiteral &t, std::size_t &i) {
+    const std::size_t n = std::strlen(t.text);
+    if (n == 0 || n > 8) return false;
+    return StemObject::denseTail(std::string(t.text, n), i);
+}
+template <typename T>
+inline Value stemGet1(const Value *stemVar, const Variables &vars, const char *stem, const T &tail) {
+    if (stemVar && stemVar->isObject())
+        if (StemObject *so = stemVar->object->asStem()) {
+            std::size_t i = 0;
+            if (!so->remote && denseTailValue(tail, i)) return so->getIndex(i);
+        }
+    return compoundGet(vars, compoundKeyOf(stem, tail), stem);
+}
+template <typename T>
+inline void stemSet1(const Value *stemVar, Variables &vars, const char *stem, const T &tail, Value value) {
+    std::size_t i = 0;
+    if (!denseTailValue(tail, i)) { compoundSet(vars, compoundKeyOf(stem, tail), std::move(value)); return; }
+    StemObject *so = stemVar && stemVar->isObject() ? stemVar->object->asStem() : nullptr;
+    std::optional<Value> bound;
+    if (!so) { bound = stemArg(vars, stem); so = bound->object->asStem(); }
+    if (so->remote) { compoundSet(vars, compoundKeyOf(stem, tail), std::move(value)); return; }
+    so->setIndex(i, std::move(value));
 }
 // DROP symbol. A stem: the variable gets a new empty stem (no default, no elements; the stem variable still exists, as
 // interpreted). A compound: the element is dropped, and stays uninitialized under a stem default.

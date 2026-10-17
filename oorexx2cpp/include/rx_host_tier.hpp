@@ -80,7 +80,7 @@ struct HostObject final : ObjectDispatch {
         if (auto st = std::dynamic_pointer_cast<StemObject>(v.object)) {
             // A compiled stem object crosses once: it becomes an interpreter stem holding its contents, and the native
             // object forwards to that stem from then on, so both sides keep sharing one stem.
-            std::lock_guard<std::mutex> g(st->lock);
+            std::lock_guard<rx::SpinLock> g(st->lock);
             if (st->remote) {
                 if (auto h = std::dynamic_pointer_cast<HostObject>(st->remote)) return h->handle;
                 throw std::runtime_error("stem object is bound to a non-interpreter object");
@@ -92,8 +92,8 @@ struct HostObject final : ObjectDispatch {
                 c->SendMessage(stem, "[]=", one);
                 if (c->CheckCondition()) raisePending(c);
             }
-            for (const auto &t : st->tails) c->SetStemElement(stem, t.first.c_str(), toRexx(c, t.second));
-            st->tails.clear(); st->dflt.reset();
+            st->takeElements([&](const std::string &tail, const Value &v) { c->SetStemElement(stem, tail.c_str(), toRexx(c, v)); });
+            st->dflt.reset();
             st->remote = host;
             return stem;
         }

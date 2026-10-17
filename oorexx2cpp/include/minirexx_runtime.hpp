@@ -6,6 +6,7 @@
 #include <boost/multiprecision/cpp_int.hpp>
 #include <algorithm>
 #include <array>
+#include <thread>
 #include <cctype>
 #include <cerrno>
 #include <cmath>
@@ -42,6 +43,7 @@ template <std::size_t N> inline bool eqLit(const std::string &s, const char (&li
 // operator an independently overridable virtual message. The prototype
 // does not yet compile ::class or method declarations.
 struct ObjectDispatch;
+struct StemObject;
 // ooRexx strings are immutable objects passed by reference. RxStr gives Value the same cost model: a string longer
 // than the inline limit lives in one shared buffer, so copying a Value (BIF argument, assignment, PARSE source,
 // message argument) copies a pointer, not the bytes. A writer that finds the buffer shared takes its own copy first.
@@ -283,6 +285,8 @@ struct ObjectDispatch {
     // asked for with REQUEST('STRING'), which the class may override, then STRING (RexxInternalObject::requestString).
     virtual bool requestsString() const { return false; }
     virtual bool isNilObject() const { return false; }
+    // The compiled stem object behind this (rx_compound_symbols.hpp), without a dynamic_cast.
+    virtual StemObject *asStem() { return nullptr; }
     // receiver[index] and receiver[index] = value with one index, done without the message when the object answers them
     // itself exactly as its [] / []= methods would (a native Array): false = send the message. indexAt sets slot to
     // the item, or to nullptr for .nil; indexPut takes the value only when it returns true.
@@ -851,8 +855,9 @@ inline void refreshField(Variables &vars, const Variables &fields, const std::st
     else if (&variableOwner(vars, name) != &fields) drop(vars, name);
 }
 inline void drop(Variables &vars, const std::string &name) {
-    // Slots cache simple variables only: erasing a compound/stem entry cannot invalidate one.
-    if (variableOwner(vars, name).erase(name) && name.find('.') == std::string::npos) variablesErased();
+    // Slots cache simple variables and stem variables ("S."): erasing a compound entry ("S.1") cannot invalidate one.
+    const std::size_t dot = name.find('.');
+    if (variableOwner(vars, name).erase(name) && (dot == std::string::npos || dot + 1 == name.size())) variablesErased();
 }
 inline void resetStem(Variables &vars, const std::string &stem) {
     // Only compound entries (names containing '.') are erased here, and slots never cache those: no generation bump.
@@ -870,13 +875,16 @@ struct VarSlot {
     std::uint64_t pool;
     std::uint64_t gen;
     Value *node;
-    Value *resolve(const Variables &vars) {
+    __attribute__((always_inline)) Value *resolve(const Variables &vars) {
         if (node && pool == vars.poolId.value && gen == variableEraseGeneration().load(std::memory_order_acquire)) return node;
         return nullptr;
     }
     void remember(const Variables &vars, std::uint64_t g, Value *p) { pool = vars.poolId.value; gen = g; node = p; }
-    Value get(const Variables &vars, const char *name) {
+    __attribute__((always_inline)) Value get(const Variables &vars, const char *name) {
         if (Value *p = resolve(vars)) return *p;
+        return getSlow(vars, name);
+    }
+    __attribute__((noinline)) Value getSlow(const Variables &vars, const char *name) {
         const std::uint64_t g = variableEraseGeneration().load(std::memory_order_acquire);
         const std::string key(name);
         const Variables &owner = variableOwner(vars, key);
@@ -889,8 +897,11 @@ struct VarSlot {
         return found->second;
     }
     // The variable's value in place (nullptr when it has none): the caller reads it without a copy.
-    const Value *find(const Variables &vars, const char *name) {
+    __attribute__((always_inline)) const Value *find(const Variables &vars, const char *name) {
         if (Value *p = resolve(vars)) return p;
+        return findSlow(vars, name);
+    }
+    __attribute__((noinline)) const Value *findSlow(const Variables &vars, const char *name) {
         const std::uint64_t g = variableEraseGeneration().load(std::memory_order_acquire);
         const std::string key(name);
         const Variables &owner = variableOwner(vars, key);
@@ -899,8 +910,11 @@ struct VarSlot {
         remember(vars, g, const_cast<Value *>(&found->second));
         return &found->second;
     }
-    void set(Variables &vars, const char *name, Value value) {
+    __attribute__((always_inline)) void set(Variables &vars, const char *name, Value value) {
         if (Value *p = resolve(vars)) { *p = std::move(value); return; }
+        setSlow(vars, name, std::move(value));
+    }
+    __attribute__((noinline)) void setSlow(Variables &vars, const char *name, Value value) {
         const std::uint64_t g = variableEraseGeneration().load(std::memory_order_acquire);
         std::string key(name);
         Variables &owner = variableOwner(vars, key);
@@ -920,6 +934,9 @@ struct VarSlot {
 // of one name shares the slot. The slot is checked against the pool and erase generation as before, so semantics are
 // those of get()/set() (EXPOSE, PROCEDURE pools, DROP).
 template <std::size_t K> struct LocalSlots { VarSlot s[K]; };
+// A stem variable's own entry ("S."), or null: what compiled S.tail checks for its stem object (rx::stemGet1).
+#define RX_VSTEM(N) ([&]() -> const ::rx::Value * { static thread_local ::rx::VarSlot _rxSlot; return _rxSlot.find(vars, N); }())
+#define RX_VSTEMK(K, N) (_rxL.s[K].find(vars, N))
 #define RX_VGETK(K, N) (_rxL.s[K].get(vars, N))
 #define RX_VREFK(K, N) ([&]() -> const ::rx::Value & { if (const ::rx::Value *_rxP = _rxL.s[K].find(vars, N)) return *_rxP; static thread_local ::rx::Value _rxUnset = ::rx::Value::string(std::string()); _rxUnset = _rxL.s[K].get(vars, N); return _rxUnset; }())
 #define RX_VTAILK(K, N) ([&]() -> const ::rx::Value & { if (const ::rx::Value *_rxP = _rxL.s[K].find(vars, N)) return *_rxP; static thread_local ::rx::Value _rxName = ::rx::Value::string(N); return _rxName; }())

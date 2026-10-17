@@ -483,7 +483,7 @@ struct EnvObject final : ObjectDispatch {
     // A compiled stem object crosses once: it becomes an interpreter stem holding its contents, and the compiled object
     // forwards to that stem from then on (both sides share one stem), as in the hosted tier.
     static void *stemHandle(StemObject &st) {
-        std::lock_guard<std::mutex> g(st.lock);
+        std::lock_guard<rx::SpinLock> g(st.lock);
         if (st.remote) {
             if (auto *e = dynamic_cast<EnvObject *>(st.remote.get())) return e->handle;
             throw std::runtime_error("stem object is bound to a non-interpreter object");
@@ -500,8 +500,8 @@ struct EnvObject final : ObjectDispatch {
             t->SendMessage1((RexxObjectPtr)stem, "[]=", one(*st.dflt));
             if (t->CheckCondition()) { t->ClearCondition(); throw std::runtime_error("cannot set the stem default"); }
         }
-        for (const auto &e : st.tails) t->SetStemElement(stem, e.first.c_str(), one(e.second));
-        st.tails.clear(); st.dflt.reset(); st.dropped.clear();
+        st.takeElements([&](const std::string &tail, const Value &v) { t->SetStemElement(stem, tail.c_str(), one(v)); });
+        st.dflt.reset(); st.dropped.clear();
         st.remote = std::make_shared<EnvObject>(h);
         return h;
     }

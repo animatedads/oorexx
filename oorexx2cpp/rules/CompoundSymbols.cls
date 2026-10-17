@@ -25,17 +25,36 @@
     if p = 0 then leave
   end
   return code || ')'
+/* S.tail with one tail: rx::stemGet1 / stemSet1 (the stem's array of whole-number tails) */
+::method oneTail class
+  use arg name
+  dot = pos('.', name)
+  if dot = 0 | dot = length(name) | \self~slots then return ''
+  part = substr(name, dot + 1)
+  if pos('.', part) > 0 then return ''
+  if part == '' | verify(left(part, 1), '0123456789') = 0 then return 'rx::TailLiteral{' || .RxQuote~cpp(part) || '}'
+  return 'RX_VTAIL(' || .RxQuote~cpp(part) || ')'
 ::method load class
   use arg name
   if pos('.', name) = 0 & self~slots then return 'RX_VGET(' || .RxQuote~cpp(name) || ')'
+  tail = self~oneTail(name)
+  if tail \== '' then do
+    stem = .RxQuote~cpp(left(name, pos('.', name)))
+    return 'rx::stemGet1(RX_VSTEM(' || stem || '), vars, ' || stem || ', ' || tail || ')'
+  end
   key = self~derivedName(name)
   if key \== '' then return 'rx::compoundGet(vars, ' || key || ', ' || .RxQuote~cpp(left(name, pos('.', name))) || ')'
   return 'rx::getSymbol(vars, ' || .RxQuote~cpp(name) || ')'
 ::method store class
   use arg name, expression
   if pos('.', name) = 0 & self~slots then return 'RX_VSET(' || .RxQuote~cpp(name) || ', ' || expression || ');'
-  key = self~derivedName(name)
+  tail = self~oneTail(name)
   /* Rexx evaluates the expression before substituting the tails. */
+  if tail \== '' then do
+    stem = .RxQuote~cpp(left(name, pos('.', name)))
+    return '{ rx::Value _rxcv = ' || expression || '; rx::stemSet1(RX_VSTEM(' || stem || '), vars, ' || stem || ', ' || tail || ', std::move(_rxcv)); }'
+  end
+  key = self~derivedName(name)
   if key \== '' then return '{ rx::Value _rxcv = ' || expression || '; rx::compoundSet(vars, ' || key || ', std::move(_rxcv)); }'
   return 'rx::setSymbol(vars, ' || .RxQuote~cpp(name) || ', ' || expression || ');'
 ::requires 'core/RxQuote.cls'
