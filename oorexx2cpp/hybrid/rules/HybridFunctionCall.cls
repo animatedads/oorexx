@@ -199,6 +199,41 @@
     if wordpos('WHILE', .local['RX2CPP.CLAUSEWORDS']) > 0 then code = code || 'rx::ActivationScope::clauseBoundary(); '
   /* the built-in bound once per call site (rx::BifName: what dispatch asks about its name, worked out once) */
   bifName = '([]() -> const rx::BifName & { static const rx::BifName _rxBif(' || .RxQuote~cpp(name) || '); return _rxBif; }())'
-  return code || 'return rx::dispatchBif(rx2cppBif(), vars, ' || bifName || ', _rxSlots); }())'
+  /* The commonest string built-ins with every argument present: rx::bifDirect answers from the arguments in place (no
+     argument vector). The arguments are evaluated left to right into references first; a plain variable is read in
+     place when no other argument can run code (all are literals or plain variables). */
+  direct = self~directCode(name)
+  if direct \== '' & args~items <= 4 & args~hasItem('RX2CPP_OMITTED') == .false then do
+    inPlace = .true
+    do argExpr over args
+      if \self~plainOrLiteral(argExpr) then inPlace = .false
+    end
+    code = '([&]() -> rx::Value { '
+    list = ''
+    do i = 1 to args~items
+      argExpr = args[i]
+      if inPlace & argExpr~left(9) == 'RX_VGET("' then argExpr = 'RX_VREF(' || argExpr~substr(9)
+      code = code || 'const rx::Value &_rxA' || i || ' = ' || argExpr || '; '
+      list = list || ', _rxA' || i
+    end
+    return .RxNative~pureCall(code || 'return rx::bifDirect(rx2cppBif(), vars, ' || bifName || ', rx::QuickBif::' || direct || list || '); }())')
+  end
+  code = code || 'return rx::dispatchBif(rx2cppBif(), vars, ' || bifName || ', _rxSlots); }())'
+  /* a built-in writes no variable (VALUE with a new value aside): the native registers stay */
+  if name \== 'VALUE' then return .RxNative~pureCall(code)
+  return code
+-- rx::QuickBif of a built-in that rx::bifDirect takes, else ''
+::method directCode private
+  use arg name
+  codes = 'LENGTH Length LASTPOS Lastpos LEFT Left POS Pos RIGHT Right SUBSTR Substr WORD Word WORDS Words'
+  p = wordpos(name, codes)
+  if p == 0 | p // 2 == 0 then return ''
+  return word(codes, p + 1)
+-- RX_VGET("NAME") or a static literal: evaluating it runs no code
+::method plainOrLiteral private
+  use arg code
+  if code~left(9) == 'RX_VGET("' & code~right(2) == '")' & pos('(', code, 9) == 0 then return .true
+  return abbrev(code, '([]() -> const rx::Value & { static const rx::Value _rxLit')
 ::requires 'core/RxQuote.cls'
 ::requires 'rules/RxBuiltinRules.cls'
+::requires 'rules/RxNative.cls'

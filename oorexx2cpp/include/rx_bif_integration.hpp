@@ -323,7 +323,9 @@ inline Value formatBifFixed(const std::vector<BifSlot>& a, const ActivationNumer
 // Exact native paths for the commonest pure string BIFs. Only the plain, unambiguous form is taken (all arguments present and
 // strings, counts written as plain digits, no whitespace other than blanks for the word functions); anything else returns
 // nullopt and goes the full catalogue route, which owns validation and error text.
-inline bool quickCount(const BifSlot &slot, std::size_t &out, bool positive) {
+// The arguments are pointers (nullptr: omitted), so a compiled call site with its arguments at hand (rx::bifDirect)
+// and the argument-vector route (quickBif) run this same code.
+inline bool quickCount(const Value *slot, std::size_t &out, bool positive) {
     if (!slot || slot->isObject()) return false;
     {   // a number made by arithmetic: its characters are its digits (no sign, no leading zero), not written out here
         const std::uint32_t m = slot->bytes.numCache().meta.load(std::memory_order_acquire);
@@ -340,10 +342,10 @@ inline bool quickCount(const BifSlot &slot, std::size_t &out, bool positive) {
     if (positive && v == 0) return false;
     out = v; return true;
 }
-inline bool quickText(const BifSlot &slot) { return slot && !slot->isObject(); }
-inline bool quickPad(const std::vector<BifSlot> &a, std::size_t i, char &pad) {
+inline bool quickText(const Value *slot) { return slot && !slot->isObject(); }
+inline bool quickPad(const Value *const *a, std::size_t n, std::size_t i, char &pad) {
     pad = ' ';
-    if (a.size() <= i) return true;
+    if (n <= i) return true;
     if (!quickText(a[i]) || a[i]->bytes.size() != 1) return false;
     pad = a[i]->bytes[0]; return true;
 }
@@ -351,17 +353,40 @@ inline bool quickBlanksOnly(const std::string &s) {
     for (char c : s) if (c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f') return false;
     return true;
 }
-inline std::optional<Value> quickBif(const std::string &name, const std::vector<BifSlot> &a) {
-    if (name.empty() || a.empty() || !quickText(a[0])) return std::nullopt;
-    const std::string &s = a[0]->bytes;
+// The commonest built-ins by a code fixed when compiled (rx::bifDirect) or found from the name (quickBif).
+enum class QuickBif { None, Length, Lastpos, Left, Pos, Right, Substr, Word, Words };
+inline QuickBif quickBifOf(const std::string &name) {
+    if (name.empty()) return QuickBif::None;
     switch (name[0]) {
     case 'L':
-        if (rx::eqLit(name, "LENGTH") && a.size() == 1) return fromInteger(static_cast<std::int64_t>(s.size()));
-        if (rx::eqLit(name, "LASTPOS") && (a.size() == 2 || a.size() == 3)) {
+        if (rx::eqLit(name, "LENGTH")) return QuickBif::Length;
+        if (rx::eqLit(name, "LASTPOS")) return QuickBif::Lastpos;
+        if (rx::eqLit(name, "LEFT")) return QuickBif::Left;
+        break;
+    case 'P': if (rx::eqLit(name, "POS")) return QuickBif::Pos; break;
+    case 'R': if (rx::eqLit(name, "RIGHT")) return QuickBif::Right; break;
+    case 'S': if (rx::eqLit(name, "SUBSTR")) return QuickBif::Substr; break;
+    case 'W':
+        if (rx::eqLit(name, "WORD")) return QuickBif::Word;
+        if (rx::eqLit(name, "WORDS")) return QuickBif::Words;
+        break;
+    default: break;
+    }
+    return QuickBif::None;
+}
+inline std::optional<Value> quickBif(QuickBif which, const Value *const *a, std::size_t n) {
+    if (which == QuickBif::None || n == 0 || !quickText(a[0])) return std::nullopt;
+    const std::string &s = a[0]->bytes;
+    switch (which) {
+    case QuickBif::Length:
+        if (n == 1) return fromInteger(static_cast<std::int64_t>(s.size()));
+        break;
+    case QuickBif::Lastpos:
+        if (n == 2 || n == 3) {
             if (!quickText(a[1])) return std::nullopt;
             const std::string &hay = a[1]->bytes;
             std::size_t start = hay.size();
-            if (a.size() == 3 && !quickCount(a[2], start, true)) return std::nullopt;
+            if (n == 3 && !quickCount(a[2], start, true)) return std::nullopt;
             if (s.empty() || s.size() > hay.size()) return fromInteger(0);
             // The match must END at or before position start.
             const std::size_t lastStart = std::min(start, hay.size()) >= s.size() ? std::min(start, hay.size()) - s.size() : std::string::npos;
@@ -369,50 +394,53 @@ inline std::optional<Value> quickBif(const std::string &name, const std::vector<
             const auto at = hay.rfind(s, lastStart);
             return fromInteger(at == std::string::npos ? 0 : static_cast<std::int64_t>(at + 1));
         }
-        if (rx::eqLit(name, "LEFT") && (a.size() == 2 || a.size() == 3)) {
-            std::size_t n; char pad;
-            if (!quickCount(a[1], n, false) || !quickPad(a, 2, pad)) return std::nullopt;
-            std::string out = s.substr(0, std::min(n, s.size()));
-            out.resize(n, pad);
+        break;
+    case QuickBif::Left:
+        if (n == 2 || n == 3) {
+            std::size_t len; char pad;
+            if (!quickCount(a[1], len, false) || !quickPad(a, n, 2, pad)) return std::nullopt;
+            std::string out = s.substr(0, std::min(len, s.size()));
+            out.resize(len, pad);
             return Value(std::move(out));
         }
         break;
-    case 'P':
-        if (rx::eqLit(name, "POS") && (a.size() == 2 || a.size() == 3)) {
+    case QuickBif::Pos:
+        if (n == 2 || n == 3) {
             if (!quickText(a[1])) return std::nullopt;
             const std::string &hay = a[1]->bytes;
             std::size_t start = 1;
-            if (a.size() == 3 && !quickCount(a[2], start, true)) return std::nullopt;
+            if (n == 3 && !quickCount(a[2], start, true)) return std::nullopt;
             if (s.empty() || start > hay.size()) return fromInteger(0);
             const auto at = hay.find(s, start - 1);
             return fromInteger(at == std::string::npos ? 0 : static_cast<std::int64_t>(at + 1));
         }
         break;
-    case 'R':
-        if (rx::eqLit(name, "RIGHT") && (a.size() == 2 || a.size() == 3)) {
-            std::size_t n; char pad;
-            if (!quickCount(a[1], n, false) || !quickPad(a, 2, pad)) return std::nullopt;
-            if (n <= s.size()) return Value(s.substr(s.size() - n));
-            return Value(std::string(n - s.size(), pad) + s);
+    case QuickBif::Right:
+        if (n == 2 || n == 3) {
+            std::size_t len; char pad;
+            if (!quickCount(a[1], len, false) || !quickPad(a, n, 2, pad)) return std::nullopt;
+            if (len <= s.size()) return Value(s.substr(s.size() - len));
+            return Value(std::string(len - s.size(), pad) + s);
         }
         break;
-    case 'S':
-        if (rx::eqLit(name, "SUBSTR") && a.size() >= 2 && a.size() <= 4) {
+    case QuickBif::Substr:
+        if (n >= 2 && n <= 4) {
             std::size_t start, len; char pad;
-            if (!quickCount(a[1], start, true) || !quickPad(a, 3, pad)) return std::nullopt;
+            if (!quickCount(a[1], start, true) || !quickPad(a, n, 3, pad)) return std::nullopt;
             const std::size_t from = start - 1;
-            if (a.size() == 2) return Value(from < s.size() ? s.substr(from) : std::string());
+            if (n == 2) return Value(from < s.size() ? s.substr(from) : std::string());
             if (!quickCount(a[2], len, false)) return std::nullopt;
             std::string out = from < s.size() ? s.substr(from, len) : std::string();
             out.resize(len, pad);
             return Value(std::move(out));
         }
         break;
-    case 'W':
-        if ((rx::eqLit(name, "WORD") && a.size() == 2) || (rx::eqLit(name, "WORDS") && a.size() == 1)) {
+    case QuickBif::Word:
+    case QuickBif::Words:
+        if ((which == QuickBif::Word && n == 2) || (which == QuickBif::Words && n == 1)) {
             if (!quickBlanksOnly(s)) return std::nullopt;
             std::size_t want = 0;
-            if (a.size() == 2 && !quickCount(a[1], want, true)) return std::nullopt;
+            if (n == 2 && !quickCount(a[1], want, true)) return std::nullopt;
             std::size_t i = 0, count = 0;
             while (true) {
                 while (i < s.size() && s[i] == ' ') ++i;
@@ -421,13 +449,20 @@ inline std::optional<Value> quickBif(const std::string &name, const std::vector<
                 while (i < s.size() && s[i] != ' ') ++i;
                 if (++count == want) return Value(s.substr(b, i - b));
             }
-            if (a.size() == 1) return fromInteger(static_cast<std::int64_t>(count));
+            if (n == 1) return fromInteger(static_cast<std::int64_t>(count));
             return Value(std::string());
         }
         break;
     default: break;
     }
     return std::nullopt;
+}
+inline std::optional<Value> quickBif(const std::string &name, const std::vector<BifSlot> &a) {
+    const QuickBif which = quickBifOf(name);
+    if (which == QuickBif::None || a.empty() || a.size() > 4) return std::nullopt;
+    const Value *p[4];
+    for (std::size_t i = 0; i < a.size(); ++i) p[i] = a[i] ? &*a[i] : nullptr;
+    return quickBif(which, p, a.size());
 }
 // 256^n by multiplication: GCC 13 reports a false -Warray-bounds inside cpp_int for a shift of cpp_int(1) by 8n bits.
 inline boost::multiprecision::cpp_int byteRange(std::size_t n) {
@@ -701,6 +736,20 @@ inline Value dispatchBif(BifRuntime& bif, Variables& vars, const BifName& n, con
 inline Value dispatchBif(BifRuntime& bif, Variables& vars, const std::string& name,
                          const std::vector<BifSlot>& slots) {
     return dispatchBif(bif, vars, BifName(name), slots);
+}
+// A built-in whose name the compiler knows, called with all its arguments present (HybridFunctionCall): the quickBif
+// answer from the arguments in place (no argument vector, no name lookup), when they are strings and quickBif takes
+// the call; anything else is the full route with the same arguments, as before.
+template <typename... A>
+inline Value bifDirect(BifRuntime &bif, Variables &vars, const BifName &n, QuickBif which, const A &...args) {
+    const Value *p[sizeof...(A)] = {&args...};
+    bool plain = true;
+    for (const Value *x : p) if (x->isObject()) plain = false;
+    if (plain) { if (auto r = quickBif(which, p, sizeof...(A))) return std::move(*r); }
+    std::vector<BifSlot> slots;
+    slots.reserve(sizeof...(A));
+    (slots.emplace_back(args), ...);
+    return dispatchBif(bif, vars, n, slots);
 }
 inline Value dispatchBifNative(BifRuntime& bif, Variables& vars, const std::string& name,
                                const std::vector<BifSlot>& slots) {

@@ -114,10 +114,20 @@
     otherwise return code
   end
 -- code of a function call or message (may run any code, assign any variable): the registers are cleared after it
+-- (not after a call marked pure: a built-in, which assigns no variable)
 ::method afterCall class
+  expose pure
   use arg code
   if \self~enabled then return code
+  if var('PURE') then if pure~hasIndex(code) then return code
   return 'RX_NAFTER(' || code || ')'
+::method pureCall class
+  expose pure
+  use arg code
+  if \self~enabled then return code
+  if var('PURE') = 0 then pure = .set~new
+  pure~put(code)
+  return code
 -- V = expr (simple V): the native statement, or '' when expr has no assignable native form
 ::method assignment class
   use arg name, expr, generic
