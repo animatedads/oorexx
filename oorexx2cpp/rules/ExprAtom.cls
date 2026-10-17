@@ -9,9 +9,9 @@
       s~next
       /* "NAME"(args): a function call by literal name (no internal-label search), library lane. */
       if s~is('(') & s~peek~line == t~endLine & s~peek~col == t~endCol & ctx~builtinExpr~hasMethod('PARSEQUOTED') then
-        return ctx~builtinExpr~parseQuoted(ctx, t~text)
+        return .RxNative~afterCall(ctx~builtinExpr~parseQuoted(ctx, t~text))
       /* made once and read by every evaluation (its numeric form, once known, kept with it) */
-      return '([]() -> const rx::Value & { static const rx::Value _rxLit = rx::Value::string(' || .RxQuote~cpp(t~text) || '); return _rxLit; }())'
+      return .RxNative~literal(t~text, '([]() -> const rx::Value & { static const rx::Value _rxLit = rx::Value::string(' || .RxQuote~cpp(t~text) || '); return _rxLit; }())')
     end
     /* A lone period is a constant symbol: its value is "." (xrange(., .)); so is ... outside USE ARG (length(...) is 3). */
     when t~kind == 'OP' & (t~text == '.' | t~text == '...') then do
@@ -22,9 +22,9 @@
       s~next
       /* Any symbol abutting "(" names a function, a constant symbol too (5A() calls 5A). */
       if s~is('(') & s~peek~line == t~endLine & s~peek~col == t~endCol then -
-        return ctx~builtinExpr~parse(ctx, t~text)
+        return .RxNative~afterCall(ctx~builtinExpr~parse(ctx, t~text))
       /* made once (its numeric form classified with it) and read by every evaluation, as the interpreter's literal */
-      return '([]() -> const rx::Value & { static const rx::Value _rxLit = rx::Value::number(' || .RxQuote~cpp(t~text) || '); return _rxLit; }())'
+      return .RxNative~literal(t~text, '([]() -> const rx::Value & { static const rx::Value _rxLit = rx::Value::number(' || .RxQuote~cpp(t~text) || '); return _rxLit; }())')
     end
     when t~kind == 'DOTIDENT' then do
       s~next
@@ -92,12 +92,12 @@
       s~next
       /* Rexx function invocation requires abuttal: F(3) differs from F (3). */
       if s~is('(') & s~peek~line == t~endLine & s~peek~col == t~endCol then -
-        return ctx~builtinExpr~parse(ctx, t~text)
+        return .RxNative~afterCall(ctx~builtinExpr~parse(ctx, t~text))
       /* A bare stem symbol is the stem object wherever it appears (shared, not copied: see StemObject); its string
          value, where one is needed, is its default value through STRING, with NOSTRING (s. || 'x'). */
       if right(t~text, 1) == '.' & pos('.', t~text) == length(t~text) then
         return 'rx::stemArg(vars, ' || .RxQuote~cpp(t~text) || ')'
-      return .RxCompoundSymbols~load(t~text)
+      return .RxNative~variable(t~text, .RxCompoundSymbols~load(t~text))
     end
     when s~accept('(') then do
       value = ctx~logicalExpr~parse(ctx)
@@ -151,3 +151,4 @@
 ::requires 'core/RxQuote.cls'
 
 ::requires 'rules/CompoundSymbols.cls'
+::requires 'rules/RxNative.cls'

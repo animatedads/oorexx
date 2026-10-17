@@ -14,7 +14,7 @@
   condition = ctx~compareExpr~parse(ctx)
   s~expect('THEN')
   s~skipSeparators
-  ctx~current~addInstruction('if (rx::condition(' || condition || ', rx::Truth::If)) {')
+  ctx~current~addInstruction('if (' || .RxOperatorRules~condition(condition, 'rx::Truth::If') || ') {')
   ctx~enterControl
   ctx~emitStatement
   ctx~leaveControl
@@ -27,3 +27,4 @@
     ctx~leaveControl
     ctx~current~addInstruction('}')
   end
+::requires 'rules/OperatorRules.cls'

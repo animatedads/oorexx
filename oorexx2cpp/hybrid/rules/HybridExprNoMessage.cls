@@ -66,7 +66,7 @@
   code = code || 'return _r' || tag || '; }())'
   /* SELF~a~b: the first send above, the rest is the shared message-send chain on its (interpreter) result. */
   if chained then return .RxExprMessage~new~parse(ctx, .false, code)
-  return code
+  return .RxNative~afterCall(code)
 ::method superSend private
   expose n
   use arg ctx, selector, argExprs, super, asInstruction
@@ -93,6 +93,8 @@
   end
   code = code || 'return _r' || tag || '; }())'
   if chain then return .RxExprMessage~new~parse(ctx, outerInstruction, code)
-  return code
+  if asInstruction then return code
+  return .RxNative~afterCall(code)
 ::requires 'core/RxQuote.cls'
+::requires 'rules/RxNative.cls'
 ::requires 'rules/ExprMessage.cls'

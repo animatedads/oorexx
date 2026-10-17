@@ -90,7 +90,7 @@
           when keyword == 'BY' then do
             hasBy = .true
             setup~append('const rx::Value _rxBy' || suffix || ' = rx::sendUnary("+", ' || expr || ', vars.numeric);')
-            setup~append('const char *_rxCmp' || suffix || ' = rx::isOne(rx::sendBinary(_rxBy' || suffix || ', "<", rx::Value::number("0"), vars.numeric)) ? "<" : ">";')
+            setup~append('const bool _rxDown' || suffix || ' = rx::isOne(rx::sendBinary(_rxBy' || suffix || ', "<", rx::Value::number("0"), vars.numeric));')
           end
           otherwise do
             hasFor = .true
@@ -100,16 +100,38 @@
       end
       if \hasBy then do
         setup~append('const rx::Value _rxBy' || suffix || ' = rx::Value::number("1");')
-        setup~append('const char *_rxCmp' || suffix || ' = ">";')
+        setup~append('const bool _rxDown' || suffix || ' = false;')
       end
-      setup~append('(void)_rxCmp' || suffix || ';')
-      setup~append(.RxCompoundSymbols~store(control, '_rxStart' || suffix))
+      setup~append('(void)_rxDown' || suffix || ';')
+      setup~append(.RxCompoundSymbols~store(control, '_rxStart' || suffix) .RxNative~invalidate(control))
       /* the control variable read in place (nothing runs between reading it and the operator) */
       current = .RxCompoundSymbols~load(control)
       if current~left(8) == 'RX_VGET(' then current = 'RX_VREF(' || current~substr(9)
-      increment~append(.RxCompoundSymbols~store(control, 'rx::sendBinary(' || current || ', "+", _rxBy' || suffix || ', vars.numeric)'))
-      if hasTo then
-        test~append('if (rx::isOne(rx::sendBinary(' || current || ', _rxCmp' || suffix || ', _rxTo' || suffix || ', vars.numeric))) break;')
+      generic = .RxCompoundSymbols~store(control, 'rx::opAdd(' || current || ', _rxBy' || suffix || ', vars.numeric)') .RxNative~invalidate(control)
+      pastTest = 'rx::loopPast(' || current || ', _rxDown' || suffix || ', _rxTo' || suffix || ', vars.numeric)'
+      if current~left(8) == 'RX_VREF(' then do
+        /* a simple control variable: the loop runs on a machine integer while its values are plain whole numbers
+           (rx::loopInts / loopHolds / loopStep); otherwise, or once anything else happens, the message path above */
+        n = '_rxN' || suffix
+        toRef = 'nullptr'
+        if hasTo then toRef = '&_rxTo' || suffix
+        setup~append('std::int64_t ' || n || ' = 0, ' || n || 'By = 0, ' || n || 'To = 0;')
+        setup~append('bool ' || n || 'On = rx::loopInts(_rxStart' || suffix || ', _rxBy' || suffix || ', ' || toRef || ', vars.numeric, ' || n || ', ' || n || 'By, ' || n || 'To);')
+        setup~append('(void)' || n || 'To;')
+        /* (the native register still holding n: nothing has written the variable since the loop did) */
+        holds = .RxNative~holds(control, n)
+        if holds \== '' then
+          increment~append('if (' || n || 'On && ' || holds || ' && rx::loopStep(' || n || ', ' || n || 'By, vars.numeric)) ' || .RxNative~set(control, n) || ' else')
+        increment~append('{ ::rx::Value *_rxH = ' || n || 'On ? rx::loopHolds(' || current || ', ' || n || ') : nullptr;')
+        increment~append('  if (_rxH && rx::loopStep(' || n || ', ' || n || 'By, vars.numeric)) { rx::loopStore(*_rxH, ' || n || '); ' || .RxNative~put(control, n) || ' }')
+        increment~append('  else { ' || n || 'On = false; ' || generic || ' } }')
+        if hasTo then
+          test~append('if (' || n || 'On && vars.numeric.fuzz == 0 ? (_rxDown' || suffix || ' ? ' || n || ' < ' || n || 'To : ' || n || ' > ' || n || 'To) : ' || pastTest || ') break;')
+      end
+      else do
+        increment~append(generic)
+        if hasTo then test~append('if (' || pastTest || ') break;')
+      end
     end
     when form == 'OVER' then do
       control = s~next~text
@@ -120,7 +142,7 @@
       setup~append('const auto _rxItems' || suffix || ' = rx::arrayItems(' || collection || ');')
       setup~append('std::size_t _rxIndex' || suffix || ' = 0;')
       test~append('if (_rxIndex' || suffix || ' >= _rxItems' || suffix || '.size()) break;')
-      test~append(.RxCompoundSymbols~store(control, '_rxItems' || suffix || '[_rxIndex' || suffix || '++]'))
+      test~append(.RxCompoundSymbols~store(control, '_rxItems' || suffix || '[_rxIndex' || suffix || '++]') .RxNative~invalidate(control))
       if s~accept('FOR') then do
         hasFor = .true
         setup~append('const std::uint64_t _rxFor' || suffix || ' = rx::loopCount(' || ctx~logicalExpr~parse(ctx) || ', true, vars.numeric);')
@@ -164,7 +186,7 @@
   end
   if whileCond \== '' then ctx~line(depth + 2, 'if (!' || whileCond || ') break;')
   if counter \== '' then
-    ctx~line(depth + 2, .RxCompoundSymbols~store(counter, 'rx::Value::number(std::to_string(_rxPass' || suffix || '))'))
+    ctx~line(depth + 2, .RxCompoundSymbols~store(counter, 'rx::Value::number(std::to_string(_rxPass' || suffix || '))') .RxNative~invalidate(counter))
   ctx~line(depth + 2, '{')
   ctx~pushLoop(label, iterLabel, exitLabel, .true)
   ctx~block(depth + 3, .true, label)
@@ -178,3 +200,4 @@
 ::requires 'rules/CompoundSymbols.cls'
 ::requires 'rules/ConditionList.cls'
 ::requires 'rules/ExprList.cls'
+::requires 'rules/RxNative.cls'

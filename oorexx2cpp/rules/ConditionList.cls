@@ -15,10 +15,11 @@
     otherwise truth = 'rx::Truth::If'
   end
   first = ctx~logicalExpr~parse(ctx)
-  if \s~is(',') then return 'rx::condition(' || first || ', ' || truth || ')'
-  code = 'rx::condition(' || first || ', rx::Truth::List)'
+  if \s~is(',') then return .RxOperatorRules~condition(first, truth)
+  code = .RxOperatorRules~condition(first, 'rx::Truth::List')
   do while s~accept(',')
     s~skipSeparators
-    code = code || ' && rx::condition(' || ctx~logicalExpr~parse(ctx) || ', rx::Truth::List)'
+    code = code || ' && ' || .RxOperatorRules~condition(ctx~logicalExpr~parse(ctx), 'rx::Truth::List')
   end
   return '(' || code || ')'
+::requires 'rules/OperatorRules.cls'

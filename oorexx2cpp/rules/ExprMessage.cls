@@ -161,6 +161,9 @@
     recv = current
   end
   if \asInstruction then code = code || 'return ' || current || '; '
+  /* a message may run any code: the native registers (RxNative) are cleared after it */
+  if \asInstruction then return .RxNative~afterCall(code || '}())')
   return code || '}())'
 ::requires 'core/RxQuote.cls'
 ::requires 'rules/CompoundAssignmentOps.cls'
+::requires 'rules/RxNative.cls'

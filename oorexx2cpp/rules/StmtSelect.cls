@@ -35,7 +35,7 @@
       condition = ''
       do forever
         .local['RX2CPP.CLAUSEWORDS'] = 'THEN'
-        test = 'rx::condition(rx::sendBinary(' || caseVar || ', "==", ' || ctx~logicalExpr~parse(ctx) || ', vars.numeric), rx::Truth::Case)'
+        test = 'rx::cmpTest(' || caseVar || ', rx::CmpOp::StrictEq, "==", ' || ctx~logicalExpr~parse(ctx) || ', vars.numeric, rx::Truth::Case)'
         if condition == '' then condition = test
         else condition = condition || ' || ' || test
         if \s~accept(',') then leave

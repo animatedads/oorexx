@@ -27,6 +27,8 @@
   expose stream atomExpr builtinExpr localRoutines messageExpr unaryExpr mulExpr addExpr compareExpr logicalExpr rules current className methods classMethods constants parentName externalParent allowInheritance isMixin mixinNames controlDepth scopes
   use arg source, allowInheritance, localRoutines = .nil
   if localRoutines == .nil then localRoutines = .array~new
+  /* native registers (rules/RxNative.cls): this lane's bodies have slot tables */
+  if .RxCompoundSymbols~slots then .local['RX2CPP.NATIVE'] = 1
   if arg(2, 'O') then allowInheritance = .false
   parentName = ''
   externalParent = ''
@@ -237,7 +239,8 @@
   scopes~rexxLogic(self, depth)
   .local['RX2CPP.CLAUSEWORDS'] = saved
   /* the clause boundary: pending CALL ON conditions call their handlers now */
-  if self~current~hasMethod('CALLON') then if self~current~callOn then self~current~addRaw('if (!_rxTrap.queue.empty()) _rxCallOn();')
+  if self~current~hasMethod('CALLON') then if self~current~callOn then
+    self~current~addRaw('if (!_rxTrap.queue.empty()) { _rxCallOn();' .RxNative~invalidateAll '}')
   /* A clause that calls TIME or DATE starts with a fresh clause time stamp (rx::ActivationScope::clauseBoundary). */
   if value('RX2CPP_HOST_API', , 'ENVIRONMENT') \== '' then do
     code = self~current~instructions
@@ -269,6 +272,15 @@
   rule = rules~find(self)
   if rule == .nil then s~fail('unsupported class method instruction')
   rule~emit(self)
+  /* Native registers (RxNative): an instruction that may write variables the registers do not see clears them all.
+     Assignments, IF, DO, SELECT, SAY... keep them (their own writes and calls are handled where they are compiled). */
+  inner = rule
+  if rule~hasMethod('INNER') then inner = rule~inner
+  if wordpos(inner~class~id~upper, 'RXSTMTASSIGN RXSTMTIF RXSTMTDO RXSTMTSELECT RXSTMTLEAVEITERATE RXSTMTNOP RXSTMTSAY' -
+             'RXSTMTTRACE RXSTMTEXIT RXHYBRIDNUMERIC RXHYBRIDRETURN') == 0 then do
+    clear = .RxNative~invalidateAll
+    if clear \== '' then self~current~addRaw(clear)
+  end
 /* ExprAtom is shared with the standalone compiler. Native classes have no program-class table and no
    hosted tier, so those environment-symbol branches are closed: .TRUE/.FALSE/.NIL work, other .NAMEs fail closed. */
 /* Adapters so the standalone statement rules (DO forms, LEAVE/ITERATE) run unchanged in this lane. */
@@ -455,12 +467,12 @@
       current~addRaw('std::vector<rx::Value> _rxProgramArgs; for (const auto &_a : arguments) _rxProgramArgs.push_back(_a ? *_a : rx::Value::string(std::string())); (void)_rxProgramArgs;')
       current~addRaw('rx::MethodTraps _rxTrap; int _rxAt = _rxEntry; std::size_t _rxLine = 0; (void)_rxLine;')
       if current~callOn then callOnSlot = self~emitCallOnDispatch(current, internalCalls)
-      current~addRaw('for (;;) { try { switch (_rxAt) { case 0: {')
+      current~addRaw('for (;;) { try { switch (_rxAt) { case 0: {' .RxNative~invalidateAll)
     end
     else if current~trapped then do
       current~addRaw('rx::MethodTraps _rxTrap; int _rxAt = 0; std::size_t _rxLine = 0; (void)_rxLine;')
       if current~callOn then callOnSlot = self~emitCallOnDispatch(current, internalCalls)
-      current~addRaw('for (;;) { try { switch (_rxAt) { case 0: {')
+      current~addRaw('for (;;) { try { switch (_rxAt) { case 0: {' .RxNative~invalidateAll)
     end
     afterLabel = .false
     do while s~peek~kind \= 'EOF' & \s~is('::')
@@ -468,6 +480,9 @@
         labelName = s~next~text
         s~expect(':')
         current~addRaw('} [[fallthrough]]; case ' || current~labels[labelName] || ': {')
+        /* entered by SIGNAL, a trapped condition or an internal routine call: the native registers start empty */
+        clear = .RxNative~invalidateAll
+        if clear \== '' then current~addRaw(clear)
         afterLabel = .true
         s~skipSeparators
         iterate
@@ -554,3 +569,5 @@
 ::method classMethods
   return .array~new
 ::requires 'rules/RxBuiltinRules.cls'
+::requires 'rules/RxNative.cls'
+::requires 'rules/CompoundSymbols.cls'

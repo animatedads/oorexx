@@ -3,6 +3,9 @@
 ::method init
   expose inner
   use arg inner
+::method inner
+  expose inner
+  return inner
 ::method accepts
   expose inner
   use arg ctx

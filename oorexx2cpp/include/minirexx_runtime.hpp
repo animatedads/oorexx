@@ -76,6 +76,9 @@ inline void notePressure(std::size_t bytes) {
 struct NumCache {
     static constexpr std::uint32_t known = 1, decimal = 2, integer = 4, pending = 8, busy = 16;
     static constexpr std::uint32_t notNumber = 32;   // the characters are no Rexx number at all (tryParseRexxDecimal)
+    // a whole number whose characters are exactly coef's digits (as arithmetic writes them: no leading zero, no sign
+    // but '-', not -0): copying the number is copying the characters
+    static constexpr std::uint32_t canonical = 64;
     std::atomic<std::int64_t> coef{0};
     std::atomic<std::uint32_t> meta{0};
     NumCache() = default;
@@ -100,7 +103,12 @@ public:
     // A moved-from string is empty: its numeric form goes with the characters.
     RxStr(RxStr &&o) noexcept : small_(std::move(o.small_)), big_(std::move(o.big_)), num_(o.num_) { o.small_.clear(); o.num_.reset(); }
     RxStr &operator=(RxStr &&o) noexcept {
-        if (this != &o) { small_ = std::move(o.small_); big_ = std::move(o.big_); num_ = o.num_; o.small_.clear(); o.num_.reset(); }
+        if (this != &o) {
+            // (a number made by arithmetic has no characters yet, nor has the variable it replaces: nothing to move)
+            if (o.small_.empty()) small_.clear(); else { small_ = std::move(o.small_); o.small_.clear(); }
+            if (big_ || o.big_) big_ = std::move(o.big_);
+            num_ = o.num_; o.num_.reset();
+        }
         return *this;
     }
     RxStr(const std::string &v) { put(std::string(v)); }
@@ -115,8 +123,10 @@ public:
     }
     // A number made as its numeric form only (see NumCache): the caller has checked it is one (rx_rexx_number.hpp
     // pendingNumber).
-    void setPendingNumber(std::int64_t coef, std::uint32_t meta) {   // meta: the classification, exponent included
-        big_.reset(); small_.clear();
+    __attribute__((always_inline)) void setPendingNumber(std::int64_t coef, std::uint32_t meta) {   // meta: the classification, exponent included
+        if (big_) big_.reset();
+        small_.clear();
+        if (meta & NumCache::integer) meta |= NumCache::canonical;   // (written as plainNumber writes it)
         num_.coef.store(coef, std::memory_order_relaxed);
         num_.meta.store(meta | NumCache::pending, std::memory_order_release);
     }
@@ -259,6 +269,13 @@ struct Value {
         return Value(std::move(target));
     }
     bool isObject() const { return static_cast<bool>(object); }
+    Value(const Value &) = default;
+    Value(Value &&) noexcept = default;
+    Value &operator=(const Value &) = default;
+    Value &operator=(Value &&o) noexcept {
+        if (this != &o) { bytes = std::move(o.bytes); if (object || o.object) object = std::move(o.object); }
+        return *this;
+    }
 };
 // No result is different from returning .nil or any other object.
 using MessageResult = std::optional<Value>;
@@ -933,7 +950,9 @@ struct VarSlot {
 // method body, numbered by the compiler: RxHybridMethod~useLocalSlots): no thread-local storage, and every access site
 // of one name shares the slot. The slot is checked against the pool and erase generation as before, so semantics are
 // those of get()/set() (EXPOSE, PROCEDURE pools, DROP).
-template <std::size_t K> struct LocalSlots { VarSlot s[K]; };
+// nr / nk: the native registers (RxNative.cls): nk[k] says nr[k] is the whole number the variable of slot k holds now
+// (1; 2: and its characters are exactly that number's digits, NumCache canonical).
+template <std::size_t K> struct LocalSlots { VarSlot s[K]; std::int64_t nr[K]; std::uint8_t nk[K]; };
 // A stem variable's own entry ("S."), or null: what compiled S.tail checks for its stem object (rx::stemGet1).
 #define RX_VSTEM(N) ([&]() -> const ::rx::Value * { static thread_local ::rx::VarSlot _rxSlot; return _rxSlot.find(vars, N); }())
 #define RX_VSTEMK(K, N) (_rxL.s[K].find(vars, N))
@@ -1556,6 +1575,167 @@ inline bool isOne(const Value &v) {
     if ((m & NumCache::pending) && (m & NumCache::integer)) return v.bytes.numCache().coef.load(std::memory_order_relaxed) == 1;
     return v.bytes == "1";
 }
+// Operators whose selector is known when the program is compiled (OperatorRules, StmtDo). Two plain whole numbers
+// (NumCache integer: at most 9 digits, within DIGITS) are added, subtracted or multiplied as machine integers and the
+// result is made as its numeric form, as numericAdd / numericSub / numericMul make it; a comparison of two strings is
+// made as a C++ bool. Anything else (an object operand, a decimal, a longer number) is the message sendBinaryOp sends:
+// the operand's own method for an object, the String class's otherwise.
+namespace fastop {
+__attribute__((always_inline)) inline bool wholeNumbers(const Value &a, const Value &b, const ActivationNumeric &n,
+                                                        std::int64_t &p, std::int64_t &q) {
+    if (a.isObject() || b.isObject() || n.digits < 9) return false;
+    if (!(numMeta(a) & numMeta(b) & kNumInteger)) return false;
+    p = a.bytes.numCache().coef.load(std::memory_order_relaxed);
+    q = b.bytes.numCache().coef.load(std::memory_order_relaxed);
+    return true;
+}
+}  // namespace fastop
+inline Value opAdd(const Value &a, const Value &b, const ActivationNumeric &n) {
+    std::int64_t p, q;
+    if (fastop::wholeNumbers(a, b, n, p, q)) { const std::int64_t r = p + q; if (n.digits >= 10 || fitsDigits(r, n)) return intResult(r); }
+    return sendBinaryOp(a, "+", 1, b, n);
+}
+inline Value opSub(const Value &a, const Value &b, const ActivationNumeric &n) {
+    std::int64_t p, q;
+    if (fastop::wholeNumbers(a, b, n, p, q)) { const std::int64_t r = p - q; if (n.digits >= 10 || fitsDigits(r, n)) return intResult(r); }
+    return sendBinaryOp(a, "-", 1, b, n);
+}
+inline Value opMul(const Value &a, const Value &b, const ActivationNumeric &n) {
+    std::int64_t p, q;
+    if (fastop::wholeNumbers(a, b, n, p, q)) { const std::int64_t r = p * q; if (n.digits >= 18 || fitsDigits(r, n)) return intResult(r); }
+    return sendBinaryOp(a, "*", 1, b, n);
+}
+inline Value opIntDiv(const Value &a, const Value &b, const ActivationNumeric &n) {
+    std::int64_t p, q;
+    if (fastop::wholeNumbers(a, b, n, p, q) && q != 0) return intResult(p / q);   // (numericWholeDivide's whole-number path)
+    if (!a.isObject() && !b.isObject()) return numericWholeDivide(a, b, n);
+    return sendBinaryOp(a, "%", 1, b, n);
+}
+inline Value opRem(const Value &a, const Value &b, const ActivationNumeric &n) {
+    std::int64_t p, q;
+    if (fastop::wholeNumbers(a, b, n, p, q) && q != 0) return intResult(p % q);   // (numericRemainder's whole-number path)
+    if (!a.isObject() && !b.isObject()) return numericRemainder(a, b, n);
+    return sendBinaryOp(a, "//", 2, b, n);
+}
+inline Value opDiv(const Value &a, const Value &b, const ActivationNumeric &n) {
+    if (!a.isObject() && !b.isObject()) return numericDiv(a, b, n);
+    return sendBinaryOp(a, "/", 1, b, n);
+}
+// a comparison as a value ("1" / "0"); sel is the selector as written (an object's method is looked up by it)
+inline Value opCmp(const Value &a, CmpOp op, const char *sel, const Value &b, const ActivationNumeric &n) {
+    if (!a.isObject() && !b.isObject()) return truthValue(compareStrings(a, op, b, n));
+    return sendBinaryOp(a, sel, std::strlen(sel), b, n);
+}
+// a comparison that is a whole IF / WHEN / WHILE / UNTIL condition: rx::condition(opCmp(...), where) without the value
+inline bool cmpTest(const Value &a, CmpOp op, const char *sel, const Value &b, const ActivationNumeric &n, Truth where) {
+    if (!a.isObject() && !b.isObject()) return compareStrings(a, op, b, n);
+    return condition(sendBinaryOp(a, sel, std::strlen(sel), b, n), where);
+}
+// a controlled loop's TO test: rx::isOne(sendBinary(control, ">" or "<", limit))
+inline bool loopPast(const Value &control, bool down, const Value &limit, const ActivationNumeric &n) {
+    if (!control.isObject() && !limit.isObject()) {
+        std::int64_t p, q;
+        if (fastop::wholeNumbers(control, limit, n, p, q) && n.fuzz == 0) return down ? p < q : p > q;
+        return compareStrings(control, down ? CmpOp::Lt : CmpOp::Gt, limit, n);
+    }
+    return isOne(sendBinaryOp(control, down ? "<" : ">", 1, limit, n));
+}
+// A controlled loop run on a machine integer (StmtDo): when the start, BY and TO values are plain whole numbers (and
+// DIGITS is at least 9) the loop keeps its control value as n, writes it to the variable as a number made by arithmetic
+// (the characters only when read), and tests n against TO. Every pass first checks that the variable still holds n
+// (loopHolds: nothing assigned it, or assigned a string with the same numeric form, which + and the TO test treat
+// alike); otherwise, or when the next value leaves the plain whole-number range or NUMERIC changes, the loop goes on
+// with the message path (opAdd / loopPast) from the variable's value, for good.
+inline bool loopInts(const Value &start, const Value &by, const Value *to, const ActivationNumeric &n,
+                     std::int64_t &cur, std::int64_t &step, std::int64_t &limit) {
+    if (n.digits < 9 || start.isObject() || by.isObject() || (to && to->isObject())) return false;
+    if (!(numMeta(start) & numMeta(by) & kNumInteger)) return false;
+    if (to && !(numMeta(*to) & kNumInteger)) return false;
+    cur = start.bytes.numCache().coef.load(std::memory_order_relaxed);
+    step = by.bytes.numCache().coef.load(std::memory_order_relaxed);
+    limit = to ? to->bytes.numCache().coef.load(std::memory_order_relaxed) : 0;
+    return true;
+}
+inline Value *loopHolds(const Value &v, std::int64_t cur) {
+    if (v.isObject()) return nullptr;
+    const NumCache &c = v.bytes.numCache();
+    if (!(c.meta.load(std::memory_order_acquire) & kNumInteger) || c.coef.load(std::memory_order_relaxed) != cur) return nullptr;
+    return const_cast<Value *>(&v);
+}
+// the next control value, when it is still a plain whole number under DIGITS >= 9
+inline bool loopStep(std::int64_t &cur, std::int64_t step, const ActivationNumeric &n) {
+    const std::int64_t next = cur + step;
+    if (n.digits < 9 || next > 999999999 || next < -999999999) return false;
+    cur = next;
+    return true;
+}
+__attribute__((always_inline)) inline void loopStore(Value &v, std::int64_t cur) {
+    v.bytes.setPendingNumber(cur, kNumKnown | kNumDecimal | kNumInteger | (128u << 8));
+}
+// Native registers (rules/RxNative.cls). A simple variable read and written by whole-number arithmetic is kept as a
+// machine integer in the activation's slot table (nr[k], valid while nk[k]) as well as in its variable: every native
+// write also writes the variable (as a number made by arithmetic), so anything else that reads it (a BIF, SAY, a
+// called routine, INTERPRET, a condition handler) reads the variable as before. Anything that may write a variable
+// without the register knowing clears the register: a generic assignment its own, and a call, a message, any other
+// instruction, a label (SIGNAL / an internal routine entered) or a CALL ON handler all of them; the next native read
+// loads it again from the variable. A native expression is only whole numbers (at most 9 digits, as NumCache integer)
+// under DIGITS >= 9 and FUZZ 0, with + - * % // and exact /, unary - +, the non-strict comparisons, and & | && \ of
+// comparison results: any operand or result outside that sets ok false and the statement runs as before.
+inline bool nOn(const ActivationNumeric &n) { return n.digits >= 9 && n.fuzz == 0; }
+__attribute__((noinline)) inline std::int64_t nLoad(VarSlot &slot, std::uint8_t &valid, std::int64_t &reg, const Variables &vars,
+                                                    const char *name, bool &ok) {
+    const Value *p = slot.find(vars, name);
+    std::uint32_t m;
+    if (p && !p->isObject() && ((m = numMeta(*p)) & kNumInteger)) {
+        reg = p->bytes.numCache().coef.load(std::memory_order_relaxed);
+        valid = (m & NumCache::canonical) ? 2 : 1;
+        return reg;
+    }
+    ok = false;
+    return 0;
+}
+template <std::size_t K> __attribute__((always_inline)) inline std::int64_t nGet(LocalSlots<K> &L, std::size_t k, const Variables &vars,
+                                                                                 const char *name, bool &ok) {
+    if (L.nk[k]) return L.nr[k];
+    return nLoad(L.s[k], L.nk[k], L.nr[k], vars, name, ok);
+}
+// a variable read as the whole value of V = Y: only when Y's characters are its number's own (then writing the number
+// to V gives V the same characters)
+template <std::size_t K> __attribute__((always_inline)) inline std::int64_t nGetCanonical(LocalSlots<K> &L, std::size_t k, const Variables &vars,
+                                                                                          const char *name, bool &ok) {
+    const std::int64_t r = nGet(L, k, vars, name, ok);
+    if (L.nk[k] != 2) ok = false;
+    return r;
+}
+template <std::size_t K> __attribute__((always_inline)) inline void nSet(LocalSlots<K> &L, std::size_t k, Variables &vars, const char *name, std::int64_t r) {
+    L.nr[k] = r; L.nk[k] = 2;
+    if (Value *p = L.s[k].resolve(vars); p && !p->isObject()) { p->bytes.setPendingNumber(r, kNumKnown | kNumDecimal | kNumInteger | (128u << 8)); return; }
+    L.s[k].set(vars, name, intResult(r));
+}
+template <std::size_t K> inline void nPut(LocalSlots<K> &L, std::size_t k, std::int64_t r) { L.nr[k] = r; L.nk[k] = 2; }
+// X = Y (Y a simple variable): X's variable now holds Y's value, so X's register is Y's (valid or not)
+template <std::size_t K> inline void nCopy(LocalSlots<K> &L, std::size_t to, std::size_t from) { L.nr[to] = L.nr[from]; L.nk[to] = L.nk[from]; }
+template <std::size_t K> inline void nInv(LocalSlots<K> &L, std::size_t k) { L.nk[k] = 0; }
+template <std::size_t K> inline void nInvAll(LocalSlots<K> &L) { std::memset(L.nk, 0, sizeof L.nk); }
+template <std::size_t K, typename T> inline T nAfter(LocalSlots<K> &L, T v) { nInvAll(L); return v; }
+// the whole-number operations (results kept within NumCache integer: at most 9 digits)
+inline std::int64_t nRange(bool &ok, std::int64_t r) { if (r > 999999999 || r < -999999999) { ok = false; return 0; } return r; }
+inline std::int64_t nAdd(bool &ok, std::int64_t a, std::int64_t b) { return nRange(ok, a + b); }
+inline std::int64_t nSub(bool &ok, std::int64_t a, std::int64_t b) { return nRange(ok, a - b); }
+inline std::int64_t nMul(bool &ok, std::int64_t a, std::int64_t b) { return nRange(ok, a * b); }
+inline std::int64_t nIntDiv(bool &ok, std::int64_t a, std::int64_t b) { if (b == 0) { ok = false; return 0; } return a / b; }
+inline std::int64_t nRem(bool &ok, std::int64_t a, std::int64_t b) { if (b == 0) { ok = false; return 0; } return a % b; }
+inline std::int64_t nDiv(bool &ok, std::int64_t a, std::int64_t b) { if (b == 0 || a % b != 0) { ok = false; return 0; } return a / b; }
+#define RX_NGETK(K, N) (::rx::nGet(_rxL, K, vars, N, _rxOk))
+#define RX_NCANONK(K, N) (::rx::nGetCanonical(_rxL, K, vars, N, _rxOk))
+#define RX_NSETK(K, N, R) (::rx::nSet(_rxL, K, vars, N, R))
+#define RX_NPUTK(K, N, R) (::rx::nPut(_rxL, K, R))
+#define RX_NHOLDSK(K, N, R) (_rxL.nk[K] != 0 && _rxL.nr[K] == (R))
+#define RX_NINVK(K, N) (::rx::nInv(_rxL, K))
+#define RX_NFROMK(K, N) K
+#define RX_NCOPYK(K, N, FROM) (::rx::nCopy(_rxL, K, FROM))
+#define RX_NINV_ALL (::rx::nInvAll(_rxL))
+#define RX_NAFTER(...) (::rx::nAfter(_rxL, (__VA_ARGS__)))
 inline bool within(std::int64_t current, std::int64_t limit, std::int64_t step) {
     if (step == 0) throw std::runtime_error("DO BY 0 unsupported");
     return step > 0 ? current <= limit : current >= limit;

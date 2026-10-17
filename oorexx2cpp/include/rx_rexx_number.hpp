@@ -71,7 +71,11 @@ inline std::uint32_t numClassify(const RxStr &str) {
         if (ok && digit) {
             coef = neg ? -c : c;
             meta |= kNumDecimal | (static_cast<std::uint32_t>(e + 128) << 8);
-            if (!plus && !dot && n <= 10 && c <= 999999999) meta |= kNumInteger;
+            if (!plus && !dot && n <= 10 && c <= 999999999) {
+                meta |= kNumInteger;
+                const std::size_t first = neg ? 1 : 0;   // its own digits: no leading zero, not -0
+                if ((t[first] != '0' || n - first == 1) && !(neg && c == 0)) meta |= NumCache::canonical;
+            }
         }
     }
     cache.coef.store(coef, std::memory_order_relaxed);
@@ -115,6 +119,11 @@ inline Value pendingNumber(std::int64_t coef, int exp) {
     std::uint32_t meta = kNumKnown | kNumDecimal | (static_cast<std::uint32_t>(exp + 128) << 8);
     if (exp == 0 && u <= 999999999) meta |= kNumInteger;
     return Value(Value::PendingTag{}, coef, meta);
+}
+// pendingNumber(r, 0) for |r| < 10**18 (a sum, difference or product of two plain whole numbers): the same numeric form
+inline Value intResult(std::int64_t r) {
+    const std::uint64_t u = r < 0 ? 0 - static_cast<std::uint64_t>(r) : static_cast<std::uint64_t>(r);
+    return Value(Value::PendingTag{}, r, kNumKnown | kNumDecimal | (128u << 8) | (u <= 999999999 ? kNumInteger : 0u));
 }
 inline bool smallInteger(const Value &v, const ActivationNumeric &ctx, std::int64_t &out) {
     if (v.isObject() || ctx.digits < 1 || ctx.fuzz != 0) return false;   // NUMERIC FUZZ changes comparisons: full path
@@ -741,6 +750,8 @@ inline void chopOperand(RexxDecimal &v, const ActivationNumeric &ctx) {
     }
 }
 inline Value numericDiv(const Value &a, const Value &b, const ActivationNumeric &ctx) {
+    // plain whole numbers within DIGITS dividing exactly: the quotient is that whole number (normalized, fixed notation)
+    { std::int64_t p, q; if (smallInteger(a, ctx, p) && smallInteger(b, ctx, q) && q != 0 && p % q == 0) return pendingNumber(p / q, 0); }
     RexxDecimal x = parseRexxDecimal(a), y = parseRexxDecimal(b);
     checkLostDigits(x, a, ctx); checkLostDigits(y, b, ctx);
     if (y.coefficient == 0) divisionByZero();
@@ -845,16 +856,15 @@ inline int rexxPaddedCompare(const std::string &a, const std::string &b) {
     }
     return 0;
 }
-inline Value numericCompare(const Value &a, CmpOp op, const Value &b, const ActivationNumeric &ctx) {
-    // A right-hand object is never silently compared as its (empty) byte string.
-    if (a.isObject() || b.isObject()) throw std::runtime_error("comparison with an object operand requires message dispatch");
+// The result of a comparison of two strings (the String class's comparison methods), as a C++ bool.
+inline bool compareStrings(const Value &a, CmpOp op, const Value &b, const ActivationNumeric &ctx) {
     switch (op) {
-    case CmpOp::StrictEq: return truthValue(a.bytes == b.bytes);
-    case CmpOp::StrictNe: return truthValue(a.bytes != b.bytes);
-    case CmpOp::SLt: return truthValue(a.bytes < b.bytes);
-    case CmpOp::SLe: return truthValue(a.bytes <= b.bytes);
-    case CmpOp::SGt: return truthValue(a.bytes > b.bytes);
-    case CmpOp::SGe: return truthValue(a.bytes >= b.bytes);
+    case CmpOp::StrictEq: return a.bytes == b.bytes;
+    case CmpOp::StrictNe: return a.bytes != b.bytes;
+    case CmpOp::SLt: return a.bytes < b.bytes;
+    case CmpOp::SLe: return a.bytes <= b.bytes;
+    case CmpOp::SGt: return a.bytes > b.bytes;
+    case CmpOp::SGe: return a.bytes >= b.bytes;
     case CmpOp::None: throw std::runtime_error("unknown decimal comparison operator");
     default: break;
     }
@@ -868,18 +878,25 @@ inline Value numericCompare(const Value &a, CmpOp op, const Value &b, const Acti
     }
     else rel = rexxPaddedCompare(a.bytes, b.bytes);
     switch (op) {
-    case CmpOp::Eq: return truthValue(rel == 0);
-    case CmpOp::Ne: return truthValue(rel != 0);
-    case CmpOp::Lt: return truthValue(rel < 0);
-    case CmpOp::Le: return truthValue(rel <= 0);
-    case CmpOp::Gt: return truthValue(rel > 0);
-    default: return truthValue(rel >= 0);
+    case CmpOp::Eq: return rel == 0;
+    case CmpOp::Ne: return rel != 0;
+    case CmpOp::Lt: return rel < 0;
+    case CmpOp::Le: return rel <= 0;
+    case CmpOp::Gt: return rel > 0;
+    default: return rel >= 0;
     }
+}
+inline Value numericCompare(const Value &a, CmpOp op, const Value &b, const ActivationNumeric &ctx) {
+    // A right-hand object is never silently compared as its (empty) byte string.
+    if (a.isObject() || b.isObject()) throw std::runtime_error("comparison with an object operand requires message dispatch");
+    return truthValue(compareStrings(a, op, b, ctx));
 }
 inline Value numericCompare(const Value &a, const std::string &op, const Value &b, const ActivationNumeric &ctx) {
     return numericCompare(a, cmpOpOf(op.data(), op.size()), b, ctx);
 }
 inline Value numericWholeDivide(const Value &a, const Value &b, const ActivationNumeric &ctx) {
+    // plain whole numbers within DIGITS: the quotient truncated toward zero is a whole number of at most DIGITS digits
+    { std::int64_t p, q; if (smallInteger(a, ctx, p) && smallInteger(b, ctx, q) && q != 0) return pendingNumber(p / q, 0); }
     RexxDecimal x = parseRexxDecimal(a), y = parseRexxDecimal(b);
     checkLostDigits(x, a, ctx); checkLostDigits(y, b, ctx);
     if (y.coefficient == 0) divisionByZero();
@@ -902,6 +919,8 @@ inline Value numericWholeDivide(const Value &a, const Value &b, const Activation
 }
 // x // y : remainder of the truncated integer quotient (sign of the dividend).
 inline Value numericRemainder(const Value &a, const Value &b, const ActivationNumeric &ctx) {
+    // plain whole numbers within DIGITS: C++ % keeps the dividend's sign, as Rexx // does
+    { std::int64_t p, q; if (smallInteger(a, ctx, p) && smallInteger(b, ctx, q) && q != 0) return pendingNumber(p % q, 0); }
     RexxDecimal x = parseRexxDecimal(a), y = parseRexxDecimal(b);
     checkLostDigits(x, a, ctx); checkLostDigits(y, b, ctx);
     if (y.coefficient == 0) divisionByZero();

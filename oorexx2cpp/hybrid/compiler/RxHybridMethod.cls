@@ -143,17 +143,22 @@
 ::method useLocalSlots
   expose instructions
   use arg internalCalls
-  macros = .array~of('RX_VGET("', 'RX_VREF("', 'RX_VTAIL("', 'RX_VSET("', 'RX_VSTEM("')
+  macros = .array~of('RX_VGET("', 'RX_VREF("', 'RX_VTAIL("', 'RX_VSET("', 'RX_VSTEM("', 'RX_NGET("', 'RX_NSET("', 'RX_NPUT("', 'RX_NINV("', 'RX_NCOPY("', 'RX_NFROM("', 'RX_NCANON("', 'RX_NHOLDS("')
   slot = .directory~new
   count = 0
   rewritten = .array~new
   do line over instructions
-    if line~pos('RX_V') > 0 then line = self~slotLine(line, macros, slot)
+    if line~pos('RX_V') > 0 | line~pos('RX_N') > 0 then line = self~slotLine(line, macros, slot)
     rewritten~append(line)
   end
   count = slot~items
-  if count == 0 then return
-  declaration = 'rx::LocalSlots<' || count || '> _rxL{}; (void)_rxL;'
+  natives = .RxNative~enabled
+  if count == 0 & \natives then return
+  /* (a body without variables still clears its registers after calls: a table of one) */
+  declaration = 'rx::LocalSlots<' || max(count, 1) || '> _rxL{}; (void)_rxL;'
+  /* Native registers (RxNative) for this body: not in a method with EXPOSE (its object variables can be changed by
+     another method or activity while this one runs) */
+  if natives then declaration = declaration '[[maybe_unused]] constexpr bool _rxNOn =' word('false true', 1 + (self~exposed~items == 0)) || ';'
   instructions = .array~of(declaration)
   do line over rewritten
     instructions~append(line)
@@ -241,3 +246,4 @@
   instructions~append('return result;')
   seenStatement = .true
   hasReturn = .true
+::requires 'rules/RxNative.cls'
