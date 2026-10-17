@@ -1,1 +1,4 @@
 1 a one | 1 b two 0
+1 one first | 1 The NIL object The NIL object | 1 three third | 0
+7 3 [1:one][4:four][7:seven] [one][four][seven] 1,4,7 one,four,seven
+[one:first][two:The NIL object][three:third]
