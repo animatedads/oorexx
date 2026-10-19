@@ -90,7 +90,7 @@
           when keyword == 'BY' then do
             hasBy = .true
             setup~append('const rx::Value _rxBy' || suffix || ' = rx::sendUnary("+", ' || expr || ', vars.numeric);')
-            setup~append('const bool _rxDown' || suffix || ' = rx::isOne(rx::sendBinary(_rxBy' || suffix || ', "<", rx::Value::number("0"), vars.numeric));')
+            setup~append('const bool _rxDown' || suffix || ' = rx::isOne(rx::sendBinary(_rxBy' || suffix || ', "<", ([]() -> const rx::Value & { static const rx::Value _rxLit = rx::Value::number("0"); return _rxLit; }()), vars.numeric));')
           end
           otherwise do
             hasFor = .true
@@ -99,7 +99,7 @@
         end
       end
       if \hasBy then do
-        setup~append('const rx::Value _rxBy' || suffix || ' = rx::Value::number("1");')
+        setup~append('const rx::Value _rxBy' || suffix || ' = ([]() -> const rx::Value & { static const rx::Value _rxLit = rx::Value::number("1"); return _rxLit; }());')
         setup~append('const bool _rxDown' || suffix || ' = false;')
       end
       setup~append('(void)_rxDown' || suffix || ';')

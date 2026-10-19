@@ -1569,6 +1569,17 @@ inline bool condition(const Value &v, Truth where) {
     badLogicalValue(v, where);
 }
 inline bool condition(const Value &v) { return condition(v, Truth::Method); }
+// rx::condition(stemGet1(...), where) without copying the element
+template <typename T>
+inline bool stemCondition1(const Value *stemVar, const Variables &vars, const char *stem, const T &tail, Truth where) {
+    if (stemVar && stemVar->isObject())
+        if (StemObject *so = stemVar->object->asStem()) {
+            std::size_t i = 0;
+            bool r = false;
+            if (!so->remote && denseTailValue(tail, i) && so->withIndex(i, [&](const Value &v) { r = condition(v, where); })) return r;
+        }
+    return condition(stemGet1(stemVar, vars, stem, tail), where);
+}
 // v.bytes == "1" (a loop's TO / FOR test), without writing the characters of a number made by a comparison.
 inline bool isOne(const Value &v) {
     const std::uint32_t m = v.bytes.numCache().meta.load(std::memory_order_acquire);

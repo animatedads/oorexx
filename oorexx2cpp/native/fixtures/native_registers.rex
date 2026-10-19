@@ -32,6 +32,16 @@ k = 10; do while k > 0; k = k - 3; end; say 'while' k
 k = 0; do until k >= 7; k = k + 2; end; say 'until' k
 cnt = 0; do i = 1 to 3; do j = i to 3; cnt = cnt + i * j; end; end; say 'nested' cnt i j
 s = 0; do i = 1 to 100000; s = s + i // 3; end; say 'big' s
+q. = 1; q.2 = 0; drop q.3; do i = 1 to 2; if q.i then say 'q' i; else say 'notq' i; end
+signal on syntax name s4
+if q.3 then nop
+s4: say 'stemcond' rc
+r.5 = 'x'; signal on syntax name s5
+k = 5; if r.k then nop
+s5: say 'stemcond2' rc
+signal on syntax name s6
+k = 6; if r.k then nop
+s6: say 'stemcond3' rc
 exit
 addten: n = n + 10; return
 proc: procedure expose g; arg h; g = h * 2; h = h + 1; return

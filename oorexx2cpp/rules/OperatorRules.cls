@@ -82,6 +82,19 @@
   return .RxNative~condition(code, self~genericCondition(code, truth))
 ::method genericCondition class private
   use arg code, truth
+  /* S.tail as the whole condition: tested in place (rx::stemCondition1), no copy of the element */
+  if abbrev(code, 'rx::stemGet1(') & code~right(1) == ')' then do
+    depth = 0
+    do k = length('rx::stemGet1(') to length(code)
+      c = code~substr(k, 1)
+      if c == '(' then depth += 1
+      else if c == ')' then do
+        depth -= 1
+        if depth == 0 then leave
+      end
+    end
+    if k == length(code) then return 'rx::stemCondition1(' || code~substr(14, length(code) - 14) || ', ' || truth || ')'
+  end
   head = '([&]() -> rx::Value { '
   tail = ', vars.numeric); }())'
   marker = 'return rx::opCmp(_left, '

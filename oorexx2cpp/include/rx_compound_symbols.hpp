@@ -123,12 +123,26 @@ struct StemObject final : ObjectDispatch {
         }
         return get(std::to_string(i));
     }
-    void setIndex(std::size_t i, Value v) {
+    // f(element value) for an element by array index, without a copy, when the array or the default answers it
+    // (under the lock): true; false when the element must be looked up by name (getIndex's other cases).
+    template <typename F> bool withIndex(std::size_t i, F &&f) {
+        std::lock_guard<SpinLock> g(lock);
+        if (i < dense.size() && dense[i]) { f(*dense[i]); return true; }
+        if (tails.empty() && dropped.empty() && dflt) { f(*dflt); return true; }
+        return false;
+    }
+    // (V: Value&& moved in, or const Value& copied once, straight into the element)
+    template <typename V> void setIndex(std::size_t i, V &&v) {
         {
             std::lock_guard<SpinLock> g(lock);
-            if (i < dense.size() && dropped.empty() && tails.empty()) { dense[i] = std::move(v); return; }
+            // (placeLocked's array case, without writing the tail out: nothing dropped, no element kept by name)
+            if (!remote && dropped.empty() && tails.empty() && i < denseMax && i <= dense.size() + denseSlack) {
+                if (i >= dense.size()) dense.resize(i + 1);
+                dense[i] = std::forward<V>(v);
+                return;
+            }
         }
-        set(std::to_string(i), std::move(v));
+        set(std::to_string(i), Value(std::forward<V>(v)));
     }
     // True when the element has a value (its own or the stem default, unless DROPped).
     bool has(const std::string &tail) {
@@ -393,15 +407,16 @@ inline Value stemGet1(const Value *stemVar, const Variables &vars, const char *s
         }
     return compoundGet(vars, compoundKeyOf(stem, tail), stem);
 }
-template <typename T>
-inline void stemSet1(const Value *stemVar, Variables &vars, const char *stem, const T &tail, Value value) {
+// (V: the value moved in (Value&&), or a literal copied once into the element (const Value&))
+template <typename T, typename V>
+inline void stemSet1(const Value *stemVar, Variables &vars, const char *stem, const T &tail, V &&value) {
     std::size_t i = 0;
-    if (!denseTailValue(tail, i)) { compoundSet(vars, compoundKeyOf(stem, tail), std::move(value)); return; }
+    if (!denseTailValue(tail, i)) { compoundSet(vars, compoundKeyOf(stem, tail), Value(std::forward<V>(value))); return; }
     StemObject *so = stemVar && stemVar->isObject() ? stemVar->object->asStem() : nullptr;
     std::optional<Value> bound;
     if (!so) { bound = stemArg(vars, stem); so = bound->object->asStem(); }
-    if (so->remote) { compoundSet(vars, compoundKeyOf(stem, tail), std::move(value)); return; }
-    so->setIndex(i, std::move(value));
+    if (so->remote) { compoundSet(vars, compoundKeyOf(stem, tail), Value(std::forward<V>(value))); return; }
+    so->setIndex(i, std::forward<V>(value));
 }
 // DROP symbol. A stem: the variable gets a new empty stem (no default, no elements; the stem variable still exists, as
 // interpreted). A compound: the element is dropped, and stays uninitialized under a stem default.

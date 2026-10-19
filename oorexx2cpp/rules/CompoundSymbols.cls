@@ -52,6 +52,9 @@
   /* Rexx evaluates the expression before substituting the tails. */
   if tail \== '' then do
     stem = .RxQuote~cpp(left(name, pos('.', name)))
+    /* a literal (nothing to evaluate first) is copied once, into the element */
+    if abbrev(expression, '([]() -> const rx::Value & { static const rx::Value _rxLit') then
+      return 'rx::stemSet1(RX_VSTEM(' || stem || '), vars, ' || stem || ', ' || tail || ', ' || expression || ');'
     return '{ rx::Value _rxcv = ' || expression || '; rx::stemSet1(RX_VSTEM(' || stem || '), vars, ' || stem || ', ' || tail || ', std::move(_rxcv)); }'
   end
   key = self~derivedName(name)
