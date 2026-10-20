@@ -385,7 +385,16 @@ inline std::optional<std::optional<Value>> (*&trappedSendHook())(void *, const s
     return hook;
 }
 // How compiled code is about to call a compiled package routine (SUBROUTINE / FUNCTION), for its PARSE SOURCE.
-inline std::string &pendingCallType() { static thread_local std::string type; return type; }
+// A thread's activation state in one thread-local object: one lookup (a call into the TLS resolver, in a shared library)
+// where an activation saves and sets several of them.
+struct ActivationScope;
+struct ThreadState {
+    std::string pendingCallType;
+    std::string trace = "N", address = "sh", alternate = "sh";
+    ActivationScope *scope = nullptr;
+};
+inline ThreadState &threadState() { static thread_local ThreadState t; return t; }
+inline std::string &pendingCallType() { return threadState().pendingCallType; }
 // The clock of an activation (RexxActivation::getTime / getElapsed): one time stamp per clause, read at the first
 // TIME / DATE of the clause; the elapsed-time origin of TIME('E') / TIME('R'). Microseconds since 0001-01-01.
 struct ClauseClock {
@@ -418,15 +427,15 @@ struct ActivationScope {
     bool seeded = false;
     std::uint64_t seed = 0;
     ActivationScope *saved;
-    static ActivationScope *&current() { static thread_local ActivationScope *scope = nullptr; return scope; }
-    explicit ActivationScope(Kind k = Method) : kind(k), callType(std::exchange(pendingCallType(), std::string())),
-                                                 saved(current()) {
-        current() = this;
-        savedTrace = std::exchange(traceSetting(), std::string("N"));
+    static ActivationScope *&current() { return threadState().scope; }
+    explicit ActivationScope(Kind k = Method) : ActivationScope(k, threadState()) {}
+    ActivationScope(Kind k, ThreadState &t) : kind(k), callType(std::exchange(t.pendingCallType, std::string())), saved(t.scope) {
+        t.scope = this;
+        savedTrace = std::exchange(t.trace, std::string("N"));
         savedNovalue = std::exchange(novalueArmed, nullptr);
         savedLostDigits = std::exchange(lostDigitsArmed, nullptr);
-        savedAddress = std::exchange(addressEnvironment(), std::string("sh"));
-        savedAlternate = std::exchange(alternateEnvironment(), std::string("sh"));
+        savedAddress = std::exchange(t.address, std::string("sh"));
+        savedAlternate = std::exchange(t.alternate, std::string("sh"));
     }
     // A new clause begins (compiled before every statement that calls TIME or DATE): the next one reads the clock again.
     static void clauseBoundary() { if (ActivationScope *s = current()) s->clockState.valid = false; else outsideClock().valid = false; }
@@ -440,8 +449,9 @@ struct ActivationScope {
         return s->callType;
     }
     ~ActivationScope() {
-        current() = saved; traceSetting() = std::move(savedTrace); novalueArmed = savedNovalue; lostDigitsArmed = savedLostDigits;
-        addressEnvironment() = std::move(savedAddress); alternateEnvironment() = std::move(savedAlternate);
+        ThreadState &t = threadState();
+        t.scope = saved; t.trace = std::move(savedTrace); novalueArmed = savedNovalue; lostDigitsArmed = savedLostDigits;
+        t.address = std::move(savedAddress); t.alternate = std::move(savedAlternate);
     }
     ActivationScope(const ActivationScope &) = delete;
     ActivationScope &operator=(const ActivationScope &) = delete;
@@ -485,12 +495,13 @@ using StreamScope = ActivationScope;
 struct InternalCallClock {
     ClauseClock saved;
     std::string savedTrace, savedAddress, savedAlternate;
-    InternalCallClock() : saved(ActivationScope::clock()), savedTrace(traceSetting()), savedAddress(addressEnvironment()),
-                          savedAlternate(alternateEnvironment()) { ActivationScope::clock().valid = false; }
+    InternalCallClock() : InternalCallClock(threadState()) {}
+    explicit InternalCallClock(ThreadState &t) : saved(ActivationScope::clock()), savedTrace(t.trace), savedAddress(t.address),
+                                                 savedAlternate(t.alternate) { ActivationScope::clock().valid = false; }
     ~InternalCallClock() {
+        ThreadState &t = threadState();
         ActivationScope::clock() = saved;
-        traceSetting() = std::move(savedTrace); addressEnvironment() = std::move(savedAddress);
-        alternateEnvironment() = std::move(savedAlternate);
+        t.trace = std::move(savedTrace); t.address = std::move(savedAddress); t.alternate = std::move(savedAlternate);
     }
     InternalCallClock(const InternalCallClock &) = delete;
     InternalCallClock &operator=(const InternalCallClock &) = delete;
@@ -812,8 +823,8 @@ inline const Value *lookup(const Variables &vars, const std::string &name) {
 }
 // TRACE / ADDRESS state (per thread). A compiled program has no trace output: settings that stay quiet are accepted,
 // settings that would print trace lines are refused loudly instead of silently ignored.
-inline std::string &traceSetting() { static thread_local std::string s = "N"; return s; }
-inline std::string &addressEnvironment() { static thread_local std::string s = "sh"; return s; }
+inline std::string &traceSetting() { return threadState().trace; }
+inline std::string &addressEnvironment() { return threadState().address; }
 [[noreturn]] inline void raiseTraceDebug();
 inline std::string traceSet(const Value &v) {
     const std::string old = traceSetting();
@@ -837,7 +848,7 @@ inline std::string traceSet(const Value &v) {
     return old;
 }
 // ADDRESS env (no command) makes env current and the previous one the alternate; a bare ADDRESS swaps them.
-inline std::string &alternateEnvironment() { static thread_local std::string s = "sh"; return s; }
+inline std::string &alternateEnvironment() { return threadState().alternate; }
 inline Value requestString(const Value &v);
 [[noreturn]] inline void raiseAddressName(const std::string &name);
 inline std::string addressSet(const Value &in) {

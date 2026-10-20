@@ -75,8 +75,9 @@
       /* .STEM~new gives a native StemObject; it becomes an interpreter stem only if it crosses to the hosted tier. */
       if t~text == 'STEM' then return 'rx::stemClass()'
       /* .TRUE/.FALSE are the strings 1 and 0 */
-      if t~text == 'TRUE' then return 'rx::Value::string("1")'
-      if t~text == 'FALSE' then return 'rx::Value::string("0")'
+      /* (made once, as a literal: and a whole number 1 / 0 to the native registers, RxNative) */
+      if t~text == 'TRUE' then return .RxNative~literal('1', '([]() -> const rx::Value & { static const rx::Value _rxLit = rx::Value::number("1"); return _rxLit; }())')
+      if t~text == 'FALSE' then return .RxNative~literal('0', '([]() -> const rx::Value & { static const rx::Value _rxLit = rx::Value::number("0"); return _rxLit; }())')
       /* Environment symbols that are not classes (or need native support) stay fail-closed. */
       if wordpos(t~text, 'ENVIRONMENT LOCAL METHODS RS STDOUT STDERR STDIN STDQUE TRACEOBJECT ERROR OUTPUT INPUT DEBUGINPUT') = 0 & ctx~hostedEnabled then do
         ctx~markHosted('.' || t~text)

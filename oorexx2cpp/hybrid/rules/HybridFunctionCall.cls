@@ -229,7 +229,7 @@
 -- rx::QuickBif of a built-in that rx::bifDirect takes, else ''
 ::method directCode private
   use arg name
-  codes = 'LENGTH Length LASTPOS Lastpos LEFT Left POS Pos RIGHT Right SUBSTR Substr WORD Word WORDS Words'
+  codes = 'LENGTH Length LASTPOS Lastpos LEFT Left POS Pos RIGHT Right SUBSTR Substr WORD Word WORDS Words ABS Abs'
   p = wordpos(name, codes)
   if p == 0 | p // 2 == 0 then return ''
   return word(codes, p + 1)

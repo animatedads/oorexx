@@ -15,7 +15,10 @@
   s = ctx~stream
   tag = ctx~label
   current = '_rxTarget' || tag
-  receiver = .RxCompoundSymbols~load(s~next~text)
+  name = s~next~text
+  /* SELF is the receiving object (USE ARG self~category, ...), not a variable (ExprAtom reads it so too) */
+  if name == 'SELF' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' then receiver = 'rx::selfObject()'
+  else receiver = .RxCompoundSymbols~load(name)
   steps = .array~new            /* each: selector, then the C++ argument expressions */
   do while s~is('~') | s~is('[')
     if s~accept('[') then do

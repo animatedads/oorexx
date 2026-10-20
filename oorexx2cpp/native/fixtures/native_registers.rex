@@ -42,7 +42,36 @@ s5: say 'stemcond2' rc
 signal on syntax name s6
 k = 6; if r.k then nop
 s6: say 'stemcond3' rc
+c = .counter~new; say 'expose' c~run(5) c~total
+u = .loose~new; say 'unguarded' u~run(4)
+say 'abs' abs(-7) abs('05') abs(-0) abs(2.5) abs(-999999999) .true + .false (.true & .false)
 exit
 addten: n = n + 10; return
 proc: procedure expose g; arg h; g = h * 2; h = h + 1; return
 inc: e = e + 1; return 1
+::class counter
+::method init
+  expose total
+  total = 0
+::method run
+  expose total step
+  use arg n
+  step = 2
+  do i = 1 to n
+    total = total + step
+    if i = 3 then self~bump     -- another method of this object changes TOTAL and STEP while RUN runs
+    total = total + 1
+  end
+  return total step
+::method bump
+  expose total step
+  total = total * 10; step = 100
+::method total
+  expose total
+  return total
+::class loose
+::method run unguarded
+  expose k
+  k = 0
+  do i = 1 to arg(1); k = k + i; end
+  return k

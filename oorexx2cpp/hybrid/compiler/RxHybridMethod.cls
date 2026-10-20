@@ -157,9 +157,11 @@
   if count == 0 & \natives & \internalCalls then return
   /* (a body without variables still clears its registers after calls: a table of one) */
   declaration = 'rx::LocalSlots<' || max(count, 1) || '> _rxL{}; (void)_rxL;'
-  /* Native registers (RxNative) for this body: not in a method with EXPOSE (its object variables can be changed by
-     another method or activity while this one runs) */
-  if natives then declaration = declaration '[[maybe_unused]] constexpr bool _rxNOn =' word('false true', 1 + (self~exposed~items == 0)) || ';'
+  /* Native registers (RxNative) for this body: a method with EXPOSE has them only when no other activity can change
+     its object variables while it runs */
+  /* (EXPOSE: only in a class where no other activity can run one of its methods meanwhile: RxHybridCompiler~parse) */
+  nativeOn = self~exposed~items == 0 | .local['RX2CPP.CLASSCONCURRENT'] == 0
+  if natives then declaration = declaration '[[maybe_unused]] constexpr bool _rxNOn =' word('false true', 1 + nativeOn) || ';'
   instructions = .array~of(declaration)
   do line over rewritten
     instructions~append(line)

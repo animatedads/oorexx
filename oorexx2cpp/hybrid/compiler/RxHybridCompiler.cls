@@ -385,6 +385,20 @@
   s = stream
   s~skipSeparators
   className = .RxHybridClassDirective~new~parse(self)
+  /* Can another activity change this class's object variables while one of its methods runs? Only through an UNGUARDED
+     method or after GUARD OFF: without either, every method of the class holds the object's lock for its scope, so a
+     method's EXPOSEd variables change only by what it runs itself (native registers, RxHybridMethod~useLocalSlots). */
+  concurrent = 0
+  n = 0
+  do while s~lookAheadKind(n) \= 'EOF'
+    if s~lookAheadKind(n) == 'IDENT' then do
+      if s~lookAheadText(n) == 'UNGUARDED' then concurrent = 1
+      if s~lookAheadText(n) == 'GUARD' & s~lookAheadText(n + 1) == 'OFF' then concurrent = 1
+    end
+    if concurrent then leave
+    n += 1
+  end
+  .local['RX2CPP.CLASSCONCURRENT'] = concurrent
   /* Synthetic class is an implementation detail: its bodies are package ROUTINEs. */
   if className \= 'RX2CPP_ROUTINE_IMPL' then scopes~setScope('::class ' || className, 'CLASS')
   s~skipSeparators

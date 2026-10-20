@@ -14,6 +14,7 @@ o = .child~new
 say o~hello (o < 2) (o \< 2)
 o~fill; say o~show
 say o~opts.[1] o~opts.[2]
+t = .tagged~new('cat', 3); say t~category t~line     -- USE ARG with SELF~attribute targets
 exit
 ::class child subclass parent                      -- a parent defined further on
 ::method hello; return 'child of' self~base
@@ -37,3 +38,8 @@ exit
 ::method base; return 'parent'
 ::method "<"; return 'lt' arg(1)
 ::method "\<"; return 'nlt' arg(1)
+::class tagged
+::attribute category
+::attribute line
+::method init
+  use strict arg self~category, self~line

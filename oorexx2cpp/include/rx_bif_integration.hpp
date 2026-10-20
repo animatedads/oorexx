@@ -354,7 +354,7 @@ inline bool quickBlanksOnly(const std::string &s) {
     return true;
 }
 // The commonest built-ins by a code fixed when compiled (rx::bifDirect) or found from the name (quickBif).
-enum class QuickBif { None, Length, Lastpos, Left, Pos, Right, Substr, Word, Words };
+enum class QuickBif { None, Length, Lastpos, Left, Pos, Right, Substr, Word, Words, Abs };
 inline QuickBif quickBifOf(const std::string &name) {
     if (name.empty()) return QuickBif::None;
     switch (name[0]) {
@@ -745,6 +745,15 @@ inline Value bifDirect(BifRuntime &bif, Variables &vars, const BifName &n, Quick
     const Value *p[sizeof...(A)] = {&args...};
     bool plain = true;
     for (const Value *x : p) if (x->isObject()) plain = false;
+    // ABS of a plain whole number (NumCache integer: at most 9 digits) under DIGITS >= 9: its magnitude, as numericBif
+    // formats it (the digits, no sign)
+    if (which == QuickBif::Abs) {
+        if (plain && sizeof...(A) == 1 && vars.numeric.digits >= 9 && (numMeta(*p[0]) & kNumInteger)) {
+            const std::int64_t c = p[0]->bytes.numCache().coef.load(std::memory_order_relaxed);
+            return intResult(c < 0 ? -c : c);
+        }
+        plain = false;   // (the full route: numericBif)
+    }
     if (plain) { if (auto r = quickBif(which, p, sizeof...(A))) return std::move(*r); }
     std::vector<BifSlot> slots;
     slots.reserve(sizeof...(A));
