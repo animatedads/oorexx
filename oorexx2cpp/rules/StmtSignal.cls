@@ -15,7 +15,7 @@
     else s~fail('SIGNAL ON supports only SYNTAX and NOVALUE in this subset')
     label = condition
     if s~accept('NAME') then do
-      if s~peek~kind \= 'IDENT' then s~fail('SIGNAL ON ... NAME requires a label')
+      if s~peek~kind \= 'IDENT' & s~peek~kind \= 'STRING' then s~fail('SIGNAL ON ... NAME requires a label')
       label = s~next~text
     end
     if \ctx~hasRoutine(label) then s~fail('SIGNAL ON ' || condition || ' handler label not found: ' || label)

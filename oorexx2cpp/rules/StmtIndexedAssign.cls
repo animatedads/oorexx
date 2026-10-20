@@ -17,7 +17,7 @@
   end
   s~expect(']')
   s~expect('=')
-  rhs = ctx~logicalExpr~parse(ctx)
+  rhs = .RxExprList~parse(ctx)   /* (a comma list is an Array, as in any assignment) */
   tag = ctx~label
   ctx~line(depth, '{')
   ctx~line(depth + 1, 'const rx::Value _ixObj' || tag || ' = ' || .RxCompoundSymbols~load(name) || ';')
@@ -32,3 +32,4 @@
   s~separator
 ::requires 'core/RxQuote.cls'
 ::requires 'rules/CompoundSymbols.cls'
+::requires 'rules/ExprList.cls'

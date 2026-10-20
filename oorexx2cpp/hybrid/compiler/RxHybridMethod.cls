@@ -153,7 +153,8 @@
   end
   count = slot~items
   natives = .RxNative~enabled
-  if count == 0 & \natives then return
+  /* (an internal routine call keeps the caller's slots: the table is declared when there is one, even empty) */
+  if count == 0 & \natives & \internalCalls then return
   /* (a body without variables still clears its registers after calls: a table of one) */
   declaration = 'rx::LocalSlots<' || max(count, 1) || '> _rxL{}; (void)_rxL;'
   /* Native registers (RxNative) for this body: not in a method with EXPOSE (its object variables can be changed by

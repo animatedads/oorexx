@@ -111,10 +111,13 @@ struct PendingCondition : std::runtime_error {
 struct MethodInfo { const char *definingClass; bool isPublic; bool noResult; };
 /* Selector and class names are case-insensitive in ooRexx; the tables hold the upper-case spelling and are searched without
    making an upper-case copy of the incoming name. */
+// (ASCII upper case, inline: what std::toupper does to a symbol's characters in the C locale, without a library call
+// per character on every message send)
+static inline unsigned char ciUpper(unsigned char c) { return (c >= 'a' && c <= 'z') ? static_cast<unsigned char>(c - 32) : c; }
 struct CiHash {
     std::size_t operator()(const std::string &s) const {
         std::size_t h = 1469598103934665603ULL;
-        for (unsigned char c : s) { h ^= (unsigned char)std::toupper(c); h *= 1099511628211ULL; }
+        for (unsigned char c : s) { h ^= ciUpper(c); h *= 1099511628211ULL; }
         return h;
     }
 };
@@ -122,7 +125,7 @@ struct CiEq {
     bool operator()(const std::string &a, const std::string &b) const {
         if (a.size() != b.size()) return false;
         for (std::size_t i = 0; i < a.size(); i++)
-            if (std::toupper((unsigned char)a[i]) != std::toupper((unsigned char)b[i])) return false;
+            if (ciUpper((unsigned char)a[i]) != ciUpper((unsigned char)b[i])) return false;
         return true;
     }
 };
@@ -130,7 +133,7 @@ typedef std::unordered_map<std::string, MethodInfo, CiHash, CiEq> MethodTable;
 typedef std::unordered_map<std::string, MethodTable, CiHash, CiEq> ClassMethodTable;
 %DIRECT_TABLES%
 [[maybe_unused]] static std::string upperOf(std::string s) {
-    for (char &c : s) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    for (char &c : s) c = static_cast<char>(ciUpper(static_cast<unsigned char>(c)));
     return s;
 }
 /* Dual representation: one native instance = one InstanceState. The state owns the compiled per-class scopes. It is

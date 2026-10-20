@@ -952,7 +952,20 @@ struct VarSlot {
 // those of get()/set() (EXPOSE, PROCEDURE pools, DROP).
 // nr / nk: the native registers (RxNative.cls): nk[k] says nr[k] is the whole number the variable of slot k holds now
 // (1; 2: and its characters are exactly that number's digits, NumCache canonical).
-template <std::size_t K> struct LocalSlots { VarSlot s[K]; std::int64_t nr[K]; std::uint8_t nk[K]; };
+template <std::size_t K> struct LocalSlots {
+    VarSlot s[K]; std::int64_t nr[K]; std::uint8_t nk[K];
+    // An internal routine runs the same body with the same table: its pool (a PROCEDURE pool, gone when it returns)
+    // replaces the caller's cached variables. The caller keeps its slots across the call (SlotsKept) when the table is
+    // small enough to copy cheaply; a kept slot is still checked against the pool and the erase generation when used.
+    static constexpr bool keepAcrossCalls = K <= 64;
+};
+template <std::size_t K, bool Keep = LocalSlots<K>::keepAcrossCalls> struct SlotsKept {
+    LocalSlots<K> &table; VarSlot saved[K];
+    explicit SlotsKept(LocalSlots<K> &t) : table(t) { std::memcpy(static_cast<void *>(saved), static_cast<const void *>(t.s), sizeof saved); }
+    ~SlotsKept() { std::memcpy(static_cast<void *>(table.s), static_cast<const void *>(saved), sizeof saved); }
+};
+template <std::size_t K> struct SlotsKept<K, false> { explicit SlotsKept(LocalSlots<K> &) {} };
+template <std::size_t K> inline SlotsKept<K> keepSlots(LocalSlots<K> &t) { return SlotsKept<K>(t); }
 // A stem variable's own entry ("S."), or null: what compiled S.tail checks for its stem object (rx::stemGet1).
 #define RX_VSTEM(N) ([&]() -> const ::rx::Value * { static thread_local ::rx::VarSlot _rxSlot; return _rxSlot.find(vars, N); }())
 #define RX_VSTEMK(K, N) (_rxL.s[K].find(vars, N))

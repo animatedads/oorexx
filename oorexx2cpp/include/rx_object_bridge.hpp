@@ -882,7 +882,13 @@ struct MethodTraps {
     bool lostDigitsOn = false;                 // SIGNAL ON LOSTDIGITS or ANY: native arithmetic raises LOSTDIGITS
     const bool *savedLostDigits = nullptr;
     int label[SLOTS] = {};
-    std::string userName[USERS];               // "USER name" of slot KINDS + i
+    // The names of USER conditions and of missing SIGNAL ON labels, kept apart and made only when one is set (an
+    // activation is entered on every internal routine call: its traps cost nothing until used).
+    struct Names { std::string user[USERS]; std::string missing[SLOTS]; };
+    std::unique_ptr<Names> names_;
+    Names &names() { if (!names_) names_ = std::make_unique<Names>(); return *names_; }
+    const std::string &userName(int u) const { static const std::string none; return names_ ? names_->user[u] : none; }
+    const std::string &missing(int k) const { static const std::string none; return names_ ? names_->missing[k] : none; }
     int users = 0;
     bool has = false;                          // a condition was trapped in this activation (or its caller's, inherited)
     std::string name;
@@ -903,8 +909,7 @@ struct MethodTraps {
             internal = true;
             std::memcpy(on, from->on, sizeof on); std::memcpy(callMode, from->callMode, sizeof callMode);
             std::memcpy(delayed, from->delayed, sizeof delayed); std::memcpy(label, from->label, sizeof label);
-            for (int k = 0; k < SLOTS; ++k) if (!from->missing[k].empty()) missing[k] = from->missing[k];
-            for (int u = 0; u < from->users; ++u) userName[u] = from->userName[u];   // (only the slots in use)
+            if (from->names_) names_ = std::make_unique<Names>(*from->names_);
             users = from->users; has = from->has; name = from->name; instruction = from->instruction; object = from->object;
         }
         Handing &h = handing();
@@ -968,7 +973,7 @@ struct MethodTraps {
                                             "HALT", "NOMETHOD"};
         const MethodTraps &m = *a->traps;
         for (int k = ERROR; k < KINDS; ++k) if (m.on[k]) names.emplace_back(kinds[k], m.callMode[k]);
-        for (int u = 0; u < m.users; ++u) if (m.on[KINDS + u]) names.emplace_back(m.userName[u], m.callMode[KINDS + u]);
+        for (int u = 0; u < m.users; ++u) if (m.on[KINDS + u]) names.emplace_back(m.userName(u), m.callMode[KINDS + u]);
         return names;
     }
     static int kindOf(const std::string &c) {
@@ -988,17 +993,17 @@ struct MethodTraps {
     int slotOf(const std::string &c, bool create) {
         const int k = kindOf(c);
         if (k >= 0) return k;
-        for (int u = 0; u < users; ++u) if (userName[u] == c) return KINDS + u;
+        for (int u = 0; u < users; ++u) if (userName(u) == c) return KINDS + u;
         if (!create) return -1;
         if (users == USERS) throw std::runtime_error("too many USER condition traps in one activation");
-        userName[users] = c;
+        names().user[users] = c;
         return KINDS + users++;
     }
     int find(const std::string &c) const { return const_cast<MethodTraps *>(this)->slotOf(c, false); }
-    std::string missing[SLOTS];                // SIGNAL ON c NAME label with no such label: 16.1 when c is raised
-    void set(const char *c, int target) { const int k = slotOf(c, true); on[k] = true; callMode[k] = false; label[k] = target; missing[k].clear(); syncNovalue(); }
-    void setMissing(const char *c, const std::string &name) { const int k = slotOf(c, true); on[k] = true; callMode[k] = false; label[k] = -1; missing[k] = name; syncNovalue(); }
-    void setCall(const char *c, int target) { const int k = slotOf(c, true); on[k] = true; callMode[k] = true; delayed[k] = false; label[k] = target; missing[k].clear(); syncNovalue(); }
+    // (names_->missing[k]: SIGNAL ON c NAME label with no such label: 16.1 when c is raised)
+    void set(const char *c, int target) { const int k = slotOf(c, true); on[k] = true; callMode[k] = false; label[k] = target; if (names_) names_->missing[k].clear(); syncNovalue(); }
+    void setMissing(const char *c, const std::string &name) { const int k = slotOf(c, true); on[k] = true; callMode[k] = false; label[k] = -1; names().missing[k] = name; syncNovalue(); }
+    void setCall(const char *c, int target) { const int k = slotOf(c, true); on[k] = true; callMode[k] = true; delayed[k] = false; label[k] = target; if (names_) names_->missing[k].clear(); syncNovalue(); }
     void clear(const char *c) { const int k = slotOf(c, true); on[k] = false; callMode[k] = false; syncNovalue(); }
     // An exception reached the activation: the label to continue at (the trap is turned off), or -1 to let it go on.
     int fire(Variables &vars, std::size_t line, std::exception_ptr e) {
@@ -1022,8 +1027,8 @@ struct MethodTraps {
         if (rx::eqLit(name, "SYNTAX") || rx::eqLit(name, "ERROR") || rx::eqLit(name, "FAILURE")) rx::set(vars, "RC", conditionEntry(object, "RC"));
         rx::set(vars, "SIGL", Value::string(std::to_string(line)));
         if (label[use] < 0) {
-            SyntaxCondition e("16.1", "Label \"" + missing[use] + "\" not found", false);
-            e.substitutions.push_back(Value::string(missing[use]));
+            SyntaxCondition e("16.1", "Label \"" + missing(use) + "\" not found", false);
+            e.substitutions.push_back(Value::string(missing(use)));
             throw e;
         }
         return label[use];

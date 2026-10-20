@@ -8,7 +8,10 @@
   s~expect('::'); s~expect('ATTRIBUTE')
   if s~peek~kind \= 'IDENT' then s~fail('ATTRIBUTE requires a simple name')
   name = s~next~text
-  if pos('.', name) > 0 then s~fail('compound ATTRIBUTE names are unsupported')
+  /* a stem (::ATTRIBUTE options. GET): its getter answers the object's stem; a compound name or a stem setter is not
+     supported */
+  isStem = pos('.', name) == length(name)
+  if pos('.', name) > 0 & \isStem then s~fail('compound ATTRIBUTE names are unsupported')
   mode = 'BOTH'
   opts = .RxHybridMethodOptions~new
   do while s~peek~kind == 'IDENT' & wordpos(s~peek~text, 'GET SET PUBLIC PRIVATE PACKAGE PROTECTED UNPROTECTED GUARDED UNGUARDED CLASS ABSTRACT') > 0
@@ -20,6 +23,7 @@
     else opts~add(s, word)
   end
   s~separator
+  if isStem & mode \== 'GET' then s~fail('a stem ATTRIBUTE is supported with GET only')
   /* ::ATTRIBUTE x GET|SET followed by code: that code is the accessor method's body (compiled as a method). */
   s~skipSeparators
   if s~peek~kind \= 'EOF' & \s~is('::') then do

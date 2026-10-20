@@ -21,8 +21,9 @@ check() {   # name program-path [REXX_PATH]
 check inline "$OUT/src/inline_routine.rex"
 check prologs "$OUT/src/prologs.rex" "$OUT/src/lib"
 check neighbours "$OUT/src/side/neighbours.rex"
+check constructs "$OUT/src/constructs.rex"
 # a ::REQUIRES that cannot be found: built, with the warning
 printf 'say 1\n::requires "nowhere.cls"\n' > "$OUT/missing.rex"
 "$ROOT/native/compile_program.sh" "$OUT/missing.rex" "$OUT/missing" > "$OUT/missing.build" 2>&1 || true
 grep -q 'warning: not compiled, loaded by the interpreter at run time: ::requires "nowhere.cls"' "$OUT/missing.build" || { echo "FAIL no warning for a package left interpreted"; cat "$OUT/missing.build"; exit 1; }
-echo "PASS program packages: inline routine body, prologs in load order, neighbouring packages, warning ($(cat "$OUT"/*.expected | wc -l) lines identical)"
+echo "PASS program packages: inline routine body, prologs in load order, neighbouring packages, warning, parser constructs ($(cat "$OUT"/*.expected | wc -l) lines identical)"

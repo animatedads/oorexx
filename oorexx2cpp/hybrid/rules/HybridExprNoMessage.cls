@@ -25,9 +25,10 @@
   if \ctx~allowInheritance then s~fail('SELF message sends require the native package compiler')
   s~next
   s~expect('~')
-  if s~peek~kind \= 'IDENT' then s~fail('expected literal method selector after SELF~')
+  if s~peek~kind \= 'IDENT' & s~peek~kind \= 'STRING' then s~fail('expected literal method selector after SELF~')
   selectorToken = s~next
   selector = selectorToken~text
+  if selectorToken~kind == 'STRING' then selector = selector~upper   /* self~"<", self~"name": a method name */
   super = .false; anyOmitted = .false
   if s~accept(':') then do
     if s~peek~kind \= 'IDENT' | s~peek~text \== 'SUPER' then s~fail('only :SUPER message scopes are supported')

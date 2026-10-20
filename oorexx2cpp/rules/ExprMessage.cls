@@ -49,7 +49,8 @@
         s~next
         selector = '[]='
         indexes = args
-        args = .array~of(ctx~logicalExpr~parse(ctx))
+        /* (as any assignment: a comma list is an Array, a[i] = x, y) */
+        args = .array~of(.RxExprList~parse(ctx))
         do ix over indexes; args~append(ix); end
         attrAssign = .true
       end
@@ -88,7 +89,7 @@
       if asInstruction & s~is('=') then do
         s~next
         selector = selector || '='
-        args~append(ctx~logicalExpr~parse(ctx))
+        args~append(.RxExprList~parse(ctx))
         attrAssign = .true
       end
       /* receiver~attribute += value: attribute=(receiver~attribute op value), the receiver evaluated once. */
@@ -167,3 +168,4 @@
 ::requires 'core/RxQuote.cls'
 ::requires 'rules/CompoundAssignmentOps.cls'
 ::requires 'rules/RxNative.cls'
+::requires 'rules/ExprList.cls'

@@ -145,7 +145,43 @@
       end
     end
   end
+  /* The classes are compiled parents first: a ::CLASS may name a SUBCLASS / MIXINCLASS parent or an INHERIT mixin that
+     the package defines further on, as the interpreter allows (it installs a package's classes in dependency order).
+     Classes stay in source order otherwise. */
+  classIndex = .directory~new
   do i = 1 to positions~items
+    classIndex[self~directiveAt(directives, positions[i], 'CLASS')~name] = i
+  end
+  classOrder = .array~new
+  placed = .set~new
+  do until \moreReady
+    moreReady = .false
+    do i = 1 to positions~items
+      if placed~hasIndex(i) then iterate
+      entry = self~directiveAt(directives, positions[i], 'CLASS')
+      ready = .true
+      do k = 1 to entry~words~items
+        w = entry~words[k]
+        needs = .array~new
+        if wordpos(w, 'SUBCLASS MIXINCLASS') > 0 & k < entry~words~items then needs~append(entry~words[k+1])
+        if w == 'INHERIT' then do m = k + 1 to entry~words~items
+          needs~append(entry~words[m])
+        end
+        do parentName over needs
+          if classIndex~hasIndex(parentName) then if \placed~hasIndex(classIndex[parentName]) then ready = .false
+        end
+      end
+      if ready then do
+        classOrder~append(i)
+        placed~put(i)
+        moreReady = .true
+      end
+    end
+  end
+  do i = 1 to positions~items      /* (a cycle: left in source order, rejected below as before) */
+    if \placed~hasIndex(i) then classOrder~append(i)
+  end
+  do i over classOrder
     start = positions[i]
     if i < positions~items then finish = positions[i+1] - 1
     else finish = lines~items

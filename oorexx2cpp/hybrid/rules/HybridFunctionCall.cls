@@ -108,11 +108,13 @@
   offset = 0
   if ctx~hasMethod('LINEOFFSET') then offset = ctx~lineOffset
   code = '([&]() -> rx::Value { std::vector<std::optional<rx::Value>> _rxIa; '
+  if args~items > 0 then code = code || '_rxIa.reserve(' || args~items || '); '
   do argExpr over args
     if argExpr == 'RX2CPP_OMITTED' then code = code || '_rxIa.emplace_back(std::nullopt); '
     else code = code || '_rxIa.emplace_back(' || argExpr || '); '
   end
-  code = code || 'rx::set(vars, "SIGL", rx::Value::string("' || (line + offset) || '")); '
+  /* SIGL: the line of the call (a constant: made once; set through the variable's slot) */
+  code = code || 'RX_VSET("SIGL", ([]() -> const rx::Value & { static const rx::Value _rxLit = rx::Value::string("' || (line + offset) || '"); return _rxLit; }())); '
   code = code || 'const rx::ActivationNumeric _rxSavedNumeric = vars.numeric; '
   target = 'vars'
   if info~procedure then do
@@ -121,7 +123,8 @@
       if names \== '' then names = names || ', '
       names = names || .RxQuote~cpp(n)
     end
-    code = code || 'rx::Variables _rxProcVars(vars, std::vector<std::string>{' || names || '}); '
+    /* (the names as literals: the pool keeps pointers to them, no allocation per call) */
+    code = code || 'rx::Variables _rxProcVars(vars, std::initializer_list<const char *>{' || names || '}); '
     target = '_rxProcVars'
   end
   /* the routine starts with this activation's trap settings and condition (MethodTraps::inheritNext); a RAISE ... RETURN
@@ -130,7 +133,8 @@
   if value('RX2CPP_HOST_API', , 'ENVIRONMENT') \== '' then
     call = '[&]() -> rx::Value { try { return ' || call || '; } catch (const rx::RaiseToCaller &_rxR) { if (_rxR.exitForm || _rxR.delivered) throw; ' || -
            'rx::noResultPending() = false; auto _rxV = rx::raisedInCaller(_rxR); return _rxV ? *_rxV : rx::noResult(); } }()'
-  code = code || 'rx::noResultPending() = false; rx::InternalCallClock _rxClock; rx::MethodTraps::inheritNext() = &_rxTrap; rx::Value _rxIr = ' || call || '; '
+  /* (the caller's variable slots kept across the call: rx::SlotsKept) */
+  code = code || 'rx::noResultPending() = false; rx::InternalCallClock _rxClock; const auto _rxKept = rx::keepSlots(_rxL); (void)_rxKept; rx::MethodTraps::inheritNext() = &_rxTrap; rx::Value _rxIr = ' || call || '; '
   code = code || 'const bool _rxNone = std::exchange(rx::noResultPending(), false); vars.numeric = _rxSavedNumeric; '
   if mode == 'FUNCTION' then do
     code = code || 'if (_rxNone) { rx::SyntaxCondition _rxNo("44.1", "No data returned from function", false); '

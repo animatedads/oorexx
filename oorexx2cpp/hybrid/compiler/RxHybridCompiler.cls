@@ -141,7 +141,9 @@
   if mode == 'BOTH' | mode == 'GET' then do
     getter = .RxHybridMethod~new(name)
     if arg(3, 'E') then getter~setOptions(options)
-    getter~returnValue('rx::get(fields_, ' || .RxQuote~cpp(name) || ')')
+    /* a stem attribute (name.) answers the stem object of that object variable, as the interpreter's getter does */
+    if name~right(1) == '.' & pos('.', name) == length(name) then getter~returnValue('rx::stemArg(fields_, ' || .RxQuote~cpp(name) || ')')
+    else getter~returnValue('rx::get(fields_, ' || .RxQuote~cpp(name) || ')')
     target~append(getter)
   end
   if mode == 'BOTH' | mode == 'SET' then do
@@ -464,7 +466,7 @@
       current~addRaw('_rxBody = [&](int _rxEntry, const std::vector<std::optional<rx::Value>> &arguments, rx::Variables &vars, bool _rxInternal) -> rx::Value {')
       current~addRaw('(void)_rxInternal; (void)arguments;')
       /* PARSE ARG / ARG read this activation's own arguments (an internal routine's, not the method's). */
-      current~addRaw('std::vector<rx::Value> _rxProgramArgs; for (const auto &_a : arguments) _rxProgramArgs.push_back(_a ? *_a : rx::Value::string(std::string())); (void)_rxProgramArgs;')
+      current~addRaw('std::vector<rx::Value> _rxProgramArgs; _rxProgramArgs.reserve(arguments.size()); for (const auto &_a : arguments) _rxProgramArgs.push_back(_a ? *_a : rx::Value::string(std::string())); (void)_rxProgramArgs;')
       current~addRaw('rx::MethodTraps _rxTrap; int _rxAt = _rxEntry; std::size_t _rxLine = 0; (void)_rxLine;')
       if current~callOn then callOnSlot = self~emitCallOnDispatch(current, internalCalls)
       current~addRaw('for (;;) { try { switch (_rxAt) { case 0: {' .RxNative~invalidateAll)

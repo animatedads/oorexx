@@ -38,7 +38,7 @@
     return
   end
   /* CALL label of this compiled method: an internal routine (HybridFunctionCall~internalCall). */
-  if s~labelNameAt(0) & ctx~hasMethod('CURRENT') then if ctx~current~hasMethod('HASINTERNALCALLS') then
+  if s~labelNameAt(0) & s~peek~kind \== 'STRING' & ctx~hasMethod('CURRENT') then if ctx~current~hasMethod('HASINTERNALCALLS') then
     if ctx~current~internalCalls~hasIndex(token~text) then do
       name = s~next~text
       args = .array~new

@@ -11,11 +11,12 @@
   return self~is('END') & \(self~lookAheadText(1) == '=' & self~lookAheadKind(1) == 'OP')
 ::method atLabel
   return self~labelNameAt(0) & self~lookAheadText(1) == ':' & self~lookAheadKind(1) \= 'STRING'
-/* A label is any symbol, constant symbols too (15:, 15.3:, .:). */
+/* A label is any symbol, constant symbols too (15:, 15.3:, .:), or a literal string ("Classic Do/Loop":, named exactly
+   by its characters: SIGNAL "Classic Do/Loop"). */
 ::method labelNameAt
   use arg n
   kind = self~lookAheadKind(n)
-  return kind == 'IDENT' | kind == 'NUMBER' | kind == 'INT' | (kind == 'OP' & self~lookAheadText(n) == '.')
+  return kind == 'IDENT' | kind == 'NUMBER' | kind == 'INT' | kind == 'STRING' | (kind == 'OP' & self~lookAheadText(n) == '.')
 /* True when the activation body starting here (up to the next label/directive/EOF) contains SIGNAL ON/OFF. */
 ::method signalAhead
   n = 0
@@ -58,7 +59,8 @@
     name = ''
     if atClause & self~lookAheadKind(n) == 'IDENT' & self~lookAheadText(n) == 'CALL' & self~lookAheadText(n + 1) == 'ON' & -
        self~lookAheadKind(n + 2) == 'IDENT' then name = self~callOnTarget(n + 2)
-    else if atClause & self~lookAheadKind(n) == 'IDENT' & self~lookAheadText(n) == 'CALL' & self~labelNameAt(n + 1) then
+    /* (CALL "name": a literal name is never an internal routine) */
+    else if atClause & self~lookAheadKind(n) == 'IDENT' & self~lookAheadText(n) == 'CALL' & self~labelNameAt(n + 1) & self~lookAheadKind(n + 1) \== 'STRING' then
       name = self~lookAheadText(n + 1)
     else if self~lookAheadKind(n) == 'IDENT' & self~lookAheadText(n + 1) == '(' then do
       t = self~lookAheadToken(n); p = self~lookAheadToken(n + 1)
