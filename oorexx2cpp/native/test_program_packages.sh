@@ -22,6 +22,7 @@ check inline "$OUT/src/inline_routine.rex"
 check prologs "$OUT/src/prologs.rex" "$OUT/src/lib"
 check neighbours "$OUT/src/side/neighbours.rex"
 check constructs "$OUT/src/constructs.rex"
+check truth "$OUT/src/truth.rex"     # an object as a logical value: its string value (requestString)
 # RX2CPP_SEPARATE_PACKAGES=1: one library per required package, each its own package (name, findRoutine of a routine
 # that is not public, a class that is not public reaching the main program, prologs)
 SEPARATE=1 check sep_main "$OUT/src/separate/pkgmain.rex"

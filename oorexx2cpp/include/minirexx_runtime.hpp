@@ -1579,7 +1579,12 @@ enum class Truth { If, When, While, Until, List, Method, Case, Guard };
 }
 inline bool condition(const Value &v, Truth where) {
     // Rexx logical conditions must be exactly 0 or 1, not generic C++ truthiness.
-    if (v.isObject()) throw std::runtime_error("object truth conversion not implemented");
+    // an object: its string value (RexxInternalObject::truthValue: requestString, NOSTRING when only STRING gives one)
+    if (v.isObject()) {
+        const Value s = requestString(v);
+        if (s.isObject()) badLogicalValue(s, where);
+        return condition(s, where);
+    }
     // a number made by arithmetic or a comparison: its characters are exactly its digits
     { const std::uint32_t m = v.bytes.numCache().meta.load(std::memory_order_acquire);
       if ((m & NumCache::pending) && (m & NumCache::integer)) {
