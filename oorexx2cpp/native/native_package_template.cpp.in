@@ -915,8 +915,11 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
             if (auto *env = dynamic_cast<rx::EnvObject *>(outcome.object.get())) return (RexxObjectPtr)env->handle;
             if (dynamic_cast<rx::NilObject *>(outcome.object.get())) return ctx->Nil();
             if (auto *ref = dynamic_cast<rx::NativeRefBase *>(outcome.object.get())) return (RexxObjectPtr)ref->materialize();
+            // a stem (RETURN s. / an exposed stem): the interpreter's stem object shared with it
+            if (auto *st = dynamic_cast<rx::StemObject *>(outcome.object.get())) return (RexxObjectPtr)rx::EnvObject::stemHandle(*st);
 #endif
-            throw std::runtime_error("native method returned an object that the interpreter cannot receive");
+            throw std::runtime_error(std::string("native method returned an object that the interpreter cannot receive (") +
+                                     typeid(*outcome.object).name() + ")");
         }
         return ctx->NewString(outcome.bytes.data(), outcome.bytes.size());
     } catch (const PendingCondition &) {
@@ -1012,7 +1015,9 @@ static RexxObjectPtr rx2cpp_routine_entry(RexxCallContext *context, RexxArrayObj
             if (auto *env = dynamic_cast<rx::EnvObject *>(outcome.object.get())) return (RexxObjectPtr)env->handle;
             if (dynamic_cast<rx::NilObject *>(outcome.object.get())) return context->Nil();
             if (auto *ref = dynamic_cast<rx::NativeRefBase *>(outcome.object.get())) return (RexxObjectPtr)ref->materialize();
-            throw std::runtime_error("native routine returned an object that the interpreter cannot receive");
+            if (auto *st = dynamic_cast<rx::StemObject *>(outcome.object.get())) return (RexxObjectPtr)rx::EnvObject::stemHandle(*st);
+            throw std::runtime_error(std::string("native routine returned an object that the interpreter cannot receive (") +
+                                     typeid(*outcome.object).name() + ")");
         }
         return context->NewString(outcome.bytes.data(), outcome.bytes.size());
 #else
