@@ -28,9 +28,30 @@ SRC="$OUT/${BASE}_program.cls"
   printf '::routine RX2CPP_MAIN public /* ---- rx2cpp combined: %s ---- */\n' "$PROG"
   awk 'NR == 1 && /^#!/ { print ""; next } { print }' "$PROG"
 } > "$SRC"
+# RX2CPP_SEPARATE_PACKAGES=1: every package the program requires (found next to its requirer or on REXX_PATH) is built
+# as its own native library first, dependencies first, named after its source file (lib rxp_<name>), and required as
+# that library: each keeps its own package (.context~package~name, its ~local, findRoutine / findClass of what is not
+# PUBLIC), as interpreted. Otherwise (default) they are combined into the program's one library: one package for all.
+if [[ "${RX2CPP_SEPARATE_PACKAGES:-}" == 1 ]]; then
+    map=${RX2CPP_LIBMAP:-}
+    seenNames=" "
+    while IFS= read -r dep; do
+        [[ -n "$dep" ]] || continue
+        name=$(basename -- "$dep")
+        case "$seenNames" in *" ${name^^} "*) echo "compile_program.sh: two required packages are named $name: RX2CPP_SEPARATE_PACKAGES needs distinct names" >&2; exit 65;; esac
+        seenNames="$seenNames${name^^} "
+        dlib="rxp_$(printf '%s' "${name%.*}" | tr -c 'A-Za-z0-9' '_' | tr 'A-Z' 'a-z')"
+        echo "compile_program.sh: package $dep -> lib$dlib.so"
+        RX2CPP_LIBMAP="$map" RX2CPP_PACKAGE_NAME="$dep" RX2CPP_SOURCE_DIR="$(dirname -- "$dep")" \
+            LD_LIBRARY_PATH="$OUT${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" "$ROOT/native/build.sh" "$dep" "$OUT" "$dlib"
+        map="${map:+$map }$name=$dlib"
+    done < <(cd -- "$(dirname -- "$PROG")" && RX2CPP_SOURCE_DIR="$(dirname -- "$PROG")" "${REXX_BIN:-rexx}" "$ROOT/native/combine_package.rex" "$PROG" --order)
+    export RX2CPP_LIBMAP="$map"
+    export LD_LIBRARY_PATH="$OUT${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
 # Its ::REQUIRES are found as the interpreter finds them: next to the program first (its copy here is in OUTDIR), then on
 # REXX_PATH (combine_package.rex, RX2CPP_SOURCE_DIR).
-RX2CPP_SOURCE_DIR="$(dirname -- "$PROG")" "$ROOT/native/build.sh" "$SRC" "$OUT" "$LIB"
+RX2CPP_SOURCE_DIR="$(dirname -- "$PROG")" RX2CPP_PACKAGE_NAME="$PROG" "$ROOT/native/build.sh" "$SRC" "$OUT" "$LIB"
 cat > "$OUT/$BASE.rex" <<EOF
 /* $BASE.rex: runs $(basename -- "$PROG") compiled by rx2cpp (lib$LIB): native/compile_program.sh */
 rx2cppMain = .context~package~findRoutine('RX2CPP_MAIN')

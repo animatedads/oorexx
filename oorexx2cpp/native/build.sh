@@ -55,6 +55,9 @@ if [[ -n "${RX2CPP_TABLE:-}" ]]; then
     [[ -f "$RX2CPP_TABLE" ]] || { echo "rx2cpp: interpreted table not found: $RX2CPP_TABLE" >&2; exit 66; }
     RX2CPP_TABLE="$(cd "$(dirname -- "$RX2CPP_TABLE")" && pwd)/$(basename -- "$RX2CPP_TABLE")"; export RX2CPP_TABLE
 fi
+# The library's package is named after its source file (NativeLibraryEmitter: .context~package~name);
+# compile_program.sh names it after the program.
+export RX2CPP_PACKAGE_NAME="${RX2CPP_PACKAGE_NAME:-$SOURCE}"
 # A package spread over several .cls files (::REQUIRES 'other.cls') is combined into one source first.
 if grep -qiE "^[[:space:]]*::requires[[:space:]]+['\"][^'\"]+\.cls['\"][[:space:]]*$" "$SOURCE"; then
     (cd "$(dirname -- "$SOURCE")" && "$REXX_BIN" "$ROOT/native/combine_package.rex" "$SOURCE" "$TMP/combined.cls" >/dev/null)

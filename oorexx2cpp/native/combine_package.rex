@@ -7,12 +7,22 @@
    Prints the number of files combined. */
 parse arg input output
 if input = '' | output = '' then do
-  say 'usage: combine_package.rex input.cls output.cls'
+  say 'usage: combine_package.rex input.cls output.cls | --order'
   exit 64
 end
+/* --order: print the files the input requires (found as for combining, RX2CPP_LIBMAP not applied), dependencies first,
+   one per line, without combining anything (compile_program.sh with RX2CPP_SEPARATE_PACKAGES=1) */
+orderOnly = output == '--order'
+if orderOnly then call value 'RX2CPP_LIBMAP', '', 'ENVIRONMENT'
 seen = .directory~new
 order = .array~new
 call visit qualify(input), seen, order
+if orderOnly then do
+  do f over order
+    if f \== qualify(input) then say f
+  end
+  exit 0
+end
 /* Each file's prolog (its clauses before the first directive) runs when the interpreter loads that file, dependencies
    first. Combined, a prolog would follow the previous file's last routine (and be compiled as part of it, or after its
    RETURN), so each one becomes a routine of its own, RX2CPP_PROLOG_n, its directive on the file's marker line (its lines

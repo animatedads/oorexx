@@ -128,9 +128,17 @@ inline RexxThreadContext *need() {
     if (!current) throw std::runtime_error("interpreter object used outside a native entry");
     return current;
 }
+inline RexxObjectPtr &libraryPackage();
 inline void *findClass(const std::string &name) {
     RexxThreadContext *t = need();
-    RexxClassObject c = t->FindClass(name.c_str());
+    // the library's own package first (its classes that are not PUBLIC too), then the global search, as the interpreter
+    // resolves a class name in the package that uses it
+    RexxClassObject c = NULLOBJECT;
+    if (libraryPackage() != NULLOBJECT) {
+        c = t->FindPackageClass((RexxPackageObject)libraryPackage(), name.c_str());
+        if (c == NULLOBJECT) t->ClearCondition();
+    }
+    if (c == NULLOBJECT) c = t->FindClass(name.c_str());
     if (c == NULLOBJECT) { t->ClearCondition(); return nullptr; }
     void *h = (void *)rxobj::pinRef(t, (RexxObjectPtr)c);
     t->ReleaseLocalReference((RexxObjectPtr)c);   // a long native call keeps every unreleased local reference

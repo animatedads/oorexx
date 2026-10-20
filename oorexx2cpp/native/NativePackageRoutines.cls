@@ -116,8 +116,9 @@
     else do
       names~append(name)
       visibilities[name] = visibility
-      if start == 1 then self~reject(start, 'native routine must follow a package class')
+      /* (a routine on line 1 shares the line with the class of the routines: line numbers kept) */
       synthetic[start] = '::method "' || name || '"'
+      if start == 1 then synthetic[start] = '::class RX2CPP_ROUTINE_IMPL public;' synthetic[start]
       if inlineBody~strip \== '' then synthetic[start] = synthetic[start] || ';' || inlineBody
       /* PARSE SOURCE names the routine's original file: the combine marker before it, else the compiled file. */
       sourcePath = .local['RX2CPP.INPUTNAME']

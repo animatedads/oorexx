@@ -23,6 +23,17 @@ LD_LIBRARY_PATH=outdir rexx outdir/prog.rex
 A `::REQUIRES` that is not compiled (not found, a `.rex` package, or kept with `RX2CPP_KEEP_INTERPRETED`) is loaded by
 the interpreter at run time; the build says so with a warning.
 
+By default the program and the packages it requires are combined into one library, so they share one package
+(`.context~package~name` is the program's, and routines or classes that are not `PUBLIC` are visible to all of them).
+To keep each package separate, as the interpreter does, build one library per required file:
+
+```
+RX2CPP_SEPARATE_PACKAGES=1 native/compile_program.sh prog.rex outdir
+```
+
+Each required file `name.cls` becomes `outdir/librxp_name.so` (built dependencies first), with its own package named
+after its source file. Two required files with the same name are refused.
+
 ## v0.30.18 — One NUMERIC grammar; shared rule-selection implementation
 
 `core/RxNumericClause.cls` now parses executable `NUMERIC DIGITS/FUZZ/FORM` once for standalone and native backends, with adapters retaining expression parsing and emission only. `core/RxRexxRuleSelection.cls` owns ordered rule selection for both existing registries; their differing rule sets are not yet consolidated. ooRexx 5.3 direct NUMERIC rule tests and GCC/Clang standalone/native differential smoke and rollback passed on a staged historical integration baseline. The full latest-main suites have not been rerun. See [`UNIFIED_STATEMENTS_V0318.md`](UNIFIED_STATEMENTS_V0318.md) and `tests/test_shared_numeric.sh`.

@@ -339,6 +339,10 @@
         source = source || '::routine "' || routineName || '" private external "LIBRARY ' || ,
                   packageName || ' ' || entryName || '"' || '0a'x
       end
+      /* A public routine is the library's export; it is the declaration package's routine too, so that its package
+         finds it (.context~package~findRoutine(name), as in the interpreted source) */
+      else source = source || '::routine "' || routineName || '" public external "LIBRARY ' || ,
+                  packageName || ' ' || entryName || '"' || '0a'x
       symbol = 'rx_native_routine_' || .RxQuote~identifier(routineName~lower)
       if routineDefs == '' then routineDefs = '#define RX2CPP_HAS_ROUTINES 1' || '0a'x || ,
         'static RexxObjectPtr rx2cpp_routine_entry(RexxCallContext *context, RexxArrayObject args, const char *name);' || '0a'x
@@ -429,7 +433,11 @@
   end
   output = output~changeStr('%CLASS_NAMES%', classes)
   output = output~changeStr('%FACTORY_DISPATCH%', factories)
-  output = output~changeStr('%INTERNAL_NAME%', .RxQuote~cpp('rx2cpp-generated-' || packageName))
+  /* The package's name: the source file it was compiled from (RX2CPP_PACKAGE_NAME, set by build.sh and
+     compile_program.sh), so .context~package~name and FILESPEC('LOCATION', ...) of it answer as interpreted */
+  internalName = value('RX2CPP_PACKAGE_NAME', , 'ENVIRONMENT')
+  if internalName == '' then internalName = 'rx2cpp-generated-' || packageName
+  output = output~changeStr('%INTERNAL_NAME%', .RxQuote~cpp(internalName))
   output = output~changeStr('%PACKAGE_NAME%', .RxQuote~cpp(packageName))
   /* ::REQUIRES 'x' LIBRARY lines of the declaration: when x is another rx2cpp library, its declaration package is
      imported at load time, so its public classes resolve before .LOCAL / .ENVIRONMENT (as for a required package). */
