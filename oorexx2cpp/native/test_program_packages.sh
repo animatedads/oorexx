@@ -23,6 +23,7 @@ check prologs "$OUT/src/prologs.rex" "$OUT/src/lib"
 check neighbours "$OUT/src/side/neighbours.rex"
 check constructs "$OUT/src/constructs.rex"
 check routine_call "$OUT/src/routine_call.rex"   # routine~call / ~callWith from compiled code (an error in the routine)
+check init_internal "$OUT/src/init_internal.rex"   # RETURN value of an internal routine of INIT
 check truth "$OUT/src/truth.rex"     # an object as a logical value: its string value (requestString)
 # RX2CPP_SEPARATE_PACKAGES=1: one library per required package, each its own package (name, findRoutine of a routine
 # that is not public, a class that is not public reaching the main program, prologs)

@@ -10,8 +10,13 @@
   bare = s~peek~kind == 'SEP' | s~peek~kind == 'EOF'
   if bare then value = 'rx::noResult()'   /* no result for the caller, as interpreted (RESULT dropped) */
   else value = .RxExprList~parse(ctx)
-  /* INIT's RETURN value is evaluated and ignored, as by the interpreter (NEW answers the new object). */
-  if ctx~current~selector == 'INIT' & \bare then value = '([&]() -> rx::Value { (void)' || value || '; return rx::Value::string(std::string()); }())'
+  /* INIT's RETURN value is evaluated and ignored, as by the interpreter (NEW answers the new object); the RETURN of an
+     internal routine of INIT answers its value to its caller (end = FindEnd(): Rexx Parser, Message.Term). */
+  if ctx~current~selector == 'INIT' & \bare then do
+    if ctx~current~hasInternalCalls then
+      value = '([&]() -> rx::Value { rx::Value _rxV = ' || value || '; if (_rxInternal) return _rxV; return rx::Value::string(std::string()); }())'
+    else value = '([&]() -> rx::Value { (void)' || value || '; return rx::Value::string(std::string()); }())'
+  end
   /* After a REPLY a method's RETURN has no caller for a value (98.936; an internal routine's RETURN does). */
   if ctx~current~replies & \bare & ctx~current~selector \== 'INIT' then do
     internal = 'false'
