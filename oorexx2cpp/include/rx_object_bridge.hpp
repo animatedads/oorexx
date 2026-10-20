@@ -328,8 +328,46 @@ inline bool send(void *target, const std::string &selector, const std::vector<Ar
     bool holes = false;
     for (const Arg &a : args) holes = holes || a.omitted;
     RexxObjectPtr r;
+    // routine~CALL / ~CALLWITH: sent from a small interpreted routine. The interpreter takes the frame that calls a native
+    // routine for a Rexx activation (NativeActivation::callNativeRoutine, accessCallerContext): sent from compiled code,
+    // that frame would be this method's native activation, and an error in the routine (reraiseException) or its
+    // caller's context (digits, ...) would read it as one (a crash: compiled Rexx Parser, Clauses.cls).
+    static const auto isRoutineCall = [](const std::string &sel) {
+        if (sel.size() != 4 && sel.size() != 8) return false;
+        std::string u(sel);
+        for (char &c : u) c = (char)std::toupper((unsigned char)c);
+        return u == "CALL" || u == "CALLWITH";
+    };
+    RexxObjectPtr viaHelper = NULLOBJECT;
+    if (isRoutineCall(selector)) {
+        static RexxClassObject routineClass = NULLOBJECT;
+        if (routineClass == NULLOBJECT) {
+            routineClass = t->FindClass("ROUTINE");
+            if (routineClass != NULLOBJECT) rxobj::pinRef(t, (RexxObjectPtr)routineClass);
+        }
+        if (routineClass != NULLOBJECT && t->IsInstanceOf((RexxObjectPtr)target, routineClass)) {
+            static RexxRoutineObject helper = NULLOBJECT;
+            if (helper == NULLOBJECT) {
+                static const char source[] = "use arg rx2cppR, rx2cppM, rx2cppA\nrx2cppR~sendWith(rx2cppM, rx2cppA)\n"
+                                             "if var('RESULT') then return result\nreturn\n";
+                helper = t->NewRoutine("rx2cpp_routine_call", source, sizeof(source) - 1);
+                if (helper != NULLOBJECT) rxobj::pinRef(t, (RexxObjectPtr)helper);
+                else t->ClearCondition();
+            }
+            if (helper != NULLOBJECT) {
+                RexxArrayObject arr = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(args.size()));
+                for (std::size_t i = 0; i < args.size(); i++)
+                    if (!args[i].omitted) t->ArrayPut(arr, argObj(args[i]), i + 1);
+                RexxArrayObject call = (RexxArrayObject)temps((RexxObjectPtr)t->ArrayOfThree((RexxObjectPtr)target,
+                    temps((RexxObjectPtr)t->String(selector.c_str())), (RexxObjectPtr)arr));
+                viaHelper = helper;
+                r = temps(t->CallRoutine(helper, call));
+            }
+        }
+    }
     // Up to two arguments and no omitted ones: no argument array is built.
-    if (!holes && args.empty()) r = temps(t->SendMessage0((RexxObjectPtr)target, selector.c_str()));
+    if (viaHelper != NULLOBJECT) {}
+    else if (!holes && args.empty()) r = temps(t->SendMessage0((RexxObjectPtr)target, selector.c_str()));
     else if (!holes && args.size() == 1) r = temps(t->SendMessage1((RexxObjectPtr)target, selector.c_str(), argObj(args[0])));
     else if (!holes && args.size() == 2) {
         RexxObjectPtr a1 = argObj(args[0]), a2 = argObj(args[1]);

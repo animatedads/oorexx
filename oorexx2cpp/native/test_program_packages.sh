@@ -22,11 +22,13 @@ check inline "$OUT/src/inline_routine.rex"
 check prologs "$OUT/src/prologs.rex" "$OUT/src/lib"
 check neighbours "$OUT/src/side/neighbours.rex"
 check constructs "$OUT/src/constructs.rex"
+check routine_call "$OUT/src/routine_call.rex"   # routine~call / ~callWith from compiled code (an error in the routine)
 check truth "$OUT/src/truth.rex"     # an object as a logical value: its string value (requestString)
 # RX2CPP_SEPARATE_PACKAGES=1: one library per required package, each its own package (name, findRoutine of a routine
 # that is not public, a class that is not public reaching the main program, prologs)
 SEPARATE=1 check sep_main "$OUT/src/separate/pkgmain.rex"
 SEPARATE=1 check sep_prolog "$OUT/src/separate/pkgprolog.rex"
+SEPARATE=1 check sep_routine_call "$OUT/src/separate/routine_call2.rex"
 SEPARATE=1 check sep_prologs "$OUT/src/prologs.rex" "$OUT/src/lib"
 ls "$OUT/sep_prolog"/librxp_pkgp.so "$OUT/sep_prolog"/librxp_pkgsep.so >/dev/null || { echo "FAIL separate libraries not built"; exit 1; }
 # a ::REQUIRES that cannot be found: built, with the warning
