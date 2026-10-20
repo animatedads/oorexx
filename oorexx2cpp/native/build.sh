@@ -59,7 +59,8 @@ fi
 # compile_program.sh names it after the program.
 export RX2CPP_PACKAGE_NAME="${RX2CPP_PACKAGE_NAME:-$SOURCE}"
 # A package spread over several .cls files (::REQUIRES 'other.cls') is combined into one source first.
-if grep -qiE "^[[:space:]]*::requires[[:space:]]+['\"][^'\"]+\.cls['\"][[:space:]]*$" "$SOURCE"; then
+# (a comment may follow the name: ::Requires "Elements.cls"   -- Defines the Element classes)
+if grep -qiE "^[[:space:]]*::requires[[:space:]]+['\"][^'\"]+\.cls['\"][[:space:]]*(--.*|/\*.*)?$" "$SOURCE"; then
     (cd "$(dirname -- "$SOURCE")" && "$REXX_BIN" "$ROOT/native/combine_package.rex" "$SOURCE" "$TMP/combined.cls" >/dev/null)
     SOURCE="$TMP/combined.cls"
 fi
