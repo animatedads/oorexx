@@ -28,7 +28,9 @@ SRC="$OUT/${BASE}_program.cls"
   printf '::routine RX2CPP_MAIN public /* ---- rx2cpp combined: %s ---- */\n' "$PROG"
   awk 'NR == 1 && /^#!/ { print ""; next } { print }' "$PROG"
 } > "$SRC"
-"$ROOT/native/build.sh" "$SRC" "$OUT" "$LIB"
+# Its ::REQUIRES are found as the interpreter finds them: next to the program first (its copy here is in OUTDIR), then on
+# REXX_PATH (combine_package.rex, RX2CPP_SOURCE_DIR).
+RX2CPP_SOURCE_DIR="$(dirname -- "$PROG")" "$ROOT/native/build.sh" "$SRC" "$OUT" "$LIB"
 cat > "$OUT/$BASE.rex" <<EOF
 /* $BASE.rex: runs $(basename -- "$PROG") compiled by rx2cpp (lib$LIB): native/compile_program.sh */
 rx2cppMain = .context~package~findRoutine('RX2CPP_MAIN')

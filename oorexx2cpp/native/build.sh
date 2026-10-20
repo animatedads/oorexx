@@ -13,6 +13,11 @@ OO_INCLUDE=${OO_INCLUDE:-$OO_ROOT/include}
 OO_LIB=${OO_LIB:-$OO_ROOT/lib}
 REXX_BIN=${REXX_BIN:-rexx}
 CXX=${CXX:-g++}
+# The runtime's decimal arithmetic uses Boost.Multiprecision (headers only).
+if ! printf '#include <boost/multiprecision/cpp_int.hpp>\n' | "$CXX" -std=c++17 -E -x c++ - >/dev/null 2>&1; then
+    echo "rx2cpp: the Boost headers are needed (boost/multiprecision/cpp_int.hpp); on Debian / Ubuntu: sudo apt install libboost-dev" >&2
+    exit 69
+fi
 export REXX_PATH="$ROOT${REXX_PATH:+:$REXX_PATH}"
 export LD_LIBRARY_PATH="$OO_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 # Build in isolation so bad source or a failed C++ compilation cannot
@@ -55,6 +60,12 @@ if grep -qiE "^[[:space:]]*::requires[[:space:]]+['\"][^'\"]+\.cls['\"][[:space:
     (cd "$(dirname -- "$SOURCE")" && "$REXX_BIN" "$ROOT/native/combine_package.rex" "$SOURCE" "$TMP/combined.cls" >/dev/null)
     SOURCE="$TMP/combined.cls"
 fi
+# A ::REQUIRES still in the source (not a LIBRARY, not found next to the source or on REXX_PATH, kept by
+# RX2CPP_KEEP_INTERPRETED, or not a .cls file) is not compiled: the interpreter loads that package at run time. Say so:
+# the program would otherwise look compiled when it is only partly.
+grep -iE "^[[:space:]]*::requires[[:space:]]" "$SOURCE" | grep -viE "[[:space:];]library([[:space:];]|$)" | while IFS= read -r req; do
+    echo "rx2cpp: warning: not compiled, loaded by the interpreter at run time: $(printf '%s' "$req" | sed -e 's/^[[:space:]]*//')" >&2
+done || true
 # RX2CPP_COMPILER_LIB=dir: generate with rx2cpp compiled by itself (dir/librx2cppc.so, see native/build_self.sh);
 # the driver is rx2cpp_native_library.rex with its compiler packages replaced by that library. Same output, faster.
 if [[ -n "${RX2CPP_COMPILER_LIB:-}" ]]; then

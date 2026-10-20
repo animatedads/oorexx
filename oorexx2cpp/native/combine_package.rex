@@ -13,15 +13,54 @@ end
 seen = .directory~new
 order = .array~new
 call visit qualify(input), seen, order
+/* Each file's prolog (its clauses before the first directive) runs when the interpreter loads that file, dependencies
+   first. Combined, a prolog would follow the previous file's last routine (and be compiled as part of it, or after its
+   RETURN), so each one becomes a routine of its own, RX2CPP_PROLOG_n, its directive on the file's marker line (its lines
+   keep their numbers), and the combined package's prolog calls them in load order. */
 combined = ''
+calls = ''
+n = 0
 do f over order
-  combined = combined || '/* ---- rx2cpp combined: ' || f || ' ---- */' || '0a'x || strip(seen[f], 'T', '0a'x) || '0a'x
+  marker = '/* ---- rx2cpp combined: ' || f || ' ---- */'
+  if hasProlog(seen[f]) then do
+    n += 1
+    marker = '::routine RX2CPP_PROLOG_' || n marker
+    calls = calls || 'call RX2CPP_PROLOG_' || n || '0a'x
+  end
+  combined = combined || marker || '0a'x || strip(seen[f], 'T', '0a'x) || '0a'x
 end
+combined = calls || combined
 call stream output, 'c', 'open write replace'
 call charout output, combined
 call stream output, 'c', 'close'
 say order~items
 exit 0
+
+/* True when the text has a clause before its first directive (comments and blank lines are not clauses). */
+hasProlog: procedure
+  use arg text
+  i = 1; n = length(text); depth = 0; atStart = .true
+  do while i <= n
+    c = text~substr(i, 1)
+    if depth > 0 then do
+      if text~substr(i, 2) == '/*' then do; depth += 1; i += 2; iterate; end
+      if text~substr(i, 2) == '*/' then do; depth -= 1; i += 2; iterate; end
+      i += 1; iterate
+    end
+    select
+      when text~substr(i, 2) == '/*' then do; depth = 1; i += 2; end
+      when text~substr(i, 2) == '--' then do
+        e = pos('0a'x, text, i)
+        if e = 0 then return .false
+        i = e
+      end
+      when c == '0a'x | c == ';' then do; atStart = .true; i += 1; end
+      when c == ' ' | c == '09'x | c == '0d'x then i += 1
+      when atStart & text~substr(i, 2) == '::' then return .false   /* the first directive: nothing before it */
+      otherwise return .true
+    end
+  end
+  return .false
 
 visit: procedure
   use arg file, seen, order
@@ -30,6 +69,12 @@ visit: procedure
   text = charin(file, 1, chars(file))
   call stream file, 'c', 'close'
   dir = filespec('location', file)
+  /* RX2CPP_SOURCE_DIR: where the input file really is (compile_program.sh compiles a copy of the program elsewhere):
+     its ::REQUIRES are looked for there first, as the interpreter looks next to the requiring file */
+  if order~items == 0 & seen~items == 1 then do
+    sourceDir = value('RX2CPP_SOURCE_DIR', , 'ENVIRONMENT')
+    if sourceDir \== '' then dir = sourceDir || '/'
+  end
   lines = text~makeArray('0a'x)
   kept = ''
   do line over lines

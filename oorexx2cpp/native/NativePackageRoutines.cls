@@ -86,8 +86,12 @@
       if verify(word(spec, 2), namePattern) > 0 | verify(word(spec, 3), namePattern) > 0 then
         self~reject(start, 'unsafe EXTERNAL library or procedure')
     end
-    else if header[optionIndex]~kind \= 'SEP' | header[optionIndex+1]~kind \= 'EOF' then
+    else if header[optionIndex]~kind \= 'SEP' then
       self~reject(start, 'unsupported ::ROUTINE options; expected name [PUBLIC|PRIVATE] [EXTERNAL "LIBRARY ..."]')
+    /* The routine's first clauses may follow its directive on the same line, after ';' (::routine r public; return 1):
+       they stay on that line (its line number) as the start of the body. */
+    inlineBody = ''
+    if \isExternal then if line~substr(header[optionIndex]~col, 1) == ';' then inlineBody = line~substr(header[optionIndex]~endCol)
     if seen~hasIndex(name) then self~reject(start, 'duplicate ::ROUTINE ' || name)
     seen[name] = .true
     /* Any symbol or string names a routine (ooRexxUnit.getShellName); C++ names are mangled (.RxQuote~identifier). */
@@ -114,6 +118,7 @@
       visibilities[name] = visibility
       if start == 1 then self~reject(start, 'native routine must follow a package class')
       synthetic[start] = '::method "' || name || '"'
+      if inlineBody~strip \== '' then synthetic[start] = synthetic[start] || ';' || inlineBody
       /* PARSE SOURCE names the routine's original file: the combine marker before it, else the compiled file. */
       sourcePath = .local['RX2CPP.INPUTNAME']
       if sourcePath == .nil then sourcePath = ''

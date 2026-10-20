@@ -1,3 +1,28 @@
+## Getting started
+
+Requirements:
+- ooRexx 5.3 installed, with its headers (`include/oorexxapi.h`); `OO_ROOT` names its prefix (default `/usr/local`)
+- a C++17 compiler: g++ 13 or clang++ (`CXX=` chooses; g++ by default)
+- the Boost headers (Boost.Multiprecision, `boost/multiprecision/cpp_int.hpp`); on Debian / Ubuntu:
+
+```
+sudo apt install libboost-dev
+```
+
+Compile a whole program (its main code, routines and classes, and the `::REQUIRES` packages found next to it or on
+`REXX_PATH`) into a native library and a launcher:
+
+```
+native/compile_program.sh prog.rex outdir
+```
+
+```
+LD_LIBRARY_PATH=outdir rexx outdir/prog.rex
+```
+
+A `::REQUIRES` that is not compiled (not found, a `.rex` package, or kept with `RX2CPP_KEEP_INTERPRETED`) is loaded by
+the interpreter at run time; the build says so with a warning.
+
 ## v0.30.18 — One NUMERIC grammar; shared rule-selection implementation
 
 `core/RxNumericClause.cls` now parses executable `NUMERIC DIGITS/FUZZ/FORM` once for standalone and native backends, with adapters retaining expression parsing and emission only. `core/RxRexxRuleSelection.cls` owns ordered rule selection for both existing registries; their differing rule sets are not yet consolidated. ooRexx 5.3 direct NUMERIC rule tests and GCC/Clang standalone/native differential smoke and rollback passed on a staged historical integration baseline. The full latest-main suites have not been rerun. See [`UNIFIED_STATEMENTS_V0318.md`](UNIFIED_STATEMENTS_V0318.md) and `tests/test_shared_numeric.sh`.
