@@ -24,5 +24,6 @@ check routine_native "$OUT/src/routine_native.rex"   # routine~call / ~callWith 
 check no_result "$OUT/src/no_result.rex"   # 91.999 for a message without a result
 check env_entries "$OUT/src/env_entries.rex"   # environment entries that are not classes: current value each time
 check native_object_messages "$OUT/src/native_object_messages.rex"   # ISNIL, CLASS, class identity, CONTAINS natively
+check string_words "$OUT/src/string_words.rex"   # CONTAINSWORD / CASELESSCONTAINSWORD natively
 check truth "$OUT/src/truth.rex"     # an object as a logical value: its string value (requestString)
 echo "PASS program constructs: $(ls "$OUT"/*.expected | wc -l) programs, $(cat "$OUT"/*.expected | wc -l) lines identical to the interpreter"

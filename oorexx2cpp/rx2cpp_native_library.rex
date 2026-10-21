@@ -11,6 +11,17 @@ signal on failure name compilerError
 progress = value('RX2CPP_PROGRESS', , 'ENVIRONMENT') == '1'
 call time 'R'
 source = readSource(input)
+/* Combined packages: the line where each source file's text starts (its combine marker), for .context~package~name
+   in code from that file (ExprAtom activationContext). */
+sourceMap = .array~new
+mapLines = source~makeArray('0a'x)
+do lineNo = 1 to mapLines~items
+  if mapLines[lineNo]~pos('/* ---- rx2cpp combined: ') > 0 then do
+    parse value mapLines[lineNo] with '/* ---- rx2cpp combined: ' mapPath ' ----'
+    sourceMap~append(.array~of(lineNo, mapPath))
+  end
+end
+.local['RX2CPP.SOURCEMAP'] = sourceMap
 extras = .RxNativePackageExtras~new~parse(source)
 source = extras~sanitized
 .local['RX2CPP.INPUTNAME'] = input   /* PARSE SOURCE of a routine outside any combine marker */

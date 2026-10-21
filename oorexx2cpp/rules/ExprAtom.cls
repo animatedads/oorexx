@@ -120,12 +120,25 @@
   end
 /* .CONTEXT in a compiled method or routine of a native library: .CONTEXT~PACKAGE is the library's package; any other
    use is a snapshot of the activation (rx::activationContext), with its variables unless only another method follows. */
+/* .CONTEXT~PACKAGE in a combined library: a view of the library's package named after the source file this code came
+   from (RX2CPP.SOURCEMAP, the combine markers), when that is not the library's own name. */
+::method fileContext private
+  map = .local['RX2CPP.SOURCEMAP']
+  line = .local['RX2CPP.RAWLINE']
+  if map == .nil | line == .nil then return 'rx::libraryContext()'
+  path = ''
+  do entry over map
+    if entry[1] <= line then path = entry[2]
+  end
+  if path == '' | path == value('RX2CPP_PACKAGE_NAME', , 'ENVIRONMENT') then return 'rx::libraryContext()'
+  return 'rx::libraryContext(' || .RxQuote~cpp(path) || ')'
 ::method activationContext private
   use arg ctx
   s = ctx~stream
   following = ''
   if s~is('~') & s~lookAheadKind(1) == 'IDENT' then following = s~lookAheadText(1)
-  if following == 'PACKAGE' | \ctx~hasMethod('CURRENT') then return 'rx::libraryContext()'
+  if following == 'PACKAGE' then return self~fileContext
+  if \ctx~hasMethod('CURRENT') then return 'rx::libraryContext()'
   method = ctx~current
   if method == .nil then return 'rx::libraryContext()'
   className = ctx~className

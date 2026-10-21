@@ -832,11 +832,32 @@ inline const bool hostNilFallbackInstalled = (nilMessageFallback() = &hostNilMes
 inline Value envClass(const std::string &name);
 // .CONTEXT inside a native library method: PACKAGE is the library's package; other RexxContext methods fail loudly
 // (a compiled method has no interpreter activation to describe).
+// A combined library's package as seen from code of one of its source files (compile_program.sh, combine_package.rex):
+// NAME is that file's name, as interpreted (the Rexx Parser finds its resources/ next to its own file); any other
+// message, and the object handed to the interpreter, is the library's package.
+struct PackageView final : NativeRefBase {
+    std::string path;
+    std::shared_ptr<EnvObject> package;
+    PackageView(std::string p, std::shared_ptr<EnvObject> pkg) : path(std::move(p)), package(std::move(pkg)) {}
+    void *materialize() override { return package->handle; }
+    MessageResult sendMessage(const std::string &selector, const std::vector<Value> &args) override {
+        if (args.empty() && rx::eqLit(selector, "NAME")) return Value::string(path);
+        return package->sendMessage(selector, args);
+    }
+    Value sendBinary(const std::string &selector, const Value &rhs) override { return package->sendBinary(selector, rhs); }
+    Value sendUnary(const std::string &selector) override { return package->sendUnary(selector); }
+    std::string display() const override { return package->display(); }
+};
 struct LibraryContext final : ObjectDispatch {
+    std::string sourcePath;   // the source file of the code using it, in a combined library ('' otherwise)
+    LibraryContext() = default;
+    explicit LibraryContext(std::string p) : sourcePath(std::move(p)) {}
     MessageResult sendMessage(const std::string &selector, const std::vector<Value> &) override {
         if (rx::eqLit(selector, "PACKAGE") && rxobj::libraryPackage() != NULLOBJECT) {
             RexxThreadContext *t = rxobj::need();
-            return Value::fromObject(std::make_shared<EnvObject>((void *)rxobj::pinRef(t, rxobj::libraryPackage())));
+            auto pkg = std::make_shared<EnvObject>((void *)rxobj::pinRef(t, rxobj::libraryPackage()));
+            if (!sourcePath.empty()) return Value::fromObject(std::make_shared<PackageView>(sourcePath, pkg));
+            return Value::fromObject(pkg);
         }
         throw SyntaxCondition("98.926", ".CONTEXT~" + selector + " is not available in compiled code", false);
     }
@@ -1357,6 +1378,8 @@ inline std::string interpreterSystem() {
     return name;
 }
 inline Value libraryContext() { static const Value c = Value::fromObject(std::make_shared<LibraryContext>()); return c; }
+// .CONTEXT of code from one source file of a combined library (its path: a literal, so one object per access site)
+inline Value libraryContext(const char *sourcePath) { return Value::fromObject(std::make_shared<LibraryContext>(sourcePath)); }
 inline Value argumentArray(const std::vector<std::optional<Value>> &args);
 inline Value selfObject();
 // .METHODS in a native library: the floating methods of its package (PackageClass::getMethods, DEFINEDMETHODS).

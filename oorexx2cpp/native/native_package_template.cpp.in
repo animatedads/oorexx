@@ -764,6 +764,9 @@ bool proxyLive(InstanceState &st) {
 namespace {
 void collectCycles() {
     std::vector<std::shared_ptr<InstanceState>> states = InstanceTable::instance().liveStates();
+    // states whose interpreter object the interpreter no longer has (collected by the interpreter collection just
+    // requested, trackState) are given up first: that object no longer holds them
+    for (const auto &st : states) if (st->alive && st->handle && st->weak) proxyLive(*st);
     struct Node { long refs = 0; bool live = false; InstanceState *state = nullptr; std::weak_ptr<rx::ObjectDispatch> object; };
     std::unordered_map<const void *, Node> nodes;
     nodes.reserve(states.size() * 2);
@@ -774,13 +777,17 @@ void collectCycles() {
         return dynamic_cast<const NativeInstanceRef *>(o) || dynamic_cast<const rx::NativeArray *>(o) ||
                dynamic_cast<const rx::NativeDirectory *>(o) || dynamic_cast<const rx::StemObject *>(o);
     };
+    std::size_t proxied = 0, running = 0, kept = 0;
     for (const auto &st : states) {
         Node &n = nodes[st.get()];
         n.state = st.get();
         n.refs = static_cast<long>(st.use_count()) - 1;   // (less this list's own)
         // a scope in use (a method running) or a state that must keep its interpreter object: live
-        for (const auto &scope : st->scopes) if (scope.second.use_count() > 1) n.refs += 1;
-        if (!stateDisposable(*st)) n.refs += 1;
+        bool inUse = false;
+        for (const auto &scope : st->scopes) if (scope.second.use_count() > 1) inUse = true;
+        if (inUse) { n.refs += 1; ++running; }
+        if (!stateDisposable(*st)) { n.refs += 1; ++kept; }
+        if (st->alive && st->handle) ++proxied;
         order.push_back(st.get());
     }
     // edges: each reference held by a state or container is one count of what it refers to
@@ -836,8 +843,13 @@ void collectCycles() {
     states.clear();
     for (const auto &st : deadStates) for (const auto &scope : st->scopes) scope.second->gcClear();
     for (const auto &o : deadObjects) o->gcClear();
-    if (std::getenv("RX2CPP_GC_STATS"))
-        std::fprintf(stderr, "rx2cpp collect: %zu states live, %zu freed, %zu containers freed\n", survivors, deadStates.size(), deadObjects.size());
+    if (std::getenv("RX2CPP_GC_STATS")) {
+        std::size_t held = 0;   // held from outside compiled objects and containers (after the subtraction)
+        for (const void *key : order) if (nodes[key].refs > 0) ++held;
+        std::fprintf(stderr, "rx2cpp collect: %zu states live, %zu freed, %zu containers freed (held from outside %zu: "
+                     "with an interpreter object %zu, running %zu, kept by class %zu)\n",
+                     survivors, deadStates.size(), deadObjects.size(), held, proxied, running, kept);
+    }
     deadObjects.clear();
     deadStates.clear();
     InstanceTable::instance().collected(survivors);
@@ -846,6 +858,9 @@ void collectCycles() {
 /* A native state was made: known to the collector, which runs when enough have been made. */
 void trackState(const std::shared_ptr<InstanceState> &st) {
     if (InstanceTable::instance().track(st)) {
+        // the interpreter collects first (its unreachable objects of native states clear their WeakReferences): the
+        // interpreter does not see the memory compiled objects hold, so it may not have collected for a long time
+        if (rx::collectHook()) rx::collectHook()();
         if (!rxobj::exclusiveNative([] { collectCycles(); })) InstanceTable::instance().collected(0);
     }
 }

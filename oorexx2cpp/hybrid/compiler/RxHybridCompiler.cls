@@ -238,6 +238,7 @@
   clauseOffset = 0
   if var('LINEOFFSET') then clauseOffset = lineOffset
   .local['RX2CPP.CLAUSELINE'] = self~stream~peek~line + clauseOffset
+  .local['RX2CPP.RAWLINE'] = self~stream~peek~line   /* (its line in the compiled source: RX2CPP.SOURCEMAP) */
   scopes~rexxLogic(self, depth)
   .local['RX2CPP.CLAUSEWORDS'] = saved
   /* the clause boundary: pending CALL ON conditions call their handlers now */

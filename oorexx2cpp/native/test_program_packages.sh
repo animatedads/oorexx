@@ -19,6 +19,7 @@ check() {   # name program-path [REXX_PATH]
   diff -u "$OUT/$name.expected" "$OUT/$name.actual" || { echo "FAIL $name differs from the interpreter"; exit 1; }
 }
 check inline "$OUT/src/inline_routine.rex"
+check combined_name "$OUT/src/combined/pkgname.rex"   # combined: .context~package~name is the source file's, findRoutine finds its routines
 check prologs "$OUT/src/prologs.rex" "$OUT/src/lib"
 check neighbours "$OUT/src/side/neighbours.rex"
 check constructs "$OUT/src/constructs.rex"

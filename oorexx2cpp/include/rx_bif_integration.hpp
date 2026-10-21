@@ -1125,6 +1125,42 @@ inline std::optional<MessageResult> quickStringMethod(const std::string &name, c
         const bool found = std::search(b, b + range, needle.data(), needle.data() + needle.size()) != b + range;
         return MessageResult(Value::string(found ? "1" : "0"));
     }
+    // hay~CONTAINSWORD / ~CASELESSCONTAINSWORD(phrase [, start]): StringUtil::wordPos / caselessWordPos > 0 (words are
+    // separated by blanks and tabs; caseless compares ASCII upper case)
+    const bool caselessWord = rx::eqLit(name, "CASELESSCONTAINSWORD");
+    if ((caselessWord || rx::eqLit(name, "CONTAINSWORD")) && !args.empty() && args.size() <= 2 && plainArgs()) {
+        std::size_t start = 1;
+        if (args.size() == 2 && !count(args[1], start, true)) return std::nullopt;
+        auto words = [](const std::string &t) {
+            std::vector<std::pair<std::size_t, std::size_t>> w;
+            std::size_t i = 0;
+            while (i < t.size()) {
+                while (i < t.size() && (t[i] == ' ' || t[i] == '\t')) ++i;
+                if (i >= t.size()) break;
+                const std::size_t b = i;
+                while (i < t.size() && t[i] != ' ' && t[i] != '\t') ++i;
+                w.emplace_back(b, i - b);
+            }
+            return w;
+        };
+        const std::string &phrase = args[0].bytes;
+        const auto hw = words(s), nw = words(phrase);
+        if (nw.empty() || start > hw.size() || nw.size() > hw.size() - start + 1) return MessageResult(Value::string("0"));
+        auto up = [](unsigned char c) { return (c >= 'a' && c <= 'z') ? c - 32 : c; };
+        for (std::size_t at = start - 1; at + nw.size() <= hw.size(); ++at) {
+            bool all = true;
+            for (std::size_t k = 0; k < nw.size() && all; ++k) {
+                const auto &h = hw[at + k], &n = nw[k];
+                if (h.second != n.second) { all = false; break; }
+                for (std::size_t c = 0; c < h.second; ++c) {
+                    const unsigned char x = static_cast<unsigned char>(s[h.first + c]), y = static_cast<unsigned char>(phrase[n.first + c]);
+                    if (caselessWord ? up(x) != up(y) : x != y) { all = false; break; }
+                }
+            }
+            if (all) return MessageResult(Value::string("1"));
+        }
+        return MessageResult(Value::string("0"));
+    }
     if (rx::eqLit(name, "COUNTSTR") && args.size() == 1 && plainArgs()) {
         const std::string &needle = args[0].bytes;
         std::size_t n = 0;
