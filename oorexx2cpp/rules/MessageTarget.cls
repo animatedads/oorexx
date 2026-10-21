@@ -17,7 +17,10 @@
   current = '_rxTarget' || tag
   name = s~next~text
   /* SELF is the receiving object (USE ARG self~category, ...), not a variable (ExprAtom reads it so too) */
-  if name == 'SELF' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' then receiver = 'rx::selfObject()'
+  if name == 'SELF' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' then do
+    if .RxExprAtom~selfIsVariable(ctx) then receiver = .RxCompoundSymbols~load(name)
+    else receiver = 'rx::selfObject()'
+  end
   else receiver = .RxCompoundSymbols~load(name)
   steps = .array~new            /* each: selector, then the C++ argument expressions */
   do while s~is('~') | s~is('[')
@@ -52,3 +55,4 @@
   return code || '}'
 ::requires 'core/RxQuote.cls'
 ::requires 'rules/CompoundSymbols.cls'
+::requires 'rules/ExprAtom.cls'

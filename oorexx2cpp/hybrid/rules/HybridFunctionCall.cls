@@ -123,8 +123,8 @@
       if names \== '' then names = names || ', '
       names = names || .RxQuote~cpp(n)
     end
-    /* (the names as literals: the pool keeps pointers to them, no allocation per call) */
-    code = code || 'rx::Variables _rxProcVars(vars, std::initializer_list<const char *>{' || names || '}); '
+    /* (the names made once, as a table: the pool points at it, no allocation per call) */
+    code = code || 'static const rx::ExposeTable _rxProcExposed{' || names || '}; rx::Variables _rxProcVars(vars, _rxProcExposed); '
     target = '_rxProcVars'
   end
   /* the routine starts with this activation's trap settings and condition (MethodTraps::inheritNext); a RAISE ... RETURN

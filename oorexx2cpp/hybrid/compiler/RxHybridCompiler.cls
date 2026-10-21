@@ -8,6 +8,13 @@
 ::attribute builtinExpr get
 ::attribute localRoutines get
 ::attribute messageExpr get
+/* SELF is a variable in a routine (unset unless assigned) and in a method that uses it as one (methodBodySelfVariable) */
+::method selfIsVariable
+  expose className current
+  if className == 'RX2CPP_ROUTINE_IMPL' then return .true
+  if current == .nil then return .false
+  if \current~hasMethod('SELFVARIABLE') then return .false
+  return current~selfVariable
 ::attribute unaryExpr get
 ::attribute mulExpr get
 ::attribute addExpr get
@@ -476,6 +483,11 @@
     current~setCallOn(callOn)
     callOnSlot = 0
     current~setReplies(s~methodBodyReply & className \== 'RX2CPP_ROUTINE_IMPL')
+    /* SELF as a variable (set here, in the method's own pool); a routine's SELF is an ordinary variable, unset */
+    if className \== 'RX2CPP_ROUTINE_IMPL' then do
+      current~setSelfVariable(s~methodBodySelfVariable)
+      if current~selfVariable then current~addRaw('rx::set(vars, "SELF", rx::selfObject());')
+    end
     if current~hasInternalCalls then do
       current~addRaw('std::function<rx::Value(int, const std::vector<std::optional<rx::Value>> &, rx::Variables &, bool)> _rxBody;')
       current~addRaw('_rxBody = [&](int _rxEntry, const std::vector<std::optional<rx::Value>> &arguments, rx::Variables &vars, bool _rxInternal) -> rx::Value {')

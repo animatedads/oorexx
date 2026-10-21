@@ -441,13 +441,24 @@ struct ActivationScope {
     ActivationScope *saved;
     static ActivationScope *&current() { return threadState().scope; }
     explicit ActivationScope(Kind k = Method) : ActivationScope(k, threadState()) {}
-    ActivationScope(Kind k, ThreadState &t) : kind(k), callType(std::exchange(t.pendingCallType, std::string())), saved(t.scope) {
+    // TRACE N and ADDRESS sh / sh, the settings a new activation starts with. Most callers run with them, so they are
+    // saved (and given back) only when the caller has others: `settings`.
+    static bool defaultSettings(const ThreadState &t) {
+        return t.trace.size() == 1 && t.trace[0] == 'N' && t.address.size() == 2 && t.address[0] == 's' &&
+               t.address[1] == 'h' && t.alternate.size() == 2 && t.alternate[0] == 's' && t.alternate[1] == 'h';
+    }
+    static void startSettings(ThreadState &t) { t.trace.assign(1, 'N'); t.address.assign("sh", 2); t.alternate.assign("sh", 2); }
+    bool settings = false;
+    ActivationScope(Kind k, ThreadState &t) : kind(k), saved(t.scope) {
+        if (!t.pendingCallType.empty()) callType = std::exchange(t.pendingCallType, std::string());
         t.scope = this;
-        savedTrace = std::exchange(t.trace, std::string("N"));
         savedNovalue = std::exchange(novalueArmed, nullptr);
         savedLostDigits = std::exchange(lostDigitsArmed, nullptr);
-        savedAddress = std::exchange(t.address, std::string("sh"));
-        savedAlternate = std::exchange(t.alternate, std::string("sh"));
+        if (!defaultSettings(t)) {
+            settings = true;
+            savedTrace = std::move(t.trace); savedAddress = std::move(t.address); savedAlternate = std::move(t.alternate);
+            startSettings(t);
+        }
     }
     // A new clause begins (compiled before every statement that calls TIME or DATE): the next one reads the clock again.
     static void clauseBoundary() { if (ActivationScope *s = current()) s->clockState.valid = false; else outsideClock().valid = false; }
@@ -462,8 +473,9 @@ struct ActivationScope {
     }
     ~ActivationScope() {
         ThreadState &t = threadState();
-        t.scope = saved; t.trace = std::move(savedTrace); novalueArmed = savedNovalue; lostDigitsArmed = savedLostDigits;
-        t.address = std::move(savedAddress); t.alternate = std::move(savedAlternate);
+        t.scope = saved; novalueArmed = savedNovalue; lostDigitsArmed = savedLostDigits;
+        if (settings) { t.trace = std::move(savedTrace); t.address = std::move(savedAddress); t.alternate = std::move(savedAlternate); }
+        else if (!defaultSettings(t)) startSettings(t);
     }
     ActivationScope(const ActivationScope &) = delete;
     ActivationScope &operator=(const ActivationScope &) = delete;
@@ -655,16 +667,49 @@ struct NumericScope {
 };
 // The names a method EXPOSEs. A method has a handful, written as string literals: they are kept as pointers (no allocation per call);
 // names that are not literals go to an overflow vector.
+// The EXPOSE list of a method or a PROCEDURE EXPOSE, made once (a static of the compiled code): a new activation
+// points at it, with nothing to copy. Each simple name has a key (length, first and fourth character: selectorKey),
+// compared before the characters; stems ("S.", which expose every compound symbol under them) are kept apart.
+struct ExposeTable {
+    struct Entry { const char *name; std::uint32_t len; std::uint32_t key; };
+    std::vector<Entry> names, stems;
+    static std::uint32_t keyOf(const char *t, std::size_t len) {
+        return static_cast<std::uint32_t>(len & 0xffff) | static_cast<std::uint32_t>(len ? static_cast<unsigned char>(t[0]) : 0) << 16 |
+               static_cast<std::uint32_t>(len ? static_cast<unsigned char>(t[len >= 4 ? 3 : len - 1]) : 0) << 24;
+    }
+    explicit ExposeTable(std::initializer_list<const char *> list) {
+        for (const char *n : list) {
+            const std::size_t len = std::strlen(n);
+            (len > 0 && n[len - 1] == '.' ? stems : names).push_back(Entry{n, static_cast<std::uint32_t>(len), keyOf(n, len)});
+        }
+    }
+    bool empty() const { return names.empty() && stems.empty(); }
+    bool contains(const char *text, std::size_t len) const {
+        const std::uint32_t key = keyOf(text, len);
+        for (const Entry &e : names) if (e.key == key && std::memcmp(e.name, text, len) == 0) return true;
+        for (const Entry &e : stems) if (len >= e.len && std::memcmp(text, e.name, e.len) == 0) return true;   // the stem, or a compound under it
+        return false;
+    }
+};
 struct ExposedNames {
     static constexpr unsigned inlineMax = 6;
     const char *lit[inlineMax]; std::size_t litLen[inlineMax]; unsigned n = 0;
     std::vector<std::string> extra;
-    bool empty() const { return n == 0 && extra.empty(); }
+    const ExposeTable *table = nullptr;
+    bool empty() const { return n == 0 && extra.empty() && (!table || table->empty()); }
     void add(const char *name) {
         if (n < inlineMax) { lit[n] = name; litLen[n] = std::strlen(name); ++n; } else extra.emplace_back(name);
     }
     void add(const std::string &name) { extra.push_back(name); }
+    // every name, the table's and the added ones
     template <typename F> bool any(F &&test) const {
+        if (table) {
+            for (const auto &e : table->names) if (test(e.name, std::size_t(e.len))) return true;
+            for (const auto &e : table->stems) if (test(e.name, std::size_t(e.len))) return true;
+        }
+        return anyAdded(test);
+    }
+    template <typename F> bool anyAdded(F &&test) const {
         for (unsigned i = 0; i < n; i++) if (test(lit[i], litLen[i])) return true;
         for (const auto &e : extra) if (test(e.c_str(), e.size())) return true;
         return false;
@@ -695,10 +740,12 @@ struct Variables : std::unordered_map<std::string, Value> {
     Variables(Variables &caller, std::initializer_list<const char *> names) : numeric(caller.numeric), outer(&caller) {
         for (const char *n : names) exposed.add(n);
     }
+    Variables(Variables &caller, const ExposeTable &table) : numeric(caller.numeric), outer(&caller) { exposed.table = &table; }
     bool isExposed(const std::string &name) const {
         const std::size_t len = name.size();
         const char *text = name.data();
-        return exposed.any([&](const char *e, std::size_t elen) {
+        if (exposed.table && exposed.table->contains(text, len)) return true;
+        return exposed.anyAdded([&](const char *e, std::size_t elen) {
             if (elen == len && std::memcmp(e, text, len) == 0) return true;
             // a stem exposed as "STEM." exposes every compound symbol under it
             return elen > 0 && e[elen - 1] == '.' && len > elen && std::memcmp(text, e, elen) == 0;

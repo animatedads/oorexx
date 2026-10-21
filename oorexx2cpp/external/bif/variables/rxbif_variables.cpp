@@ -13,10 +13,9 @@ std::string scalar(const Slot& a, const char* what) {
     throw std::runtime_error(std::string("BIF variable: missing or unqualified ")+what);
   return a->bytes;
 }
-rx::Value scalarResult(const Slot& value) {
+// A variable's value: any object (rx::Value keeps its identity and lifetime, as a variable does).
+rx::Value priorResult(const Slot& value) {
   if (!value) throw std::runtime_error("BIF variable: caller provider returned no prior value");
-  if (value->isObject())
-    throw std::runtime_error("BIF variable: interpreter object result requires qualified object ABI");
   return *value;
 }
 }
@@ -62,8 +61,6 @@ rx::Value VariableRouter::execute(const std::string& name,
   const Slot selector=args.size()>2?args[2]:std::nullopt;
   if (selector && selector->isObject())
     throw std::runtime_error("BIF VALUE: selector object conversion requires qualified ABI");
-  if (newValue && newValue->isObject())
-    throw std::runtime_error("BIF VALUE: object-valued assignment requires qualified object ABI");
   // The provider MUST perform lexical validation and snapshot/return the old
   // value before changing the original activation. For external selectors it
   // is also responsible for policy, isolation, and failure recovery.
@@ -73,6 +70,6 @@ rx::Value VariableRouter::execute(const std::string& name,
     throw std::runtime_error("BIF VALUE: caller reported invalid symbol/selector");
   if(newValue && result.kind!=SymbolKind::Assignable)
     throw std::runtime_error("BIF VALUE: assignment to nonassignable symbol");
-  return scalarResult(result.prior);
+  return priorResult(result.prior);
 }
 } // namespace rxbif_variables

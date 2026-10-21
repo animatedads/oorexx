@@ -75,7 +75,6 @@ int main() {
     mustReject("name must be supplied","SYMBOL",{std::nullopt});
     mustReject("incorrect argument count","VAR",{SV::string("X"),SV::string("y")});
     mustReject("unqualified symbol name","VALUE",{SV::fromObject(std::make_shared<rx::ObjectDispatch>())});
-    mustReject("object-valued assignment","VALUE",{SV::string("X"),SV::fromObject(std::make_shared<rx::ObjectDispatch>())});
     mustReject("selector object conversion","VALUE",{SV::string("X"),std::nullopt,SV::fromObject(std::make_shared<rx::ObjectDispatch>())});
     const auto old=values.at("X");
     assert(call("VALUE",{SV::string("123")})=="123");

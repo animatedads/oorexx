@@ -124,6 +124,37 @@
   end
   if self~lookAheadText(k) == 'NAME' then return self~lookAheadText(k + 1)
   return condition
+/* Is SELF used as a variable in this method body? In the interpreter it is one: a method's activation starts with SELF
+   (and SUPER) set as local variables (RexxActivation::run), so it can be assigned, parsed into, dropped, read by name
+   (VALUE, VAR, SYMBOL, INTERPRET), and it is unset in a PROCEDURE routine that does not expose it. Such a method keeps
+   SELF as a variable; any other reads the receiver directly. (A conservative scan: a false yes costs one variable.) */
+::method methodBodySelfVariable
+  n = 0
+  first = ''
+  do while self~lookAheadKind(n) \= 'EOF'
+    kind = self~lookAheadKind(n)
+    text = self~lookAheadText(n)
+    atClause = self~clauseStartAt(n)
+    if \atClause & n > 0 then
+      if self~lookAheadKind(n - 1) == 'IDENT' & wordpos(self~lookAheadText(n - 1), 'THEN ELSE OTHERWISE') > 0 then atClause = .true
+    if atClause then do
+      if kind == 'OP' & text == '::' then leave
+      first = text
+    end
+    if kind == 'IDENT' then do
+      if atClause & wordpos(text, 'PROCEDURE INTERPRET') > 0 then return .true
+      if wordpos(text, 'VALUE VAR SYMBOL') > 0 & self~lookAheadText(n + 1) == '(' then do
+        /* a literal name other than SELF reads no SELF */
+        if \(self~lookAheadKind(n + 2) == 'STRING' & translate(self~lookAheadText(n + 2)) \== 'SELF') then return .true
+      end
+      if text == 'SELF' then do
+        if atClause & self~lookAheadKind(n + 1) == 'OP' & right(self~lookAheadText(n + 1), 1) == '=' then return .true
+        if \atClause & wordpos(first, 'PARSE PULL ARG USE DROP DO LOOP') > 0 then return .true
+      end
+    end
+    n = n + 1
+  end
+  return .false
 /* Does this method body have a CALL ON instruction (its handlers are called at clause boundaries)? */
 ::method methodBodyCallOn
   n = 0

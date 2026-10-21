@@ -43,10 +43,10 @@ The caller's provider must authorise the selector and implement the full
 transaction semantics or reject the request. It is unsafe to default to a
 C++ `getenv()`/`setenv()` translation.
 
-**Object boundary:** until identity/lifetime and array marshalling is
-qualified, object-valued argument names, replacements, selectors and
-returned values fail explicitly. A provider must not mutate original state
-before discovering that the old value cannot cross this boundary.
+**Object boundary:** a variable's value and a `VALUE()` replacement may be any
+object (`rx::Value` keeps its identity and lifetime, as a variable does;
+2026-10-21). Object-valued names and selectors still fail explicitly, before
+the provider is called.
 
 ## Conversion rules and limitations
 

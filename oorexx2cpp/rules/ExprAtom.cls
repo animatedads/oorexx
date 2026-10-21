@@ -87,6 +87,8 @@
     end
     when t~kind == 'IDENT' & t~text == 'SELF' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' then do
       s~next
+      /* a variable where the method uses it as one (and in a routine, where it is just a variable): RX_VGET */
+      if .RxExprAtom~selfIsVariable(ctx) then return .RxCompoundSymbols~load('SELF')
       return 'rx::selfObject()'
     end
     when t~kind == 'IDENT' then do
@@ -122,6 +124,11 @@
    use is a snapshot of the activation (rx::activationContext), with its variables unless only another method follows. */
 /* .CONTEXT~PACKAGE in a combined library: a view of the library's package named after the source file this code came
    from (RX2CPP.SOURCEMAP, the combine markers), when that is not the library's own name. */
+/* Is SELF a variable here (RxHybridCompiler~selfIsVariable): in a routine, or in a method that uses it as one? */
+::method selfIsVariable class
+  use arg ctx
+  if \ctx~hasMethod('SELFISVARIABLE') then return .false
+  return ctx~selfIsVariable
 ::method fileContext private
   map = .local['RX2CPP.SOURCEMAP']
   line = .local['RX2CPP.RAWLINE']

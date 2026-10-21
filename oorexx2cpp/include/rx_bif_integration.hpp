@@ -176,11 +176,19 @@ inline rxbif_variables::Reply frameVariableReply(Variables& vars,
         }
         return {SymbolKind::Assignable,assigned,std::nullopt};
     }
-    if(previous && previous->isObject())
-        throw std::runtime_error("BIF VALUE: object prior cannot cross scalar ABI");
+    // A stem name's value is the stem object (a stem variable always has one: RexxStem), not its default value.
+    if(!symbol.empty() && symbol.back()=='.' && symbol.find('.')==symbol.size()-1) {
+        const Value stem=stemArg(vars,symbol);
+        if(req.action==Action::Exchange) {
+            if(!req.replacement) throw std::runtime_error("BIF VALUE: invalid replacement");
+            setSymbol(vars,symbol,*req.replacement);
+        }
+        return {SymbolKind::Assignable,true,BifSlot{stem}};
+    }
+    // (a variable holds any object: VALUE answers it and assigns one, as BuiltinFunctions VALUE does)
     const Value prior=previous?*previous:Value::string(resolved);
     if(req.action==Action::Exchange) {
-        if(!req.replacement || req.replacement->isObject())
+        if(!req.replacement)
             throw std::runtime_error("BIF VALUE: invalid replacement");
         // Preflight the old result and the new object before changing anything.
         setSymbol(vars,symbol,*req.replacement);

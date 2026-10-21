@@ -104,7 +104,9 @@
         if names \== '' then names = names || ', '
         names = names || .RxQuote~cpp(field)
       end
-      lines~append('      rx::Variables vars(fields_, {' || names || '});')
+      /* (the list made once: a new activation points at it) */
+      lines~append('      static const rx::ExposeTable _rxExposed{' || names || '};')
+      lines~append('      rx::Variables vars(fields_, _rxExposed);')
     end
     else lines~append('      rx::Variables vars;')
     /* Per-activation built-in state (stream table, RANDOM seed): see rx::ActivationScope. */

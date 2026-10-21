@@ -26,4 +26,6 @@ check env_entries "$OUT/src/env_entries.rex"   # environment entries that are no
 check native_object_messages "$OUT/src/native_object_messages.rex"   # ISNIL, CLASS, class identity, CONTAINS natively
 check string_words "$OUT/src/string_words.rex"   # CONTAINSWORD / CASELESSCONTAINSWORD natively
 check truth "$OUT/src/truth.rex"     # an object as a logical value: its string value (requestString)
+check self_variable "$OUT/src/self_variable.rex"   # SELF as a variable: assigned, by name, dropped, unset in routines
+check value_objects "$OUT/src/value_objects.rex"   # VALUE() with objects; a stem name's value is the stem object
 echo "PASS program constructs: $(ls "$OUT"/*.expected | wc -l) programs, $(cat "$OUT"/*.expected | wc -l) lines identical to the interpreter"

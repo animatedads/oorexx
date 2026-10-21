@@ -11,7 +11,13 @@
   use arg ctx, asInstruction
   if arg(2, 'O') then asInstruction = .false
   s = ctx~stream
-  if s~peek~kind == 'IDENT' & s~peek~text == 'SELF' & s~lookAheadText(1) == '~' then return self~selfSend(ctx, asInstruction)
+  if s~peek~kind == 'IDENT' & s~peek~text == 'SELF' & s~lookAheadText(1) == '~' then do
+    /* SELF as a variable (assigned, or unset in a routine): the shared message rule sends to its value; a SUPER
+       override (SELF~m:SUPER) is always a send to the receiver */
+    viaVariable = .false
+    if value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' & s~lookAheadText(3) \== ':' then viaVariable = .RxExprAtom~selfIsVariable(ctx)
+    if \viaVariable then return self~selfSend(ctx, asInstruction)
+  end
   /* With interpreter objects available (host API), any receiver works: the shared message-send rule, one path. */
   if value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' then return .RxExprMessage~new~parse(ctx, .false)
   value = ctx~atomExpr~parse(ctx)
@@ -89,7 +95,9 @@
     code = code || 'rx::Value _r' || tag || ' = rx::Value::string(std::string()); { auto _o' || tag || ' = rx2cpp::selfSendValues(' || .RxQuote~cpp(target) || ', _sa' || tag || '); if (_o' || tag || ') _r' || tag || ' = *_o' || tag || '; } '
   else
     code = code || 'rx::Value _r' || tag || ' = rx2cpp::selfSendValue(' || .RxQuote~cpp(target) || ', _sa' || tag || '); '
-  do field over ctx~current~exposed
+  /* (host lane: EXPOSEd names alias the object's fields, so the method sees what the send changed; the standalone lane
+     keeps copies and reads them back) */
+  if value('RX2CPP_HOST_API', , 'ENVIRONMENT') == '' then do field over ctx~current~exposed
     code = code || 'rx::refreshField(vars, fields_, ' || .RxQuote~cpp(field) || '); '
   end
   code = code || 'return _r' || tag || '; }())'
@@ -99,3 +107,4 @@
 ::requires 'core/RxQuote.cls'
 ::requires 'rules/RxNative.cls'
 ::requires 'rules/ExprMessage.cls'
+::requires 'rules/ExprAtom.cls'
