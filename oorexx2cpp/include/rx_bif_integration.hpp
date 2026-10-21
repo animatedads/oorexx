@@ -258,13 +258,12 @@ inline Value argBifSlots(const std::vector<Slot>& args, const std::vector<BifSlo
     if(o=='N') return exists?argSlotValue(args[n-1]):Value::string("");
 #ifdef RX2CPP_HOST_API
     // A: the arguments from n to the last one that exists, as an Array (omitted ones stay empty slots).
+    // (a native array, as .Array~of makes in compiled code: it becomes the interpreter's Array if it is handed over)
     const std::size_t size = n<=count ? count-n+1 : 0;
-    Value array=envClass("ARRAY");
-    MessageResult made=array.object->sendMessage("NEW",{Value::string(std::to_string(size))});
-    if(!made) throw std::runtime_error("cannot create the ARG array");
+    auto made = std::make_shared<NativeArray>(size);
     for(std::size_t i=0;i<size;++i)
-        if(args[n-1+i]) made->object->sendMessage("PUT",{argSlotValue(args[n-1+i]),Value::string(std::to_string(i+1))});
-    return *made;
+        if(args[n-1+i]) { made->slots[i] = argSlotValue(args[n-1+i]); ++made->count; }
+    return Value::fromObject(made);
 #else
     throw std::runtime_error("BIF ARG: option A is not implemented in compiled programs");
 #endif

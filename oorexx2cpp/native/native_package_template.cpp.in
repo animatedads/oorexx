@@ -403,7 +403,15 @@ bool nativeSelfSend(const std::shared_ptr<InstanceState> &st, const std::string 
         if (args.empty() || args[0].isObject()) return false;
         const auto &parents = parentTable();
         auto pit = parents.find(definingClass);
-        if (pit == parents.end() || pit->second.empty()) return false;
+        if (pit == parents.end() || pit->second.empty()) {
+            // self~init:super in a root class whose superclass is .Object (a class of this library whose state is all
+            // native): .Object's INIT, which does nothing (without making the interpreter object to run it there)
+            if (args.size() == 1 && same(args[0].bytes, "INIT") && directNewTable().count(definingClass) && stateDisposable(*st)) {
+                out = std::nullopt;
+                return true;
+            }
+            return false;
+        }
         Resolved *method = lookupMethod(pit->second, args[0].bytes);
         if (!method) return false;
         std::vector<std::optional<rx::Value>> rest;
