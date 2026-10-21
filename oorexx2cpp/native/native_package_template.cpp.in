@@ -142,6 +142,8 @@ typedef std::unordered_map<std::string, MethodTable, CiHash, CiEq> ClassMethodTa
 struct InstanceState;
 bool stateDisposable(InstanceState &st);
 void trackState(const std::shared_ptr<InstanceState> &st);
+void watchProxy(InstanceState &st);
+bool proxyLive(InstanceState &st);
 struct InstanceState : std::enable_shared_from_this<InstanceState> {
     std::string dynamicClass;        // the class the instance was created from (upper case)
     // 1: the interpreter object holds nothing the native state does not (stateDisposable): it is not pinned for compiled
@@ -149,6 +151,9 @@ struct InstanceState : std::enable_shared_from_this<InstanceState> {
     signed char disposable = -1;
     // the class's method table (lookupMethod(InstanceState &, ...)): found on the first send; a marker when the class has none
     std::atomic<const void *> methods{nullptr};
+    // A disposable state's interpreter object is not pinned: a WeakReference to it (pinned) says whether the
+    // interpreter still has it (cleared by the collection that finds it unreachable, before its UNINIT runs).
+    void *weak = nullptr;
     bool exact = false;              // the dynamic class is a class of this package, so direct dispatch is faithful
     bool classSide = false;          // the state of a class object (its CLASS methods), not of an instance
     std::mutex gate;
@@ -341,7 +346,7 @@ struct ProxyHold {
 };
 /* An interpreter object for a native state: a new instance of the class whose first INIT adopts the state. */
 void *materializeState(const std::shared_ptr<InstanceState> &st, ProxyHold *hold = nullptr) {
-    if (st->alive && st->handle) {
+    if (st->alive && st->handle && proxyLive(*st)) {
         if (hold) hold->h = (void *)rxobj::pinRef(rxobj::need(), (RexxObjectPtr)st->handle);
         return st->handle;
     }
@@ -685,8 +690,42 @@ std::string dynamicClassOf(RexxMethodContext *ctx, RexxObjectPtr self) {
 bool stateDisposable(InstanceState &st) {
     if (st.disposable < 0)
         st.disposable = (st.exact && !st.classSide && directNewTable().count(st.dynamicClass) > 0 &&
-                         !lookupMethod(st.dynamicClass, "UNINIT")) ? 1 : 0;
+                         !lookupMethod(st.dynamicClass, "UNINIT") && !lookupMethod(st.dynamicClass, "RX2CPP_USER_UNINIT")) ? 1 : 0;
     return st.disposable == 1 && !classesChanged();
+}
+/* A disposable state's interpreter object, watched through a WeakReference (InstanceState::weak). */
+void watchProxy(InstanceState &st) {
+    if (st.weak || !st.handle || !stateDisposable(st)) return;
+    RexxThreadContext *t = rxobj::need();
+    static RexxObjectPtr weakClass = NULLOBJECT;
+    if (weakClass == NULLOBJECT) {
+        weakClass = (RexxObjectPtr)t->FindClass("WEAKREFERENCE");
+        if (weakClass == NULLOBJECT) { t->ClearCondition(); return; }
+        rxobj::pinRef(t, weakClass);
+    }
+    RexxObjectPtr w = t->SendMessage1(weakClass, "NEW", (RexxObjectPtr)st.handle);
+    if (t->CheckCondition() || w == NULLOBJECT) { t->ClearCondition(); return; }
+    st.weak = (void *)rxobj::pinRef(t, w);
+    t->ReleaseLocalReference(w);
+}
+/* Whether the state's interpreter object is still the interpreter's: for a watched (disposable) state, its
+   WeakReference still refers to it. One the interpreter has found unreachable (its UNINIT may not have run yet) is
+   given up here: the state is detached from it, and the next use makes a new one. */
+bool proxyLive(InstanceState &st) {
+    if (!st.alive || !st.handle) return false;
+    if (!st.weak) return true;
+    RexxThreadContext *t = rxobj::need();
+    RexxObjectPtr v = t->SendMessage0((RexxObjectPtr)st.weak, "VALUE");
+    if (t->CheckCondition()) { t->ClearCondition(); return true; }
+    const bool live = v == (RexxObjectPtr)st.handle;
+    if (v != NULLOBJECT) t->ReleaseLocalReference(v);
+    if (live) return true;
+    InstanceTable::instance().unbind(st.handle);
+    if (!st.token.empty()) InstanceTable::instance().remove(st.token);   // (its UNINIT then finds no state)
+    st.token.clear();
+    st.alive = false; st.handle = nullptr;
+    rxobj::unpinLater(st.weak); st.weak = nullptr;
+    return false;
 }
 /* Cycle collection. Compiled code's references are counted (std::shared_ptr), so native instances that refer to each
    other (a doubly linked list, a parent and its children) are never freed by counting alone. The collector finds them
@@ -763,6 +802,10 @@ void collectCycles() {
         if (auto o = n.object.lock()) deadObjects.push_back(std::move(o));
     }
     const std::size_t survivors = states.size() - deadStates.size();
+    if (const char *d = std::getenv("RX2CPP_GC_STATS")) if (d[0] == '2')
+        for (const auto &st : deadStates)
+            std::fprintf(stderr, "rx2cpp collect: freed %s%s (references %ld)\n", st->dynamicClass.c_str(), st->classSide ? " class" : "",
+                         static_cast<long>(st.use_count()));
     states.clear();
     for (const auto &st : deadStates) for (const auto &scope : st->scopes) scope.second->gcClear();
     for (const auto &o : deadObjects) o->gcClear();
@@ -943,6 +986,7 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
                 state->alive = true;
                 if (!classSide) InstanceTable::instance().bind(state->handle, state);
                 setRootToken(token);
+                watchProxy(*state);
                 failedInitToken.clear();
                 return NULLOBJECT;
             }
@@ -991,6 +1035,7 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
                 setRootToken(token);
 #ifdef RX2CPP_HOST_API
                 trackState(state);
+                watchProxy(*state);
 #endif
             }
         } else {
@@ -1294,6 +1339,9 @@ RexxMethod1(RexxObjectPtr, rx_native_uninit, OSELF, self)
         if (auto st = rx2cpp::InstanceTable::instance().find(token)) {
             rx2cpp::InstanceTable::instance().unbind(st->handle);
             st->alive = false; st->handle = nullptr;
+#ifdef RX2CPP_HOST_API
+            if (st->weak) { rxobj::unpinLater(st->weak); st->weak = nullptr; }
+#endif
         }
         rx2cpp::InstanceTable::instance().remove(token);
         context->DropObjectVariable("RX2CPP_NATIVE_ID");
