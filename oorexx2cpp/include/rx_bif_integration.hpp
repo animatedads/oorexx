@@ -647,7 +647,18 @@ inline bool numericEdgeArgs(const std::string &name, const std::vector<BifSlot> 
     if (a.empty() || !a[0] || a[0]->isObject()) return false;
     const std::string first = a[0]->bytes.str();
     if (rx::eqLit(name, "D2C") || rx::eqLit(name, "D2X")) {
-        if (a.size() > 1) return true;   // the signed form (with a length) is the interpreter's
+        // the signed form (with a length): native for a plain whole number (optional '-') within DIGITS and a plain
+        // length; anything else (decimals, exponents, blanks, a bad length: their errors) is the interpreter's
+        if (a.size() > 1) {
+            if (!a[1] || a[1]->isObject()) return true;
+            const std::string &len = a[1]->bytes;
+            if (len.empty() || len.size() > 9 || len.find_first_not_of("0123456789") != std::string::npos) return true;
+            const std::size_t start = (!first.empty() && first[0] == '-') ? 1 : 0;
+            if (first.size() == start || first.find_first_not_of("0123456789", start) != std::string::npos) return true;
+            const std::size_t lead = first.find_first_not_of('0', start);
+            const std::size_t significant = lead == std::string::npos ? 0 : first.size() - lead;
+            return significant > static_cast<std::size_t>(num.digits);
+        }
         return first.empty() || first.size() > static_cast<std::size_t>(num.digits) ||
                first.find_first_not_of("0123456789") != std::string::npos;
     }
