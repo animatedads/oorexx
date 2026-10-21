@@ -180,6 +180,19 @@ inline void *findClass(const std::string &name) {
     if (libraryPackage() != NULLOBJECT) {
         c = t->FindPackageClass((RexxPackageObject)libraryPackage(), name.c_str());
         if (c == NULLOBJECT) t->ClearCondition();
+        // (PackageClass::findClass goes on to .LOCAL and .ENVIRONMENT and answers any entry there: only a class is one,
+        // as FindClass filters (NativeActivation::findClass); an entry such as a string is an environment entry)
+        else {
+            static thread_local RexxClassObject classClass = NULLOBJECT;
+            if (classClass == NULLOBJECT) {
+                classClass = t->FindClass("CLASS");
+                if (classClass != NULLOBJECT) rxobj::pinRef(t, (RexxObjectPtr)classClass);
+            }
+            if (classClass != NULLOBJECT && !t->IsInstanceOf((RexxObjectPtr)c, classClass)) {
+                t->ReleaseLocalReference((RexxObjectPtr)c);
+                return nullptr;
+            }
+        }
     }
     if (c == NULLOBJECT) c = t->FindClass(name.c_str());
     if (c == NULLOBJECT) { t->ClearCondition(); return nullptr; }
@@ -556,6 +569,13 @@ inline std::optional<Value> (*packageClassHook)(const std::string &) = nullptr;
 // instance (its compiled methods then run directly). The hook takes over the global reference it is given.
 inline std::optional<Value> (*adoptHook)(void *globalRef) = nullptr;
 inline std::optional<Value> (*selfObjectHook)() = nullptr;
+struct EnvObject;
+// Installed by a generated library with ::ROUTINEs: runs routine~CALL / ~CALLWITH natively when the receiver is one of
+// its compiled routines (ours set); otherwise ours stays false and the message goes to the interpreter.
+inline MessageResult (*&routineCallHook())(void *routine, const std::string &selector, const std::vector<Value> &args, bool &ours) {
+    static MessageResult (*hook)(void *, const std::string &, const std::vector<Value> &, bool &) = nullptr;
+    return hook;
+}
 struct EnvObject final : ObjectDispatch {
     void *handle;
     explicit EnvObject(void *h) : handle(h) {}
@@ -726,6 +746,14 @@ struct EnvObject final : ObjectDispatch {
     MessageResult sendMessage(const std::string &selector, const std::vector<Value> &args) override {
         if (!selector.empty() && selector[0] == '[') if (auto fast = arrayAccess(selector, args)) return *fast;
         if (trappedSendHook()) if (auto trapped = trappedSendHook()(handle, selector, args)) return *trapped;
+        // routine~CALL / ~CALLWITH of a routine compiled in this library: run it here (routineCallHook), its arguments
+        // staying native (no interpreter frame, no interpreter copy of an argument array)
+        if (routineCallHook() && (selector.size() == 4 || selector.size() == 8) &&
+            (rx::eqLit(selector, "CALL") || rx::eqLit(selector, "CALLWITH"))) {
+            bool ours = false;
+            MessageResult r = routineCallHook()(handle, selector, args, ours);
+            if (ours) return r;
+        }
         std::vector<rxobj::Arg> in; convert(args, in);
         rxobj::Result r; std::string code, text;
         if (!rxobj::send(handle, selector, in, r, code, text)) {

@@ -1112,6 +1112,20 @@ inline std::optional<MessageResult> quickStringMethod(const std::string &name, c
         if (auto r = quickBif(name, a)) return MessageResult(std::move(*r));
         return std::nullopt;
     }
+    // hay~CONTAINS(needle [, start [, length]]): StringUtil::containsRexx (POS within the range, as 1 / 0)
+    if (rx::eqLit(name, "CONTAINS") && !args.empty() && args.size() <= 3 && plainArgs()) {
+        std::size_t start = 1, range = std::string::npos;
+        if (args.size() >= 2 && !count(args[1], start, true)) return std::nullopt;
+        if (args.size() == 3 && !count(args[2], range, false)) return std::nullopt;
+        const std::string &needle = args[0].bytes;
+        const std::size_t from = start - 1;
+        if (from >= s.size() || needle.empty()) return MessageResult(Value::string("0"));
+        range = std::min(range, s.size() - from);
+        if (needle.size() > range) return MessageResult(Value::string("0"));
+        const auto *b = s.data() + from;
+        const bool found = std::search(b, b + range, needle.data(), needle.data() + needle.size()) != b + range;
+        return MessageResult(Value::string(found ? "1" : "0"));
+    }
     if (rx::eqLit(name, "COUNTSTR") && args.size() == 1 && plainArgs()) {
         const std::string &needle = args[0].bytes;
         std::size_t n = 0;

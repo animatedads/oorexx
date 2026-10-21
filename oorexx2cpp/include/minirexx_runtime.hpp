@@ -1360,7 +1360,12 @@ inline Value messageValue(const Value &receiver, const std::string &selector,
                           const std::vector<Value> &args, bool cascade) {
     MessageResult outcome = sendMessage(receiver, selector, args);
     if (cascade) return receiver;
-    if (!outcome) throw std::runtime_error("message " + selector + " did not return a result");
+    if (!outcome) {
+        // Error 91.999 (Error_No_result_object_message), as the interpreter reports a message used for its value
+        SyntaxCondition e("91.999", "Message \"" + selector + "\" did not return a result", false);
+        e.substitutions.push_back(Value::string(selector));
+        throw e;
+    }
     return std::move(*outcome);
 }
 // receiver[index] (one index): the object's own answer when it has one (ObjectDispatch::indexAt), else the message.

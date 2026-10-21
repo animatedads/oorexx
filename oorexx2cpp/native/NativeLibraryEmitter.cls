@@ -323,6 +323,7 @@
   if countClasses == 0 then raise syntax 40.1 array('rx2cpp: empty class package')
   routineDefs = ''
   routineEntries = ''
+  routineNameList = ''
   if arg(6, 'E') then do
     do routineName over routines~names
       self~identifier(.RxQuote~identifier(routineName), 'routine')
@@ -348,6 +349,7 @@
         'static RexxObjectPtr rx2cpp_routine_entry(RexxCallContext *context, RexxArrayObject args, const char *name);' || '0a'x
       routineDefs = routineDefs || 'RexxRoutine1(RexxObjectPtr, ' || symbol || ', ARGLIST, args)' || '0a'x
       routineDefs = routineDefs || '{ return rx2cpp_routine_entry(context, args, ' || .RxQuote~cpp(routineName) || '); }' || '0a'x
+      routineNameList = routineNameList || '    ' || .RxQuote~cpp(routineName) || ',' || '0a'x
       /* REXX_TYPED_ROUTINE written out: the exported name is a string, not an identifier (it may hold dots). */
       routineEntries = routineEntries || '    { ROUTINE_TYPED_STYLE, 0, ' || .RxQuote~cpp(entryName) || ', (void *)' || symbol || ', 0, 0 },' || '0a'x
     end
@@ -418,6 +420,9 @@
   output = template~changeStr('%DIRECT_TABLES%', direct)
   output = output~changeStr('%METHOD_DEFINITIONS%', cpp)
   output = output~changeStr('%METHOD_ENTRIES%', entries)
+  /* the compiled routines' names: routine~CALL of one of them runs natively (template: routineCallImpl) */
+  if routineNameList \== '' then
+    routineDefs = routineDefs || 'static const char *const rx2cppRoutineNames[] = {' || '0a'x || routineNameList || '    nullptr };' || '0a'x
   output = output~changeStr('%ROUTINE_DEFINITIONS%', routineDefs)
   output = output~changeStr('%ROUTINE_ENTRIES%', routineEntries)
   if self~form == 'tokenized' then output = output~changeStr('%CLASS_SOURCE%', self~tokenized(source))

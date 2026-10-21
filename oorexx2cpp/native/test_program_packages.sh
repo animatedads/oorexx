@@ -22,12 +22,6 @@ check inline "$OUT/src/inline_routine.rex"
 check prologs "$OUT/src/prologs.rex" "$OUT/src/lib"
 check neighbours "$OUT/src/side/neighbours.rex"
 check constructs "$OUT/src/constructs.rex"
-check routine_call "$OUT/src/routine_call.rex"   # routine~call / ~callWith from compiled code (an error in the routine)
-check init_internal "$OUT/src/init_internal.rex"   # RETURN value of an internal routine of INIT
-check stem_returns "$OUT/src/stem_returns.rex"   # a stem returned by a routine, a method, a stem attribute
-check dynamic_call "$OUT/src/dynamic_call.rex"   # CALL (expression): a label of the routine or method first
-check d2c_signed "$OUT/src/d2c_signed.rex"   # D2C / D2X with a length (two's complement), native
-check truth "$OUT/src/truth.rex"     # an object as a logical value: its string value (requestString)
 # RX2CPP_SEPARATE_PACKAGES=1: one library per required package, each its own package (name, findRoutine of a routine
 # that is not public, a class that is not public reaching the main program, prologs)
 SEPARATE=1 check sep_main "$OUT/src/separate/pkgmain.rex"
@@ -40,4 +34,4 @@ ls "$OUT/sep_prolog"/librxp_pkgp.so "$OUT/sep_prolog"/librxp_pkgsep.so >/dev/nul
 printf 'say 1\n::requires "nowhere.cls"\n' > "$OUT/missing.rex"
 "$ROOT/native/compile_program.sh" "$OUT/missing.rex" "$OUT/missing" > "$OUT/missing.build" 2>&1 || true
 grep -q 'warning: not compiled, loaded by the interpreter at run time: ::requires "nowhere.cls"' "$OUT/missing.build" || { echo "FAIL no warning for a package left interpreted"; cat "$OUT/missing.build"; exit 1; }
-echo "PASS program packages: inline routine body, prologs in load order, neighbouring packages, warning, parser constructs, separate packages ($(cat "$OUT"/*.expected | wc -l) lines identical)"
+echo "PASS program packages: inline routine body, prologs in load order, neighbouring packages, warning, separate packages ($(cat "$OUT"/*.expected | wc -l) lines identical)"

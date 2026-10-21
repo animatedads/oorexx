@@ -469,6 +469,7 @@ bool objectIdentityOp(const std::shared_ptr<InstanceState> &st, const std::strin
     known.emplace(key, identity);
     return identity;
 }
+rx::Value nativeClassValue(const std::string &name);
 class NativeInstanceRef final : public rx::NativeRefBase {
     std::shared_ptr<InstanceState> st_;
     std::shared_ptr<rx::EnvObject> keep_;   // adopted from the interpreter: holds its global reference (no early UNINIT)
@@ -505,6 +506,13 @@ public:
         }
         if (Resolved *method = lookupMethod(*st_, selector))
             if (method->second.isPublic || privateAllowedFor(st_.get(), method->second)) return runNative(st_, *method, optionalsOf(args));
+        // .Object's ISNIL and CLASS of an instance of a class of this library whose state is all native: answered here
+        // (the class defines neither: the lookup above found none), without making its interpreter object
+        if (args.empty() && !st_->classSide && stateDisposable(*st_)) {
+            static const CiEq same;
+            if (same(selector, "ISNIL")) return rx::Value::string("0");
+            if (same(selector, "CLASS")) return nativeClassValue(st_->dynamicClass);
+        }
         return interpreterSend(st_, selector, args);
     }
     const InstanceState *state() const { return st_.get(); }
@@ -622,10 +630,21 @@ public:
         }
         return iclass().sendMessage(selector, args);
     }
-    rx::Value sendBinary(const std::string &selector, const rx::Value &rhs) override { return iclass().sendBinary(selector, rhs); }
+    rx::Value sendBinary(const std::string &selector, const rx::Value &rhs) override {
+        // a class object compared with a class object: the Class class's comparisons are identity (x~class == .Foo)
+        const bool positive = selector == "==" || selector == "=";
+        if (positive || selector == "\\==" || selector == "\\=" || selector == "<>" || selector == "><") {
+            bool known = false, same = false;
+            if (auto *other = dynamic_cast<NativeClassObj *>(rhs.object.get())) { known = true; same = other->name_ == name_; }
+            else if (auto *env = dynamic_cast<rx::EnvObject *>(rhs.object.get())) { if (env->handle) { known = true; same = env->handle == iclass().handle; } }
+            if (known) return rx::Value::string(same == positive ? "1" : "0");
+        }
+        return iclass().sendBinary(selector, rhs);
+    }
     rx::Value sendUnary(const std::string &selector) override { return iclass().sendUnary(selector); }
     std::string display() const override { return const_cast<NativeClassObj *>(this)->iclass().display(); }
 };
+rx::Value nativeClassValue(const std::string &name) { return rx::Value::fromObject(std::make_shared<NativeClassObj>(name)); }
 std::optional<rx::Value> packageClassImpl(const std::string &name) {
     const std::string up = upperOf(name);
     if (!directNewTable().count(up)) return std::nullopt;
@@ -1235,6 +1254,49 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
 #ifdef RX2CPP_HAS_ROUTINES
 // A package ::ROUTINE called by the interpreter. With the host API, arguments and result are values (objects included:
 // interpreter objects, native instances, .nil); otherwise the scalar string ABI.
+#ifdef RX2CPP_HOST_API
+/* routine~CALL / ~CALLWITH from compiled code whose receiver is a routine of this library (the interpreter's routine
+   object, from findRoutine, .routines, ...): run here, as a local routine call is, with the arguments as they are
+   (rx::routineCallHook). The routine objects are the declaration package's, found once by name. */
+static rx::MessageResult routineCallImpl(void *routine, const std::string &selector, const std::vector<rx::Value> &args, bool &ours) {
+    static thread_local std::unordered_map<void *, const char *> mine;
+    static thread_local bool filled = false;
+    if (!filled && rxobj::libraryPackage() != NULLOBJECT) {
+        filled = true;
+        RexxThreadContext *t = rxobj::need();
+        RexxDirectoryObject all = t->GetPackageRoutines((RexxPackageObject)rxobj::libraryPackage());
+        if (t->CheckCondition()) t->ClearCondition();
+        else if (all != NULLOBJECT)
+            for (const char *const *n = rx2cppRoutineNames; *n; ++n) {
+                RexxObjectPtr r = t->DirectoryAt(all, *n);
+                if (r != NULLOBJECT) mine.emplace((void *)r, *n);   // (the package keeps its routines)
+            }
+    }
+    auto it = mine.find(routine);
+    if (it == mine.end()) return std::nullopt;
+    std::vector<std::optional<rx::Value>> positional;
+    if (rx::eqLit(selector, "CALL")) {
+        for (const rx::Value &a : args) {
+            auto *e = a.isObject() ? dynamic_cast<rx::EnvObject *>(a.object.get()) : nullptr;
+            if (e && !e->handle) positional.emplace_back(std::nullopt); else positional.emplace_back(a);
+        }
+    } else {
+        if (args.size() != 1 || !args[0].isObject()) return std::nullopt;   // (the interpreter's error)
+        if (auto *na = dynamic_cast<rx::NativeArray *>(args[0].object.get())) {
+            if (na->real) return std::nullopt;
+            for (const auto &slot : na->slots) positional.push_back(slot);
+        } else return std::nullopt;   // an interpreter array: as before
+    }
+    ours = true;
+    auto obj = rx2cpp::makeGeneratedObject_RX2CPP_ROUTINE_IMPL();
+    rx::noResultPending() = false;
+    rx::pendingCallType() = "SUBROUTINE";
+    rx::Value v = rx::runRaising([&] { return obj->invokeValues(it->second, positional); });
+    if (std::exchange(rx::noResultPending(), false)) return std::nullopt;
+    return v;
+}
+[[maybe_unused]] static const bool routineCallInstalled = (rx::routineCallHook() = &routineCallImpl, true);
+#endif
 static RexxObjectPtr rx2cpp_routine_entry(RexxCallContext *context, RexxArrayObject args, const char *name) {
     try {
 #ifdef RX2CPP_HOST_API
