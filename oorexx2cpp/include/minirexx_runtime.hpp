@@ -285,6 +285,14 @@ struct NoMethod : std::runtime_error {
     std::shared_ptr<ObjectDispatch> conditionObject;   // the interpreter's condition object, when it raised the error (97.1)
     std::vector<Value> substitutions;                  // its ADDITIONAL values
 };
+// The key a compiled class's dispatch switches on (RxHybridCppEmitter dispatch): the name's length, first character and
+// fourth (or last) character. Names of one class rarely share it; one comparison then confirms the name.
+inline std::uint32_t selectorKey(const std::string &s) {
+    const std::size_t n = s.size();
+    if (n == 0) return 0;
+    return static_cast<std::uint32_t>(n & 0xFFFF) | static_cast<std::uint32_t>(static_cast<unsigned char>(s[0])) << 16 |
+           static_cast<std::uint32_t>(static_cast<unsigned char>(s[n >= 4 ? 3 : n - 1])) << 24;
+}
 struct ObjectDispatch {
     virtual MessageResult sendMessage(const std::string &selector,
                                       const std::vector<Value> &args) {

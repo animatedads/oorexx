@@ -77,6 +77,10 @@
   return out
 ::method dispatch private
   use arg lines, unit, options, bodies
+  /* The selector chooses its method through a switch on a key of the name (its length, first and fourth (or last)
+     characters: rx::selectorKey), then one comparison: no chain of string comparisons per message. */
+  groups = .directory~new
+  keys = .array~new
   index = 0
   do method over unit~methods
     index = index + 1
@@ -85,9 +89,9 @@
     /* REPLY: the stub passes the reply box as the last argument (rx::ReplyScope) */
     if replies then do
       guarded = wordpos('UNGUARDED', method~declaration~upper) = 0
-      lines~append('    if (selector == ' || .RxQuote~cpp(method~selector) || ') { rx::ReplyScope _rxReply(arguments, ' || word('false true', 1 + guarded) || '); return rxMethod' || index || '(selector, _rxReply.arguments); }')
+      call dispatchLine method~selector, '      if (selector == ' || .RxQuote~cpp(method~selector) || ') { rx::ReplyScope _rxReply(arguments, ' || word('false true', 1 + guarded) || '); return rxMethod' || index || '(selector, _rxReply.arguments); }'
     end
-    else lines~append('    if (selector == ' || .RxQuote~cpp(method~selector) || ') return rxMethod' || index || '(selector, arguments);')
+    else call dispatchLine method~selector, '      if (selector == ' || .RxQuote~cpp(method~selector) || ') return rxMethod' || index || '(selector, arguments);'
     target = lines
     lines = bodies
     lines~append('  rx::Value rxMethod' || index || '(const std::string &selector, const std::vector<std::optional<rx::Value>> &arguments) {')
@@ -141,6 +145,36 @@
     lines~append('  }')
     lines = target
   end
+  if keys~items > 0 then do
+    lines~append('    switch (rx::selectorKey(selector)) {')
+    do key over keys
+      lines~append('    case ' || key || 'u:')
+      do l over groups[key]
+        lines~append(l)
+      end
+      lines~append('      break;')
+    end
+    lines~append('    default: break;')
+    lines~append('    }')
+  end
+  return
+/* the line that dispatches one selector, under its key (as rx::selectorKey computes it) */
+dispatchLine:
+  use arg sel, line
+  numeric digits 12
+  n = length(sel)
+  key = 0
+  if n > 0 then do
+    k = n
+    if n >= 4 then k = 4
+    key = n // 65536 + c2d(left(sel, 1)) * 65536 + c2d(substr(sel, k, 1)) * 16777216
+  end
+  if \groups~hasIndex(key) then do
+    groups[key] = .array~new
+    keys~append(key)
+  end
+  groups[key]~append(line)
+  return
 /* Vector invocation belongs only to synthetic package-routine classes.
    Each invocation owns fresh local variables; scalar byte strings are bound
    positionally and no object/class state is introduced. */

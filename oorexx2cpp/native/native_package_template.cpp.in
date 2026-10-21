@@ -147,6 +147,8 @@ struct InstanceState : std::enable_shared_from_this<InstanceState> {
     // 1: the interpreter object holds nothing the native state does not (stateDisposable): it is not pinned for compiled
     // code's references, the interpreter collects it when it holds it no more, and one is made again when needed.
     signed char disposable = -1;
+    // the class's method table (lookupMethod(InstanceState &, ...)): found on the first send; a marker when the class has none
+    std::atomic<const void *> methods{nullptr};
     bool exact = false;              // the dynamic class is a class of this package, so direct dispatch is faithful
     bool classSide = false;          // the state of a class object (its CLASS methods), not of an instance
     std::mutex gate;
@@ -269,12 +271,63 @@ std::vector<std::optional<rx::Value>> optionalsOf(const std::vector<rx::Value> &
 }
 /* The table entry for (class, selector): first = the canonical upper-case selector, second = how to dispatch it. */
 typedef const MethodTable::value_type Resolved;
+/* A class's methods by a key of the selector (its length, first and fourth (or last) characters, case folded: three
+   loads, no pass over the name), in an open-addressed table: one probe and one comparison on a send. */
+struct FastMethods {
+    struct Slot { std::uint32_t key = 0; Resolved *entry = nullptr; };
+    std::vector<Slot> slots;
+    std::size_t mask = 0;
+    static std::uint32_t keyOf(const std::string &s) {
+        const std::size_t n = s.size();
+        if (n == 0) return 0;
+        return static_cast<std::uint32_t>(n & 0xFFFF) | static_cast<std::uint32_t>(ciUpper(static_cast<unsigned char>(s[0]))) << 16 |
+               static_cast<std::uint32_t>(ciUpper(static_cast<unsigned char>(s[n >= 4 ? 3 : n - 1]))) << 24;
+    }
+    static std::size_t spread(std::uint32_t k) { return static_cast<std::size_t>((k * 0x9E3779B1u) ^ (k >> 13)); }
+    explicit FastMethods(const MethodTable &table) {
+        std::size_t size = 8;
+        while (size < table.size() * 2) size <<= 1;
+        slots.resize(size);
+        mask = size - 1;
+        for (const auto &entry : table) {
+            const std::uint32_t k = keyOf(entry.first);
+            std::size_t i = spread(k) & mask;
+            while (slots[i].entry) i = (i + 1) & mask;
+            slots[i].key = k; slots[i].entry = &entry;
+        }
+    }
+    Resolved *find(const std::string &selector) const {
+        static const CiEq same;
+        const std::uint32_t k = keyOf(selector);
+        for (std::size_t i = spread(k) & mask; slots[i].entry; i = (i + 1) & mask)
+            if (slots[i].key == k && same(slots[i].entry->first, selector)) return slots[i].entry;
+        return nullptr;
+    }
+};
+const FastMethods *fastMethodsOf(const std::string &cls) {
+    static const auto *all = [] {
+        auto *m = new std::unordered_map<std::string, FastMethods, CiHash, CiEq>();
+        for (const auto &c : directMethodTable()) m->emplace(c.first, FastMethods(c.second));
+        return m;
+    }();
+    auto it = all->find(cls);
+    return it == all->end() ? nullptr : &it->second;
+}
 Resolved *lookupMethod(const std::string &cls, const std::string &selector) {
-    const auto &all = directMethodTable();
-    auto it = all.find(cls);
-    if (it == all.end()) return nullptr;
-    auto jt = it->second.find(selector);
-    return jt == it->second.end() ? nullptr : &*jt;
+    const FastMethods *f = fastMethodsOf(cls);
+    return f ? f->find(selector) : nullptr;
+}
+/* (a state's class table, found once) */
+Resolved *lookupMethod(InstanceState &st, const std::string &selector) {
+    static const char none = 0;   // (marks a class with no table)
+    const void *known = st.methods.load(std::memory_order_acquire);
+    if (!known) {
+        const FastMethods *f = fastMethodsOf(st.dynamicClass);
+        known = f ? static_cast<const void *>(f) : static_cast<const void *>(&none);
+        st.methods.store(known, std::memory_order_release);
+    }
+    if (known == &none) return nullptr;
+    return static_cast<const FastMethods *>(known)->find(selector);
 }
 /* The interpreter object of a native state stays alive while compiled code sends it a message: nothing in the
    interpreter may reference it (a native instance's proxy), so a collection during the send (an argument string, the
@@ -353,7 +406,7 @@ bool nativeSelfSend(const std::shared_ptr<InstanceState> &st, const std::string 
         out = runNative(st, *method, rest);
         return true;
     }
-    Resolved *method = lookupMethod(st->dynamicClass, selector);
+    Resolved *method = lookupMethod(*st, selector);
     if (!method) return false;
     out = runNative(st, *method, optionalsOf(args));
     return true;
@@ -431,7 +484,7 @@ public:
     rx::MessageResult sendMessage(const std::string &selector, const std::vector<rx::Value> &args) override {
         // ISA of a compiled instance whose class does not define ISA: the answer depends on its class and the class asked
         // about, so the interpreter answers once per pair.
-        if (args.size() == 1 && args[0].isObject() && !st_->classSide && selector == "ISA" && !lookupMethod(st_->dynamicClass, "ISA")) {
+        if (args.size() == 1 && args[0].isObject() && !st_->classSide && selector == "ISA" && !lookupMethod(*st_, "ISA")) {
             void *key = nullptr;
             if (auto *e = dynamic_cast<rx::EnvObject *>(args[0].object.get())) key = e->handle;
             else if (auto *n = dynamic_cast<rx::NativeRefBase *>(args[0].object.get()); n && !dynamic_cast<NativeInstanceRef *>(n)) key = n->materialize();
@@ -445,7 +498,7 @@ public:
                 return r;
             }
         }
-        if (Resolved *method = lookupMethod(st_->dynamicClass, selector))
+        if (Resolved *method = lookupMethod(*st_, selector))
             if (method->second.isPublic || privateAllowedFor(st_.get(), method->second)) return runNative(st_, *method, optionalsOf(args));
         return interpreterSend(st_, selector, args);
     }
