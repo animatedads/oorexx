@@ -24,6 +24,9 @@
   lines~append('class GeneratedObject_' || suffix || ' final : public CompiledObject, public rx::ObjectDispatch {')
   lines~append('  rx::Variables fields_;')
   lines~append('public:')
+  /* the cycle collector's view of the object variables (native_package_template.cpp.in collectCycles) */
+  lines~append('  void gcFields(const std::function<void(const rx::Value &)> &f) const override { for (const auto &kv : fields_) f(kv.second); }')
+  lines~append('  void gcClear() override { std::unordered_map<std::string, rx::Value> gone; gone.swap(fields_); rx::variablesErased(); }')
   /* One entry point: the ooRexx ARGLIST, any length. invoke0/invoke/invoke2 are thin adapters for
      host code that still calls them; they carry no arity logic. */
   lines~append('  rx::Value invokeValues(const std::string &selector, const std::vector<std::optional<rx::Value>> &arguments) override {')

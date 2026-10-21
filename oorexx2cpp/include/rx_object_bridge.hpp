@@ -25,6 +25,7 @@ inline bool send(void *t, const std::string &s, const std::vector<Arg> &a, Resul
 #else
 #include <oorexxapi.h>
 #include <mutex>
+#include <condition_variable>
 #include <typeinfo>
 #include <cstdlib>
 #include <pwd.h>
@@ -40,12 +41,50 @@ struct Arg { void *obj = nullptr; std::string bytes; bool omitted = false; std::
 struct Result { int kind = 0; std::string bytes; void *obj = nullptr; };
 inline thread_local RexxThreadContext *current = nullptr;
 inline thread_local RexxObjectPtr currentSelf = NULLOBJECT;
+// The threads running compiled code. The library's cycle collector (native_package_template.cpp.in collectCycles)
+// looks at every native object, so it runs only while the calling thread is the one thread in compiled code; a thread
+// entering compiled code meanwhile waits for it to finish (exclusiveNative).
+struct NativeGate { std::mutex m; std::condition_variable cv; int active = 0; bool collecting = false; };
+inline NativeGate &nativeGate() { static NativeGate *g = new NativeGate; return *g; }   // never destroyed: used during exit
+inline thread_local int nativeDepth = 0;
+template <class F> inline bool exclusiveNative(F &&f) {
+    NativeGate &g = nativeGate();
+    {
+        std::lock_guard<std::mutex> l(g.m);
+        if (g.active != 1 || g.collecting || nativeDepth == 0) return false;
+        g.collecting = true;
+    }
+    try { f(); } catch (...) {}
+    { std::lock_guard<std::mutex> l(g.m); g.collecting = false; }
+    g.cv.notify_all();
+    return true;
+}
+inline void unpinRef(RexxThreadContext *t, void *h);
+inline RexxObjectPtr pinRef(RexxThreadContext *t, RexxObjectPtr o);
+// An interpreter object a native entry returns, that nothing else may reference (a native instance's own object, which
+// compiled code does not pin): pinned until the next entry into compiled code, when the interpreter has it.
+inline std::vector<void *> &returnPins() { static thread_local std::vector<void *> p; return p; }
+inline void *returnPin(void *h);
 // Set by every native method/routine entry for the duration of the call (self is NULLOBJECT in routines).
 struct Scope {
-    RexxThreadContext *previous; RexxObjectPtr previousSelf;
+    RexxThreadContext *previous; RexxObjectPtr previousSelf; Scope *outer;
+    static Scope *&innermost() { static thread_local Scope *s = nullptr; return s; }
     explicit Scope(RexxThreadContext *c, RexxObjectPtr self = NULLOBJECT)
-        : previous(current), previousSelf(currentSelf) { current = c; currentSelf = self; }
-    ~Scope() { current = previous; currentSelf = previousSelf; }
+        : previous(current), previousSelf(currentSelf), outer(innermost()) {
+        current = c; currentSelf = self; innermost() = this;
+        if (!returnPins().empty()) for (void *h : std::exchange(returnPins(), std::vector<void *>())) unpinRef(c, h);
+        if (nativeDepth++ == 0) {
+            NativeGate &g = nativeGate();
+            std::unique_lock<std::mutex> l(g.m);
+            g.cv.wait(l, [&] { return !g.collecting; });
+            ++g.active;
+        }
+    }
+    ~Scope() {
+        innermost() = outer;
+        current = previous; currentSelf = previousSelf;
+        if (--nativeDepth == 0) { NativeGate &g = nativeGate(); std::lock_guard<std::mutex> l(g.m); --g.active; }
+    }
 };
 // Every object an API call returns stays referenced until the native method returns. A long-running compiled method makes
 // millions of temporaries, so each is dropped as soon as it has been used.
@@ -93,6 +132,10 @@ inline void unpinLater(void *h) {
     if (current) { unpinRef(current, h); return; }
     std::lock_guard<std::mutex> g(pinTable().lock);
     deferredUnpins().push_back(h);
+}
+inline void *returnPin(void *h) {
+    if (h && current) returnPins().push_back((void *)pinRef(current, (RexxObjectPtr)h));
+    return h;
 }
 inline void unpinRef(RexxThreadContext *t, void *h) {
     if (!h) return;
@@ -1546,6 +1589,14 @@ struct NativeArray final : NativeRefBase, ItemSnapshot, std::enable_shared_from_
     static constexpr std::size_t maxSlots = std::size_t(1) << 20;
     bool sized = true;                          // .array~new gives no dimension yet (DIMENSION 0); NEW(n) and OF give 1
     explicit NativeArray(std::size_t size = 0, bool withSize = true) : slots(size), sized(withSize) {}
+    void gcValues(const std::function<void(const Value &)> &f) const override {
+        for (const auto &v : slots) if (v) f(*v);
+        if (real) f(*real);
+    }
+    void gcClear() override {
+        std::vector<std::optional<Value>> gone; gone.swap(slots); count = 0;
+        std::optional<Value> r; r.swap(real);
+    }
     // A positive whole number written plainly (blanks around allowed); anything else is left to the interpreter.
     static bool index(const Value &v, std::size_t &out) {
         if (v.isObject()) return false;
@@ -1706,6 +1757,15 @@ struct NativeDirectory final : NativeRefBase, std::enable_shared_from_this<Nativ
     std::unordered_map<std::string, Value> entries;
     std::optional<Value> real;
     std::vector<std::size_t> hashOrder;                   // positions in order, in the interpreter's order (when asked)
+    void gcValues(const std::function<void(const Value &)> &f) const override {
+        for (const auto &kv : entries) f(kv.second);
+        if (real) f(*real);
+    }
+    void gcClear() override {
+        std::unordered_map<std::string, Value> gone; gone.swap(entries);
+        order.clear(); hashOrder.clear();
+        std::optional<Value> r; r.swap(real);
+    }
     // The interpreter's ALLINDEXES order of these keys (no entry is ever removed while native: a new key is what makes
     // it stale).
     const std::vector<std::size_t> &interpreterOrder() {

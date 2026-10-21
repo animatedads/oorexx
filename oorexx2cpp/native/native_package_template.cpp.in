@@ -139,8 +139,14 @@ typedef std::unordered_map<std::string, MethodTable, CiHash, CiEq> ClassMethodTa
 /* Dual representation: one native instance = one InstanceState. The state owns the compiled per-class scopes. It is
    reachable from compiled code directly (NativeInstanceRef) and, once an interpreter object exists for it, through the
    token stored in that object. */
+struct InstanceState;
+bool stateDisposable(InstanceState &st);
+void trackState(const std::shared_ptr<InstanceState> &st);
 struct InstanceState : std::enable_shared_from_this<InstanceState> {
     std::string dynamicClass;        // the class the instance was created from (upper case)
+    // 1: the interpreter object holds nothing the native state does not (stateDisposable): it is not pinned for compiled
+    // code's references, the interpreter collects it when it holds it no more, and one is made again when needed.
+    signed char disposable = -1;
     bool exact = false;              // the dynamic class is a class of this package, so direct dispatch is faithful
     bool classSide = false;          // the state of a class object (its CLASS methods), not of an instance
     std::mutex gate;
@@ -152,7 +158,7 @@ struct InstanceState : std::enable_shared_from_this<InstanceState> {
     void *pin = nullptr;
     void notePin() {   // (gate held)
 #ifdef RX2CPP_HOST_API
-        if (nativeRefs > 0 && alive && handle && !pin && rxobj::current)
+        if (nativeRefs > 0 && alive && handle && !pin && rxobj::current && !stateDisposable(*this))
             pin = (void *)rxobj::pinRef(rxobj::current, (RexxObjectPtr)handle);
 #endif
     }
@@ -170,8 +176,33 @@ class InstanceTable {
     std::mutex gate_;
     std::unordered_map<std::string, std::shared_ptr<InstanceState>> states_;
     unsigned long long next_ = 0;
+    std::vector<std::weak_ptr<InstanceState>> all_;   // every native state (the cycle collector's view)
+    std::size_t sinceCollect_ = 0, collectAt_ = 20000;
+    // RX2CPP_GC_EVERY=n: collect every n states (tests: 1 collects at every new state)
+    std::size_t every_ = [] { const char *e = std::getenv("RX2CPP_GC_EVERY"); return e ? std::max<std::size_t>(1, std::strtoul(e, nullptr, 10)) : 0; }();
 public:
+    InstanceTable() { if (every_) collectAt_ = every_; }
     static InstanceTable &instance() { static InstanceTable table; return table; }
+    // A new native state, known to the cycle collector. True when enough have been made since it last ran.
+    bool track(const std::shared_ptr<InstanceState> &state) {
+        std::lock_guard<std::mutex> lock(gate_);
+        all_.push_back(state);
+        return ++sinceCollect_ >= collectAt_;
+    }
+    std::vector<std::shared_ptr<InstanceState>> liveStates() {
+        std::lock_guard<std::mutex> lock(gate_);
+        std::vector<std::shared_ptr<InstanceState>> out;
+        out.reserve(all_.size());
+        std::size_t kept = 0;
+        for (auto &w : all_) if (auto st = w.lock()) { out.push_back(std::move(st)); all_[kept++] = w; }
+        all_.resize(kept);
+        return out;
+    }
+    void collected(std::size_t survivors) {
+        std::lock_guard<std::mutex> lock(gate_);
+        sinceCollect_ = 0;
+        collectAt_ = every_ ? every_ : std::max<std::size_t>(20000, survivors);   // (its work is proportional to the states)
+    }
     std::string add(const std::shared_ptr<InstanceState> &state) {
         std::lock_guard<std::mutex> lock(gate_);
         auto token = std::string("instance-") + std::to_string(++next_);
@@ -269,7 +300,9 @@ void *materializeState(const std::shared_ptr<InstanceState> &st, ProxyHold *hold
     pendingAdopt.reset();
     rxobj::release(cls);
     if (!ok) throw rx::SyntaxCondition(code, text, false);
-    // (the new object's own reference: kept for the caller's send, else released)
+    // (the new object's own reference: kept for the caller's send, else released: the state's pin keeps it, or for a
+    // disposable state the caller's own (an argument's hold, the entry's result: rxobj::returnPin), taken before the
+    // interpreter allocates again)
     if (r.kind == 2) { if (hold) hold->h = r.obj; else rxobj::release(r.obj); }
     if (!st->alive) throw std::runtime_error("cannot create the interpreter object for a native instance");
     { std::lock_guard<std::mutex> lock(st->gate); st->notePin(); }   // compiled code holds it: keep it
@@ -417,6 +450,7 @@ public:
         return interpreterSend(st_, selector, args);
     }
     const InstanceState *state() const { return st_.get(); }
+    const std::shared_ptr<InstanceState> &stateRef() const { return st_; }   // (the cycle collector's edge)
     rx::Value sendBinary(const std::string &selector, const rx::Value &rhs) override {
         // .Object's comparisons are identity: answered here when that is the method the object would run.
         const bool positive = selector == "==" || selector == "=";
@@ -522,6 +556,7 @@ public:
             auto st = std::make_shared<InstanceState>();
             st->dynamicClass = name_;
             st->exact = true;
+            trackState(st);
             Resolved *init = lookupMethod(name_, "INIT");
             if (!init) throw std::runtime_error("native class without INIT: " + name_);
             runNative(st, *init, optionalsOf(args));
@@ -566,8 +601,12 @@ std::shared_ptr<rx::ObjectDispatch> pendingConditionImpl(const std::exception &e
 }
 std::optional<rx::Value> adoptImpl(void *globalRef) {
     auto st = InstanceTable::instance().byHandle(globalRef);
-    if (st && st->alive && st->exact && st->handle == globalRef)
+    if (st && st->alive && st->exact && st->handle == globalRef) {
+        // (a disposable state: its interpreter object need not stay, so its reference is dropped: compiled code holds the
+        // native state, as for an instance it made itself)
+        if (stateDisposable(*st)) { rxobj::release(globalRef); return rx::Value::fromObject(std::make_shared<NativeInstanceRef>(st)); }
         return rx::Value::fromObject(std::make_shared<NativeInstanceRef>(st, std::make_shared<rx::EnvObject>(globalRef)));
+    }
     if (auto cls = adoptClass(globalRef)) { rxobj::release(globalRef); return cls; }
     return std::nullopt;
 }
@@ -586,6 +625,106 @@ std::string dynamicClassOf(RexxMethodContext *ctx, RexxObjectPtr self) {
 }
 [[maybe_unused]] const bool hooksInstalled = (rx::packageClassHook = &packageClassImpl, rx::selfObjectHook = &selfObjectImpl,
                                               rx::adoptHook = &adoptImpl, rx::pendingConditionHook = &pendingConditionImpl, true);
+}
+/* A state whose interpreter object holds nothing of its own: an instance of a class of this library whose state is all
+   native (directNewTable: compiled methods only, no interpreter parent or mixin, no NEW of its own) and without an
+   UNINIT method (which runs when the interpreter collects the object). */
+bool stateDisposable(InstanceState &st) {
+    if (st.disposable < 0)
+        st.disposable = (st.exact && !st.classSide && directNewTable().count(st.dynamicClass) > 0 &&
+                         !lookupMethod(st.dynamicClass, "UNINIT")) ? 1 : 0;
+    return st.disposable == 1 && !classesChanged();
+}
+/* Cycle collection. Compiled code's references are counted (std::shared_ptr), so native instances that refer to each
+   other (a doubly linked list, a parent and its children) are never freed by counting alone. The collector finds them
+   as CPython's does: for every native state and container reachable from one, the references that come from other
+   states or containers are subtracted from its count; what is left over is held from outside (a running method, a
+   local variable, the interpreter through the state's object): those are live, with everything reachable from them.
+   The rest is unreachable: its references are dropped, which frees it. Runs only while this thread is the one thread
+   in compiled code (rxobj::exclusiveNative), when enough states have been made since the last collection. */
+namespace {
+void collectCycles() {
+    std::vector<std::shared_ptr<InstanceState>> states = InstanceTable::instance().liveStates();
+    struct Node { long refs = 0; bool live = false; InstanceState *state = nullptr; std::weak_ptr<rx::ObjectDispatch> object; };
+    std::unordered_map<const void *, Node> nodes;
+    nodes.reserve(states.size() * 2);
+    std::vector<const void *> order;
+    // the containers a value refers to that the collector follows: native instances' references, arrays, directories,
+    // stems (anything else (a string, an interpreter object) refers to nothing native)
+    auto followed = [](const rx::ObjectDispatch *o) {
+        return dynamic_cast<const NativeInstanceRef *>(o) || dynamic_cast<const rx::NativeArray *>(o) ||
+               dynamic_cast<const rx::NativeDirectory *>(o) || dynamic_cast<const rx::StemObject *>(o);
+    };
+    for (const auto &st : states) {
+        Node &n = nodes[st.get()];
+        n.state = st.get();
+        n.refs = static_cast<long>(st.use_count()) - 1;   // (less this list's own)
+        // a scope in use (a method running) or a state that must keep its interpreter object: live
+        for (const auto &scope : st->scopes) if (scope.second.use_count() > 1) n.refs += 1;
+        if (!stateDisposable(*st)) n.refs += 1;
+        order.push_back(st.get());
+    }
+    // edges: each reference held by a state or container is one count of what it refers to
+    std::vector<const void *> pending(order.begin(), order.end());
+    auto edgesOf = [&](const void *key, const std::function<void(const void *)> &edge) {
+        Node &n = nodes[key];
+        auto onValue = [&](const rx::Value &v) {
+            if (!v.isObject() || !followed(v.object.get())) return;
+            const void *child = v.object.get();
+            auto it = nodes.find(child);
+            if (it == nodes.end()) {
+                Node c; c.refs = static_cast<long>(v.object.use_count()); c.object = v.object;
+                nodes.emplace(child, std::move(c));
+                pending.push_back(child);
+            }
+            edge(child);
+        };
+        if (n.state) { for (const auto &scope : n.state->scopes) scope.second->gcFields(onValue); return; }
+        auto o = n.object.lock();
+        if (!o) return;
+        if (auto *ref = dynamic_cast<NativeInstanceRef *>(o.get())) {
+            const void *child = ref->stateRef().get();
+            if (nodes.count(child)) edge(child);   // (every state is a node; one made during the collection is not)
+            return;
+        }
+        o->gcValues(onValue);
+    };
+    for (std::size_t i = 0; i < pending.size(); i++) {
+        const void *key = pending[i];
+        edgesOf(key, [&](const void *child) { nodes[child].refs -= 1; });
+    }
+    // live: held from outside, and everything reachable from it
+    std::vector<const void *> stack;
+    for (const void *key : pending) { Node &n = nodes[key]; if (n.refs > 0 && !n.live) { n.live = true; stack.push_back(key); } }
+    while (!stack.empty()) {
+        const void *key = stack.back(); stack.pop_back();
+        edgesOf(key, [&](const void *child) { Node &c = nodes[child]; if (!c.live) { c.live = true; stack.push_back(child); } });
+    }
+    // the rest: dropped (held here while their references go, so none is freed under the loop)
+    std::vector<std::shared_ptr<InstanceState>> deadStates;
+    std::vector<std::shared_ptr<rx::ObjectDispatch>> deadObjects;
+    for (const auto &st : states) if (!nodes[st.get()].live) deadStates.push_back(st);
+    for (const void *key : pending) {
+        Node &n = nodes[key];
+        if (n.live || n.state) continue;
+        if (auto o = n.object.lock()) deadObjects.push_back(std::move(o));
+    }
+    const std::size_t survivors = states.size() - deadStates.size();
+    states.clear();
+    for (const auto &st : deadStates) for (const auto &scope : st->scopes) scope.second->gcClear();
+    for (const auto &o : deadObjects) o->gcClear();
+    if (std::getenv("RX2CPP_GC_STATS"))
+        std::fprintf(stderr, "rx2cpp collect: %zu states live, %zu freed, %zu containers freed\n", survivors, deadStates.size(), deadObjects.size());
+    deadObjects.clear();
+    deadStates.clear();
+    InstanceTable::instance().collected(survivors);
+}
+}
+/* A native state was made: known to the collector, which runs when enough have been made. */
+void trackState(const std::shared_ptr<InstanceState> &st) {
+    if (InstanceTable::instance().track(st)) {
+        if (!rxobj::exclusiveNative([] { collectCycles(); })) InstanceTable::instance().collected(0);
+    }
 }
 #endif
 namespace {
@@ -797,6 +936,9 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
                 state->token = token;
                 failedInitToken = token;
                 setRootToken(token);
+#ifdef RX2CPP_HOST_API
+                trackState(state);
+#endif
             }
         } else {
             // The root class owns the single lifetime token. A derived method asks the root method for it; normal ooRexx
@@ -836,6 +978,9 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
                     state->alive = true;
                     InstanceTable::instance().bind(state->handle, state);
                     state->token = InstanceTable::instance().add(state);
+#ifdef RX2CPP_HOST_API
+                    trackState(state);
+#endif
                 }
                 token = state->token;
                 setRootToken(token);
@@ -914,7 +1059,7 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
 #ifdef RX2CPP_HOST_API
             if (auto *env = dynamic_cast<rx::EnvObject *>(outcome.object.get())) return (RexxObjectPtr)env->handle;
             if (dynamic_cast<rx::NilObject *>(outcome.object.get())) return ctx->Nil();
-            if (auto *ref = dynamic_cast<rx::NativeRefBase *>(outcome.object.get())) return (RexxObjectPtr)ref->materialize();
+            if (auto *ref = dynamic_cast<rx::NativeRefBase *>(outcome.object.get())) return (RexxObjectPtr)rxobj::returnPin(ref->materialize());
             // a stem (RETURN s. / an exposed stem): the interpreter's stem object shared with it
             if (auto *st = dynamic_cast<rx::StemObject *>(outcome.object.get())) return (RexxObjectPtr)rx::EnvObject::stemHandle(*st);
 #endif
@@ -1014,7 +1159,7 @@ static RexxObjectPtr rx2cpp_routine_entry(RexxCallContext *context, RexxArrayObj
         if (outcome.isObject()) {
             if (auto *env = dynamic_cast<rx::EnvObject *>(outcome.object.get())) return (RexxObjectPtr)env->handle;
             if (dynamic_cast<rx::NilObject *>(outcome.object.get())) return context->Nil();
-            if (auto *ref = dynamic_cast<rx::NativeRefBase *>(outcome.object.get())) return (RexxObjectPtr)ref->materialize();
+            if (auto *ref = dynamic_cast<rx::NativeRefBase *>(outcome.object.get())) return (RexxObjectPtr)rxobj::returnPin(ref->materialize());
             if (auto *st = dynamic_cast<rx::StemObject *>(outcome.object.get())) return (RexxObjectPtr)rx::EnvObject::stemHandle(*st);
             throw std::runtime_error(std::string("native routine returned an object that the interpreter cannot receive (") +
                                      typeid(*outcome.object).name() + ")");

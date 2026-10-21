@@ -120,6 +120,10 @@ struct CompiledObject {
        scope lock still decides what GUARDED means). */
     ScopeLock scope_lock;
     virtual ~CompiledObject() = default;
+    /* Cycle collection (native_package_template.cpp.in collectCycles): the object variables of this scope, and
+       dropping them all (the instance was found unreachable). */
+    virtual void gcFields(const std::function<void(const rx::Value &)> &) const {}
+    virtual void gcClear() {}
     virtual std::string invoke(const std::string &selector, const std::string &value) = 0;
     virtual std::string invoke2(const std::string &selector, const std::string &, const std::string &) {
         throw std::runtime_error("two-argument selector not implemented: " + selector);

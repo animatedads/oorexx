@@ -63,6 +63,16 @@ struct StemObject final : ObjectDispatch {
     // an array indexed by that number while they stay dense (an index at most denseSlack past the end; beyond, the
     // element goes to tails, where get looks for it too). Same tails, same values: only where they are kept.
     std::vector<std::optional<Value>> dense;
+    void gcValues(const std::function<void(const Value &)> &f) const override {
+        if (dflt) f(*dflt);
+        for (const auto &kv : tails) f(kv.second);
+        for (const auto &v : dense) if (v) f(*v);
+    }
+    void gcClear() override {
+        std::optional<Value> d; d.swap(dflt);
+        std::unordered_map<std::string, Value> t; t.swap(tails);
+        std::vector<std::optional<Value>> n; n.swap(dense);
+    }
     static constexpr std::size_t denseSlack = 1024, denseMax = std::size_t(1) << 24;
     std::unordered_set<std::string> dropped;            // DROPped elements under a default
     std::shared_ptr<ObjectDispatch> remote;             // interpreter stem, once the object has crossed

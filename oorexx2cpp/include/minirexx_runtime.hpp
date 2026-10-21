@@ -296,6 +296,10 @@ struct ObjectDispatch {
         throw NoMethod("unhandled object message: " + selector);
     }
     virtual ~ObjectDispatch() = default;
+    // Cycle collection (the native library's collector, native_package_template.cpp.in collectCycles): the values a
+    // container holds, and dropping them all (a container found unreachable: its references are what keep a cycle).
+    virtual void gcValues(const std::function<void(const Value &)> &) const {}
+    virtual void gcClear() {}
     // True when the object has no MAKESTRING method (a Stem): its string value comes from STRING, with NOSTRING.
     virtual bool noMakeString() const { return false; }
     // True for an object of a class that is not built in (RexxInternalObject::isBaseClass false): its string value is
