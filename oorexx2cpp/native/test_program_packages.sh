@@ -25,6 +25,7 @@ check constructs "$OUT/src/constructs.rex"
 check routine_call "$OUT/src/routine_call.rex"   # routine~call / ~callWith from compiled code (an error in the routine)
 check init_internal "$OUT/src/init_internal.rex"   # RETURN value of an internal routine of INIT
 check stem_returns "$OUT/src/stem_returns.rex"   # a stem returned by a routine, a method, a stem attribute
+check dynamic_call "$OUT/src/dynamic_call.rex"   # CALL (expression): a label of the routine or method first
 check truth "$OUT/src/truth.rex"     # an object as a logical value: its string value (requestString)
 # RX2CPP_SEPARATE_PACKAGES=1: one library per required package, each its own package (name, findRoutine of a routine
 # that is not public, a class that is not public reaching the main program, prologs)

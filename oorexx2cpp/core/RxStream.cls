@@ -67,6 +67,12 @@
       if p~line == t~endLine & p~col == t~endCol then name = self~lookAheadText(n)
     end
     if name \== '' then if labels~hasItem(name) then calls[name] = 'PENDING'
+    /* CALL (expression): the name is known at run time, and an internal label is searched first (DynamicCall): every
+       label may be called */
+    if atClause & self~lookAheadKind(n) == 'IDENT' & self~lookAheadText(n) == 'CALL' & self~lookAheadText(n + 1) == '(' then
+      do lbl over labels
+        calls[lbl] = 'PENDING'
+      end
     n = n + 1
   end
   /* PROCEDURE [EXPOSE names] right after each called label */

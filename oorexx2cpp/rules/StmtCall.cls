@@ -26,13 +26,29 @@
       else args~append(ctx~logicalExpr~parse(ctx))
       if \s~accept(',') then leave
     end
-    code = '{ std::vector<std::optional<rx::Value>> _rxCallArgs; '
+    /* CALL (expression) in a compiled method or routine with labels: a label whose name is the value (case sensitive) is
+       called as an internal routine (RexxInstructionDynamicCall: labels first, then built-ins and external routines). */
+    labels = .array~new
+    if token~kind \== 'STRING' & ctx~hasMethod('CURRENT') then if ctx~current~hasMethod('HASINTERNALCALLS') then
+      do lbl over ctx~current~internalCalls~allIndexes~sort
+        labels~append(lbl)
+      end
+    code = '{ '
+    if labels~items > 0 then do
+      code = code || 'const rx::Value _rxDn = rx::requestString(' || nameExpr || '); '
+      nameExpr = '_rxDn'
+      do lbl over labels
+        code = code || 'if (_rxDn.bytes == ' || .RxQuote~cpp(lbl) || ') (void)' || -
+               ctx~builtinExpr~internalCall(ctx, lbl, args, 'CALL', token~line) || '; else '
+      end
+    end
+    code = code || '{ std::vector<std::optional<rx::Value>> _rxCallArgs; '
     do argExpr over args
       if argExpr == 'RX2CPP_OMITTED' then code = code || '_rxCallArgs.emplace_back(std::nullopt); '
       else code = code || '_rxCallArgs.emplace_back(' || argExpr || '); '
     end
     code = code || 'auto _rxR = rx::interpreterCall(vars, "(dynamic)", _rxCallArgs, std::optional<rx::Value>(' || nameExpr || ')); '
-    code = code || 'if (_rxR) rx::set(vars, "RESULT", *_rxR); else rx::drop(vars, "RESULT"); }'
+    code = code || 'if (_rxR) rx::set(vars, "RESULT", *_rxR); else rx::drop(vars, "RESULT"); } }'
     ctx~line(depth, code)
     s~separator
     return
