@@ -309,7 +309,10 @@
         source = source || '  self~rx2cpp_native_release' || '0a'x
         source = source || '::method RX2CPP_NATIVE_RELEASE external "LIBRARY ' || packageName || ' rx_native_uninit"' || '0a'x
       end
-      else source = source || '::method UNINIT external "LIBRARY ' || packageName || ' rx_native_uninit"' || '0a'x
+      /* (no UNINIT otherwise: the state is released when its interpreter object's WeakReference is found cleared
+         (watchProxy / proxyLive). An UNINIT would put every such object in the interpreter's uninit table, which the
+         interpreter scans in full at every activation while any uninit is pending; and the class would show a method
+         its source does not have.) */
       /* Object's COPY would share the native state: rejected, unless the class defines its own COPY (an ordinary
          method that builds the copy itself). */
       ownCopy = .false

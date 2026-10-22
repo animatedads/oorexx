@@ -151,8 +151,8 @@ struct InstanceState : std::enable_shared_from_this<InstanceState> {
     signed char disposable = -1;
     // the class's method table (lookupMethod(InstanceState &, ...)): found on the first send; a marker when the class has none
     std::atomic<const void *> methods{nullptr};
-    // A disposable state's interpreter object is not pinned: a WeakReference to it (pinned) says whether the
-    // interpreter still has it (cleared by the collection that finds it unreachable, before its UNINIT runs).
+    // A WeakReference (pinned) to the state's interpreter object: says whether the interpreter still has it (cleared by
+    // the collection that finds it unreachable). The state is released when it is found cleared (watchProxy).
     void *weak = nullptr;
     bool exact = false;              // the dynamic class is a class of this package, so direct dispatch is faithful
     bool classSide = false;          // the state of a class object (its CLASS methods), not of an instance
@@ -720,10 +720,15 @@ bool stateDisposable(InstanceState &st) {
                          !lookupMethod(st.dynamicClass, "UNINIT") && !lookupMethod(st.dynamicClass, "RX2CPP_USER_UNINIT")) ? 1 : 0;
     return st.disposable == 1 && !classesChanged();
 }
-/* A disposable state's interpreter object, watched through a WeakReference (InstanceState::weak). */
+/* A state's interpreter object, watched through a WeakReference (InstanceState::weak): the state is released when the
+   interpreter has collected the object (proxyLive, and the sweep at each cycle collection). A class with a user UNINIT
+   releases it from its UNINIT instead (rx_native_uninit), and a class object lives as long as the interpreter. */
 void watchProxy(InstanceState &st) {
-    if (st.weak || !st.handle || !stateDisposable(st)) return;
+    if (st.weak || !st.handle || st.classSide) return;
     RexxThreadContext *t = rxobj::need();
+    // (an instance of an interpreter subclass is asked: the user UNINIT may be inherited from a compiled class)
+    if (st.exact ? lookupMethod(st.dynamicClass, "RX2CPP_USER_UNINIT") != nullptr
+                 : t->HasMethod((RexxObjectPtr)st.handle, "RX2CPP_USER_UNINIT") != 0) return;
     static RexxObjectPtr weakClass = NULLOBJECT;
     if (weakClass == NULLOBJECT) {
         weakClass = (RexxObjectPtr)t->FindClass("WEAKREFERENCE");
@@ -740,7 +745,7 @@ void watchProxy(InstanceState &st) {
    given up here: the state is detached from it, and the next use makes a new one. */
 bool proxyLive(InstanceState &st) {
     if (!st.alive || !st.handle) return false;
-    if (!st.weak) return true;
+    if (!st.weak || st.pin) return true;   // (a pinned object is not collected)
     RexxThreadContext *t = rxobj::need();
     RexxObjectPtr v = t->SendMessage0((RexxObjectPtr)st.weak, "VALUE");
     if (t->CheckCondition()) { t->ClearCondition(); return true; }

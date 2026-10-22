@@ -2185,6 +2185,17 @@ inline MessageResult NativeArray::sendMessage(const std::string &selector, const
     case 'C':
         if (rx::eqLit(selector, "CLASS") && n == 0) return nativeArrayClass();
         break;
+    case 'D':
+        // ArrayClass::deleteRexx / deleteItem / closeGap: past the size, .nil and no change; otherwise the item there
+        // (or .nil) is taken out and every later slot moves down one (the size one less)
+        if (rx::eqLit(selector, "DELETE") && n == 1 && index(args[0], i)) {
+            if (i > slots.size()) return nil();
+            std::optional<Value> out = std::move(slots[i - 1]);
+            slots.erase(slots.begin() + static_cast<std::ptrdiff_t>(i - 1));
+            if (out) { --count; return std::move(*out); }
+            return nil();
+        }
+        break;
     case 'F':
         // ArrayClass::fillRexx: every slot of the array's size, the receiver back
         if (rx::eqLit(selector, "FILL") && n == 1 && !omitted(args[0])) {
