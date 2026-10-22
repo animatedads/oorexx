@@ -144,6 +144,7 @@ bool stateDisposable(InstanceState &st);
 void trackState(const std::shared_ptr<InstanceState> &st);
 void watchProxy(InstanceState &st);
 bool proxyLive(InstanceState &st);
+std::shared_ptr<InstanceState> stateOfObject(void *handle);
 struct InstanceState : std::enable_shared_from_this<InstanceState> {
     std::string dynamicClass;        // the class the instance was created from (upper case)
     // 1: the interpreter object holds nothing the native state does not (stateDisposable): it is not pinned for compiled
@@ -685,7 +686,7 @@ std::shared_ptr<rx::ObjectDispatch> pendingConditionImpl(const std::exception &e
     return rx::takeKeptCondition();
 }
 std::optional<rx::Value> adoptImpl(void *globalRef) {
-    auto st = InstanceTable::instance().byHandle(globalRef);
+    auto st = stateOfObject(globalRef);
     if (st && st->alive && st->exact && st->handle == globalRef) {
         // (a disposable state: its interpreter object need not stay, so its reference is dropped: compiled code holds the
         // native state, as for an instance it made itself)
@@ -758,6 +759,14 @@ bool proxyLive(InstanceState &st) {
     st.alive = false; st.handle = nullptr;
     rxobj::unpinLater(st.weak); st.weak = nullptr;
     return false;
+}
+/* The native state of an interpreter object, by its address: none when the state's own object was collected (its
+   WeakReference cleared) and the address now belongs to another object. (Without an UNINIT, nothing unbinds a collected
+   object's address at once.) */
+std::shared_ptr<InstanceState> stateOfObject(void *handle) {
+    auto st = InstanceTable::instance().byHandle(handle);
+    if (st && (st->handle != handle || !proxyLive(*st))) return nullptr;
+    return st;
 }
 /* Cycle collection. Compiled code's references are counted (std::shared_ptr), so native instances that refer to each
    other (a doubly linked list, a parent and its children) are never freed by counting alone. The collector finds them
@@ -1062,7 +1071,7 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
             } else if (!classSide) {
                 // A mixin of an interpreter class (its own native root) whose INIT runs for an object another root's
                 // INIT has registered already: one state, this scope added to it.
-                state = InstanceTable::instance().byHandle((void *)selfObj);
+                state = stateOfObject((void *)selfObj);
                 if (state) { token = state->token; setRootToken(token); }
             }
             if (!state) {
@@ -1111,7 +1120,7 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
                 // A mixin of an interpreter class (its own native root) inherited by a class of another root (or an
                 // interpreted class): the object's state, registered by its own root, gets this scope; an object with
                 // none gets one here (its INIT was not this root's).
-                state = InstanceTable::instance().byHandle((void *)selfObj);
+                state = stateOfObject((void *)selfObj);
                 if (!state) {
                     state = std::make_shared<InstanceState>();
 #ifdef RX2CPP_HOST_API
@@ -1404,7 +1413,7 @@ RexxMethod2(RexxObjectPtr, rx_native_holds, OSELF, self, CSTRING, scope)
         if (h.first == self && h.second == scope) return context->True();
     // (or the compiled scope lock: a compiled method of the object running on this thread, guarded or not)
     try {
-        if (auto st = rx2cpp::InstanceTable::instance().byHandle((void *)self))
+        if (auto st = rx2cpp::stateOfObject((void *)self))
             if (st->at(scope)->scope_lock.heldByMe()) return context->True();
     } catch (const std::exception &) {}
     return context->False();

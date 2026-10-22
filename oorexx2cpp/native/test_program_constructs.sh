@@ -35,4 +35,5 @@ check native_sets "$OUT/src/native_sets.rex"   # .Set~of / .Bag~of native; SEND 
 check identity_eq "$OUT/src/identity_eq.rex"   # == / \== of interpreter objects: identity when they run Object's own
 check native_stringtable "$OUT/src/native_stringtable.rex"   # .StringTable native in compiled code, order included
 check array_delete "$OUT/src/array_delete.rex"   # Array~delete native (ArrayClass::deleteItem / closeGap)
+check address_reuse "$OUT/src/address_reuse.rex"   # an interpreter object at a collected compiled instance's address is itself
 echo "PASS program constructs: $(ls "$OUT"/*.expected | wc -l) programs, $(cat "$OUT"/*.expected | wc -l) lines identical to the interpreter"
