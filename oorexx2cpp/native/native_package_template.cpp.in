@@ -246,6 +246,10 @@ public:
 private:
     std::unordered_map<void *, std::weak_ptr<InstanceState>> byHandle_;
 };
+#ifndef RX2CPP_HOST_API
+// (without the host API there is no WeakReference watching: the address's state as bound)
+std::shared_ptr<InstanceState> stateOfObject(void *handle) { return InstanceTable::instance().byHandle(handle); }
+#endif
 namespace {
 struct ReleaseAndReacquire {
     ScopeLock &lock; unsigned depth;

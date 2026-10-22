@@ -165,6 +165,18 @@
   if count == 0 & \natives & \internalCalls then return
   /* (a body without variables still clears its registers after calls: a table of one) */
   declaration = 'rx::LocalSlots<' || max(count, 1) || '> _rxL{}; (void)_rxL;'
+  /* The activation's frame (rx::Frame): the body's simple variables by slot number, not by name. The names, in slot
+     order, are made once (a static); a PROCEDURE pool of an internal routine gets its own frame from the same names. */
+  ordered = .array~new(max(count, 1))
+  do name over slot~allIndexes
+    ordered[slot[name] + 1] = name
+  end
+  names = ''
+  do i = 1 to count
+    if names \== '' then names = names || ', '
+    names = names || '"' || ordered[i] || '"'
+  end
+  declaration = declaration 'static const rx::FrameNames _rxFN{' || names || '}; rx::Frame<' || max(count, 1) || '> _rxF(vars, _rxFN);'
   /* Native registers (RxNative) for this body: a method with EXPOSE has them only when no other activity can change
      its object variables while it runs */
   /* (EXPOSE: only in a class where no other activity can run one of its methods meanwhile: RxHybridCompiler~parse) */

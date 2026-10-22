@@ -36,4 +36,6 @@ check identity_eq "$OUT/src/identity_eq.rex"   # == / \== of interpreter objects
 check native_stringtable "$OUT/src/native_stringtable.rex"   # .StringTable native in compiled code, order included
 check array_delete "$OUT/src/array_delete.rex"   # Array~delete native (ArrayClass::deleteItem / closeGap)
 check address_reuse "$OUT/src/address_reuse.rex"   # an interpreter object at a collected compiled instance's address is itself
+check variable_frame "$OUT/src/variable_frame.rex"   # locals in the frame: VALUE, DROP, INTERPRET, PROCEDURE EXPOSE, recursion
+check variable_frame_methods "$OUT/src/variable_frame_methods.rex"   # frames in methods: EXPOSE by name, PROCEDURE EXPOSE through both
 echo "PASS program constructs: $(ls "$OUT"/*.expected | wc -l) programs, $(cat "$OUT"/*.expected | wc -l) lines identical to the interpreter"

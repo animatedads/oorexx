@@ -316,11 +316,13 @@ inline void interpret(Variables &vars, const Value &code) {
         c->RequestGlobalReference(routine);
     }
     RexxDirectoryObject in = c->NewDirectory();
-    for (const auto &kv : vars) {
-        if (kv.first.find('.') != std::string::npos)
+    std::vector<std::string> before;
+    forEachVariable(vars, [&](const std::string &name, const Value &value) {
+        if (name.find('.') != std::string::npos)
             throw std::runtime_error("INTERPRET with stem or compound variables is not implemented");
-        c->DirectoryPut(in, HostObject::toRexx(c, kv.second), kv.first.c_str());
-    }
+        c->DirectoryPut(in, HostObject::toRexx(c, value), name.c_str());
+        before.push_back(name);
+    });
     RexxArrayObject a = c->NewArray(5);
     c->ArrayPut(a, c->String(code.bytes.data(), code.bytes.size()), 1);
     c->ArrayPut(a, in, 2);
@@ -339,14 +341,13 @@ inline void interpret(Variables &vars, const Value &code) {
         if (!nm || !val) continue;
         after.insert_or_assign(std::string(c->ObjectToStringValue(nm)), wrap(c, val));
     }
-    for (auto it = vars.begin(); it != vars.end();)
-        if (!after.count(it->first)) it = vars.erase(it); else ++it;
+    for (const std::string &name : before) if (!after.count(name)) drop(vars, name);
     variablesErased();
     for (auto &kv : after) {
         if (kv.first == "_RX_D") vars.numeric.digits = std::stoul(kv.second.bytes);
         else if (kv.first == "_RX_F") vars.numeric.fuzz = std::stoul(kv.second.bytes);
         else if (kv.first == "_RX_FM") vars.numeric.engineering = kv.second.bytes == "ENGINEERING";
-        else vars.insert_or_assign(kv.first, kv.second);
+        else set(vars, kv.first, kv.second);
     }
 }
 

@@ -125,6 +125,8 @@
     end
     /* (the names made once, as a table: the pool points at it, no allocation per call) */
     code = code || 'static const rx::ExposeTable _rxProcExposed{' || names || '}; rx::Variables _rxProcVars(vars, _rxProcExposed); '
+    /* (its own frame: the body's variables, the exposed ones the caller's) */
+    code = code || 'rx::Frame<std::remove_reference_t<decltype(_rxL)>::size> _rxProcF(_rxProcVars, _rxFN); '
     target = '_rxProcVars'
   end
   /* the routine starts with this activation's trap settings and condition (MethodTraps::inheritNext); a RAISE ... RETURN

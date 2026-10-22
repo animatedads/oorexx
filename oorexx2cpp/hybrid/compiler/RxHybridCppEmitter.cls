@@ -23,10 +23,28 @@
   lines~append('namespace rx2cpp {')
   lines~append('class GeneratedObject_' || suffix || ' final : public CompiledObject, public rx::ObjectDispatch {')
   lines~append('  rx::Variables fields_;')
+  /* The object variables its methods EXPOSE, kept in place (rx::FieldFrame): a method's frame refers to them directly. */
+  fieldNames = .array~new
+  do method over unit~methods
+    do f over method~exposed
+      if f~right(1) \== '.' & \fieldNames~hasItem(f) then fieldNames~append(f)
+    end
+  end
+  if fieldNames~items > 0 then do
+    quoted = ''
+    do f over fieldNames
+      if quoted \== '' then quoted = quoted || ', '
+      quoted = quoted || .RxQuote~cpp(f)
+    end
+    lines~append('  static const rx::FrameNames &fieldNames_() { static const rx::FrameNames names{' || quoted || '}; return names; }')
+    lines~append('  rx::FieldFrame<' || fieldNames~items || '> fieldFrame_{fields_, fieldNames_()};')
+  end
   lines~append('public:')
   /* the cycle collector's view of the object variables (native_package_template.cpp.in collectCycles) */
-  lines~append('  void gcFields(const std::function<void(const rx::Value &)> &f) const override { for (const auto &kv : fields_) f(kv.second); }')
-  lines~append('  void gcClear() override { std::unordered_map<std::string, rx::Value> gone; gone.swap(fields_); rx::variablesErased(); }')
+  lines~append('  void gcFields(const std::function<void(const rx::Value &)> &f) const override { rx::forEachVariable(fields_, [&](const std::string &, const rx::Value &v) { f(v); }); }')
+  clearFrame = ''
+  if fieldNames~items > 0 then clearFrame = ' fieldFrame_.clear();'
+  lines~append('  void gcClear() override { std::unordered_map<std::string, rx::Value> gone; gone.swap(fields_);' || clearFrame || ' rx::variablesErased(); }')
   /* One entry point: the ooRexx ARGLIST, any length. invoke0/invoke/invoke2 are thin adapters for
      host code that still calls them; they carry no arity logic. */
   lines~append('  rx::Value invokeValues(const std::string &selector, const std::vector<std::optional<rx::Value>> &arguments) override {')

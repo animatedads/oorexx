@@ -1588,11 +1588,11 @@ inline Value activationContext(Variables &vars, const std::vector<std::optional<
     if (c->method) c->self = selfObject();
     if (withVariables) {
         std::unordered_set<std::string> stems;
-        for (const auto &kv : vars) {
-            const std::size_t dot = kv.first.find('.');
-            if (dot == std::string::npos) c->variables.emplace_back(kv.first, kv.second);
-            else stems.insert(kv.first.substr(0, dot + 1));
-        }
+        forEachVariable(vars, [&](const std::string &name, const Value &value) {
+            const std::size_t dot = name.find('.');
+            if (dot == std::string::npos) c->variables.emplace_back(name, value);
+            else stems.insert(name.substr(0, dot + 1));
+        });
         vars.exposed.any([&](const char *e, std::size_t len) {
             const std::string n(e, len);
             if (!n.empty() && n.back() == '.') stems.insert(n);
@@ -2764,11 +2764,11 @@ inline std::optional<Value> interpretInActivation(Variables &vars, const Value &
     // the visible variables: this pool's, then exposed ones (a stem by its stem object)
     std::vector<std::string> names;
     std::unordered_set<std::string> stems;
-    for (const auto &kv : vars) {
-        const std::size_t dot = kv.first.find('.');
-        if (dot == std::string::npos) names.push_back(kv.first);
-        else stems.insert(kv.first.substr(0, dot + 1));
-    }
+    forEachVariable(vars, [&](const std::string &name, const Value &) {
+        const std::size_t dot = name.find('.');
+        if (dot == std::string::npos) names.push_back(name);
+        else stems.insert(name.substr(0, dot + 1));
+    });
     vars.exposed.any([&](const char *e, std::size_t len) {
         const std::string n(e, len);
         if (!n.empty() && n.back() == '.') stems.insert(n);

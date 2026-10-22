@@ -728,12 +728,76 @@ struct PoolId {
 // node is valid only while the generation it saw is current. Insertions and rehash keep node addresses, so they need no bump.
 inline std::atomic<std::uint64_t> &variableEraseGeneration() { static std::atomic<std::uint64_t> g{1}; return g; }
 inline void variablesErased() { variableEraseGeneration().fetch_add(1, std::memory_order_release); }
+// The simple variable names of one compiled body, in its slot order (RxHybridMethod~useLocalSlots): a static of the
+// generated code. A name is found by its key (length, first and fourth character: Tom Dyer's key) in a small
+// open-addressed table, then compared.
+struct FrameNames {
+    std::vector<const char *> names;
+    std::vector<std::uint32_t> lens, keys;
+    std::vector<int> table;   // slot numbers by key, -1 empty
+    std::size_t mask = 0;
+    static std::uint32_t keyOf(const char *t, std::size_t len) {
+        return static_cast<std::uint32_t>(len & 0xffff) | static_cast<std::uint32_t>(len ? static_cast<unsigned char>(t[0]) : 0) << 16 |
+               static_cast<std::uint32_t>(len ? static_cast<unsigned char>(t[len >= 4 ? 3 : len - 1]) : 0) << 24;
+    }
+    static std::size_t spread(std::uint32_t key) { return static_cast<std::size_t>((key * 0x9E3779B1u) >> 7); }
+    FrameNames() = default;
+    FrameNames(std::initializer_list<const char *> list) {
+        for (const char *n : list) {
+            const std::size_t len = std::strlen(n);
+            names.push_back(n); lens.push_back(static_cast<std::uint32_t>(len)); keys.push_back(keyOf(n, len));
+        }
+        std::size_t size = 8;
+        while (size < names.size() * 2) size *= 2;
+        table.assign(size, -1);
+        mask = size - 1;
+        for (std::size_t k = 0; k < names.size(); ++k) {
+            std::size_t i = spread(keys[k]) & mask;
+            while (table[i] >= 0) i = (i + 1) & mask;
+            table[i] = static_cast<int>(k);
+        }
+    }
+    int find(const char *t, std::size_t len) const {
+        if (names.empty()) return -1;
+        const std::uint32_t key = keyOf(t, len);
+        for (std::size_t i = spread(key) & mask; table[i] >= 0; i = (i + 1) & mask) {
+            const int k = table[i];
+            if (keys[k] == key && std::memcmp(names[k], t, len) == 0) return k;
+        }
+        return -1;
+    }
+};
 struct Variables : std::unordered_map<std::string, Value> {
     PoolId poolId;
     ActivationNumeric numeric;
     Variables *outer = nullptr;
     ExposedNames exposed;
+    // The activation's frame (rx::Frame): the simple variables of the compiled body, by slot number, kept in place of
+    // map entries. frame[k] is the storage of slot k's variable (its own, or the owner's for a PROCEDURE EXPOSE name),
+    // or null when it is kept by name (a stem, an EXPOSEd name). frameOwn: this pool's own storage.
+    std::optional<Value> **frame = nullptr;
+    std::optional<Value> *frameOwn = nullptr;
+    std::size_t frameSize = 0;
+    const FrameNames *frameNames = nullptr;
     Variables() = default;
+    // (a copy has no frame: the frame belongs to the activation; its variables are copied by name)
+    Variables(const Variables &o) : std::unordered_map<std::string, Value>(o), poolId(o.poolId), numeric(o.numeric),
+                                    outer(o.outer), exposed(o.exposed) { copyFrameOf(o); }
+    Variables &operator=(const Variables &o) {
+        if (this != &o) {
+            std::unordered_map<std::string, Value>::operator=(o);
+            poolId = o.poolId; numeric = o.numeric; outer = o.outer; exposed = o.exposed;
+            frame = nullptr; frameOwn = nullptr; frameSize = 0; frameNames = nullptr;
+            copyFrameOf(o);
+        }
+        return *this;
+    }
+    void copyFrameOf(const Variables &o) {
+        if (!o.frame || !o.frameNames) return;
+        for (std::size_t k = 0; k < o.frameSize && k < o.frameNames->names.size(); ++k)
+            if (o.frame[k] == o.frameOwn + k && *o.frame[k])
+                insert_or_assign(std::string(o.frameNames->names[k], o.frameNames->lens[k]), **o.frame[k]);
+    }
     Variables(Variables &caller, std::vector<std::string> names) : numeric(caller.numeric), outer(&caller) {
         for (auto &n : names) exposed.add(n);
     }
@@ -741,9 +805,8 @@ struct Variables : std::unordered_map<std::string, Value> {
         for (const char *n : names) exposed.add(n);
     }
     Variables(Variables &caller, const ExposeTable &table) : numeric(caller.numeric), outer(&caller) { exposed.table = &table; }
-    bool isExposed(const std::string &name) const {
-        const std::size_t len = name.size();
-        const char *text = name.data();
+    bool isExposed(const std::string &name) const { return isExposed(name.data(), name.size()); }
+    bool isExposed(const char *text, std::size_t len) const {
         if (exposed.table && exposed.table->contains(text, len)) return true;
         return exposed.anyAdded([&](const char *e, std::size_t elen) {
             if (elen == len && std::memcmp(e, text, len) == 0) return true;
@@ -875,10 +938,27 @@ inline const Variables &variableOwner(const Variables &vars, const std::string &
     if (vars.outer && vars.isExposed(name)) return variableOwner(*vars.outer, name);
     return vars;
 }
+// The frame storage of a simple variable of this pool (its own or, for a PROCEDURE EXPOSE name, the owner's), or null
+// when the pool keeps it by name.
+inline std::optional<Value> *frameEntry(const Variables &pool, const char *name, std::size_t len) {
+    if (!pool.frame) return nullptr;
+    const int k = pool.frameNames->find(name, len);
+    return (k >= 0 && static_cast<std::size_t>(k) < pool.frameSize) ? pool.frame[k] : nullptr;
+}
+inline std::optional<Value> *frameEntry(const Variables &pool, const std::string &name) { return frameEntry(pool, name.data(), name.size()); }
 inline const Value *lookup(const Variables &vars, const std::string &name) {
     const Variables &owner = variableOwner(vars, name);
+    if (std::optional<Value> *f = frameEntry(owner, name)) return *f ? &**f : nullptr;
     auto found = owner.find(name);
     return found == owner.end() ? nullptr : &found->second;
+}
+// Every variable of this pool itself (not the exposed ones of another pool): (name, value), its frame's included.
+template <typename F> void forEachVariable(const Variables &vars, F &&each) {
+    for (const auto &kv : vars) each(kv.first, kv.second);
+    if (!vars.frame) return;
+    for (std::size_t k = 0; k < vars.frameSize && k < vars.frameNames->names.size(); ++k)
+        if (vars.frame[k] == vars.frameOwn + k && *vars.frame[k])
+            each(std::string(vars.frameNames->names[k], vars.frameNames->lens[k]), **vars.frame[k]);
 }
 // TRACE / ADDRESS state (per thread). A compiled program has no trace output: settings that stay quiet are accepted,
 // settings that would print trace lines are refused loudly instead of silently ignored.
@@ -932,7 +1012,9 @@ inline Value get(const Variables &vars, const std::string &name) {
     return Value::string(name);
 }
 inline void set(Variables &vars, const std::string &name, Value value) {
-    variableOwner(vars, name).insert_or_assign(name, std::move(value));
+    Variables &owner = variableOwner(vars, name);
+    if (std::optional<Value> *f = frameEntry(owner, name)) { if (*f) **f = std::move(value); else f->emplace(std::move(value)); return; }
+    owner.insert_or_assign(name, std::move(value));
 }
 // An EXPOSEd variable after a SELF send (the method may have changed the object variable): the object's value, or no
 // value when it has none (never its name: an unset variable stays unset, VAR() 0, no NOVALUE).
@@ -944,7 +1026,9 @@ inline void refreshField(Variables &vars, const Variables &fields, const std::st
 inline void drop(Variables &vars, const std::string &name) {
     // Slots cache simple variables and stem variables ("S."): erasing a compound entry ("S.1") cannot invalidate one.
     const std::size_t dot = name.find('.');
-    if (variableOwner(vars, name).erase(name) && (dot == std::string::npos || dot + 1 == name.size())) variablesErased();
+    Variables &owner = variableOwner(vars, name);
+    if (std::optional<Value> *f = frameEntry(owner, name)) { f->reset(); return; }   // (no slot caches a frame entry)
+    if (owner.erase(name) && (dot == std::string::npos || dot + 1 == name.size())) variablesErased();
 }
 inline void resetStem(Variables &vars, const std::string &stem) {
     // Only compound entries (names containing '.') are erased here, and slots never cache those: no generation bump.
@@ -975,6 +1059,11 @@ struct VarSlot {
         const std::uint64_t g = variableEraseGeneration().load(std::memory_order_acquire);
         const std::string key(name);
         const Variables &owner = variableOwner(vars, key);
+        if (std::optional<Value> *f = frameEntry(owner, key)) {
+            if (*f) return **f;
+            if (novalueArmed && *novalueArmed) throw NoValueCondition(name);
+            return Value::string(name);
+        }
         auto found = owner.find(key);
         if (found == owner.end()) {
             if (novalueArmed && *novalueArmed) throw NoValueCondition(name);
@@ -992,6 +1081,7 @@ struct VarSlot {
         const std::uint64_t g = variableEraseGeneration().load(std::memory_order_acquire);
         const std::string key(name);
         const Variables &owner = variableOwner(vars, key);
+        if (std::optional<Value> *f = frameEntry(owner, key)) return *f ? &**f : nullptr;
         auto found = owner.find(key);
         if (found == owner.end()) return nullptr;
         remember(vars, g, const_cast<Value *>(&found->second));
@@ -1005,6 +1095,7 @@ struct VarSlot {
         const std::uint64_t g = variableEraseGeneration().load(std::memory_order_acquire);
         std::string key(name);
         Variables &owner = variableOwner(vars, key);
+        if (std::optional<Value> *f = frameEntry(owner, key)) { if (*f) **f = std::move(value); else f->emplace(std::move(value)); return; }
         auto r = owner.insert_or_assign(std::move(key), std::move(value));
         remember(vars, g, &r.first->second);
     }
@@ -1022,12 +1113,100 @@ struct VarSlot {
 // those of get()/set() (EXPOSE, PROCEDURE pools, DROP).
 // nr / nk: the native registers (RxNative.cls): nk[k] says nr[k] is the whole number the variable of slot k holds now
 // (1; 2: and its characters are exactly that number's digits, NumCache canonical).
+// An unset variable's value: its name, or the NOVALUE condition when it is trapped (get()).
+__attribute__((noinline)) inline Value unsetVariable(const char *name) {
+    if (novalueArmed && *novalueArmed) throw NoValueCondition(name);
+    return Value::string(name);
+}
 template <std::size_t K> struct LocalSlots {
     VarSlot s[K]; std::int64_t nr[K]; std::uint8_t nk[K];
+    static constexpr std::size_t size = K;
+    // Slot k's variable in the pool's frame (rx::Frame), or null: then the slot finds it by name, as before.
+    static __attribute__((always_inline)) std::optional<Value> *frameOf(std::size_t k, const Variables &vars) {
+        return (vars.frame && k < vars.frameSize) ? vars.frame[k] : nullptr;
+    }
+    __attribute__((always_inline)) Value get(std::size_t k, const Variables &vars, const char *name) {
+        if (std::optional<Value> *f = frameOf(k, vars)) return *f ? **f : unsetVariable(name);
+        return s[k].get(vars, name);
+    }
+    __attribute__((always_inline)) const Value *find(std::size_t k, const Variables &vars, const char *name) {
+        if (std::optional<Value> *f = frameOf(k, vars)) return *f ? &**f : nullptr;
+        return s[k].find(vars, name);
+    }
+    __attribute__((always_inline)) Value *resolve(std::size_t k, const Variables &vars) {
+        if (std::optional<Value> *f = frameOf(k, vars)) return *f ? &**f : nullptr;
+        return s[k].resolve(vars);
+    }
+    __attribute__((always_inline)) void set(std::size_t k, Variables &vars, const char *name, Value value) {
+        if (std::optional<Value> *f = frameOf(k, vars)) { if (*f) **f = std::move(value); else f->emplace(std::move(value)); return; }
+        s[k].set(vars, name, std::move(value));
+    }
     // An internal routine runs the same body with the same table: its pool (a PROCEDURE pool, gone when it returns)
     // replaces the caller's cached variables. The caller keeps its slots across the call (SlotsKept) when the table is
     // small enough to copy cheaply; a kept slot is still checked against the pool and the erase generation when used.
     static constexpr bool keepAcrossCalls = K <= 64;
+};
+// The frame of one activation (a method's pool, or a PROCEDURE pool of one of its internal routines): the body's simple
+// variables kept by slot number instead of by name (no map node, no hashing, no string per first use). A stem and a
+// name the pool EXPOSEs from the object's variables stay by name; a PROCEDURE EXPOSE name is the caller's own frame
+// entry when it has one. Every by-name access (VALUE, VAR, SYMBOL, DROP, INTERPRET, PARSE, a PROCEDURE EXPOSE chain)
+// finds a frame variable through the pool's FrameNames, so it is the same variable everywhere.
+template <std::size_t K> struct Frame {
+    static constexpr std::size_t inlineMax = 16;
+    Variables &vars;
+    std::optional<Value> inl[K <= inlineMax ? K : 1];
+    std::unique_ptr<std::optional<Value>[]> big;
+    std::optional<Value> *at[K];
+    Frame(Variables &v, const FrameNames &names) : vars(v) {
+        std::optional<Value> *own = inl;
+        if (K > inlineMax) { big.reset(new std::optional<Value>[K]); own = big.get(); }
+        const std::size_t count = std::min(K, names.names.size());
+        for (std::size_t k = 0; k < K; ++k) at[k] = nullptr;
+        for (std::size_t k = 0; k < count; ++k) {
+            const char *name = names.names[k];
+            const std::size_t len = names.lens[k];
+            if (len == 0 || name[len - 1] == '.') continue;   // a stem: by name
+            if (v.outer && v.isExposed(name, len)) {
+                // the owner's (an EXPOSEd object variable is by name; a PROCEDURE EXPOSE name the caller's frame entry)
+                const Variables *owner = v.outer;
+                while (owner->outer && owner->isExposed(name, len)) owner = owner->outer;
+                at[k] = frameEntry(*owner, name, len);
+                continue;
+            }
+            at[k] = own + k;
+        }
+        // (variables set by name before the frame (the method's arguments): moved into it; no slot has cached them)
+        for (auto it = v.begin(); it != v.end();) {
+            const int k = names.find(it->first.data(), it->first.size());
+            if (k >= 0 && static_cast<std::size_t>(k) < K && at[k] == own + k) { own[k].emplace(std::move(it->second)); it = v.erase(it); }
+            else ++it;
+        }
+        v.frame = at; v.frameOwn = own; v.frameSize = K; v.frameNames = &names;
+    }
+    ~Frame() { vars.frame = nullptr; vars.frameOwn = nullptr; vars.frameSize = 0; vars.frameNames = nullptr; }
+    Frame(const Frame &) = delete;
+    Frame &operator=(const Frame &) = delete;
+};
+// The object variables of a compiled class scope (its EXPOSEd simple names) kept in place, as a frame that lives as long as
+// the object: a method's frame finds an EXPOSEd name there (Frame: the owner's frame entry), so it reads and writes the
+// object variable directly. Stems, and names no method of the class EXPOSEs, stay by name.
+template <std::size_t N> struct FieldFrame {
+    std::optional<Value> own[N];
+    std::optional<Value> *at[N];
+    FieldFrame(Variables &fields, const FrameNames &names) {
+        for (std::size_t k = 0; k < N; ++k) {
+            const bool stem = k >= names.names.size() || names.lens[k] == 0 || names.names[k][names.lens[k] - 1] == '.';
+            at[k] = stem ? nullptr : own + k;
+        }
+        fields.frame = at; fields.frameOwn = own; fields.frameSize = N; fields.frameNames = &names;
+    }
+    // (the values are taken out first, then released: a value's release may run code that looks at this object)
+    void clear() {
+        std::vector<Value> gone;
+        for (auto &v : own) if (v) { gone.push_back(std::move(*v)); v.reset(); }
+    }
+    FieldFrame(const FieldFrame &) = delete;
+    FieldFrame &operator=(const FieldFrame &) = delete;
 };
 template <std::size_t K, bool Keep = LocalSlots<K>::keepAcrossCalls> struct SlotsKept {
     LocalSlots<K> &table; VarSlot saved[K];
@@ -1038,11 +1217,11 @@ template <std::size_t K> struct SlotsKept<K, false> { explicit SlotsKept(LocalSl
 template <std::size_t K> inline SlotsKept<K> keepSlots(LocalSlots<K> &t) { return SlotsKept<K>(t); }
 // A stem variable's own entry ("S."), or null: what compiled S.tail checks for its stem object (rx::stemGet1).
 #define RX_VSTEM(N) ([&]() -> const ::rx::Value * { static thread_local ::rx::VarSlot _rxSlot; return _rxSlot.find(vars, N); }())
-#define RX_VSTEMK(K, N) (_rxL.s[K].find(vars, N))
-#define RX_VGETK(K, N) (_rxL.s[K].get(vars, N))
-#define RX_VREFK(K, N) ([&]() -> const ::rx::Value & { if (const ::rx::Value *_rxP = _rxL.s[K].find(vars, N)) return *_rxP; static thread_local ::rx::Value _rxUnset = ::rx::Value::string(std::string()); _rxUnset = _rxL.s[K].get(vars, N); return _rxUnset; }())
-#define RX_VTAILK(K, N) ([&]() -> const ::rx::Value & { if (const ::rx::Value *_rxP = _rxL.s[K].find(vars, N)) return *_rxP; static thread_local ::rx::Value _rxName = ::rx::Value::string(N); return _rxName; }())
-#define RX_VSETK(K, N, ...) (_rxL.s[K].set(vars, N, __VA_ARGS__))
+#define RX_VSTEMK(K, N) (_rxL.find(K, vars, N))
+#define RX_VGETK(K, N) (_rxL.get(K, vars, N))
+#define RX_VREFK(K, N) ([&]() -> const ::rx::Value & { if (const ::rx::Value *_rxP = _rxL.find(K, vars, N)) return *_rxP; static thread_local ::rx::Value _rxUnset = ::rx::Value::string(std::string()); _rxUnset = _rxL.get(K, vars, N); return _rxUnset; }())
+#define RX_VTAILK(K, N) ([&]() -> const ::rx::Value & { if (const ::rx::Value *_rxP = _rxL.find(K, vars, N)) return *_rxP; static thread_local ::rx::Value _rxName = ::rx::Value::string(N); return _rxName; }())
+#define RX_VSETK(K, N, ...) (_rxL.set(K, vars, N, __VA_ARGS__))
 
 
 // USE ARG drops an omitted target instead of assigning the empty string;
@@ -1786,9 +1965,7 @@ __attribute__((always_inline)) inline void loopStore(Value &v, std::int64_t cur)
 // under DIGITS >= 9 and FUZZ 0, with + - * % // and exact /, unary - +, the non-strict comparisons, and & | && \ of
 // comparison results: any operand or result outside that sets ok false and the statement runs as before.
 inline bool nOn(const ActivationNumeric &n) { return n.digits >= 9 && n.fuzz == 0; }
-__attribute__((noinline)) inline std::int64_t nLoad(VarSlot &slot, std::uint8_t &valid, std::int64_t &reg, const Variables &vars,
-                                                    const char *name, bool &ok) {
-    const Value *p = slot.find(vars, name);
+__attribute__((noinline)) inline std::int64_t nLoad(const Value *p, std::uint8_t &valid, std::int64_t &reg, bool &ok) {
     std::uint32_t m;
     if (p && !p->isObject() && ((m = numMeta(*p)) & kNumInteger)) {
         reg = p->bytes.numCache().coef.load(std::memory_order_relaxed);
@@ -1801,7 +1978,7 @@ __attribute__((noinline)) inline std::int64_t nLoad(VarSlot &slot, std::uint8_t 
 template <std::size_t K> __attribute__((always_inline)) inline std::int64_t nGet(LocalSlots<K> &L, std::size_t k, const Variables &vars,
                                                                                  const char *name, bool &ok) {
     if (L.nk[k]) return L.nr[k];
-    return nLoad(L.s[k], L.nk[k], L.nr[k], vars, name, ok);
+    return nLoad(L.find(k, vars, name), L.nk[k], L.nr[k], ok);
 }
 // a variable read as the whole value of V = Y: only when Y's characters are its number's own (then writing the number
 // to V gives V the same characters)
@@ -1813,8 +1990,8 @@ template <std::size_t K> __attribute__((always_inline)) inline std::int64_t nGet
 }
 template <std::size_t K> __attribute__((always_inline)) inline void nSet(LocalSlots<K> &L, std::size_t k, Variables &vars, const char *name, std::int64_t r) {
     L.nr[k] = r; L.nk[k] = 2;
-    if (Value *p = L.s[k].resolve(vars); p && !p->isObject()) { p->bytes.setPendingNumber(r, kNumKnown | kNumDecimal | kNumInteger | (128u << 8)); return; }
-    L.s[k].set(vars, name, intResult(r));
+    if (Value *p = L.resolve(k, vars); p && !p->isObject()) { p->bytes.setPendingNumber(r, kNumKnown | kNumDecimal | kNumInteger | (128u << 8)); return; }
+    L.set(k, vars, name, intResult(r));
 }
 template <std::size_t K> inline void nPut(LocalSlots<K> &L, std::size_t k, std::int64_t r) { L.nr[k] = r; L.nk[k] = 2; }
 // X = Y (Y a simple variable): X's variable now holds Y's value, so X's register is Y's (valid or not)

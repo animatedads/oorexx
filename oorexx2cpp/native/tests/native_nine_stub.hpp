@@ -48,5 +48,7 @@ struct NativeArray:ObjectDispatch {
 };
 inline Value nil(){return Value::fromObject(std::make_shared<EnvObject>());}
 inline Value envClass(const std::string &){return Value::fromObject(std::make_shared<EnvObject>());}
+// (the bridge's SEND / SENDWITH re-dispatch: not part of this standalone smoke test)
+inline bool nativeSendWith(const std::string &, const std::vector<Value> &, std::string &, std::vector<Value> &){return false;}
 }
 #include "../../include/rx_native_nine.hpp"

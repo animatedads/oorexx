@@ -204,6 +204,7 @@
         names = names || .RxQuote~cpp(n)
       end
       code = code || 'rx::Variables _rxProcVars(vars, std::vector<std::string>{' || names || '}); '
+      code = code || 'rx::Frame<std::remove_reference_t<decltype(_rxL)>::size> _rxProcF(_rxProcVars, _rxFN); '
       target = '_rxProcVars'
     end
     code = code || '(void)_rxBody(' || entry || ', _rxQa, ' || target || ', true); break; } '
