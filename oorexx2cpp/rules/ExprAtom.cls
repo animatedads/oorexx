@@ -59,12 +59,15 @@
       if t~text == 'MUTABLEBUFFER' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' & \ctx~hasProgramClass(t~text) then return 'rx::mutableBufferClass()'
       if t~text == 'ARRAY' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' & \ctx~hasProgramClass(t~text) then return 'rx::nativeArrayClass()'
       if t~text == 'DIRECTORY' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' & \ctx~hasProgramClass(t~text) then return 'rx::nativeDirectoryClass()'
+      if t~text == 'STRINGTABLE' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' & \ctx~hasProgramClass(t~text) then return 'rx::nativeStringTableClass()'
       /* Nine native ooRexx object classes in the compiled host-library lane only. */
       if value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' & wordpos(t~text, 'LIST QUEUE TABLE SET BAG RELATION SUPPLIER MESSAGE DATETIME') > 0 & \ctx~hasProgramClass(t~text) then -
         return 'rx::nativeNineClass(' || .RxQuote~cpp(t~text) || ')'
+      /* .Stem~new: a native stem object (the interpreter's Stem class for anything else) */
+      if t~text == 'STEM' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' & \ctx~hasProgramClass(t~text) then return 'rx::nativeStemClass()'
       /* Kernel / host-API mode: environment classes are the interpreter's own objects, not reimplementations. */
       if (value('RX2CPP_KERNEL', , 'ENVIRONMENT') \= '' | value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '') & wordpos(t~text, 'TRUE FALSE NIL') = 0 & \ctx~hasProgramClass(t~text) then -
-        return 'rx::envClass(' || .RxQuote~cpp(t~text) || ')'
+        return 'RX_ENV(' || .RxQuote~cpp(t~text) || ')'
       if ctx~hasProgramClass(t~text) then return 'rx::Value::fromObject(_rxClasses.at(' || .RxQuote~cpp(t~text) || '))'
       /* A hosted unit shares objects with the interpreter, so collections must be interpreter objects. */
       if t~text == 'ARRAY' & ctx~hasHostUnit & ctx~hostedEnabled then do

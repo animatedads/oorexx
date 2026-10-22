@@ -219,6 +219,18 @@ struct NativeNineClass final : NativeRefBase {
         return env->handle;
     }
     MessageResult sendMessage(const std::string &s,const std::vector<Value> &a) override {
+        { std::string sel; std::vector<Value> sent; if (nativeSendWith(s,a,sel,sent)) return sendMessage(sel,sent); }
+        // SetClass::ofRexx / BagClass::ofRexx: a new collection, PUT of each item (an omitted one is the
+        // interpreter's error)
+        if (s=="OF" && (kind=="SET" || kind=="BAG")) {
+            bool omitted=false;
+            for (const Value &v:a) if (NativeArray::omitted(v)) omitted=true;
+            if (!omitted) {
+                MessageResult made=sendMessage("NEW",{});
+                for (const Value &v:a) made->object->sendMessage("PUT",{v});
+                return made;
+            }
+        }
         if (s=="NEW") {
             if (a.empty()) {
                 if(kind=="LIST") return Value::fromObject(std::make_shared<NativeList>());

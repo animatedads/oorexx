@@ -207,6 +207,14 @@ struct StemObject final : ObjectDispatch {
                 return std::nullopt;
             }
             if (selector == "STRING") return defaultValue();
+            // StemClass::hasIndex: an element with a value of its own (not the default); no index: always true
+            if (selector == "HASINDEX") {
+                if (args.empty()) return Value::string("1");
+                const std::string tail = tailOf(0);
+                std::size_t i = 0; const bool d = denseTail(tail, i);
+                std::lock_guard<SpinLock> g(lock);
+                return Value::string(findLocked(tail, d, i) ? "1" : "0");
+            }
         }
         // Any other Stem method (AT, PUT, TODIRECTORY, ITEMS, ...) and object indexes: the stem becomes an interpreter
         // stem holding its contents (as when it crosses), and the interpreter's Stem class answers, errors included.

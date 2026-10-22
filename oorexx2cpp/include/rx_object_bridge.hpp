@@ -248,6 +248,52 @@ inline void *environmentEntry(const std::string &name) {
     if (o == NULLOBJECT) return nullptr;
     return (void *)rxobj::pinRef(t, o);
 }
+// environmentEntry's lookup without its per-call costs: the three directories (the package's LOCAL, .local,
+// .environment) are found once per thread and kept; DirectoryAt is the interpreter's own get(), as
+// PackageClass::findClass does. Answers a local reference (the caller releases it), or NULLOBJECT.
+inline RexxObjectPtr environmentLookup(RexxThreadContext *t, const std::string &name) {
+    struct Dirs { RexxDirectoryObject pkg = NULLOBJECT, local = NULLOBJECT, global = NULLOBJECT; bool pkgDone = false; };
+    static thread_local Dirs d;
+    if (!d.pkgDone && libraryPackage() != NULLOBJECT) {
+        d.pkgDone = true;
+        RexxObjectPtr l = t->SendMessage0(libraryPackage(), "LOCAL");
+        if (t->CheckCondition()) t->ClearCondition();
+        else if (l != NULLOBJECT && l != t->Nil() && t->IsDirectory(l)) d.pkg = (RexxDirectoryObject)pinRef(t, l);
+        if (l != NULLOBJECT) t->ReleaseLocalReference(l);
+    }
+    if (d.local == NULLOBJECT) {
+        RexxObjectPtr l = (RexxObjectPtr)t->GetLocalEnvironment();
+        d.local = (RexxDirectoryObject)pinRef(t, l); t->ReleaseLocalReference(l);
+        RexxObjectPtr g = (RexxObjectPtr)t->GetGlobalEnvironment();
+        d.global = (RexxDirectoryObject)pinRef(t, g); t->ReleaseLocalReference(g);
+    }
+    RexxObjectPtr o = NULLOBJECT;
+    if (d.pkg != NULLOBJECT) o = t->DirectoryAt(d.pkg, name.c_str());
+    if (o == NULLOBJECT && d.local != NULLOBJECT) o = t->DirectoryAt(d.local, name.c_str());
+    if (o == NULLOBJECT && d.global != NULLOBJECT) o = t->DirectoryAt(d.global, name.c_str());
+    if (t->CheckCondition()) { t->ClearCondition(); if (o != NULLOBJECT) t->ReleaseLocalReference(o); return NULLOBJECT; }
+    return o;
+}
+// Does this object run Object's own == and \== (identity, RexxObject::strictEqual)? Asked of the object's behaviour
+// (INSTANCEMETHOD), compared with .Object's methods; false when unsure.
+inline bool objectIdentityEquality(void *h) {
+    RexxThreadContext *t = need();
+    LocalRefs temps(t);
+    static thread_local RexxObjectPtr eq = NULLOBJECT, ne = NULLOBJECT;
+    auto method = [&](RexxObjectPtr target, const char *selector, const char *name) -> RexxObjectPtr {
+        RexxObjectPtr m = temps(t->SendMessage1(target, selector, temps((RexxObjectPtr)t->String(name))));
+        if (t->CheckCondition()) { t->ClearCondition(); return NULLOBJECT; }
+        return m;
+    };
+    if (eq == NULLOBJECT) {
+        RexxObjectPtr object = temps((RexxObjectPtr)t->FindClass("OBJECT"));
+        RexxObjectPtr e = method(object, "METHOD", "=="), n = method(object, "METHOD", "\\==");
+        if (e == NULLOBJECT || n == NULLOBJECT) return false;
+        eq = pinRef(t, e); ne = pinRef(t, n);
+    }
+    RexxObjectPtr e = method((RexxObjectPtr)h, "INSTANCEMETHOD", "=="), n = method((RexxObjectPtr)h, "INSTANCEMETHOD", "\\==");
+    return e != NULLOBJECT && e == eq && n != NULLOBJECT && n == ne;
+}
 // RX2CPP_REF_STATS=1: global references taken by sends, released, and dropped without a context (leaked); printed at exit.
 struct RefStats {
     std::atomic<unsigned long> taken{0}, released{0}, dropped{0};
@@ -312,13 +358,14 @@ inline void *newArray(std::size_t size, const std::vector<Arg> &items) {
     return (void *)rxobj::pinRef(t, (RexxObjectPtr)arr);
 }
 // Store entries into an interpreter Directory in the given order (the same as [] = for each, without a send per entry).
-inline void directoryPutAll(void *dir, const std::vector<std::string> &keys, const std::vector<Arg> &values) {
+inline void directoryPutAll(void *dir, const std::vector<std::string> &keys, const std::vector<Arg> &values, bool directory = true) {
     RexxThreadContext *t = need();
     for (std::size_t i = 0; i < keys.size(); i++) {
         LocalRefs temps(t);
         const Arg &a = values[i];
         RexxObjectPtr value = a.obj ? (RexxObjectPtr)a.obj : temps((RexxObjectPtr)t->NewString(a.bytes.data(), a.bytes.size()));
-        if (keys[i].find('\0') == std::string::npos) t->DirectoryPut((RexxDirectoryObject)dir, value, keys[i].c_str());
+        // (DirectoryPut is the Directory API; a StringTable takes []=, the same put)
+        if (directory && keys[i].find('\0') == std::string::npos) t->DirectoryPut((RexxDirectoryObject)dir, value, keys[i].c_str());
         else temps(t->SendMessage2((RexxObjectPtr)dir, "[]=", value, temps((RexxObjectPtr)t->NewString(keys[i].data(), keys[i].size()))));
     }
 }
@@ -771,7 +818,22 @@ struct EnvObject final : ObjectDispatch {
         if (r.kind == 0) return std::nullopt;
         return wrap(r);
     }
+    // == and \== of an object that runs Object's own (a Routine compared with .nil: once per clause in the Rexx
+    // Parser): identity, answered here for a string, .nil or another interpreter object (asked once per object).
+    int identityEquality = -1;
     Value sendBinary(const std::string &selector, const Value &rhs) override {
+        const bool strict = selector.size() == 2 && selector[0] == '=' && selector[1] == '=';
+        const bool notStrict = selector.size() == 3 && selector[0] == '\\' && selector[1] == '=' && selector[2] == '=';
+        if ((strict || notStrict) && handle) {
+            void *other = nullptr; bool known = false;
+            if (!rhs.isObject()) known = true;   // a string is never this object
+            else if (rhs.object->isNilObject()) { other = rxobj::nilObject(); known = other != nullptr; }
+            else if (auto *e = dynamic_cast<EnvObject *>(rhs.object.get())) { other = e->handle; known = other != nullptr; }
+            if (known) {
+                if (identityEquality < 0) identityEquality = rxobj::objectIdentityEquality(handle) ? 1 : 0;
+                if (identityEquality == 1) return Value::string((other == handle) == strict ? "1" : "0");
+            }
+        }
         auto r = sendMessage(selector, {rhs});
         if (!r) throw std::runtime_error("operator message returned no value: " + selector);
         return *r;
@@ -835,14 +897,54 @@ inline Value envClass(const std::string &name);
 // A combined library's package as seen from code of one of its source files (compile_program.sh, combine_package.rex):
 // NAME is that file's name, as interpreted (the Rexx Parser finds its resources/ next to its own file); any other
 // message, and the object handed to the interpreter, is the library's package.
+// The answers of the library package's FINDROUTINE (Routine objects), kept: a package's routines and the public routines
+// of the packages it requires are fixed once loaded. Compiled code changing the package (ADDROUTINE, ADDPACKAGE, ...)
+// empties it. (Interpreted code changing a compiled library's package is not seen.)
+struct PackageRoutines { std::mutex lock; std::unordered_map<std::string, Value> found; };
+inline PackageRoutines &packageRoutines() { static PackageRoutines *p = new PackageRoutines; return *p; }
+inline MessageResult libraryPackageMessage(EnvObject &package, const std::string &selector, const std::vector<Value> &args) {
+    auto caselessEquals = [](const std::string &a, const char *b) {
+        const std::size_t n = std::strlen(b);
+        if (a.size() != n) return false;
+        for (std::size_t i = 0; i < n; i++)
+            if (std::toupper(static_cast<unsigned char>(a[i])) != static_cast<unsigned char>(b[i])) return false;
+        return true;
+    };
+    static const char *const changes[] = {"ADDROUTINE", "ADDPUBLICROUTINE", "ADDPACKAGE", "LOADPACKAGE", "LOADLIBRARY",
+                                          "ADDCLASS", "ADDPUBLICCLASS"};
+    if (args.size() == 1 && !args[0].isObject() && caselessEquals(selector, "FINDROUTINE")) {
+        std::string key = args[0].bytes.str();
+        for (char &c : key) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        PackageRoutines &r = packageRoutines();
+        {
+            std::lock_guard<std::mutex> g(r.lock);
+            auto it = r.found.find(key);
+            if (it != r.found.end()) return it->second;
+        }
+        MessageResult result = package.sendMessage(selector, args);
+        if (result && result->isObject() && !result->object->isNilObject()) {
+            std::lock_guard<std::mutex> g(r.lock);
+            r.found.insert_or_assign(key, *result);
+        }
+        return result;
+    }
+    for (const char *c : changes) if (caselessEquals(selector, c)) {
+        std::lock_guard<std::mutex> g(packageRoutines().lock);
+        packageRoutines().found.clear();
+        break;
+    }
+    return package.sendMessage(selector, args);
+}
+// The library's package as compiled code sees it (.context~package): in a combined library, named after the source file
+// of the code (`path`; '' is the library's own name).
 struct PackageView final : NativeRefBase {
     std::string path;
     std::shared_ptr<EnvObject> package;
     PackageView(std::string p, std::shared_ptr<EnvObject> pkg) : path(std::move(p)), package(std::move(pkg)) {}
     void *materialize() override { return package->handle; }
     MessageResult sendMessage(const std::string &selector, const std::vector<Value> &args) override {
-        if (args.empty() && rx::eqLit(selector, "NAME")) return Value::string(path);
-        return package->sendMessage(selector, args);
+        if (args.empty() && !path.empty() && rx::eqLit(selector, "NAME")) return Value::string(path);
+        return libraryPackageMessage(*package, selector, args);
     }
     Value sendBinary(const std::string &selector, const Value &rhs) override { return package->sendBinary(selector, rhs); }
     Value sendUnary(const std::string &selector) override { return package->sendUnary(selector); }
@@ -854,10 +956,12 @@ struct LibraryContext final : ObjectDispatch {
     explicit LibraryContext(std::string p) : sourcePath(std::move(p)) {}
     MessageResult sendMessage(const std::string &selector, const std::vector<Value> &) override {
         if (rx::eqLit(selector, "PACKAGE") && rxobj::libraryPackage() != NULLOBJECT) {
-            RexxThreadContext *t = rxobj::need();
-            auto pkg = std::make_shared<EnvObject>((void *)rxobj::pinRef(t, rxobj::libraryPackage()));
+            // (the package object made once: kept for the life of the library)
+            static const std::shared_ptr<EnvObject> pkg =
+                std::make_shared<EnvObject>((void *)rxobj::pinRef(rxobj::need(), rxobj::libraryPackage()));
+            static const Value library = Value::fromObject(std::make_shared<PackageView>(std::string(), pkg));
             if (!sourcePath.empty()) return Value::fromObject(std::make_shared<PackageView>(sourcePath, pkg));
-            return Value::fromObject(pkg);
+            return library;
         }
         throw SyntaxCondition("98.926", ".CONTEXT~" + selector + " is not available in compiled code", false);
     }
@@ -1515,34 +1619,62 @@ inline Value selfObject() {
     if (!h) throw std::runtime_error("SELF is not available here");
     return EnvObject::adopt(h);
 }
-// .NAME environment symbols resolve to the interpreter's own classes (.ARRAY, .DIRECTORY, .LIST, ...).
-inline Value envClass(const std::string &name) {
-    // Class objects live as long as the interpreter instance: resolve each name once per thread (FindClass is a full lookup).
-    static thread_local std::unordered_map<std::string, Value> cache;
-    auto it = cache.find(name);
-    if (it != cache.end()) return it->second;
-    if (packageClassHook) if (auto v = packageClassHook(name)) { cache.emplace(name, *v); return *v; }
-    void *h = (rx::eqLit(name, "LOCAL") || rx::eqLit(name, "ENVIRONMENT")) ? rxobj::environmentObject(name) : rxobj::findClass(name);
-    if (!h) {
-        // Not a class: an environment entry (.REXXINFO, .OUTPUT, an application's .local['X']), looked up each time.
-        if (void *entry = rxobj::environmentEntry(name)) {
-            // A String entry (.local~v1 = 'a') is a string value in compiled code, as strings are everywhere.
-            RexxThreadContext *t = rxobj::need();
-            if (rxobj::isPlainString(t, (RexxObjectPtr)entry)) {
-                RexxStringObject so = (RexxStringObject)t->ObjectToString((RexxObjectPtr)entry);
-                Value v = Value::string(std::string(t->StringData(so), t->StringLength(so)));
-                rxobj::release(entry);
-                return v;
-            }
-            return Value::fromObject(std::make_shared<EnvObject>(entry));
-        }
-        return Value::string("." + name);   // an unknown environment symbol is its own name, as interpreted (.FOO, ...)
-    }
-    auto obj = std::make_shared<EnvObject>(h);
-    Value value = Value::fromObject(obj);
-    cache.emplace(name, value);
-    return value;
+// An environment symbol (.NAME), resolved as PackageClass::findClass does. A class of this package, of a package it
+// requires or of the REXX package is fixed once found (the interpreter keeps it in the RexxDotVariable); any other
+// name is looked up every time (the package's LOCAL, .local, .environment). Each compiled site keeps its EnvName
+// (RX_ENV): the value found is kept with the object it came from, so the same object again is the same value, with no
+// conversion and no pin.
+struct EnvName {
+    std::string name;
+    int state = 0;            // 0 not yet resolved, 1 fixed, 2 looked up each time
+    Value value;
+    void *last = nullptr;     // (2) the object `value` came from, pinned while kept
+    explicit EnvName(std::string n) : name(std::move(n)), value(Value::string(std::string())) {}
+};
+inline EnvName &envName(const std::string &name) {
+    static thread_local std::unordered_map<std::string, std::unique_ptr<EnvName>> *names =
+        new std::unordered_map<std::string, std::unique_ptr<EnvName>>;   // (never destroyed: values outlive the interpreter)
+    auto &slot = (*names)[name];
+    if (!slot) slot = std::make_unique<EnvName>(name);
+    return *slot;
 }
+inline Value envValue(EnvName &e) {
+    if (e.state == 1) return e.value;
+    const std::string &name = e.name;
+    if (e.state == 0) {
+        if (packageClassHook) if (auto v = packageClassHook(name)) { e.value = *v; e.state = 1; return e.value; }
+        void *h = (rx::eqLit(name, "LOCAL") || rx::eqLit(name, "ENVIRONMENT")) ? rxobj::environmentObject(name) : rxobj::findClass(name);
+        if (h) { e.value = Value::fromObject(std::make_shared<EnvObject>(h)); e.state = 1; return e.value; }
+        e.state = 2;
+    }
+#ifdef RX2CPP_HOST_API
+    RexxThreadContext *t = rxobj::need();
+    RexxObjectPtr o = rxobj::environmentLookup(t, name);
+    if (o == NULLOBJECT) return Value::string("." + name);   // an unknown environment symbol is its own name (.FOO)
+    if ((void *)o == e.last) { t->ReleaseLocalReference(o); return e.value; }
+    Value v = Value::string(std::string());
+    if (rxobj::isPlainString(t, o)) {
+        // A String entry (.local~v1 = 'a') is a string value in compiled code, as strings are everywhere.
+        RexxStringObject so = (RexxStringObject)t->ObjectToString(o);
+        v = Value::string(std::string(t->StringData(so), t->StringLength(so)));
+        if ((RexxObjectPtr)so != o) t->ReleaseLocalReference((RexxObjectPtr)so);
+    }
+    else v = Value::fromObject(std::make_shared<EnvObject>((void *)rxobj::pinRef(t, o)));
+    void *kept = (void *)rxobj::pinRef(t, o);
+    if (e.last) rxobj::unpinRef(t, e.last);
+    e.last = kept;
+    e.value = v;
+    t->ReleaseLocalReference(o);
+    return v;
+#else
+    if (void *entry = rxobj::environmentEntry(name)) return Value::fromObject(std::make_shared<EnvObject>(entry));
+    return Value::string("." + name);
+#endif
+}
+// One environment symbol of the compiled code: its EnvName found once per site and thread.
+#define RX_ENV(N) ([]() -> ::rx::Value { static thread_local ::rx::EnvName *_rxE = nullptr; if (!_rxE) _rxE = &::rx::envName(N); return ::rx::envValue(*_rxE); }())
+// .NAME environment symbols resolve to the interpreter's own classes (.ARRAY, .DIRECTORY, .LIST, ...).
+inline Value envClass(const std::string &name) { return envValue(envName(name)); }
 #ifdef RX2CPP_HOST_API
 // .MUTABLEBUFFER in compiled library code. A buffer built and read by compiled code (json.cls: one APPEND per token)
 // stays native: APPEND of plain strings, STRING, MAKESTRING and LENGTH run here without crossing to the interpreter.
@@ -1759,10 +1891,30 @@ struct NativeArray final : NativeRefBase, ItemSnapshot, std::enable_shared_from_
         return text ? text->bytes.str() : std::string();
     }
 };
+// Object~SEND(name, args...) / SENDWITH(name, array) to a native class object: the message itself, sent to the same
+// object (its own methods: a native class has no override of SEND), as RexxObject::sendWith does: the name
+// upper-cased, the array's items up to its last one (messageArgCount), holes omitted. A name that is not a plain
+// string (a scope override) or an interpreter array is left to the interpreter.
+inline bool nativeSendWith(const std::string &s, const std::vector<Value> &a, std::string &sel, std::vector<Value> &args) {
+    if (a.empty() || a[0].isObject()) return false;
+    if (rx::eqLit(s, "SEND")) args.assign(a.begin() + 1, a.end());
+    else if (rx::eqLit(s, "SENDWITH") && a.size() == 2 && a[1].isObject()) {
+        auto *arr = dynamic_cast<NativeArray *>(a[1].object.get());
+        if (!arr || arr->real) return false;
+        std::size_t last = arr->slots.size();
+        while (last > 0 && !arr->slots[last - 1]) --last;
+        for (std::size_t i = 0; i < last; ++i) args.push_back(arr->slots[i] ? *arr->slots[i] : omittedArgument());
+    }
+    else return false;
+    sel = a[0].bytes.str();
+    for (char &c : sel) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    return true;
+}
 struct NativeArrayClass final : NativeRefBase {
     static Value interpreterClass() { return envClass("ARRAY"); }
     void *materialize() override { return static_cast<EnvObject *>(interpreterClass().object.get())->handle; }
     MessageResult sendMessage(const std::string &selector, const std::vector<Value> &args) override {
+        { std::string sel; std::vector<Value> sent; if (nativeSendWith(selector, args, sel, sent)) return sendMessage(sel, sent); }
         if (rx::eqLit(selector, "NEW")) {
             std::size_t n = 0;
             if (args.empty()) return Value::fromObject(std::make_shared<NativeArray>(0, false));
@@ -1790,6 +1942,26 @@ struct NativeArrayClass final : NativeRefBase {
     }
     std::string display() const override { return "The Array class"; }
 };
+// .STEM in compiled library code: NEW gives a native StemObject (it becomes an interpreter stem when it crosses, or on a
+// message it does not answer itself); any other message, and the class as an argument, is the interpreter's Stem class.
+struct NativeStemClass final : NativeRefBase {
+    static Value interpreterClass() { return envClass("STEM"); }
+    void *materialize() override { return static_cast<EnvObject *>(interpreterClass().object.get())->handle; }
+    MessageResult sendMessage(const std::string &selector, const std::vector<Value> &args) override {
+        { std::string sel; std::vector<Value> sent; if (nativeSendWith(selector, args, sel, sent)) return sendMessage(sel, sent); }
+        if (rx::eqLit(selector, "NEW") && args.size() <= 1 && (args.empty() || !args[0].isObject()))
+            return stemClass().object->sendMessage(selector, args);
+        return interpreterClass().object->sendMessage(selector, args);
+    }
+    Value sendBinary(const std::string &selector, const Value &rhs) override {
+        return interpreterClass().object->sendBinary(selector, rhs);
+    }
+    std::string display() const override { return "The Stem class"; }
+};
+inline Value nativeStemClass() {
+    static thread_local const Value c = Value::fromObject(std::make_shared<NativeStemClass>());
+    return c;
+}
 inline Value nativeArrayClass() {
     static thread_local const Value c = Value::fromObject(std::make_shared<NativeArrayClass>());
     return c;
@@ -1803,7 +1975,13 @@ inline Value nativeArrayClass() {
 // original order and forwards to it from then on.
 struct NativeDirectoryClass;
 inline Value nativeDirectoryClass();
+inline Value nativeStringTableClass();
 struct NativeDirectory final : NativeRefBase, std::enable_shared_from_this<NativeDirectory> {
+    // DIRECTORY, or STRINGTABLE (the same string-keyed collection, StringHashCollection, without SETMETHOD entries)
+    const char *kind = "DIRECTORY";
+    NativeDirectory() = default;
+    explicit NativeDirectory(const char *k) : kind(k) {}
+    Value classValue() const { return kind[0] == 'D' ? nativeDirectoryClass() : nativeStringTableClass(); }
     std::vector<std::string> order;                       // first-insertion order
     std::unordered_map<std::string, Value> entries;
     std::optional<Value> real;
@@ -1821,11 +1999,11 @@ struct NativeDirectory final : NativeRefBase, std::enable_shared_from_this<Nativ
     // it stale).
     const std::vector<std::size_t> &interpreterOrder() {
         if (hashOrder.size() == order.size()) return hashOrder;
-        MessageResult made = envClass("DIRECTORY").object->sendMessage("NEW", {});
+        MessageResult made = envClass(kind).object->sendMessage("NEW", {});
         auto *env = made && made->isObject() ? dynamic_cast<EnvObject *>(made->object.get()) : nullptr;
         if (!env) throw std::runtime_error(".Directory~new is not an interpreter object");
         std::vector<rxobj::Arg> in(order.size());
-        rxobj::directoryPutAll(env->handle, order, in);   // (empty strings: only the keys matter)
+        rxobj::directoryPutAll(env->handle, order, in, kind[0] == 'D');   // (empty strings: only the keys matter)
         std::unordered_map<std::string, std::size_t> position;
         for (std::size_t i = 0; i < order.size(); ++i) position.emplace(order[i], i);
         RexxThreadContext *t = rxobj::need();
@@ -1854,7 +2032,7 @@ struct NativeDirectory final : NativeRefBase, std::enable_shared_from_this<Nativ
     }
     Value &promote() {
         if (!real) {
-            MessageResult made = envClass("DIRECTORY").object->sendMessage("NEW", {});
+            MessageResult made = envClass(kind).object->sendMessage("NEW", {});
             if (!made || !made->isObject()) throw std::runtime_error(".Directory~new returned no object");
             auto *env = dynamic_cast<EnvObject *>(made->object.get());
             if (!env) throw std::runtime_error(".Directory~new is not an interpreter object");
@@ -1862,7 +2040,7 @@ struct NativeDirectory final : NativeRefBase, std::enable_shared_from_this<Nativ
             values.reserve(order.size());
             for (const auto &k : order) values.push_back(entries.at(k));
             std::vector<rxobj::Arg> in; EnvObject::convert(values, in);
-            rxobj::directoryPutAll(env->handle, order, in);
+            rxobj::directoryPutAll(env->handle, order, in, kind[0] == 'D');
             real = *made;
             std::vector<std::string>().swap(order);
             std::unordered_map<std::string, Value>().swap(entries);
@@ -1872,21 +2050,23 @@ struct NativeDirectory final : NativeRefBase, std::enable_shared_from_this<Nativ
     void *materialize() override { return static_cast<EnvObject *>(promote().object.get())->handle; }
     // Whether a Directory understands the selector itself (a method of Directory or an ancestor), asked once per
     // selector of an interpreter Directory kept for the purpose.
-    static bool directoryMethod(const std::string &selector) {
+    static bool directoryMethod(const char *kind, const std::string &selector) {
         static std::mutex gate;
-        static std::unordered_map<std::string, bool> known;
-        static std::optional<Value> probe;
+        static std::unordered_map<std::string, bool> known;   // kind:selector
+        static std::unordered_map<std::string, Value> probes;
         std::lock_guard<std::mutex> g(gate);
-        auto it = known.find(selector);
+        const std::string key = std::string(kind) + ':' + selector;
+        auto it = known.find(key);
         if (it != known.end()) return it->second;
-        if (!probe) {
-            MessageResult made = envClass("DIRECTORY").object->sendMessage("NEW", {});
+        auto p = probes.find(kind);
+        if (p == probes.end()) {
+            MessageResult made = envClass(kind).object->sendMessage("NEW", {});
             if (!made) return true;
-            probe = *made;
+            p = probes.emplace(kind, *made).first;
         }
-        MessageResult has = probe->object->sendMessage("HASMETHOD", {Value::string(selector)});
+        MessageResult has = p->second.object->sendMessage("HASMETHOD", {Value::string(selector)});
         const bool yes = !has || has->isObject() || has->bytes.str() != "0";
-        known.emplace(selector, yes);
+        known.emplace(key, yes);
         return yes;
     }
     MessageResult sendMessage(const std::string &selector, const std::vector<Value> &args) override {
@@ -1908,7 +2088,7 @@ struct NativeDirectory final : NativeRefBase, std::enable_shared_from_this<Nativ
         // DirectoryClass::unknown: a message that is no Directory method names an entry: NAME= sets it, NAME answers
         // it (.nil when absent). (d~w1 = x; d~w1)
         if (!selector.empty() && ((n == 0 && selector.back() != '=') || (n == 1 && selector.size() > 1 && selector.back() == '=' &&
-                                  !NativeArray::omitted(args[0]))) && !directoryMethod(selector)) {
+                                  !NativeArray::omitted(args[0]))) && !directoryMethod(kind, selector)) {
             if (n == 0) {
                 auto it = entries.find(selector);
                 return it == entries.end() ? nil() : it->second;
@@ -1928,10 +2108,10 @@ struct NativeDirectory final : NativeRefBase, std::enable_shared_from_this<Nativ
             for (std::size_t i : at) items.push_back(rx::eqLit(selector, "ALLINDEXES") ? Value::string(order[i]) : entries.at(order[i]));
             return arrayOf(std::move(items));
         }
-        if (rx::eqLit(selector, "CLASS") && n == 0) return nativeDirectoryClass();
+        if (rx::eqLit(selector, "CLASS") && n == 0) return classValue();
         if (rx::eqLit(selector, "ISA") && n == 1 && args[0].isObject()) {
-            if (args[0].object.get() == nativeDirectoryClass().object.get()) return Value::string("1");
-            Value cls = envClass("DIRECTORY");
+            if (args[0].object.get() == classValue().object.get()) return Value::string("1");
+            Value cls = envClass(kind);
             if (auto *e = dynamic_cast<EnvObject *>(args[0].object.get()))
                 if (e->handle == static_cast<EnvObject *>(cls.object.get())->handle) return Value::string("1");
             return cls.object->sendMessage("ISSUBCLASSOF", args);
@@ -1953,19 +2133,26 @@ struct NativeDirectory final : NativeRefBase, std::enable_shared_from_this<Nativ
     }
 };
 struct NativeDirectoryClass final : NativeRefBase {
-    void *materialize() override { return static_cast<EnvObject *>(envClass("DIRECTORY").object.get())->handle; }
+    const char *kind;
+    explicit NativeDirectoryClass(const char *k) : kind(k) {}
+    void *materialize() override { return static_cast<EnvObject *>(envClass(kind).object.get())->handle; }
     MessageResult sendMessage(const std::string &selector, const std::vector<Value> &args) override {
-        // Only .Directory~new without arguments: an initial size changes the interpreter's table layout (and order).
-        if (rx::eqLit(selector, "NEW") && args.empty()) return Value::fromObject(std::make_shared<NativeDirectory>());
-        return envClass("DIRECTORY").object->sendMessage(selector, args);
+        { std::string sel; std::vector<Value> sent; if (nativeSendWith(selector, args, sel, sent)) return sendMessage(sel, sent); }
+        // Only ~new without arguments: an initial size changes the interpreter's table layout (and order).
+        if (rx::eqLit(selector, "NEW") && args.empty()) return Value::fromObject(std::make_shared<NativeDirectory>(kind));
+        return envClass(kind).object->sendMessage(selector, args);
     }
     Value sendBinary(const std::string &selector, const Value &rhs) override {
-        return envClass("DIRECTORY").object->sendBinary(selector, rhs);
+        return envClass(kind).object->sendBinary(selector, rhs);
     }
-    std::string display() const override { return "The Directory class"; }
+    std::string display() const override { return kind[0] == 'D' ? "The Directory class" : "The StringTable class"; }
 };
 inline Value nativeDirectoryClass() {
-    static thread_local const Value c = Value::fromObject(std::make_shared<NativeDirectoryClass>());
+    static thread_local const Value c = Value::fromObject(std::make_shared<NativeDirectoryClass>("DIRECTORY"));
+    return c;
+}
+inline Value nativeStringTableClass() {
+    static thread_local const Value c = Value::fromObject(std::make_shared<NativeDirectoryClass>("STRINGTABLE"));
     return c;
 }
 inline MessageResult NativeArray::sendMessage(const std::string &selector, const std::vector<Value> &args) {
