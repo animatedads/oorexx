@@ -820,7 +820,10 @@ struct EnvObject final : ObjectDispatch {
     }
     // == and \== of an object that runs Object's own (a Routine compared with .nil: once per clause in the Rexx
     // Parser): identity, answered here for a string, .nil or another interpreter object (asked once per object).
+    // (asked at the second comparison of the same object: a wrapper used once is compared by the interpreter, one send
+    // instead of three)
     int identityEquality = -1;
+    unsigned comparisons = 0;
     Value sendBinary(const std::string &selector, const Value &rhs) override {
         const bool strict = selector.size() == 2 && selector[0] == '=' && selector[1] == '=';
         const bool notStrict = selector.size() == 3 && selector[0] == '\\' && selector[1] == '=' && selector[2] == '=';
@@ -829,7 +832,7 @@ struct EnvObject final : ObjectDispatch {
             if (!rhs.isObject()) known = true;   // a string is never this object
             else if (rhs.object->isNilObject()) { other = rxobj::nilObject(); known = other != nullptr; }
             else if (auto *e = dynamic_cast<EnvObject *>(rhs.object.get())) { other = e->handle; known = other != nullptr; }
-            if (known) {
+            if (known && (identityEquality >= 0 || ++comparisons >= 2)) {
                 if (identityEquality < 0) identityEquality = rxobj::objectIdentityEquality(handle) ? 1 : 0;
                 if (identityEquality == 1) return Value::string((other == handle) == strict ? "1" : "0");
             }
