@@ -41,9 +41,10 @@ int main() {
     assert(rx::get(parent,"X").bytes=="new");
     reject(b,child,"VALUE",{Value::string("123"),Value::string("bad")});
     assert(call(b,child,"VALUE",{Value::string("123")}).bytes=="123");
+    // A variable holding an object: VALUE answers the object and assigns the new value (BuiltinFunctions VALUE).
     rx::set(parent,"X",Value::fromObject(std::make_shared<rx::ObjectDispatch>()));
-    reject(b,child,"VALUE",{Value::string("x"),Value::string("bad")});
-    assert(rx::lookup(parent,"X")->isObject());
+    assert(call(b,child,"VALUE",{Value::string("x"),Value::string("bad")}).isObject());
+    assert(rx::get(parent,"X").bytes=="bad");
     rx::set(parent,"X",Value::string("safe"));
     child.numeric.digits=17;
     child.numeric.fuzz=2;
@@ -56,5 +57,5 @@ int main() {
     assert(call(b,child,"VAR",{Value::string("x")}).bytes=="1");
     // TRACE() is language state owned by the compiled program (as the interpreter: N by default), not a rejected BIF.
     assert(call(b,child,"TRACE",{}).bytes=="N");
-    std::cout << "PASS activation variable provider: aliases, stem tails, scalar preflight, numeric, selectors\n";
+    std::cout << "PASS activation variable provider: aliases, stem tails, object values, numeric, selectors\n";
 }
