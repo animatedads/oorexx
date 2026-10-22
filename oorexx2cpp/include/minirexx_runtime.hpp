@@ -1046,11 +1046,24 @@ struct VarSlot {
     std::uint64_t pool;
     std::uint64_t gen;
     Value *node;
+    // A variable found in the pool's EXPOSE owner (an object variable kept by name: a stem): remembered by that owner, so
+    // the next activation of the same method on the same object (another pool, the same EXPOSE list) finds it at once.
+    const void *viaTable;
     __attribute__((always_inline)) Value *resolve(const Variables &vars) {
-        if (node && pool == vars.poolId.value && gen == variableEraseGeneration().load(std::memory_order_acquire)) return node;
+        if (node && gen == variableEraseGeneration().load(std::memory_order_acquire) &&
+            (pool == vars.poolId.value || (viaTable && vars.outer && vars.outer->poolId.value == pool &&
+                                           vars.exposed.table == viaTable && vars.exposed.n == 0 && vars.exposed.extra.empty())))
+            return node;
         return nullptr;
     }
-    void remember(const Variables &vars, std::uint64_t g, Value *p) { pool = vars.poolId.value; gen = g; node = p; }
+    void remember(const Variables &vars, std::uint64_t g, Value *p) { pool = vars.poolId.value; gen = g; node = p; viaTable = nullptr; }
+    void remember(const Variables &vars, const Variables &owner, std::uint64_t g, Value *p) {
+        // (by the owner when the name came from the pool's static EXPOSE list straight to its outer pool)
+        if (&owner == vars.outer && vars.exposed.table && vars.exposed.n == 0 && vars.exposed.extra.empty()) {
+            pool = owner.poolId.value; gen = g; node = p; viaTable = vars.exposed.table;
+        }
+        else remember(vars, g, p);
+    }
     __attribute__((always_inline)) Value get(const Variables &vars, const char *name) {
         if (Value *p = resolve(vars)) return *p;
         return getSlow(vars, name);
@@ -1069,7 +1082,7 @@ struct VarSlot {
             if (novalueArmed && *novalueArmed) throw NoValueCondition(name);
             return Value::string(name);
         }
-        remember(vars, g, const_cast<Value *>(&found->second));
+        remember(vars, owner, g, const_cast<Value *>(&found->second));
         return found->second;
     }
     // The variable's value in place (nullptr when it has none): the caller reads it without a copy.
@@ -1084,7 +1097,7 @@ struct VarSlot {
         if (std::optional<Value> *f = frameEntry(owner, key)) return *f ? &**f : nullptr;
         auto found = owner.find(key);
         if (found == owner.end()) return nullptr;
-        remember(vars, g, const_cast<Value *>(&found->second));
+        remember(vars, owner, g, const_cast<Value *>(&found->second));
         return &found->second;
     }
     __attribute__((always_inline)) void set(Variables &vars, const char *name, Value value) {
@@ -1097,7 +1110,7 @@ struct VarSlot {
         Variables &owner = variableOwner(vars, key);
         if (std::optional<Value> *f = frameEntry(owner, key)) { if (*f) **f = std::move(value); else f->emplace(std::move(value)); return; }
         auto r = owner.insert_or_assign(std::move(key), std::move(value));
-        remember(vars, g, &r.first->second);
+        remember(vars, owner, g, &r.first->second);
     }
 };
 // One slot per compiled access site and thread; the slot is zero-initialised (trivial), so no guard is needed.
@@ -1147,9 +1160,9 @@ template <std::size_t K> struct LocalSlots {
     static constexpr bool keepAcrossCalls = K <= 64;
 };
 // The frame of one activation (a method's pool, or a PROCEDURE pool of one of its internal routines): the body's simple
-// variables kept by slot number instead of by name (no map node, no hashing, no string per first use). A stem and a
-// name the pool EXPOSEs from the object's variables stay by name; a PROCEDURE EXPOSE name is the caller's own frame
-// entry when it has one. Every by-name access (VALUE, VAR, SYMBOL, DROP, INTERPRET, PARSE, a PROCEDURE EXPOSE chain)
+// variables kept by slot number instead of by name (no map node, no hashing, no string per first use). A stem's own
+// variable ("S.") is in the frame too; its compound entries ("S.1") stay by name. An EXPOSEd name is its owner's frame
+// entry when the owner has one (the object's FieldFrame, the caller's frame), else by name. Every by-name access (VALUE, VAR, SYMBOL, DROP, INTERPRET, PARSE, a PROCEDURE EXPOSE chain)
 // finds a frame variable through the pool's FrameNames, so it is the same variable everywhere.
 template <std::size_t K> struct Frame {
     static constexpr std::size_t inlineMax = 16;
@@ -1165,7 +1178,7 @@ template <std::size_t K> struct Frame {
         for (std::size_t k = 0; k < count; ++k) {
             const char *name = names.names[k];
             const std::size_t len = names.lens[k];
-            if (len == 0 || name[len - 1] == '.') continue;   // a stem: by name
+            if (len == 0) continue;
             if (v.outer && v.isExposed(name, len)) {
                 // the owner's (an EXPOSEd object variable is by name; a PROCEDURE EXPOSE name the caller's frame entry)
                 const Variables *owner = v.outer;
@@ -1189,14 +1202,14 @@ template <std::size_t K> struct Frame {
 };
 // The object variables of a compiled class scope (its EXPOSEd simple names) kept in place, as a frame that lives as long as
 // the object: a method's frame finds an EXPOSEd name there (Frame: the owner's frame entry), so it reads and writes the
-// object variable directly. Stems, and names no method of the class EXPOSEs, stay by name.
+// object variable directly (a stem: its stem variable; its compound entries stay by name). Names no method of the class
+// EXPOSEs stay by name.
 template <std::size_t N> struct FieldFrame {
     std::optional<Value> own[N];
     std::optional<Value> *at[N];
     FieldFrame(Variables &fields, const FrameNames &names) {
         for (std::size_t k = 0; k < N; ++k) {
-            const bool stem = k >= names.names.size() || names.lens[k] == 0 || names.names[k][names.lens[k] - 1] == '.';
-            at[k] = stem ? nullptr : own + k;
+            at[k] = (k >= names.names.size() || names.lens[k] == 0) ? nullptr : own + k;
         }
         fields.frame = at; fields.frameOwn = own; fields.frameSize = N; fields.frameNames = &names;
     }

@@ -27,7 +27,7 @@
   fieldNames = .array~new
   do method over unit~methods
     do f over method~exposed
-      if f~right(1) \== '.' & \fieldNames~hasItem(f) then fieldNames~append(f)
+      if \fieldNames~hasItem(f) then fieldNames~append(f)
     end
   end
   if fieldNames~items > 0 then do

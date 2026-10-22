@@ -257,20 +257,24 @@ inline StemObject *boundStem(const Variables &vars, const std::string &stem) {
 // The stem as a value: bind the variable to a StemObject (moving its flat entries into it) and return the object.
 inline Value stemArg(Variables &vars, const std::string &stem) {
     Variables &owner = variableOwner(vars, stem);
-    auto self = owner.find(stem);
-    if (self != owner.end() && self->second.isObject() && dynamic_cast<StemObject *>(self->second.object.get()))
-        return self->second;
+    // (the stem variable in the pool's frame, or by name; its compound entries are always by name)
+    std::optional<Value> *frame = frameEntry(owner, stem);
+    const Value *self = nullptr;
+    if (frame) { if (*frame) self = &**frame; }
+    else { auto it = owner.find(stem); if (it != owner.end()) self = &it->second; }
+    if (self && self->isObject() && dynamic_cast<StemObject *>(self->object.get())) return *self;
     auto obj = std::make_shared<StemObject>(stem);
+    if (self) obj->dflt = *self;
     for (auto it = owner.begin(); it != owner.end();) {
-        if (it->first == stem) { obj->dflt = it->second; ++it; }
-        else if (it->first.size() > stem.size() && it->first.compare(0, stem.size(), stem) == 0) {
+        if (it->first.size() > stem.size() && it->first.compare(0, stem.size(), stem) == 0) {
             obj->place(it->first.substr(stem.size()), std::move(it->second));
             it = owner.erase(it);
         } else ++it;
     }
     stemObjectsInUse().store(true, std::memory_order_relaxed);
     Value v = Value::fromObject(obj);
-    owner.insert_or_assign(stem, v);
+    if (frame) { if (*frame) **frame = v; else frame->emplace(v); }
+    else owner.insert_or_assign(stem, v);
     return v;
 }
 // The .STEM class object: NEW([name]) gives a fresh StemObject.
