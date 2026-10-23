@@ -2144,6 +2144,25 @@ struct NativeDirectoryClass final : NativeRefBase {
         { std::string sel; std::vector<Value> sent; if (nativeSendWith(selector, args, sel, sent)) return sendMessage(sel, sent); }
         // Only ~new without arguments: an initial size changes the interpreter's table layout (and order).
         if (rx::eqLit(selector, "NEW") && args.empty()) return Value::fromObject(std::make_shared<NativeDirectory>(kind));
+        // MapCollection OF (CoreClasses.orx): a new collection, then for each argument, an array of exactly two items
+        // (index, item), PUT(item, index). Native when every argument is a native array of two items whose index is a
+        // string; anything else (and every error) is the interpreter's.
+        if (rx::eqLit(selector, "OF")) {
+            bool plain = true;
+            for (const Value &a : args) {
+                auto *pair = a.isObject() ? dynamic_cast<NativeArray *>(a.object.get()) : nullptr;
+                if (!pair || pair->real || pair->count != 2 || pair->slots.size() < 2 || !pair->slots[0] || !pair->slots[1] ||
+                    pair->slots[0]->isObject()) { plain = false; break; }
+            }
+            if (plain) {
+                auto made = std::make_shared<NativeDirectory>(kind);
+                for (const Value &a : args) {
+                    auto *pair = static_cast<NativeArray *>(a.object.get());
+                    made->sendMessage("PUT", {*pair->slots[1], *pair->slots[0]});
+                }
+                return Value::fromObject(made);
+            }
+        }
         return envClass(kind).object->sendMessage(selector, args);
     }
     Value sendBinary(const std::string &selector, const Value &rhs) override {

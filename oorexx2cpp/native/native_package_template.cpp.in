@@ -462,7 +462,7 @@ bool nativeSelfSend(const std::shared_ptr<InstanceState> &st, const std::string 
         return true;
     }
     Resolved *method = lookupMethod(*st, selector);
-    if (!method) return builtinSend(*st, selector, args, out);
+    if (!method) return false;
     out = runNative(st, *method, optionalsOf(args));
     return true;
 }
@@ -520,6 +520,11 @@ bool objectIdentityOp(const std::shared_ptr<InstanceState> &st, const std::strin
     return identity;
 }
 rx::Value nativeClassValue(const std::string &name);
+class NativeInstanceRef;
+/* A message to a compiled instance that its class has no compiled method for (from compiled code holding it, or SELF
+   in one of its methods): its array part, the messages answered here without its interpreter object, else the
+   interpreter object. */
+rx::MessageResult inheritedSend(const std::shared_ptr<InstanceState> &st, const std::string &selector, const std::vector<rx::Value> &args);
 class NativeInstanceRef final : public rx::NativeRefBase {
     std::shared_ptr<InstanceState> st_;
     std::shared_ptr<rx::EnvObject> keep_;   // adopted from the interpreter: holds its global reference (no early UNINIT)
@@ -538,36 +543,11 @@ public:
     NativeInstanceRef &operator=(const NativeInstanceRef &) = delete;
     void *materialize() override { return materializeState(st_); }
     rx::MessageResult sendMessage(const std::string &selector, const std::vector<rx::Value> &args) override {
-        // ISA of a compiled instance whose class does not define ISA: the answer depends on its class and the class asked
-        // about, so the interpreter answers once per pair.
-        if (args.size() == 1 && args[0].isObject() && !st_->classSide && selector == "ISA" && !lookupMethod(*st_, "ISA")) {
-            void *key = nullptr;
-            if (auto *e = dynamic_cast<rx::EnvObject *>(args[0].object.get())) key = e->handle;
-            else if (auto *n = dynamic_cast<rx::NativeRefBase *>(args[0].object.get()); n && !dynamic_cast<NativeInstanceRef *>(n)) key = n->materialize();
-            if (key) {
-                static thread_local std::map<std::pair<std::string, void *>, bool> known;
-                const auto k = std::make_pair(st_->dynamicClass, key);
-                auto it = known.find(k);
-                if (it != known.end()) return rx::Value::string(it->second ? "1" : "0");
-                auto r = interpreterSend(st_, selector, args);
-                if (r && !r->isObject()) known.emplace(k, r->bytes == "1");
-                return r;
-            }
-        }
         if (Resolved *method = lookupMethod(*st_, selector)) {
             if (method->second.isPublic || privateAllowedFor(st_.get(), method->second)) return runNative(st_, *method, optionalsOf(args));
-        } else if (st_->builtin) {
-            std::optional<rx::Value> out;
-            if (builtinSend(*st_, selector, args, out)) return out;
+            return interpreterSend(st_, selector, args);   // (the interpreter's error, or its own check)
         }
-        // .Object's ISNIL and CLASS of an instance of a class of this library whose state is all native: answered here
-        // (the class defines neither: the lookup above found none), without making its interpreter object
-        if (args.empty() && !st_->classSide && stateDisposable(*st_)) {
-            static const CiEq same;
-            if (same(selector, "ISNIL")) return rx::Value::string("0");
-            if (same(selector, "CLASS")) return nativeClassValue(st_->dynamicClass);
-        }
-        return interpreterSend(st_, selector, args);
+        return inheritedSend(st_, selector, args);
     }
     const InstanceState *state() const { return st_.get(); }
     const std::shared_ptr<InstanceState> &stateRef() const { return st_; }   // (the cycle collector's edge)
@@ -596,6 +576,36 @@ public:
         return r->bytes;
     }
 };
+rx::MessageResult inheritedSend(const std::shared_ptr<InstanceState> &st, const std::string &selector, const std::vector<rx::Value> &args) {
+    static const CiEq same;
+    if (st->builtin) {
+        std::optional<rx::Value> out;
+        if (builtinSend(*st, selector, args, out)) return out;
+    }
+    // ISA (the class defines none: no compiled method was found): the answer depends on the instance's class and the
+    // class asked about, so the interpreter answers once per pair.
+    if (args.size() == 1 && args[0].isObject() && !st->classSide && same(selector, "ISA")) {
+        void *key = nullptr;
+        if (auto *e = dynamic_cast<rx::EnvObject *>(args[0].object.get())) key = e->handle;
+        else if (auto *n = dynamic_cast<rx::NativeRefBase *>(args[0].object.get()); n && !dynamic_cast<NativeInstanceRef *>(n)) key = n->materialize();
+        if (key) {
+            static thread_local std::map<std::pair<std::string, void *>, bool> known;
+            const auto k = std::make_pair(st->dynamicClass, key);
+            auto it = known.find(k);
+            if (it != known.end()) return rx::Value::string(it->second ? "1" : "0");
+            auto r = interpreterSend(st, selector, args);
+            if (r && !r->isObject()) known.emplace(k, r->bytes == "1");
+            return r;
+        }
+    }
+    // .Object's ISNIL and CLASS of an instance of a class of this library whose state is all native: answered here
+    // (the class defines neither), without making its interpreter object
+    if (args.empty() && !st->classSide && stateDisposable(*st)) {
+        if (same(selector, "ISNIL")) return rx::Value::string("0");
+        if (same(selector, "CLASS")) return nativeClassValue(st->dynamicClass);
+    }
+    return interpreterSend(st, selector, args);
+}
 class NativeFrame final : public SelfSender {
     std::shared_ptr<InstanceState> st_; std::string definingClass_;
     const std::vector<std::optional<rx::Value>> &args_; SelfSender *previous_;
@@ -606,7 +616,9 @@ public:
     std::optional<rx::Value> sendValues(const std::string &selector, const std::vector<rx::Value> &args) override {
         std::optional<rx::Value> out;
         if (nativeSelfSend(st_, definingClass_, selector, args, out)) return out;
-        return interpreterSend(st_, selector, args);
+        // (a super helper nativeSelfSend leaves, or a message the class has no compiled method for)
+        if (selector.compare(0, 7, "RX2CPP_") == 0 || lookupMethod(*st_, selector)) return interpreterSend(st_, selector, args);
+        return inheritedSend(st_, selector, args);
     }
     std::string send(const std::string &selector, const std::vector<std::string> &args) override {
         std::vector<rx::Value> values;

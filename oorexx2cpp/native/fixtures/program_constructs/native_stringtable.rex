@@ -18,3 +18,21 @@ say .mytable['k'] u~items
 s = .StringTable~new
 do i = 1 to 40; s['key' || i] = i; end
 say s~allIndexes~makeString('L', ' ')
+/* MapCollection OF: pairs (index, item), PUT in argument order; anything else is the interpreter's */
+o = .StringTable~of(('&', 'and'), ('=', 'eq'), ('&', 'again'), ('<', .nil))
+say o~items o['&'] o['='] (o['<'] == .nil) o~class~id o~allIndexes~makeString('L', ',')
+o['>'] = 'gt'
+say o~items o['>']
+e = .StringTable~of()
+say e~items e~class~id
+d = .Directory~of(('a', 1), ('b', 2))
+say d~a d['b'] d~items d~class~id
+signal on syntax name ofError1
+x = .StringTable~of(('a', 1, 3))
+ofError1: say 'error' condition('o')~code
+signal on syntax name ofError2
+x = .StringTable~of(('a', 1), 'notanarray')
+ofError2: say 'error' condition('o')~code
+signal on syntax name ofError3
+x = .StringTable~of(('a', 1), , ('b', 2))
+ofError3: say 'error' condition('o')~code
