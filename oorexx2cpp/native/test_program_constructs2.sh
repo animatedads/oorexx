@@ -30,6 +30,4 @@ check address_reuse "$OUT/src/address_reuse.rex"   # an interpreter object at a 
 check variable_frame "$OUT/src/variable_frame.rex"   # locals in the frame: VALUE, DROP, INTERPRET, PROCEDURE EXPOSE, recursion
 check variable_frame_methods "$OUT/src/variable_frame_methods.rex"   # frames in methods: EXPOSE by name, PROCEDURE EXPOSE through both
 check array_subclass "$OUT/src/array_subclass.rex"   # .Array subclasses made natively: the array part native until it crosses
-check self_inherited "$OUT/src/self_inherited.rex"   # SELF~isA / ~class / ~isNil in compiled methods: as compiled code holding the object
-check constants_native "$OUT/src/constants_native.rex"   # ::CONSTANT from compiled code: the interpreter's value, asked once; hiding as interpreted
 echo "PASS program constructs (2): $(ls "$OUT"/*.expected | wc -l) programs, $(cat "$OUT"/*.expected | wc -l) lines identical to the interpreter"

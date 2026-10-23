@@ -498,12 +498,12 @@
       current~addRaw('std::vector<rx::Value> _rxProgramArgs; _rxProgramArgs.reserve(arguments.size()); for (const auto &_a : arguments) _rxProgramArgs.push_back(_a ? *_a : rx::Value::string(std::string())); (void)_rxProgramArgs;')
       current~addRaw('rx::MethodTraps _rxTrap; int _rxAt = _rxEntry; std::size_t _rxLine = 0; (void)_rxLine;')
       if current~callOn then callOnSlot = self~emitCallOnDispatch(current, internalCalls)
-      current~addRaw('for (;;) { try { switch (_rxAt) { case 0: {' .RxNative~invalidateAll)
+      current~addRaw('_rxSignal: for (;;) { try { switch (_rxAt) { case 0: { if (false) goto _rxSignal;' .RxNative~invalidateAll)
     end
     else if current~trapped then do
       current~addRaw('rx::MethodTraps _rxTrap; int _rxAt = 0; std::size_t _rxLine = 0; (void)_rxLine;')
       if current~callOn then callOnSlot = self~emitCallOnDispatch(current, internalCalls)
-      current~addRaw('for (;;) { try { switch (_rxAt) { case 0: {' .RxNative~invalidateAll)
+      current~addRaw('_rxSignal: for (;;) { try { switch (_rxAt) { case 0: { if (false) goto _rxSignal;' .RxNative~invalidateAll)
     end
     afterLabel = .false
     do while s~peek~kind \= 'EOF' & \s~is('::')

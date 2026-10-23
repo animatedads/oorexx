@@ -37,7 +37,7 @@
     expr = ctx~logicalExpr~parse(ctx)
     code = '{ const rx::Value _rxTarget = ' || expr || '; const std::string _rxName = _rxTarget.isObject() ? std::string() : _rxTarget.bytes.str(); '
     do name over method~labels~allIndexes
-      code = code || 'if (_rxName == ' || .RxQuote~cpp(name) || ') throw rx::SignalJump{' || method~labels[name] || ', ' || (line + ctx~lineOffset) || '}; '
+      code = code || 'if (_rxName == ' || .RxQuote~cpp(name) || ') ' || self~jump(method~labels[name], line + ctx~lineOffset) || ' '
     end
     code = code || '{ rx::SyntaxCondition _rxMissing("16.1", "Label \"" + _rxName + "\" not found", false); _rxMissing.substitutions.push_back(_rxTarget); throw _rxMissing; } }'
     ctx~line(0, code)
@@ -45,9 +45,17 @@
   else do
     label = s~next~text
     if \method~labels~hasIndex(label) then s~fail('SIGNAL: no label ' || label || ' in this method')
-    ctx~line(0, 'throw rx::SignalJump{' || method~labels[label] || ', ' || (line + ctx~lineOffset) || '};')
+    ctx~line(0, self~jump(method~labels[label], line + ctx~lineOffset))
   end
   s~separator
+/* The jump: the body's dispatch loop entered again at the label (case k), SIGL set, as its SignalJump catch does,
+   by a goto to the loop (_rxSignal, RxHybridCompiler~parse): leaving every block, DO loops included, without a C++
+   exception (the Rexx Parser's Scanner signals once or more per element: unwinding was a large part of its time). A
+   SIGNAL runs in the body function that has the loop (statements are not emitted inside lambdas); one that did not
+   would not compile, never miscompile. */
+::method jump private
+  use arg target, line
+  return '{ _rxAt = ' || target || '; rx::set(vars, "SIGL", rx::Value::string("' || line || '")); goto _rxSignal; }'
 ::method condition private
   use arg s, how
   if s~peek~kind \= 'IDENT' then s~fail('SIGNAL ' || how || ' needs a condition name')

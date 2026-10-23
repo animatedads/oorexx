@@ -14,10 +14,15 @@
   if ctx~hasMethod('CURRENT') then if ctx~current~hasMethod('BRANCHRETURNVALUE') then do
     /* after a REPLY, EXIT has no caller for a value (98.937) */
     if hasValue & ctx~current~replies & ctx~current~selector \== 'INIT' then code = 'rx::afterReply(' || code || ', true, false)'
-    /* In a method with internal routines EXIT may run inside one: it leaves the whole method. */
+    /* In a method with internal routines EXIT may run inside one (_rxInternal: the body entered by a CALL): it leaves
+       the whole method (MethodExit, caught where the method calls its body). Run by the method's own body it is the
+       body's return: the value the catch would return, without the C++ exception (15% of the compiled Rexx
+       Parser's samples were unwinding, PreClauser~nextClause's EXITs). */
     if ctx~current~hasInternalCalls then do
-      if \hasValue | ctx~current~selector == 'INIT' then ctx~current~addRaw('throw rx::MethodExit{std::nullopt};')
-      else ctx~current~addRaw('throw rx::MethodExit{std::optional<rx::Value>(' || code || ')};')
+      if \hasValue | ctx~current~selector == 'INIT' then
+        ctx~current~addRaw('{ if (!_rxInternal) return rx::noResult(); throw rx::MethodExit{std::nullopt}; }')
+      else
+        ctx~current~addRaw('{ rx::Value _rxExitValue = ' || code || '; if (!_rxInternal) return _rxExitValue; throw rx::MethodExit{std::optional<rx::Value>(std::move(_rxExitValue))}; }')
       s~separator
       return
     end

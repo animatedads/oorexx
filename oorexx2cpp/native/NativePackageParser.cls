@@ -233,18 +233,25 @@
       interpretedMethods[classEntry~name] = text
     end
     /* SIGL is a line of the original file: a combined package marks where each file starts. */
+    /* (the markers as read from the input, RX2CPP.SOURCEMAP: the sanitized lines here no longer have one that ends a
+       routine's directive line, as a compiled program's main code does (compile_program.sh): its classes' SIGL was
+       2 lines off) */
     markerLine = 0
-    do m = start - 1 to 1 by -1
+    sourcePath = self~inputName
+    sourceMap = .local['RX2CPP.SOURCEMAP']
+    if sourceMap~isA(.array) then do entry over sourceMap
+      if entry[1] < start then do; markerLine = entry[1]; sourcePath = entry[2]; end
+    end
+    else do m = start - 1 to 1 by -1
       if lines[m]~pos('/* ---- rx2cpp combined: ') > 0 then do
         markerLine = m
+        parse value lines[markerLine] with '/* ---- rx2cpp combined: ' sourcePath ' ----'
         leave
       end
     end
     unit = .RxHybridCompiler~new(section, .true)
     unit~setLineOffset(start - 1 - markerLine)
     /* PARSE SOURCE names the class's original file: the combine marker's path, else the compiled file itself. */
-    if markerLine > 0 then parse value lines[markerLine] with '/* ---- rx2cpp combined: ' sourcePath ' ----'
-    else sourcePath = self~inputName
     unit~setSourceName(sourcePath)
     unit = unit~parse
     name = unit~className
