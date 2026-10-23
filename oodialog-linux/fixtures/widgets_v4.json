@@ -1,0 +1,138 @@
+{
+  "format": "windows-rc-json-v4",
+  "resources": [
+    {
+      "id": "IDD_WIDGETS",
+      "type": "DIALOGEX",
+      "entries": [
+        {
+          "kind": "property",
+          "name": "CAPTION",
+          "value": "\"ooDialog Widget Test\""
+        },
+        {
+          "kind": "control",
+          "controlType": "PUSHBUTTON",
+          "arguments": [
+            "\"Go\"",
+            101,
+            10,
+            10,
+            50,
+            14
+          ],
+          "resolvedControlId": 101,
+          "line": 2
+        },
+        {
+          "kind": "control",
+          "controlType": "CHECKBOX",
+          "arguments": [
+            "\"Enabled\"",
+            102,
+            10,
+            28,
+            65,
+            14
+          ],
+          "resolvedControlId": 102,
+          "line": 3
+        },
+        {
+          "kind": "control",
+          "controlType": "RADIOBUTTON",
+          "arguments": [
+            "\"Option\"",
+            103,
+            10,
+            46,
+            65,
+            14
+          ],
+          "resolvedControlId": 103,
+          "line": 4
+        },
+        {
+          "kind": "control",
+          "controlType": "LTEXT",
+          "arguments": [
+            "\"Status\"",
+            104,
+            10,
+            64,
+            65,
+            12
+          ],
+          "resolvedControlId": 104,
+          "line": 5
+        },
+        {
+          "kind": "control",
+          "controlType": "EDITTEXT",
+          "arguments": [
+            105,
+            80,
+            10,
+            100,
+            14
+          ],
+          "resolvedControlId": 105,
+          "line": 6
+        },
+        {
+          "kind": "control",
+          "controlType": "LISTBOX",
+          "arguments": [
+            106,
+            80,
+            30,
+            100,
+            45
+          ],
+          "resolvedControlId": 106,
+          "line": 7
+        },
+        {
+          "kind": "control",
+          "controlType": "COMBOBOX",
+          "arguments": [
+            107,
+            80,
+            80,
+            100,
+            30
+          ],
+          "resolvedControlId": 107,
+          "line": 8
+        },
+        {
+          "kind": "control",
+          "controlType": "GROUPBOX",
+          "arguments": [
+            "\"Group\"",
+            108,
+            5,
+            5,
+            185,
+            120
+          ],
+          "resolvedControlId": 108,
+          "line": 9
+        },
+        {
+          "kind": "control",
+          "controlType": "PROGRESSBAR",
+          "arguments": [
+            109,
+            10,
+            100,
+            120,
+            14
+          ],
+          "resolvedControlId": 109,
+          "line": 10
+        }
+      ]
+    }
+  ]
+}
