@@ -1,0 +1,98 @@
+{
+  "baseline": "dev15 184/199",
+  "dev16_frontier": "190/199",
+  "newly_cleared": 6,
+  "remaining": 9,
+  "residual": [
+    {
+      "unit": "interpreter_api_CallContextStubs_cpp",
+      "cfront_rc": 0,
+      "cc370_rc": 0,
+      "asm_bytes": 363586
+    },
+    {
+      "unit": "interpreter_api_MethodContextStubs_cpp",
+      "cfront_rc": 0,
+      "cc370_rc": 0,
+      "asm_bytes": 281916
+    },
+    {
+      "unit": "interpreter_api_ThreadContextStubs_cpp",
+      "cfront_rc": 0,
+      "cc370_rc": 0,
+      "asm_bytes": 803100
+    },
+    {
+      "unit": "interpreter_classes_NumberStringMath2_cpp",
+      "cfront_rc": 0,
+      "cc370_rc": 0,
+      "asm_bytes": 277883
+    },
+    {
+      "unit": "interpreter_classes_RexxQueueMethods_cpp",
+      "cfront_rc": 0,
+      "cc370_rc": 0,
+      "asm_bytes": 144056
+    },
+    {
+      "unit": "interpreter_execution_NativeActivation_cpp",
+      "cfront_rc": 14,
+      "cc370_rc": null,
+      "asm_bytes": 0
+    },
+    {
+      "unit": "interpreter_instructions_CommandIOConfiguration_cpp",
+      "cfront_rc": 13,
+      "cc370_rc": null,
+      "asm_bytes": 0
+    },
+    {
+      "unit": "interpreter_memory_GlobalNames_cpp",
+      "cfront_rc": 0,
+      "cc370_rc": 0,
+      "asm_bytes": 346919
+    },
+    {
+      "unit": "interpreter_memory_Setup_cpp",
+      "cfront_rc": 8,
+      "cc370_rc": null,
+      "asm_bytes": 0
+    },
+    {
+      "unit": "interpreter_package_LibraryPackage_cpp",
+      "cfront_rc": 9,
+      "cc370_rc": null,
+      "asm_bytes": 0
+    },
+    {
+      "unit": "interpreter_runtime_InternalPackage_cpp",
+      "cfront_rc": 14,
+      "cc370_rc": null,
+      "asm_bytes": 0
+    },
+    {
+      "unit": "interpreter_runtime_Interpreter_cpp",
+      "cfront_rc": 9,
+      "cc370_rc": null,
+      "asm_bytes": 0
+    },
+    {
+      "unit": "interpreter_runtime_RexxUtilCommon_cpp",
+      "cfront_rc": 14,
+      "cc370_rc": null,
+      "asm_bytes": 0
+    },
+    {
+      "unit": "interpreter_streamLibrary_FileNative_cpp",
+      "cfront_rc": 14,
+      "cc370_rc": null,
+      "asm_bytes": 0
+    },
+    {
+      "unit": "interpreter_streamLibrary_StreamNative_cpp",
+      "cfront_rc": 14,
+      "cc370_rc": null,
+      "asm_bytes": 0
+    }
+  ]
+}
