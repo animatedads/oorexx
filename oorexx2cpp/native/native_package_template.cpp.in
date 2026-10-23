@@ -1019,10 +1019,10 @@ public:
     void guardSet(bool on) {
         if (on == guardHeld_) return;
         if (on) {
-            { ReleaseAndReacquire released(lock_); ctx_->SetGuardOn(); }
+            { ReleaseAndReacquire released(lock_); rxobj::viaInterpreter([&] { ctx_->SetGuardOn(); }); }
             if (held_) held_->hold(self_, className_);
         } else {
-            ctx_->SetGuardOff();
+            rxobj::viaInterpreter([&] { ctx_->SetGuardOff(); });
             if (held_) held_->drop();
         }
         guardHeld_ = on;
@@ -1044,7 +1044,7 @@ public:
     // locks (a nested call) takes the compiled scope lock.
     void afterReply(bool guarded) {
         if (guarded) {
-            { ReleaseAndReacquire released(lock_); ctx_->SetGuardOn(); }
+            { ReleaseAndReacquire released(lock_); rxobj::viaInterpreter([&] { ctx_->SetGuardOn(); }); }
             if (held_) held_->hold(self_, className_);
         }
         if (pendingScope_) { pendingScope_->lock(); pendingScope_ = nullptr; }
@@ -1052,7 +1052,7 @@ public:
     std::string forward(const std::string &selector) override {
         RexxObjectPtr result;
         { ReleaseAndReacquire released(lock_);
-          result = ctx_->ForwardMessage(self_, selector.c_str(), NULLOBJECT, ctx_->GetArguments()); }
+          result = rxobj::viaInterpreter([&] { return ctx_->ForwardMessage(self_, selector.c_str(), NULLOBJECT, ctx_->GetArguments()); }); }
         if (ctx_->CheckCondition()) throw PendingCondition();
         if (result == NULLOBJECT)
             throw std::runtime_error("FORWARD returned no scalar result");
@@ -1062,7 +1062,7 @@ public:
     std::optional<rx::Value> forwardValues(const std::string &selector) override {
         RexxObjectPtr result;
         { ReleaseAndReacquire released(lock_);
-          result = ctx_->ForwardMessage(self_, selector.c_str(), NULLOBJECT, ctx_->GetArguments()); }
+          result = rxobj::viaInterpreter([&] { return ctx_->ForwardMessage(self_, selector.c_str(), NULLOBJECT, ctx_->GetArguments()); }); }
         if (ctx_->CheckCondition()) throw PendingCondition();
         if (result == NULLOBJECT) return std::nullopt;
         if (rxobj::isPlainString(ctx_->threadContext, result)) return rx::Value::string(stringValue(ctx_, result));
@@ -1140,7 +1140,7 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
             if (definingRoot == NULLOBJECT) throw std::runtime_error("compiled superclass missing: " + rootClass);
             RexxArrayObject tokenArgs = ctx->NewArray(1);
             ctx->ArrayAppend(tokenArgs, ctx->String(value.c_str()));
-            ctx->ForwardMessage(ctx->GetSelf(), "RX2CPP_NATIVE_SETTOKEN", definingRoot, tokenArgs);
+            rxobj::viaInterpreter([&] { return ctx->ForwardMessage(ctx->GetSelf(), "RX2CPP_NATIVE_SETTOKEN", definingRoot, tokenArgs); });
             if (ctx->CheckCondition()) throw PendingCondition();
         };
         if (initializer) {
@@ -1168,7 +1168,7 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
                 // are per class scope, so the token is read and written through the root class's own accessors.
                 auto definingRoot = ctx->FindClass(rootClass.c_str());
                 if (definingRoot == NULLOBJECT) throw std::runtime_error("compiled superclass missing: " + rootClass);
-                RexxObjectPtr rootToken = ctx->ForwardMessage(ctx->GetSelf(), "RX2CPP_NATIVE_TOKEN", definingRoot, ctx->NewArray(0));
+                RexxObjectPtr rootToken = rxobj::viaInterpreter([&] { return ctx->ForwardMessage(ctx->GetSelf(), "RX2CPP_NATIVE_TOKEN", definingRoot, ctx->NewArray(0)); });
                 if (ctx->CheckCondition()) throw PendingCondition();
                 if (rootToken != NULLOBJECT) {
                     // INIT:SUPER (or FORWARD CLASS (SUPER)) from a further-derived INIT, or INIT sent again: the object
@@ -1218,7 +1218,7 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
                 if (definingRoot == NULLOBJECT)
                     throw std::runtime_error("compiled superclass missing: " + rootClass);
                 // Explicit scope-directed message dispatch, bypassing a possible subclass override of the internal accessor.
-                old = ctx->ForwardMessage(ctx->GetSelf(), "RX2CPP_NATIVE_TOKEN", definingRoot, ctx->NewArray(0));
+                old = rxobj::viaInterpreter([&] { return ctx->ForwardMessage(ctx->GetSelf(), "RX2CPP_NATIVE_TOKEN", definingRoot, ctx->NewArray(0)); });
             }
             if (old == NULLOBJECT && classSide && isRoot) {
                 // The class object has no native state until its first CLASS method runs (no INIT CLASS declared).

@@ -24,6 +24,7 @@ inline bool send(void *t, const std::string &s, const std::vector<Arg> &a, Resul
 }
 #else
 #include <oorexxapi.h>
+#include "rx_api_epoch.hpp"
 #include <mutex>
 #include <condition_variable>
 #include <typeinfo>
@@ -68,9 +69,12 @@ inline void *returnPin(void *h);
 // Set by every native method/routine entry for the duration of the call (self is NULLOBJECT in routines).
 struct Scope {
     RexxThreadContext *previous; RexxObjectPtr previousSelf; Scope *outer;
+    RexxThreadInterface *replaced = nullptr;   // the context's function table, while the epoch table is in place
     static Scope *&innermost() { static thread_local Scope *s = nullptr; return s; }
     explicit Scope(RexxThreadContext *c, RexxObjectPtr self = NULLOBJECT)
         : previous(current), previousSelf(currentSelf), outer(innermost()) {
+        interpreterChanged();   // (the interpreter ran before this entry)
+        replaced = installEpochTable(c);
         current = c; currentSelf = self; innermost() = this;
         if (!returnPins().empty()) for (void *h : std::exchange(returnPins(), std::vector<void *>())) unpinRef(c, h);
         if (nativeDepth++ == 0) {
@@ -82,6 +86,8 @@ struct Scope {
     }
     ~Scope() {
         innermost() = outer;
+        restoreEpochTable(current, replaced);
+        interpreterChanged();   // (the interpreter runs after this entry returns)
         current = previous; currentSelf = previousSelf;
         if (--nativeDepth == 0) { NativeGate &g = nativeGate(); std::lock_guard<std::mutex> l(g.m); --g.active; }
     }
@@ -713,7 +719,10 @@ struct EnvObject final : ObjectDispatch {
         bool user = false;
         RexxObjectPtr pkg = temps(t->SendMessage0(cls, "PACKAGE"));
         if (t->CheckCondition()) t->ClearCondition();
-        else if (pkg != NULLOBJECT && pkg != t->Nil()) {
+        // a class made at run time (.object~subclass(...), .class~new) has no package: not built in either (its instances'
+        // behaviour is not primitive: RexxInternalObject::isBaseClass)
+        else if (pkg == NULLOBJECT || pkg == t->Nil()) user = true;
+        else {
             RexxObjectPtr name = temps(t->SendMessage0(pkg, "NAME"));
             if (t->CheckCondition()) t->ClearCondition();
             else if (name != NULLOBJECT) user = std::string(t->ObjectToStringValue(name)) != "REXX";
@@ -1638,6 +1647,10 @@ struct EnvName {
     int state = 0;            // 0 not yet resolved, 1 fixed, 2 looked up each time
     Value value;
     void *last = nullptr;     // (2) the object `value` came from, pinned while kept
+    // (2) the interpreter epoch (rx_api_epoch.hpp) when `value` was looked up: while it has not moved, nothing can have
+    // changed the three directories, and `value` is the answer (an unknown name too: the empty `last`)
+    unsigned long epoch = 0;
+    bool unknown = false;
     explicit EnvName(std::string n) : name(std::move(n)), value(Value::string(std::string())) {}
 };
 inline EnvName &envName(const std::string &name) {
@@ -1657,10 +1670,17 @@ inline Value envValue(EnvName &e) {
         e.state = 2;
     }
 #ifdef RX2CPP_HOST_API
+    if (e.epoch != 0 && e.epoch == rxobj::interpreterEpoch()) {
+        if (e.unknown) return Value::string("." + name);
+        return e.value;
+    }
     RexxThreadContext *t = rxobj::need();
     RexxObjectPtr o = rxobj::environmentLookup(t, name);
-    if (o == NULLOBJECT) return Value::string("." + name);   // an unknown environment symbol is its own name (.FOO)
-    if ((void *)o == e.last) { t->ReleaseLocalReference(o); return e.value; }
+    // (the lookup's own calls are pure: DirectoryAt, and below the string value of a String and the pin table; the
+    // epoch read after them is the one the answer belongs to)
+    if (o == NULLOBJECT) { e.unknown = true; e.epoch = rxobj::interpreterEpoch(); return Value::string("." + name); }   // an unknown environment symbol is its own name (.FOO)
+    e.unknown = false;
+    if ((void *)o == e.last) { t->ReleaseLocalReference(o); e.epoch = rxobj::interpreterEpoch(); return e.value; }
     Value v = Value::string(std::string());
     if (rxobj::isPlainString(t, o)) {
         // A String entry (.local~v1 = 'a') is a string value in compiled code, as strings are everywhere.
@@ -1674,6 +1694,7 @@ inline Value envValue(EnvName &e) {
     e.last = kept;
     e.value = v;
     t->ReleaseLocalReference(o);
+    e.epoch = rxobj::interpreterEpoch();
     return v;
 #else
     if (void *entry = rxobj::environmentEntry(name)) return Value::fromObject(std::make_shared<EnvObject>(entry));
