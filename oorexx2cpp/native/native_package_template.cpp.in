@@ -171,6 +171,11 @@ struct InstanceState : std::enable_shared_from_this<InstanceState> {
 #endif
     }
     std::string token;
+#ifdef RX2CPP_HOST_API
+    // An instance of a compiled .Array subclass made by compiled code (arrayNewTable): its array part, native until the
+    // instance needs its interpreter object (materializeState copies the items into it, and this goes).
+    std::shared_ptr<rx::NativeArray> builtin;
+#endif
     std::vector<std::pair<std::string, std::shared_ptr<CompiledObject>>> scopes;   // instances have a handful of scopes: a scan beats hashing
     std::shared_ptr<CompiledObject> at(const std::string &cls) {
         std::lock_guard<std::mutex> lock(gate);
@@ -366,8 +371,27 @@ void *materializeState(const std::shared_ptr<InstanceState> &st, ProxyHold *hold
     // (the new object's own reference: kept for the caller's send, else released: the state's pin keeps it, or for a
     // disposable state the caller's own (an argument's hold, the entry's result: rxobj::returnPin), taken before the
     // interpreter allocates again)
+    if (!st->alive) { if (r.kind == 2) rxobj::release(r.obj); throw std::runtime_error("cannot create the interpreter object for a native instance"); }
+    if (st->builtin) {
+        // the array part goes into the interpreter object, as it is: each item at its index, and the size (an empty
+        // slot at the end: .nil put there and removed, which leaves the size); the instance is the interpreter's from now on
+        std::shared_ptr<rx::NativeArray> items = std::move(st->builtin);
+        st->builtin.reset();
+        auto put = [&](const char *selector, std::vector<rx::Value> args) {
+            std::vector<rxobj::Arg> in; rx::EnvObject::convert(args, in);
+            rxobj::Result done; std::string c, t;
+            if (!rxobj::send(st->handle, selector, in, done, c, t)) throw rx::SyntaxCondition(c, t, false);
+            if (done.kind == 2) rxobj::release(done.obj);
+        };
+        const std::size_t size = items->slots.size();
+        for (std::size_t i = 0; i < size; ++i)
+            if (items->slots[i]) put("PUT", {*items->slots[i], rx::NativeArray::number(i + 1)});
+        if (size > 0 && !items->slots[size - 1]) {
+            put("PUT", {rx::nil(), rx::NativeArray::number(size)});
+            put("REMOVE", {rx::NativeArray::number(size)});
+        }
+    }
     if (r.kind == 2) { if (hold) hold->h = r.obj; else rxobj::release(r.obj); }
-    if (!st->alive) throw std::runtime_error("cannot create the interpreter object for a native instance");
     { std::lock_guard<std::mutex> lock(st->gate); st->notePin(); }   // compiled code holds it: keep it
     return st->handle;
 }
@@ -394,6 +418,19 @@ std::optional<rx::Value> interpreterSend(const std::shared_ptr<InstanceState> &s
 }
 std::optional<rx::Value> runNative(const std::shared_ptr<InstanceState> &st, Resolved &method,
                                    const std::vector<std::optional<rx::Value>> &args);
+/* A message to an instance of a compiled .Array subclass that its class does not define, answered by its native array
+   part (InstanceState::builtin) when that answers it as the interpreter's Array would for this object. Not the
+   messages whose answer is the array itself or its class (FILL, CLASS, ISA): those are the instance's own. */
+bool builtinSend(InstanceState &st, const std::string &selector, const std::vector<rx::Value> &args, std::optional<rx::Value> &out) {
+    if (!st.builtin) return false;
+    static const CiEq same;
+    if (same(selector, "FILL") || same(selector, "CLASS") || same(selector, "ISA")) return false;
+    // (the selector as the native array knows it: upper case)
+    rx::MessageResult r;
+    if (!st.builtin->answer(upperOf(selector), args, r)) return false;
+    out = std::move(r);
+    return true;
+}
 /* SELF~selector(args) from compiled code in an exact instance: dispatch inside the library when the method is compiled. */
 bool nativeSelfSend(const std::shared_ptr<InstanceState> &st, const std::string &definingClass, const std::string &selector,
                     const std::vector<rx::Value> &args, std::optional<rx::Value> &out) {
@@ -425,7 +462,7 @@ bool nativeSelfSend(const std::shared_ptr<InstanceState> &st, const std::string 
         return true;
     }
     Resolved *method = lookupMethod(*st, selector);
-    if (!method) return false;
+    if (!method) return builtinSend(*st, selector, args, out);
     out = runNative(st, *method, optionalsOf(args));
     return true;
 }
@@ -517,8 +554,12 @@ public:
                 return r;
             }
         }
-        if (Resolved *method = lookupMethod(*st_, selector))
+        if (Resolved *method = lookupMethod(*st_, selector)) {
             if (method->second.isPublic || privateAllowedFor(st_.get(), method->second)) return runNative(st_, *method, optionalsOf(args));
+        } else if (st_->builtin) {
+            std::optional<rx::Value> out;
+            if (builtinSend(*st_, selector, args, out)) return out;
+        }
         // .Object's ISNIL and CLASS of an instance of a class of this library whose state is all native: answered here
         // (the class defines neither: the lookup above found none), without making its interpreter object
         if (args.empty() && !st_->classSide && stateDisposable(*st_)) {
@@ -631,7 +672,17 @@ public:
         static const CiEq same;
         if (same(selector, "DEFINE") || same(selector, "DELETE") || same(selector, "INHERIT") || same(selector, "UNINHERIT"))
             classesChanged() = true;
-        if (same(selector, "NEW") && !classesChanged()) {
+        if (same(selector, "NEW") && args.empty() && !classesChanged() && arrayNewTable().count(name_)) {
+            // .Array's NEW without arguments, then INIT, which for this class does nothing (arrayNewTable: no INIT of
+            // its own): the instance with an empty native array part, made without its interpreter object
+            auto st = std::make_shared<InstanceState>();
+            st->dynamicClass = name_;
+            st->exact = true;
+            st->builtin = std::make_shared<rx::NativeArray>(0, false);
+            trackState(st);
+            return rx::Value::fromObject(std::make_shared<NativeInstanceRef>(st));
+        }
+        if (same(selector, "NEW") && !classesChanged() && directNewTable().count(name_)) {
             auto st = std::make_shared<InstanceState>();
             st->dynamicClass = name_;
             st->exact = true;
@@ -660,7 +711,7 @@ public:
 rx::Value nativeClassValue(const std::string &name) { return rx::Value::fromObject(std::make_shared<NativeClassObj>(name)); }
 std::optional<rx::Value> packageClassImpl(const std::string &name) {
     const std::string up = upperOf(name);
-    if (!directNewTable().count(up)) return std::nullopt;
+    if (!directNewTable().count(up) && !arrayNewTable().count(up)) return std::nullopt;
     return rx::Value::fromObject(std::make_shared<NativeClassObj>(up));
 }
 /* This library's class objects that compiled code may instantiate directly (directNewTable), by interpreter handle. */
@@ -671,6 +722,8 @@ const std::unordered_map<void *, std::string> &classByHandle() {
         filled = true;
         for (const auto &name : directNewTable())
             if (void *h = rxobj::findClass(name)) table.emplace(h, name);   // class objects live as long as the interpreter
+        for (const auto &name : arrayNewTable())
+            if (void *h = rxobj::findClass(name)) table.emplace(h, name);
     }
     return table;
 }
@@ -823,7 +876,11 @@ void collectCycles() {
             }
             edge(child);
         };
-        if (n.state) { for (const auto &scope : n.state->scopes) scope.second->gcFields(onValue); return; }
+        if (n.state) {
+            for (const auto &scope : n.state->scopes) scope.second->gcFields(onValue);
+            if (n.state->builtin) n.state->builtin->gcValues(onValue);
+            return;
+        }
         auto o = n.object.lock();
         if (!o) return;
         if (auto *ref = dynamic_cast<NativeInstanceRef *>(o.get())) {
@@ -859,7 +916,10 @@ void collectCycles() {
             std::fprintf(stderr, "rx2cpp collect: freed %s%s (references %ld)\n", st->dynamicClass.c_str(), st->classSide ? " class" : "",
                          static_cast<long>(st.use_count()));
     states.clear();
-    for (const auto &st : deadStates) for (const auto &scope : st->scopes) scope.second->gcClear();
+    for (const auto &st : deadStates) {
+        for (const auto &scope : st->scopes) scope.second->gcClear();
+        if (st->builtin) st->builtin->gcClear();
+    }
     for (const auto &o : deadObjects) o->gcClear();
     if (std::getenv("RX2CPP_GC_STATS")) {
         std::size_t held = 0;   // held from outside compiled objects and containers (after the subtraction)

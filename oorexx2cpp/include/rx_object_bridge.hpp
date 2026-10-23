@@ -1880,6 +1880,7 @@ struct NativeArray final : NativeRefBase, ItemSnapshot, std::enable_shared_from_
         return promote().object->sendMessage(selector, args);
     }
     MessageResult sendMessage(const std::string &selector, const std::vector<Value> &args) override;
+    bool answer(const std::string &selector, const std::vector<Value> &args, MessageResult &result);
     Value sendBinary(const std::string &selector, const Value &rhs) override {
         if (!real && (rx::eqLit(selector, "==") || rx::eqLit(selector, "=") || rx::eqLit(selector, "\\==") || rx::eqLit(selector, "\\=") || rx::eqLit(selector, "<>") || rx::eqLit(selector, "><"))) {
             const bool same = rhs.isObject() && rhs.object.get() == this;
@@ -2160,40 +2161,50 @@ inline Value nativeStringTableClass() {
 }
 inline MessageResult NativeArray::sendMessage(const std::string &selector, const std::vector<Value> &args) {
     if (real) return real->object->sendMessage(selector, args);
+    MessageResult out;
+    if (answer(selector, args, out)) return out;
+    return forward(selector, args);
+}
+// The messages answered natively (false: the interpreter's Array must answer it). The array part of an instance of a
+// compiled .Array subclass (InstanceState::builtin) asks this too, so nothing here may answer with the array itself
+// or its class: FILL, CLASS and ISA are the caller's to leave out.
+inline bool NativeArray::answer(const std::string &selector, const std::vector<Value> &args, MessageResult &result) {
     std::size_t i = 0;
     const std::size_t n = args.size();
     switch (selector.empty() ? 0 : selector[0]) {
     case '[':
         if (rx::eqLit(selector, "[]") && n == 1 && index(args[0], i))
-            return i <= slots.size() && slots[i - 1] ? *slots[i - 1] : nil();
-        if (rx::eqLit(selector, "[]=") && n == 2 && !omitted(args[0]) && index(args[1], i) && place(i, args[0])) return std::nullopt;
+            { result = i <= slots.size() && slots[i - 1] ? *slots[i - 1] : nil(); return true; }
+        if (rx::eqLit(selector, "[]=") && n == 2 && !omitted(args[0]) && index(args[1], i) && place(i, args[0])) { result = std::nullopt; return true; }
         break;
     case 'A':
         if (rx::eqLit(selector, "AT") && n == 1 && index(args[0], i))
-            return i <= slots.size() && slots[i - 1] ? *slots[i - 1] : nil();
+            { result = i <= slots.size() && slots[i - 1] ? *slots[i - 1] : nil(); return true; }
         if (rx::eqLit(selector, "APPEND") && n == 1 && !omitted(args[0])) {
             const std::size_t at = lastIndex() + 1;
-            if (place(at, args[0])) return number(at);
+            if (place(at, args[0])) { result = number(at); return true; }
         }
-        if (rx::eqLit(selector, "ALLITEMS") && n == 0) return newArrayOf(*snapshotItems());
+        if (rx::eqLit(selector, "ALLITEMS") && n == 0) { result = newArrayOf(*snapshotItems()); return true; }
         if (rx::eqLit(selector, "ALLINDEXES") && n == 0) {
             std::vector<Value> ix;
             for (std::size_t k = 0; k < slots.size(); ++k) if (slots[k]) ix.push_back(number(k + 1));
-            return newArrayOf(std::move(ix));
+            result = newArrayOf(std::move(ix));
+            return true;
         }
         break;
     case 'C':
-        if (rx::eqLit(selector, "CLASS") && n == 0) return nativeArrayClass();
+        if (rx::eqLit(selector, "CLASS") && n == 0) { result = nativeArrayClass(); return true; }
         break;
     case 'D':
         // ArrayClass::deleteRexx / deleteItem / closeGap: past the size, .nil and no change; otherwise the item there
         // (or .nil) is taken out and every later slot moves down one (the size one less)
         if (rx::eqLit(selector, "DELETE") && n == 1 && index(args[0], i)) {
-            if (i > slots.size()) return nil();
+            if (i > slots.size()) { result = nil(); return true; }
             std::optional<Value> out = std::move(slots[i - 1]);
             slots.erase(slots.begin() + static_cast<std::ptrdiff_t>(i - 1));
-            if (out) { --count; return std::move(*out); }
-            return nil();
+            if (out) --count;
+            result = out ? std::move(*out) : nil();
+            return true;
         }
         break;
     case 'F':
@@ -2201,58 +2212,61 @@ inline MessageResult NativeArray::sendMessage(const std::string &selector, const
         if (rx::eqLit(selector, "FILL") && n == 1 && !omitted(args[0])) {
             for (auto &s : slots) s = args[0];
             count = slots.size();
-            return self();
+            result = self();
+            return true;
         }
         if (rx::eqLit(selector, "FIRST") && n == 0) {
-            for (std::size_t k = 0; k < slots.size(); ++k) if (slots[k]) return number(k + 1);
-            return nil();
+            for (std::size_t k = 0; k < slots.size(); ++k) if (slots[k]) { result = number(k + 1); return true; }
+            { result = nil(); return true; }
         }
         if (rx::eqLit(selector, "FIRSTITEM") && n == 0) {
-            for (const auto &s : slots) if (s) return *s;
-            return nil();
+            for (const auto &s : slots) if (s) { result = *s; return true; }
+            { result = nil(); return true; }
         }
         break;
     case 'H':
         if (rx::eqLit(selector, "HASINDEX") && n == 1 && index(args[0], i))
-            return Value::string(i <= slots.size() && slots[i - 1] ? "1" : "0");
+            { result = Value::string(i <= slots.size() && slots[i - 1] ? "1" : "0"); return true; }
         break;
     case 'I':
-        if (rx::eqLit(selector, "ITEMS") && n == 0) return number(count);
-        if (rx::eqLit(selector, "ISEMPTY") && n == 0) return Value::string(count == 0 ? "1" : "0");
+        if (rx::eqLit(selector, "ITEMS") && n == 0) { result = number(count); return true; }
+        if (rx::eqLit(selector, "ISEMPTY") && n == 0) { result = Value::string(count == 0 ? "1" : "0"); return true; }
         if (rx::eqLit(selector, "ISA") && n == 1 && args[0].isObject()) {
-            if (dynamic_cast<NativeArrayClass *>(args[0].object.get())) return Value::string("1");
+            if (dynamic_cast<NativeArrayClass *>(args[0].object.get())) { result = Value::string("1"); return true; }
             // An Array instance: isA(c) is c == .Array or .Array~isSubclassOf(c) (no promotion needed).
             Value cls = NativeArrayClass::interpreterClass();
             if (auto *e = dynamic_cast<EnvObject *>(args[0].object.get()))
-                if (e->handle == static_cast<EnvObject *>(cls.object.get())->handle) return Value::string("1");
-            return cls.object->sendMessage("ISSUBCLASSOF", args);
+                if (e->handle == static_cast<EnvObject *>(cls.object.get())->handle) { result = Value::string("1"); return true; }
+            result = cls.object->sendMessage("ISSUBCLASSOF", args);
+            return true;
         }
         break;
     case 'L':
-        if (rx::eqLit(selector, "LAST") && n == 0) { const std::size_t l = lastIndex(); return l ? number(l) : nil(); }
-        if (rx::eqLit(selector, "LASTITEM") && n == 0) { const std::size_t l = lastIndex(); return l ? *slots[l - 1] : nil(); }
+        if (rx::eqLit(selector, "LAST") && n == 0) { const std::size_t l = lastIndex(); result = l ? number(l) : nil(); return true; }
+        if (rx::eqLit(selector, "LASTITEM") && n == 0) { const std::size_t l = lastIndex(); result = l ? *slots[l - 1] : nil(); return true; }
         break;
     case 'M':
-        if (rx::eqLit(selector, "MAKEARRAY") && n == 0) return newArrayOf(*snapshotItems());
+        if (rx::eqLit(selector, "MAKEARRAY") && n == 0) { result = newArrayOf(*snapshotItems()); return true; }
         break;
     case 'P':
-        if (rx::eqLit(selector, "PUT") && n == 2 && !omitted(args[0]) && index(args[1], i) && place(i, args[0])) return std::nullopt;
+        if (rx::eqLit(selector, "PUT") && n == 2 && !omitted(args[0]) && index(args[1], i) && place(i, args[0])) { result = std::nullopt; return true; }
         break;
     case 'R':
         if (rx::eqLit(selector, "REMOVE") && n == 1 && index(args[0], i)) {
-            if (i > slots.size() || !slots[i - 1]) return nil();
+            if (i > slots.size() || !slots[i - 1]) { result = nil(); return true; }
             Value out = std::move(*slots[i - 1]);
             slots[i - 1].reset();
             --count;
-            return out;
+            result = std::move(out);
+            return true;
         }
         break;
     case 'S':
-        if (rx::eqLit(selector, "SIZE") && n == 0) return number(slots.size());
+        if (rx::eqLit(selector, "SIZE") && n == 0) { result = number(slots.size()); return true; }
         break;
     default: break;
     }
-    return forward(selector, args);
+    return false;
 }
 #endif
 #ifdef RX2CPP_HOST_API

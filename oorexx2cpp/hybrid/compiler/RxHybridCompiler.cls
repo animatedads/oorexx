@@ -104,6 +104,7 @@
     if method~selector == 'INIT' then return
   end
   init = .RxHybridMethod~new('INIT')
+  init~setSynthetic(.true)
   /* A class that declares no INIT runs the inherited one with NEW's arguments: with an interpreter parent (ooTestCase,
      Stream, ...) that is the parent's INIT, reached through this class's super helper (see NativeLibraryEmitter). */
   if var('EXTERNALPARENT') then if externalParent \== '' then

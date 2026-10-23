@@ -44,6 +44,7 @@
   tableOrder = .array~new
   parentOf = .directory~new
   newOk = .directory~new        /* class can be instantiated by compiled code without an interpreter object */
+  arrayOk = .directory~new      /* a subclass of .Array compiled code makes natively (arrayNewTable) */
   do unit over units
     name = unit~className
     classSide = unit~isClassSide
@@ -71,6 +72,20 @@
         if cm~selector~upper == 'NEW' then ok = .false
       end
       newOk[name] = ok
+      /* A subclass of .Array whose own methods are all compiled and that makes nothing at NEW (no class NEW, no INIT of
+         its own, no UNINIT, no mixin): compiled code makes its instances natively, the array part a native array
+         (arrayNewTable; native_package_template.cpp.in InstanceState::builtin). */
+      aok = \unit~isMixin & unit~mixinNames~items == 0
+      if unit~parentName == '' then aok = aok & unit~externalParent~upper == 'ARRAY'
+      else aok = aok & arrayOk[unit~parentName] == .true
+      do m over unit~methods
+        if m~selector~upper == 'UNINIT' | m~selector~upper == 'RX2CPP_USER_UNINIT' then aok = .false
+        if m~selector~upper == 'INIT' & \m~synthetic then aok = .false
+      end
+      do cm over unit~classMethods
+        if wordpos(cm~selector~upper, 'NEW OF') > 0 then aok = .false
+      end
+      arrayOk[name] = aok
       declared = name
       if unit~hasMethod('DECLAREDNAME') then if unit~declaredName \== '' then declared = '"' || unit~declaredName || '"'
       /* Visibility as written: a class without PUBLIC is private to this package, as interpreted. */
@@ -412,6 +427,12 @@
   direct = direct || '  static const std::unordered_map<std::string, std::string> table = {' || '0a'x
   do cn over tableOrder
     direct = direct || '    {' || .RxQuote~cpp(cn) || ', ' || .RxQuote~cpp(parentOf[cn]) || '},' || '0a'x
+  end
+  direct = direct || '  };' || '0a'x || '  return table;' || '0a'x || '}' || '0a'x
+  direct = direct || '[[maybe_unused]] static const std::unordered_set<std::string> &arrayNewTable() {' || '0a'x
+  direct = direct || '  static const std::unordered_set<std::string> table = {' || '0a'x
+  do cn over tableOrder
+    if arrayOk[cn] == .true then direct = direct || '    ' || .RxQuote~cpp(cn) || ',' || '0a'x
   end
   direct = direct || '  };' || '0a'x || '  return table;' || '0a'x || '}' || '0a'x
   direct = direct || '[[maybe_unused]] static const std::unordered_set<std::string> &directNewTable() {' || '0a'x
