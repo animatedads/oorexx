@@ -1,0 +1,9 @@
+{
+  "kind": "profile",
+  "id": "oo-rexx-mvs",
+  "version": "0.1",
+  "packs": [
+    "packs/core",
+    "packs/oo-rexx-mvs"
+  ]
+}

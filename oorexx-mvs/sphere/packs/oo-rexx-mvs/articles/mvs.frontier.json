@@ -1,0 +1,49 @@
+{
+  "kind": "article",
+  "id": "mvs.frontier",
+  "version": "0.1",
+  "sphere": "oo-rexx-mvs",
+  "title": "The pinned cfront and cc370 frontier",
+  "section": "translation",
+  "summary": "The pinned ooRexx C++ source is adapted in a shadow tree, lowered through the patched cfront and fed to cc370 -S for S/370 assembler output. Dev15 reported 184/199 and dev16 reported 190/199 permitted core units; no later bulk sweep has been qualified.",
+  "invariants": [
+    "Compiler source pins must match exact upstream Git HEAD; a dirty checkout is rejected by dev19 preflight.",
+    "199 permitted units exclude unrelated platform code, extensions, samples, and rexxapi; no claim of translating all upstream source.",
+    "Nonempty generated assembler is a host translation artifact, not a linkable executable guarantee.",
+    "The dev20 SJLJ cfront micro-probe does not clear any of the nine residual units.",
+    "Never destroy an earlier evidence directory until preflight passes; failed preflight must be non-destructive."
+  ],
+  "authority": "project-artifact",
+  "provenance": [
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/oorexx-mvs24-cfront-bulkpass-dev16.sh",
+      "claim": "Documented source/evidence; independent guest qualification not implied"
+    },
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/evidence/dev15-new-units.tsv",
+      "claim": "Documented source/evidence; independent guest qualification not implied"
+    },
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/evidence/dev16-residual-15.tsv",
+      "claim": "Documented source/evidence; independent guest qualification not implied"
+    },
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/evidence/verified-summary.json",
+      "claim": "Documented source/evidence; independent guest qualification not implied"
+    },
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/tests/test_dev19_preflight.py",
+      "claim": "Documented source/evidence; independent guest qualification not implied"
+    }
+  ],
+  "related": [
+    "mvs.residuals",
+    "mvs.unwind",
+    "mvs.qualification"
+  ]
+}

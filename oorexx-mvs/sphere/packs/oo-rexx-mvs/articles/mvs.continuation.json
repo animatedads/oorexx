@@ -1,0 +1,38 @@
+{
+  "kind": "article",
+  "id": "mvs.continuation",
+  "version": "0.1",
+  "sphere": "oo-rexx-mvs",
+  "title": "Prioritized development work",
+  "section": "continuation",
+  "summary": "Restore current output and first-diagnostic evidence; establish an installed SDK host consumer and ABI probe; continue nine-unit cfront work without losing 190/199 qualification; qualify MVS SJLJ and RecordSet at target; then request explicitly authorized z/OS31 native execution, while preserving 24-bit MVS as a separate target.",
+  "invariants": [
+    "Do not promote SDK TSO31 to primary production path until ELF, native deck, startup, newlib closure and guest behavior pass.",
+    "Do not assume full ooRexx C++-to-cfront conversion when nine translation units remain.",
+    "Reserve a sufficient 24-bit MVS virtual-address budget for interpreter image, stack, heap and services.",
+    "Retain static port documentation and guest evidence under this component rather than modifying another project's sphere without authority."
+  ],
+  "authority": "project-artifact",
+  "provenance": [
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/evidence/dev16-residual-15.tsv",
+      "claim": "Documented source/evidence; independent guest qualification not implied"
+    },
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/experimental/elf-sdk/README.md",
+      "claim": "Documented source/evidence; independent guest qualification not implied"
+    },
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/oorexx-mvs24-cfront-bulkpass-dev16.sh",
+      "claim": "Documented source/evidence; independent guest qualification not implied"
+    }
+  ],
+  "related": [
+    "mvs.start",
+    "mvs.frontier",
+    "mvs.qualification"
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "kind": "article",
+  "id": "mvs.start",
+  "version": "0.1",
+  "sphere": "oo-rexx-mvs",
+  "title": "Port identity and current scope",
+  "section": "status",
+  "summary": "ooRexx interpreter to MVS 3.8J is an experimental S/370 port of the interpreter itself. The dev16 190/199 C++ unit translation frontier remains inherited through dev20. The experimental Mainframe ELF SDK TSO31 and TSO24 lanes are separate; neither is a qualified running ooRexx on z/OS.",
+  "invariants": [
+    "Do not equate 190 successful host translation units with an MVS-linked interpreter.",
+    "Do not mix the MVS 3.8J / 24-bit effective address contract with z/OS31 or z/OS64 ABI and service contracts.",
+    "Alchemy component PA-C-MVSCF is ACTIVE in the portfolio; a proposed conference paper PA-P-MVSCF is not production acceptance.",
+    "The sphere describes source and evidence; it grants no deployment or JES authority."
+  ],
+  "authority": "project-artifact",
+  "provenance": [
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/evidence/dev16-residual-15.tsv",
+      "claim": "Documented source/evidence; independent guest qualification not implied"
+    },
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/evidence/verified-summary.json",
+      "claim": "Documented source/evidence; independent guest qualification not implied"
+    },
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/experimental/elf-sdk/qualification.json",
+      "claim": "Documented source/evidence; independent guest qualification not implied"
+    }
+  ],
+  "related": [
+    "mvs.frontier",
+    "mvs.backends",
+    "mvs.qualification"
+  ]
+}

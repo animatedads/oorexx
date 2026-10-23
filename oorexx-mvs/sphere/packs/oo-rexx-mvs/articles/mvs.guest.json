@@ -1,0 +1,33 @@
+{
+  "kind": "article",
+  "id": "mvs.guest",
+  "version": "0.1",
+  "sphere": "oo-rexx-mvs",
+  "title": "MVS and modern z/OS execution authority",
+  "section": "guest",
+  "summary": "ED209Z on ED209C is the first MVS 3.8J TK5 test target; ED209ZZ on ED209I is a distinct second target and not a fallback alias. A historical RecordSet job RSQQUAL was accepted by JES and ended in assembler RC16/JCL failure; link and GO did not execute. An approved modern z/OS account that permits custom native load modules has not been confirmed.",
+  "invariants": [
+    "Do not convert a JES acceptance into a successful execution claim.",
+    "An assembler RC16 and GO NOT_RUN are retained as a failure observation, not hidden by subsequent design work.",
+    "Never assume trial z/OS access grants development/deployment rights; verify explicit permission for compiler output, JES and load libraries.",
+    "Use the existing sshnode.sh authority for remote ED209 interaction where available; do not invent credentials or operate guests from this sphere.",
+    "Do not mix ed209c/ed209z identity or mainframe-native code with a host ooRexx/Hercules control-plane script."
+  ],
+  "authority": "project-artifact",
+  "provenance": [
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/evidence/dev18-tests.txt",
+      "claim": "Documented source/evidence; independent guest qualification not implied"
+    },
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/experimental/elf-sdk/qualification.json",
+      "claim": "Documented source/evidence; independent guest qualification not implied"
+    }
+  ],
+  "related": [
+    "mvs.qualification",
+    "mvs.continuation"
+  ]
+}

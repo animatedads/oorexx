@@ -1,0 +1,38 @@
+{
+  "kind": "article",
+  "id": "mvs.qualification",
+  "version": "0.1",
+  "sphere": "oo-rexx-mvs",
+  "title": "Evidence categories and acceptance gates",
+  "section": "qualification",
+  "summary": "Host mock tests currently cover RecordSet, SJLJ, API guards and SDK harness; the bundled cfront unwind unit was qualified as host C output. These must remain separate from the 190/199 inherited cc370 result and from all missing MVS/modern z/OS guest gates.",
+  "invariants": [
+    "Use PASS_HOST_MOCK, PASS_HOST_NATIVE, SOURCE_REPORTED, FAILED_GUEST, NOT_RUN and NOT_ESTABLISHED as distinct evidence statuses.",
+    "Each successful target claim needs executable/build identity, toolchain, target OS and JES/log or terminal witness.",
+    "Native loader and C ABI must be qualified before interpreter execution.",
+    "Recheck all 199 source units after a changed backend; alternate compilation is not inherited cc370 evidence.",
+    "The Gopher sphere's structural checks are not equivalent to running LLM Gopher's own validate/lint or to target execution."
+  ],
+  "authority": "project-artifact",
+  "provenance": [
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/evidence/verified-summary.json",
+      "claim": "Documented source/evidence; independent guest qualification not implied"
+    },
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/evidence/dev19-unwind-cfront.txt",
+      "claim": "Documented source/evidence; independent guest qualification not implied"
+    },
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/experimental/elf-sdk/qualification.json",
+      "claim": "Documented source/evidence; independent guest qualification not implied"
+    }
+  ],
+  "related": [
+    "mvs.guest",
+    "mvs.continuation"
+  ]
+}

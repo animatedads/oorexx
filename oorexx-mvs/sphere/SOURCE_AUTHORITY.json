@@ -1,0 +1,42 @@
+{
+  "kind": "source-ledger",
+  "schema": "oorexx-mvs.source-ledger/1",
+  "version": "0.1",
+  "recorded_at": "2026-10-23",
+  "upstream_pins": {
+    "ooRexx": "de1db87f486d430d1faa9151b8a2d5f328ab70f2",
+    "cfront": "f87de66d9442230ba6fcbc965924a6a6dd31497e",
+    "cc370": "ddb1c8ccc7edd537373c924b761e15b703690565",
+    "sdk": "8801bfe1f4b554b21a435bdf8b049b20bb2eb49e",
+    "sdk_develop": "a9aa863c6b657128522b41252b7b72785020e912"
+  },
+  "distribution_archives": [
+    {
+      "artifact": "oorexx-mvs24-cfront-dev20-source.zip",
+      "sha256": "18d7996bd649e7449bad116f9fdda48f4767a62b3ac91ad05ccf1aa8dae9f6ad",
+      "scope": "Legacy dev20 source and historical evidence"
+    },
+    {
+      "artifact": "oorexx-mvs-elf-sdk-zos31-spike-v0.1.zip",
+      "sha256": "6265383e3af77edcd921d8c3fb1ee2d867b3026fb790a5ee69b95360764cc997",
+      "scope": "Experimental ELF SDK TSO24/TSO31 host harness"
+    },
+    {
+      "artifact": "oorexx_recordset_v0.1-dev11.zip",
+      "sha256": "fe7a51dd574737f82b30b93b8b665b57f99890f0e6388b12c43220fdb645ef04",
+      "scope": "External native RecordSet dependency, not vendored"
+    }
+  ],
+  "sdk_release": {
+    "tag": "v0.1.0",
+    "release_date": "2026-10-03",
+    "linux_x64_sha256": "b8c4c9dfba07122d6983a6aa84d9e00681572630a1dccc6bcf268099ac75ef61",
+    "upstream_qualification": "z/OS 1.5 selected paths only",
+    "own_qualification": "NOT_RUN"
+  },
+  "portfolio_reference": {
+    "component": "PA-C-MVSCF",
+    "paper": "PA-P-MVSCF",
+    "status": "ACTIVE"
+  }
+}

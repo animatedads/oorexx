@@ -1,0 +1,37 @@
+{
+  "kind": "article",
+  "id": "mvs.residuals",
+  "version": "0.1",
+  "sphere": "oo-rexx-mvs",
+  "title": "The nine unresolved C++ translation units",
+  "section": "translation",
+  "summary": "The final nine were rejected by cfront in the dev16 recorded sweep: NativeActivation(14), CommandIOConfiguration(13), Setup(8), LibraryPackage(9), InternalPackage(14), Interpreter(9), RexxUtilCommon(14), FileNative(14), StreamNative(14). Their complete first-diagnostic logs were not supplied with the dev20 archive.",
+  "invariants": [
+    "Cfront exit status is a symptom, not a root-cause diagnosis.",
+    "Never infer a successful cc370 pass where cfront output was unavailable.",
+    "The residual-only sweep checks nine units; it does not replace a full 199-unit qualification.",
+    "Editing upstream ooRexx sources directly is not a translation compatibility strategy; retain pinned originals and controlled shadow rewrites."
+  ],
+  "authority": "project-artifact",
+  "provenance": [
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/evidence/dev16-residual-15.tsv",
+      "claim": "Documented source/evidence; independent guest qualification not implied"
+    },
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/evidence/github-pinned-residual.json",
+      "claim": "Documented source/evidence; independent guest qualification not implied"
+    },
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/oorexx-mvs24-cfront-bulkpass-dev16.sh",
+      "claim": "Documented source/evidence; independent guest qualification not implied"
+    }
+  ],
+  "related": [
+    "mvs.frontier",
+    "mvs.backends"
+  ]
+}

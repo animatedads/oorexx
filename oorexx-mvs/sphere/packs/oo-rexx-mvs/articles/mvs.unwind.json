@@ -1,0 +1,49 @@
+{
+  "kind": "article",
+  "id": "mvs.unwind",
+  "version": "0.1",
+  "sphere": "oo-rexx-mvs",
+  "title": "Activation and SJLJ runtime",
+  "section": "runtime",
+  "summary": "An MVS single-task setjmp/longjmp frame seam substitutes for C++ exception transfer in the cfront bootstrap. Dev20 fail-closes invalid and duplicate frame lifecycle operations; native API catch wrappers release frames only once. Host selection, negative-path and cfront micro-probe checks are distinct from target ABI testing.",
+  "invariants": [
+    "setjmp must execute within the matching live catching function, never within a helper frame that has returned.",
+    "An unmatched exception must terminate; silent normal return is invalid.",
+    "A 32-bit pointer container is not proof that the MVS target can address beyond 24 bits.",
+    "Single-task bootstrap state is not a reentrant, multithreaded or target MVS ABI qualification.",
+    "Future task-local frame binding and true MVS jump-buffer layout require independent guest proof."
+  ],
+  "authority": "project-artifact",
+  "provenance": [
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/runtime/MvsUnwind.cpp",
+      "claim": "Documented source/evidence; independent guest qualification not implied"
+    },
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/runtime/MvsUnwindSingleTask.cpp",
+      "claim": "Documented source/evidence; independent guest qualification not implied"
+    },
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/dev16_api_unwind.py",
+      "claim": "Documented source/evidence; independent guest qualification not implied"
+    },
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/tests/unwind_chain_test.cpp",
+      "claim": "Documented source/evidence; independent guest qualification not implied"
+    },
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/evidence/dev20-sjlj-chain.md",
+      "claim": "Documented source/evidence; independent guest qualification not implied"
+    }
+  ],
+  "related": [
+    "mvs.recordset",
+    "mvs.guest",
+    "mvs.qualification"
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "kind": "article",
+  "id": "mvs.backends",
+  "version": "0.1",
+  "sphere": "oo-rexx-mvs",
+  "title": "Legacy S/370 versus ELF SDK z/OS profiles",
+  "section": "alternatives",
+  "summary": "Historical MVS remains cfront -> cc370, with ELF SDK GCC as a separated research alternative. Mainframe ELF SDK 0.1.0 (GCC16.2, binutils2.47, selected newlib) supports TSO31 and TSO24 installed C consumers. Its 0.1.0 TSO24 service and dataset I/O are not MVS 3.8J qualified; SDK is C-only, so cfront remains the C++ lowering frontend initially.",
+  "invariants": [
+    "Keep host compiler backend and guest runtime adapters independent.",
+    "Do not relabel profile objects to bypass MLAB1 ABI/service identity checks.",
+    "TSO31 ILP32 does not imply its runtime can be executed on MVS 3.8J.",
+    "The installed SDK reports upstream z/OS1.5 TSO31 entry plus selected dataset I/O, but our ooRexx SDK consumer has not been run with actual SDK.",
+    "TSO24 dataset I/O is excluded by SDK 0.1.0; do not substitute native entry24 for ooRexx's RecordSet support."
+  ],
+  "authority": "project-artifact",
+  "provenance": [
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/experimental/elf-sdk/README.md",
+      "claim": "Documented source/evidence; independent guest qualification not implied"
+    },
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/experimental/elf-sdk/qualification.json",
+      "claim": "Documented source/evidence; independent guest qualification not implied"
+    },
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/experimental/elf-sdk/run-sdk-host-smoke.py",
+      "claim": "Documented source/evidence; independent guest qualification not implied"
+    }
+  ],
+  "related": [
+    "mvs.frontier",
+    "mvs.guest",
+    "mvs.qualification"
+  ]
+}

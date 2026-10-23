@@ -1,0 +1,44 @@
+{
+  "kind": "article",
+  "id": "mvs.recordset",
+  "version": "0.1",
+  "sphere": "oo-rexx-mvs",
+  "title": "MVS logical-record I/O and allocation lifecycle",
+  "section": "io",
+  "summary": "The MVS RecordSet dev11 package supplies QSAM and SVC 99 access. ooRexx's MvsRecordProvider is a typed logical-record seam exposing explicit EOF, one-based record positioning, unknown count, metadata and retryable cleanup. It is not a POSIX stream implementation.",
+  "invariants": [
+    "EOF is not a zero-length logical record.",
+    "Never discard a DD allocation or QSAM handle when CLOSE or unallocation fails; permit retry.",
+    "Channel close-pending is not equivalent to DD ownership; state must not be misinterpreted.",
+    "Do not reinterpret absolute paths as dataset names or fake arbitrary seek offsets.",
+    "The adapter's host fake-QSAM tests do not establish successful native RecordSet operation under MVS."
+  ],
+  "authority": "project-artifact",
+  "provenance": [
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/port/mvs/MvsRecordProvider.c",
+      "claim": "Documented source/evidence; independent guest qualification not implied"
+    },
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/port/mvs/MvsRecordProvider.h",
+      "claim": "Documented source/evidence; independent guest qualification not implied"
+    },
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/tests/mvs_record_metadata_test.c",
+      "claim": "Documented source/evidence; independent guest qualification not implied"
+    },
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/evidence/dev18-tests.txt",
+      "claim": "Documented source/evidence; independent guest qualification not implied"
+    }
+  ],
+  "related": [
+    "mvs.guest",
+    "mvs.backends",
+    "mvs.qualification"
+  ]
+}

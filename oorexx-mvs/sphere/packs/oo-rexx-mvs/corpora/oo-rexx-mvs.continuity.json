@@ -1,0 +1,56 @@
+{
+  "kind": "corpus",
+  "id": "oo-rexx-mvs.continuity",
+  "sphere": "oo-rexx-mvs",
+  "title": "ooRexx MVS port continuity rules",
+  "records": [
+    {
+      "topic": "source.pins",
+      "rule": "Pins for ooRexx, cfront, cc370 and SDK are provenance identities; reject unqualified moving-target builds."
+    },
+    {
+      "topic": "baseline",
+      "rule": "190/199 from dev16 is a historic translation measurement, not MVS execution."
+    },
+    {
+      "topic": "residuals",
+      "rule": "Nine cfront failures; a return code does not replace first diagnostic evidence."
+    },
+    {
+      "topic": "unwind",
+      "rule": "Single-task SJLJ and host cfront probes need target ABI qualification."
+    },
+    {
+      "topic": "records",
+      "rule": "QSAM logical records, separate EOF, owned DD cleanup retry; no invented POSIX seek."
+    },
+    {
+      "topic": "sdk",
+      "rule": "ELF SDK TSO31/24 harness is experimental; no target qualification by mock consumer."
+    },
+    {
+      "topic": "mvs",
+      "rule": "ED209Z on ED209C, distinct from ED209ZZ on ED209I; preserve RSQQUAL failed assembler result."
+    },
+    {
+      "topic": "modern",
+      "rule": "Modern z/OS native execution requires explicit allowed use and guest evidence."
+    },
+    {
+      "topic": "governance",
+      "rule": "Sphere is descriptive/read-only; not an execution or deployment grant."
+    }
+  ],
+  "provenance": [
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/evidence/verified-summary.json",
+      "claim": "Historical dev16 summary"
+    },
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/experimental/elf-sdk/qualification.json",
+      "claim": "Modern SDK candidate"
+    }
+  ]
+}

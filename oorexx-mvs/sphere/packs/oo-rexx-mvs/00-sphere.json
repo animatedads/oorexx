@@ -1,0 +1,53 @@
+{
+  "kind": "sphere",
+  "id": "oo-rexx-mvs",
+  "version": "0.1",
+  "title": "ooRexx interpreter port to MVS 3.8J and experimental z/OS backends",
+  "access_policy": "oo-rexx-mvs-access",
+  "purpose": "Evidence-qualified technical continuity for pinned cfront/cc370 bulk translation, MVS runtime and QSAM records, and independent ELF SDK z/OS profile experiments.",
+  "related_spheres": [
+    "oorexx",
+    "queue-fabric"
+  ],
+  "start_here": [
+    "mvs.start",
+    "mvs.frontier",
+    "mvs.backends",
+    "mvs.qualification",
+    "mvs.continuation"
+  ],
+  "sections": [
+    {
+      "id": "status",
+      "title": "Identity and baseline"
+    },
+    {
+      "id": "translation",
+      "title": "Pinned translation"
+    },
+    {
+      "id": "runtime",
+      "title": "Unwind and ABI"
+    },
+    {
+      "id": "io",
+      "title": "Logical record services"
+    },
+    {
+      "id": "alternatives",
+      "title": "Experimental compiler backends"
+    },
+    {
+      "id": "guest",
+      "title": "Native guest execution"
+    },
+    {
+      "id": "qualification",
+      "title": "Evidence and safety gates"
+    },
+    {
+      "id": "continuation",
+      "title": "Next work"
+    }
+  ]
+}
