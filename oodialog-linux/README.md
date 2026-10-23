@@ -26,3 +26,14 @@ python3 qt6/tests/protocol_integration.py --executable ./build-qt6/oodialog-qt6 
 ```
 
 **Important:** A live `oorexxpython` Rexx-object callback has NOT been verified. This package does not yet offer an application-transparent `::requires` native renderer nor 80% upstream ooDialog API parity. The previous out-of-process bridge files were removed from this release; the protocol renderer remains diagnostic.
+## Dev13 — listener lifecycle and sphere (2026-10-23)
+- Native callback dispatch retains an executing callable across self-replacement/unbinding.
+- Added `unbind(controlId,eventName)` and `listener_count()` to the native extension.
+- Added `tests/native_listener_reentrant.py` (requires a compiled Qt6/Python extension).
+- Scope and evidence are documented in `sphere/oodialog_linux_dev13.md`.
+- This code has not yet passed native dev13 compilation or live `oorexxpython` callback qualification.
+
+Run on the native Qt6 host after building `native/`:
+```sh
+QT_QPA_PLATFORM=offscreen PYTHONPATH="$PWD/build-native" python3 tests/native_listener_reentrant.py
+```
