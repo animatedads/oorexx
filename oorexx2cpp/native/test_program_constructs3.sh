@@ -20,4 +20,5 @@ check() {   # name program-path
 check self_inherited "$OUT/src/self_inherited.rex"   # SELF~isA / ~class / ~isNil in compiled methods: as compiled code holding the object
 check constants_native "$OUT/src/constants_native.rex"   # ::CONSTANT from compiled code: the interpreter's value, asked once; hiding as interpreted
 check method_exit "$OUT/src/method_exit.rex"   # EXIT from a method body returns, from an internal routine leaves; SIGNAL as a jump; SIGL / PARSE SOURCE / .LINE in classes of a program
+check datatype_options "$OUT/src/datatype_options.rex"   # DATATYPE: every option natively as StringUtil::dataType (B X S V O I 9 were the interpreter's)
 echo "PASS program constructs (3): $(ls "$OUT"/*.expected | wc -l) programs, $(cat "$OUT"/*.expected | wc -l) lines identical to the interpreter"
