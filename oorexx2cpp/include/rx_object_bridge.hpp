@@ -290,6 +290,7 @@ inline void *environmentEntry(const std::string &name) {
 // environmentEntry's lookup without its per-call costs: the three directories (the package's LOCAL, .local,
 // .environment) are found once per thread and kept; DirectoryAt is the interpreter's own get(), as
 // PackageClass::findClass does. Answers a local reference (the caller releases it), or NULLOBJECT.
+inline void bifStat(const std::string &name);
 struct EnvDirs { RexxDirectoryObject pkg = NULLOBJECT, local = NULLOBJECT, global = NULLOBJECT; bool pkgDone = false; };
 inline EnvDirs &envDirs() { static thread_local EnvDirs d; return d; }
 // Does this Directory have SETMETHOD entries or an UNKNOWN method (DirectoryClass::methodTable, ::unknownMethod)? Its
@@ -297,6 +298,14 @@ inline EnvDirs &envDirs() { static thread_local EnvDirs d; return d; }
 // Directories made for the purpose (none, a SETMETHOD entry, an UNKNOWN method) and checked again after UNSETMETHOD of
 // the UNKNOWN; when they cannot be found exactly the answer is always true (nothing is kept). A methodTable once made
 // stays (empty) after UNSETMETHOD: still true, the safe side.
+// An interpreter object's size in pointers (RexxInternalObject: its vtable, then ObjectHeader::objectSize in bytes);
+// 0 when the size is not plausible. Bounds the scans below.
+inline std::size_t objectWords(RexxObjectPtr o) {
+    if (o == NULLOBJECT) return 0;
+    const std::size_t bytes = reinterpret_cast<const std::size_t *>(o)[1];
+    if (bytes < 4 * sizeof(void *) || bytes > 65536 || bytes % sizeof(void *) != 0) return 0;
+    return bytes / sizeof(void *);
+}
 struct DirectoryFields { int methodTable = -1, unknownMethod = -1; bool known = false; };
 inline DirectoryFields &directoryFields(RexxThreadContext *t) {
     static DirectoryFields f;
@@ -320,16 +329,18 @@ inline DirectoryFields &directoryFields(RexxThreadContext *t) {
     if (!none1 || !none2 || !method1 || !method2 || !unknown1 || !unknown2) return f;
     auto word = [](RexxObjectPtr o, int i) { return reinterpret_cast<void *const *>(o)[i]; };
     int mt = -1, um = -1, mtCount = 0, umCount = 0;
-    for (int i = 0; i < words; ++i) {
+    const int size = static_cast<int>(std::min({objectWords(none1), objectWords(method1), objectWords(unknown1)}));
+    for (int i = 3; i < words && i < size; ++i) {
         const bool noneZero = !word(none1, i) && !word(none2, i);
         if (noneZero && word(method1, i) && word(method2, i) && !word(unknown1, i) && !word(unknown2, i)) { mt = i; ++mtCount; }
         if (noneZero && !word(method1, i) && !word(method2, i) && word(unknown1, i) && word(unknown2, i)) { um = i; ++umCount; }
     }
-    if (mtCount != 1 || umCount != 1 || um != mt + 1) return f;   // (declared one after the other)
+    if (mtCount != 1 || umCount != 1 || um != mt + 1) { bifStat("directory fields not found"); return f; }   // (declared one after the other)
     t->SendMessage1(unknown1, "UNSETMETHOD", (RexxObjectPtr)t->String("UNKNOWN"));
     if (t->CheckCondition()) { t->ClearCondition(); return f; }
     if (word(unknown1, um)) return f;
     f.methodTable = mt; f.unknownMethod = um;
+    bifStat("directory fields " + std::to_string(mt) + "/" + std::to_string(um));
     return f;
 }
 inline bool directoryComputesEntries(RexxThreadContext *t, RexxDirectoryObject d) {
@@ -363,13 +374,64 @@ inline EnvDirs &findEnvDirs(RexxThreadContext *t) {
     }
     return d;
 }
+// The package's security manager (PackageClass::securityManager, a SecurityManager whose ::manager is the object set by
+// SETSECURITYMANAGER): PackageClass::findClass asks it (LOCAL, ENVIRONMENT) before .local and .environment. The two
+// fields are found once: in a package given a security manager (an object made for the purpose) the one pointer
+// that is empty in a package without one, and in the object it points to, the manager itself.
+struct PackageFields { int securityManager = -1, manager = -1; bool known = false; };
+inline PackageFields &packageFields(RexxThreadContext *t) {
+    static PackageFields f;
+    if (f.known) return f;
+    f.known = true;
+    RexxObjectPtr packageClass = (RexxObjectPtr)t->FindClass("PACKAGE"), objectClass = (RexxObjectPtr)t->FindClass("OBJECT");
+    if (packageClass == NULLOBJECT || objectClass == NULLOBJECT) { t->ClearCondition(); return f; }
+    auto make = [&](const char *name) -> RexxObjectPtr {
+        RexxObjectPtr p = t->SendMessage2(packageClass, "NEW", (RexxObjectPtr)t->String(name), (RexxObjectPtr)t->String("nop"));
+        if (t->CheckCondition()) { t->ClearCondition(); return NULLOBJECT; }
+        return p == NULLOBJECT ? NULLOBJECT : pinRef(t, p);
+    };
+    RexxObjectPtr plain1 = make("RX2CPP_PROBE_1"), plain2 = make("RX2CPP_PROBE_2"), managed = make("RX2CPP_PROBE_3");
+    RexxObjectPtr m = t->SendMessage0(objectClass, "NEW");
+    if (!plain1 || !plain2 || !managed || m == NULLOBJECT || t->CheckCondition()) { t->ClearCondition(); return f; }
+    m = pinRef(t, m);
+    t->SendMessage1(managed, "SETSECURITYMANAGER", m);
+    if (t->CheckCondition()) { t->ClearCondition(); return f; }
+    auto word = [](RexxObjectPtr o, std::size_t i) { return reinterpret_cast<void *const *>(o)[i]; };
+    const std::size_t size = std::min({objectWords(plain1), objectWords(plain2), objectWords(managed)});
+    int sm = -1, mg = -1, found = 0;
+    for (std::size_t i = 3; i < size; ++i) {
+        if (word(plain1, i) || word(plain2, i) || !word(managed, i)) continue;
+        RexxObjectPtr wrapper = (RexxObjectPtr)word(managed, i);
+        const std::size_t wsize = objectWords(wrapper);
+        for (std::size_t j = 3; j < wsize; ++j)
+            if (word(wrapper, j) == (void *)m) { sm = static_cast<int>(i); mg = static_cast<int>(j); ++found; }
+    }
+    if (found != 1) { bifStat("security manager fields not found"); return f; }
+    f.securityManager = sm; f.manager = mg;
+    bifStat("security manager fields " + std::to_string(sm) + "/" + std::to_string(mg));
+    return f;
+}
+// The security manager of a package: 0 none, 1 one (its manager object in m), -1 not known (its fields were not found).
+inline int packageSecurityManager(RexxThreadContext *t, RexxObjectPtr package, RexxObjectPtr &m) {
+    m = NULLOBJECT;
+    if (package == NULLOBJECT) return 0;
+    const PackageFields &f = packageFields(t);
+    if (f.securityManager < 0) return -1;
+    void *wrapper = reinterpret_cast<void *const *>(package)[f.securityManager];
+    if (!wrapper) return 0;
+    m = (RexxObjectPtr)reinterpret_cast<void *const *>(wrapper)[f.manager];
+    return 1;
+}
 inline RexxObjectPtr environmentLookup(RexxThreadContext *t, const std::string &name) {
     EnvDirs &d = findEnvDirs(t);
+    // (a condition raised by a SETMETHOD entry or an UNKNOWN method stays pending for the caller: rx::envValue raises it)
     RexxObjectPtr o = NULLOBJECT;
     if (d.pkg != NULLOBJECT) o = t->DirectoryAt(d.pkg, name.c_str());
+    if (t->CheckCondition()) return NULLOBJECT;
     if (o == NULLOBJECT && d.local != NULLOBJECT) o = t->DirectoryAt(d.local, name.c_str());
+    if (t->CheckCondition()) return NULLOBJECT;
     if (o == NULLOBJECT && d.global != NULLOBJECT) o = t->DirectoryAt(d.global, name.c_str());
-    if (t->CheckCondition()) { t->ClearCondition(); if (o != NULLOBJECT) t->ReleaseLocalReference(o); return NULLOBJECT; }
+    if (t->CheckCondition()) { if (o != NULLOBJECT) t->ReleaseLocalReference(o); return NULLOBJECT; }
     return o;
 }
 // Does this object run Object's own == and \== (identity, RexxObject::strictEqual)? Asked of the object's behaviour
@@ -1752,13 +1814,95 @@ inline EnvName &envName(const std::string &name) {
     if (!slot) slot = std::make_unique<EnvName>(name);
     return *slot;
 }
+#ifdef RX2CPP_HOST_API
+// A condition the interpreter left pending (a SETMETHOD entry, an UNKNOWN method or a security manager that raised):
+// raised in compiled code as the interpreter's, with its condition object.
+[[noreturn]] inline void raisePending(RexxThreadContext *t, const std::string &what) {
+    RexxDirectoryObject info = t->GetConditionInfo();
+    RexxCondition cd; t->DecodeConditionInfo(info, &cd);
+    const std::string code = std::to_string(cd.code / 1000) + "." + std::to_string(cd.code % 1000);
+    const std::string text = (cd.message && t->IsString(cd.message)) ? t->ObjectToStringValue(cd.message) : "error in " + what;
+    rxobj::keepCondition(t);
+    t->ClearCondition();
+    rxobj::captureAdditional(t, info);
+    SyntaxCondition raised(code, text, false);
+    for (const std::string &a : rxobj::lastAdditional()) raised.substitutions.push_back(Value::string(a));
+    raised.conditionObject = takeKeptCondition();
+    throw raised;
+}
+// PackageClass::findClass's search for a name that is not a class, with the package's security manager (manager; secured
+// -1: its fields were not found, so the package answers it: PackageClass~findClass): the package LOCAL, the manager's
+// LOCAL, .local, its ENVIRONMENT, .environment. SecurityManager::callSecurityManager: LOCAL / ENVIRONMENT sent with a
+// Directory holding NAME; a result is required and must be exactly 0 or 1; 1 answers the RESULT entry (none: the
+// search goes on). found: the answer is an entry whose value is .nil (the object answered is then NULLOBJECT).
+inline RexxObjectPtr securedEnvironmentLookup(RexxThreadContext *t, const std::string &name, int secured, RexxObjectPtr manager, bool &found) {
+    found = false;
+    if (secured < 0) {
+        // (only an entry that is .nil and no entry at all both answer .nil here: .nil it is when a directory has the name)
+        RexxObjectPtr r = t->SendMessage1(rxobj::libraryPackage(), "FINDCLASS", (RexxObjectPtr)t->String(name.c_str()));
+        if (t->CheckCondition()) raisePending(t, "FINDCLASS");
+        if (r != NULLOBJECT && r != t->Nil()) return r;
+        rxobj::EnvDirs &d = rxobj::findEnvDirs(t);
+        for (RexxDirectoryObject dir : {d.pkg, d.local, d.global}) {
+            if (dir == NULLOBJECT) continue;
+            RexxObjectPtr has = t->SendMessage1((RexxObjectPtr)dir, "HASINDEX", (RexxObjectPtr)t->String(name.c_str()));
+            if (t->CheckCondition()) raisePending(t, "HASINDEX");
+            if (has != NULLOBJECT && t->IsString(has) && std::string(t->ObjectToStringValue(has)) == "1") { found = true; break; }
+        }
+        return NULLOBJECT;
+    }
+    rxobj::EnvDirs &d = rxobj::findEnvDirs(t);
+    auto get = [&](RexxDirectoryObject dir) -> RexxObjectPtr {
+        if (dir == NULLOBJECT) return NULLOBJECT;
+        RexxObjectPtr o = t->DirectoryAt(dir, name.c_str());
+        if (t->CheckCondition()) raisePending(t, "AT");
+        return o;
+    };
+    auto ask = [&](const char *what) -> RexxObjectPtr {
+        RexxDirectoryObject args = t->NewDirectory();
+        t->DirectoryPut(args, (RexxObjectPtr)t->String(name.c_str()), "NAME");
+        std::vector<rxobj::Arg> in(1); in[0].obj = (void *)args;
+        rxobj::Result r; std::string code, text;
+        if (!rxobj::send((void *)manager, what, in, r, code, text)) {
+            SyntaxCondition raised(code, text, false);
+            for (const std::string &a : rxobj::lastAdditional()) raised.substitutions.push_back(Value::string(a));
+            raised.conditionObject = takeKeptCondition();
+            throw raised;
+        }
+        if (r.kind == 0) {
+            SyntaxCondition missing("91.999", std::string("Message \"") + what + "\" did not return a result.", false);
+            missing.substitutions.push_back(Value::string(what));
+            throw missing;
+        }
+        std::string answer = r.bytes;
+        if (r.kind == 2) { answer = t->ObjectToStringValue((RexxObjectPtr)r.obj); rxobj::release(r.obj); }
+        if (answer != "0" && answer != "1") {
+            SyntaxCondition bad("34.903", "Authorization return value must be exactly \"0\" or \"1\"; found \"" + answer + "\".", false);
+            bad.substitutions.push_back(Value::string(answer));
+            throw bad;
+        }
+        if (answer == "0") return NULLOBJECT;
+        RexxObjectPtr result = t->DirectoryAt(args, "RESULT");
+        if (t->CheckCondition()) raisePending(t, "AT");
+        return result;
+    };
+    RexxObjectPtr o = get(d.pkg);
+    if (o == NULLOBJECT && manager != NULLOBJECT) o = ask("LOCAL");
+    if (o == NULLOBJECT) o = get(d.local);
+    if (o == NULLOBJECT && manager != NULLOBJECT) o = ask("ENVIRONMENT");
+    if (o == NULLOBJECT) o = get(d.global);
+    return o;
+}
+#endif
 inline Value envValue(EnvName &e) {
     if (e.state == 1) return e.value;
     const std::string &name = e.name;
     if (e.state == 0) {
         if (packageClassHook) if (auto v = packageClassHook(name)) { e.value = *v; e.state = 1; return e.value; }
 #ifdef RX2CPP_HOST_API
-        void *h = (rx::eqLit(name, "LOCAL") || rx::eqLit(name, "ENVIRONMENT")) ? rxobj::environmentObject(name) : rxobj::packageClass(name);
+        // (.LOCAL and .ENVIRONMENT are entries of .environment, found as any other: a security manager is asked for them
+        // too, as interpreted)
+        void *h = rxobj::packageClass(name);
 #else
         void *h = (rx::eqLit(name, "LOCAL") || rx::eqLit(name, "ENVIRONMENT")) ? rxobj::environmentObject(name) : rxobj::findClass(name);
 #endif
@@ -1772,11 +1916,17 @@ inline Value envValue(EnvName &e) {
     }
     RexxThreadContext *t = rxobj::need();
     // Kept only when the three directories answer their own entries (rxobj::environmentEntriesOnly, asked before the
-    // lookup: no SETMETHOD entry or UNKNOWN method, whose value is computed at each read). The lookup's calls then run
-    // no Rexx code (DirectoryAt of entries, below the string value of a String and the pin table): the epoch read
-    // after them is the one the answer belongs to.
-    const bool keep = rxobj::environmentEntriesOnly(t);
-    RexxObjectPtr o = rxobj::environmentLookup(t, name);
+    // lookup: no SETMETHOD entry or UNKNOWN method, whose value is computed at each read) and the package has no
+    // security manager (asked at every lookup, as interpreted). The lookup's calls then run no Rexx code (DirectoryAt
+    // of entries, below the string value of a String and the pin table): the epoch read after them is the one the
+    // answer belongs to.
+    RexxObjectPtr manager = NULLOBJECT;
+    const int secured = rxobj::packageSecurityManager(t, rxobj::libraryPackage(), manager);
+    const bool keep = secured == 0 && rxobj::environmentEntriesOnly(t);
+    bool found = false;
+    RexxObjectPtr o = secured == 0 ? rxobj::environmentLookup(t, name) : securedEnvironmentLookup(t, name, secured, manager, found);
+    if (secured == 0 && t->CheckCondition()) raisePending(t, "AT");
+    if (found && o == NULLOBJECT) { e.epoch = 0; e.unknown = false; e.value = nil(); return e.value; }   // (an entry that is .nil)
     auto remember = [&]() { e.epoch = keep ? rxobj::interpreterEpoch() : 0; };
     if (o == NULLOBJECT) { e.unknown = true; remember(); return Value::string("." + name); }   // an unknown environment symbol is its own name (.FOO)
     e.unknown = false;
