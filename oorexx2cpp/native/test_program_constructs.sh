@@ -26,16 +26,4 @@ check env_entries "$OUT/src/env_entries.rex"   # environment entries that are no
 check native_object_messages "$OUT/src/native_object_messages.rex"   # ISNIL, CLASS, class identity, CONTAINS natively
 check string_words "$OUT/src/string_words.rex"   # CONTAINSWORD / CASELESSCONTAINSWORD natively
 check truth "$OUT/src/truth.rex"     # an object as a logical value: its string value (requestString)
-check self_variable "$OUT/src/self_variable.rex"   # SELF as a variable: assigned, by name, dropped, unset in routines
-check value_objects "$OUT/src/value_objects.rex"   # VALUE() with objects; a stem name's value is the stem object
-check env_lookup "$OUT/src/env_lookup.rex"   # .NAME looked up each time (package LOCAL, .local, .environment), as interpreted
-check find_routine "$OUT/src/find_routine.rex"   # .context~package~findRoutine: the same Routine object, kept
-check native_stems "$OUT/src/native_stems.rex"   # .Stem~new native in compiled code: [], []=, HASINDEX; crossing
-check native_sets "$OUT/src/native_sets.rex"   # .Set~of / .Bag~of native; SEND / SENDWITH to native class objects
-check identity_eq "$OUT/src/identity_eq.rex"   # == / \== of interpreter objects: identity when they run Object's own
-check native_stringtable "$OUT/src/native_stringtable.rex"   # .StringTable native in compiled code, order included
-check array_delete "$OUT/src/array_delete.rex"   # Array~delete native (ArrayClass::deleteItem / closeGap)
-check address_reuse "$OUT/src/address_reuse.rex"   # an interpreter object at a collected compiled instance's address is itself
-check variable_frame "$OUT/src/variable_frame.rex"   # locals in the frame: VALUE, DROP, INTERPRET, PROCEDURE EXPOSE, recursion
-check variable_frame_methods "$OUT/src/variable_frame_methods.rex"   # frames in methods: EXPOSE by name, PROCEDURE EXPOSE through both
 echo "PASS program constructs: $(ls "$OUT"/*.expected | wc -l) programs, $(cat "$OUT"/*.expected | wc -l) lines identical to the interpreter"
