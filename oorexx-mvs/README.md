@@ -1,42 +1,77 @@
-# ooRexx MVS 3.8J port — dev18
+# ooRexx interpreter port: MVS 3.8J and experimental z/OS targets
 
-Experimental port of the Open Object Rexx interpreter to IBM S/370 and classic MVS 3.8J.
+Experimental translation of the Open Object Rexx interpreter for IBM
+System/370 / MVS 3.8J, with a **separate** Mainframe ELF SDK compiler
+experiment for z/OS TSO31 and TSO24.
 
-## Current status (10 October 2026)
+## Qualification snapshot — 23 October 2026
 
-**190/199 permitted core translation units** were reported to pass the Linux-hosted C++ shadow -> AT&T cfront C -> cc370 -S -> non-empty S/370 assembler pipeline at dev16. dev17 and dev18 strengthen host-tested unwind and MVS native-record adapter semantics, but **do not increase** the 190/199 translation count.
+The accepted Linux-hosted core translation checkpoint is **190/199 permitted
+ooRexx C++ units** reaching cfront C and `cc370 -S` nonempty assembler at
+dev16. This is unchanged through the dev20 runtime/harness line.
 
-Nine translation blockers remain:
-- `NativeActivation.cpp`
-- `CommandIOConfiguration.cpp`
-- `Setup.cpp`
-- `LibraryPackage.cpp`
-- `InternalPackage.cpp`
-- `Interpreter.cpp`
-- `RexxUtilCommon.cpp`
-- `FileNative.cpp`
-- `StreamNative.cpp`
+The nine cfront-blocked files remain:
+`NativeActivation.cpp`, `CommandIOConfiguration.cpp`, `Setup.cpp`,
+`LibraryPackage.cpp`, `InternalPackage.cpp`, `Interpreter.cpp`,
+`RexxUtilCommon.cpp`, `FileNative.cpp` and `StreamNative.cpp`.
 
-**No complete MVS link, JES execution, or ooTest conformance is claimed.** Producing S/370 assembler is not equivalent to a running ooRexx interpreter.
+There is **no complete MVS interpreter link, first ooRexx program on MVS,
+full ooTest run or modern z/OS execution claim**. Some other Alchemy/MVS
+components have run real JES jobs; their failures must not be counted as
+successful ooRexx port execution.
 
-## Provenance
+## Where to start
 
-- Upstream: https://github.com/ooRexx/ooRexx
-- Pinned ooRexx commit: `de1db87f486d430d1faa9151b8a2d5f328ab70f2`
-- Full dev18 delivery archive: `oorexx-mvs24-cfront-bulk-dev18.zip`
-- Dev18 archive SHA-256: `ae64882eabb7645937d6c2d73343721562b20e020377eef4abebe77bed72c1db`
-- Original source-oriented GitHub snapshot: `oorexx-mvs-github-ready-dev18.zip`
-- RecordSet v0.1-dev11 is a separate dependency and is not vendored.
+- [LLM Gopher MVS sphere](sphere/README.md): evidence-scoped architecture,
+  provenance, nine residuals, ABI/record contracts, guest observations and
+  continuity/acceptance gates. Profile: `sphere/profiles/oo-rexx-mvs.json`.
+- [Translation sources](TRANSLATION-SOURCES.md): full dev16 shell driver,
+  cfront replacements, pinned-source verifier and dev13–dev16 transforms.
+- [RecordSet adapter](port/mvs/MvsRecordProvider.h): native MVS QSAM/SVC99
+  logical record semantics and retryable DD cleanup (separate dev11 dependency).
+- [Unwind runtime](runtime/MvsUnwind.cpp): fail-closed single-task SJLJ
+  bootstrap. Actual MVS setjmp/longjmp ABI remains unqualified.
+- [ELF SDK experiment](experimental/elf-sdk/README.md): isolated C-only
+  GCC16.2 SDK host packaging path for TSO31/TSO24. Not deployed to MVS 3.8J
+  and not accepted as the primary backend.
+- [Historical evidence](evidence/SOURCE-EVIDENCE.md): restored exact source
+  matrices and [38-file archive](evidence/archive/README.md) of dev20
+  qualification logs and checksums.
 
-## Implementation boundary
+## Pinned source authority
 
-- Native MVS dataset support uses logical records and the independently developed RecordSet QSAM/SVC 99 interface. It is not a substitute for POSIX byte streams or an implementation of full ooRexx stream semantics.
-- MVS unwind uses an SJLJ bootstrap. Unmatched activation transfers fail closed; real MVS ABI and reentrancy qualification remain outstanding.
-- Keep the remaining nine translation units visible until rechecked with the pinned toolchain. Do not claim a translation result from host-only adapter tests.
-- Preserve all upstream ooRexx licensing and notices.
+- ooRexx: `de1db87f486d430d1faa9151b8a2d5f328ab70f2`
+- cfront: `f87de66d9442230ba6fcbc965924a6a6dd31497e`
+- cc370: `ddb1c8ccc7edd537373c924b761e15b703690565`
+- Mainframe ELF SDK 0.1.0 release (2026-10-03), project
+  [source](https://github.com/adesutherland/mainframe-elf-sdk).
+  Upstream z/OS 1.5 selected TSO31 execution does not qualify this ooRexx port.
+- Exact hashes of preserved dev20, RecordSet dev11 and experimental SDK
+  delivery archives are in [sphere source authority](sphere/SOURCE_AUTHORITY.json).
 
-## Delivery and tests
+## Host-only regression checks
 
-The validated dev18 source-oriented delivery comprises 70 files of source transformations, patched cfront material, adapters, tests, scripts and evidence. The bootstrap commit establishes this directory and records exact checkpoint provenance. Do not mistake an incomplete repository sync for a complete source snapshot.
+With extracted RecordSet dev11 sources available as `RECORDSET_ROOT`:
 
-The relevant qualification evidence remains host-side only. Real MVS execution will be tracked separately when JES output is available.
+```sh
+bash tests/run-recordset-host.sh "$RECORDSET_ROOT"
+bash tests/run-unwind-host.sh
+bash tests/run-dev20-guard.sh
+python3 -m unittest discover -s tests -p 'test_dev*.py' -q
+cd experimental/elf-sdk
+python3 -m unittest discover -s tests -p 'test*.py' -q
+cc -std=c99 -Wall -Wextra -Werror -pedantic -fsyntax-only z_backend_contract.c
+```
+
+Sphere structure can be checked with:
+
+```sh
+python3 sphere/tests/verify_sphere.py
+```
+
+All are **host-level** gates. None replace a source-pinned cfront/cc370
+rerun, an MVS IEWL/JES test, or a permitted modern z/OS31 load-module run.
+
+The existing MVS3.8J guest ED209Z on host ED209C is distinct from ED209ZZ
+on host ED209I. Use approved remote management procedures. Nothing in this
+repository authorizes access to a modern z/OS host.
