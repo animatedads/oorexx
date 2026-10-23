@@ -1,11 +1,15 @@
 # ooRexx 5.3.0: interpreter bug reports (native API, rexxutil) and a performance issue
 
-Status (2026-10-16): bugs 1 and 2 confirmed still present on r13271 by Josep Maria Blasco: to be filed. Issue 3 was
-already fixed upstream in r13267 (bug #2106, "Linux: entering the interpreter is slow (pthread_getattr_np)": a
-thread_local cache in currentThreadStack; stackbench 1.7 us per call on the r13271 portable build): not to be filed.
-Our interpreter source stops at de1db87 (r13196), older than that fix. Bug 4 (SysStemSort crash, found 2026-10-16)
-confirmed on r13271 (trunk HEAD, Ubuntu 24.04 package) by Josep Maria: to be filed with its patch
-(`TICKET_bug4.md` has the ticket text).
+Status (2026-10-23, checked against trunk r13284 through the GitHub mirror, ooRexx/oorexx a4210fc):
+- Bug 1: fixed upstream in r13257 (bug #2100, "ReleaseGlobalReference never releases": the same one-line fix as ours).
+- Bug 2: still present in trunk r13284 (NativeActivation::run / callNativeRoutine unchanged). To be filed.
+- Issue 3: fixed upstream in r13267 (bug #2106, "Linux: entering the interpreter is slow (pthread_getattr_np)": a
+  thread_local cache in currentThreadStack; stackbench 1.7 us per call on the r13271 portable build). Not to be filed.
+- Bug 4: fixed upstream in r13284 (bug #2120, "SysStemSort crashes when its error is not trapped").
+- Bug 5: fixed upstream in r13259 (bug #2102, "pendingUninits never returns to zero", Erich, 2026-10-08): trunk's
+  checkUninit has exactly our condition, `isObjectDead(markWord) && !isReadyForUninit()`. We measured on r13196,
+  which predates it (Josep Maria Blasco, 2026-10-23). Not to be filed.
+Our interpreter source stops at de1db87 (r13196). Before writing a ticket: fetch the mirror and check trunk first.
 
 Found while testing rx2cpp (ooRexx-to-C++ compiler) against ooRexx 5.3.0 r13196 (Linux, 64-bit), built from the head of
 the 5.3 source (last commit de1db87, "Fix for [#bugs:2090]"); both are present at head.
@@ -217,7 +221,8 @@ have the same exposure; not checked.
 
 Found 2026-10-23 (rx2cpp profiling: 37% of the compiled Rexx Parser's samples in `MemoryObject::runUninits`).
 Reproduction: `uninitscan/uninitscan.rex` (pure Rexx). Patch: `ooRexx-uninit-count.patch` (one condition in
-`MemoryObject::checkUninit`). Ticket text: `TICKET_bug5.md`. Not yet filed.
+`MemoryObject::checkUninit`). Ticket text: `TICKET_bug5.md`.
+**Already fixed upstream in r13259 (bug #2102); do not file.** Kept for builds of r13258 and older.
 
 ```
 rexx uninitscan/uninitscan.rex 20000
