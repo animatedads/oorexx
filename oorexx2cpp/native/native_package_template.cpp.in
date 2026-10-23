@@ -547,8 +547,11 @@ public:
     NativeInstanceRef &operator=(const NativeInstanceRef &) = delete;
     void *materialize() override {
         static const bool sendStats = std::getenv("RX2CPP_BIF_STATS") != nullptr;
-        if (sendStats && !(st_->alive && st_->handle)) rxobj::pendingArgumentStat = "materialize " + st_->dynamicClass + " as an argument";
-        return materializeState(st_);
+        const bool made = sendStats && !(st_->alive && st_->handle);
+        void *h = materializeState(st_);
+        // (named with the send it goes to: the next one, after the NEW that made it)
+        if (made) rxobj::pendingArgumentStat = "materialize " + st_->dynamicClass + " as an argument";
+        return h;
     }
     rx::MessageResult sendMessage(const std::string &selector, const std::vector<rx::Value> &args) override {
         if (Resolved *method = lookupMethod(*st_, selector)) {
