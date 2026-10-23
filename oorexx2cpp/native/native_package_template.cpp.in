@@ -1693,6 +1693,9 @@ static void RexxEntry loadPackage(RexxThreadContext *ctx) {
         ctx->SendMessage1((RexxObjectPtr)pkg, "ADDPACKAGE", other);
         if (ctx->CheckCondition()) return;
     }
+#ifdef RX2CPP_HOST_API
+    rxobj::takeFixedClassTables(ctx);   // the package's classes as the program will see them (imports included)
+#endif
     ctx->DirectoryPut(ctx->GetGlobalEnvironment(), (RexxObjectPtr)pkg, packageKey(%PACKAGE_NAME%).c_str());
     auto classes = ctx->GetPackagePublicClasses(pkg);
     auto allClasses = ctx->GetPackageClasses(pkg);

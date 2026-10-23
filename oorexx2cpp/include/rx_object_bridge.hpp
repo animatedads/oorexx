@@ -211,34 +211,45 @@ inline void *findClass(const std::string &name) {
 // package (installed, installed public), one a required package made public (merged), or a public class of the REXX
 // package. Asked of the collections the package answers (CLASSES, PUBLICCLASSES, IMPORTEDCLASSES): no environment
 // directory is read (their entries, and a Directory's SETMETHOD entry or UNKNOWN method, are the dynamic part).
-inline void *packageClass(const std::string &name) {
-    RexxThreadContext *t = need();
+// The interpreter answers CLASSES / PUBLICCLASSES / IMPORTEDCLASSES with a copy (PackageClass::getClassesRexx), so they
+// are asked once, when the library is loaded (takeFixedClassTables, after the packages it requires are imported), and
+// looked up with StringTableAt afterwards: a lookup allocates nothing, as the interpreter's own findClass does not (the
+// copies made at each first lookup moved what the interpreter's save stack still held: test_object_lifetime.sh).
+struct FixedClassTables { RexxObjectPtr tables[4] = { NULLOBJECT, NULLOBJECT, NULLOBJECT, NULLOBJECT }; bool made = false; };
+inline FixedClassTables &fixedClassTables() { static FixedClassTables f; return f; }
+inline void takeFixedClassTables(RexxThreadContext *t) {
+    FixedClassTables &f = fixedClassTables();
     LocalRefs temps(t);
-    auto at = [&](RexxObjectPtr owner, const char *selector) -> RexxObjectPtr {
+    auto table = [&](RexxObjectPtr owner, const char *selector) -> RexxObjectPtr {
         if (owner == NULLOBJECT) return NULLOBJECT;
-        RexxObjectPtr table = temps(t->SendMessage0(owner, selector));
+        RexxObjectPtr v = temps(t->SendMessage0(owner, selector));
         if (t->CheckCondition()) { t->ClearCondition(); return NULLOBJECT; }
-        if (table == NULLOBJECT || table == t->Nil()) return NULLOBJECT;
-        RexxObjectPtr v = temps(t->SendMessage1(table, "[]", temps((RexxObjectPtr)t->String(name.c_str()))));
-        if (t->CheckCondition()) { t->ClearCondition(); return NULLOBJECT; }
-        return v == t->Nil() ? NULLOBJECT : v;
+        if (v == NULLOBJECT || v == t->Nil() || !t->IsStringTable(v)) return NULLOBJECT;
+        return pinRef(t, v);
     };
     RexxObjectPtr pkg = libraryPackage();
-    RexxObjectPtr c = at(pkg, "CLASSES");
-    if (c == NULLOBJECT) c = at(pkg, "PUBLICCLASSES");
-    if (c == NULLOBJECT) c = at(pkg, "IMPORTEDCLASSES");
-    if (c == NULLOBJECT) {
-        static thread_local RexxObjectPtr rexxPackage = NULLOBJECT;
-        if (rexxPackage == NULLOBJECT) {
-            RexxObjectPtr object = temps((RexxObjectPtr)t->FindClass("OBJECT"));
-            RexxObjectPtr p = object == NULLOBJECT ? NULLOBJECT : temps(t->SendMessage0(object, "PACKAGE"));
-            if (t->CheckCondition()) t->ClearCondition();
-            else if (p != NULLOBJECT && p != t->Nil()) rexxPackage = pinRef(t, p);
-        }
-        c = at(rexxPackage, "PUBLICCLASSES");
+    f.tables[0] = table(pkg, "CLASSES");
+    f.tables[1] = table(pkg, "PUBLICCLASSES");
+    f.tables[2] = table(pkg, "IMPORTEDCLASSES");
+    RexxObjectPtr object = temps((RexxObjectPtr)t->FindClass("OBJECT"));
+    RexxObjectPtr rexxPackage = object == NULLOBJECT ? NULLOBJECT : temps(t->SendMessage0(object, "PACKAGE"));
+    if (t->CheckCondition()) { t->ClearCondition(); rexxPackage = NULLOBJECT; }
+    if (rexxPackage != NULLOBJECT && rexxPackage != t->Nil()) f.tables[3] = table(rexxPackage, "PUBLICCLASSES");
+    f.made = true;
+}
+inline void *packageClass(const std::string &name) {
+    RexxThreadContext *t = need();
+    FixedClassTables &f = fixedClassTables();
+    if (!f.made) takeFixedClassTables(t);   // (a library loaded without the template's loader)
+    for (RexxObjectPtr tab : f.tables) {
+        if (tab == NULLOBJECT) continue;
+        RexxObjectPtr c = t->StringTableAt((RexxStringTableObject)tab, name.c_str());
+        if (c == NULLOBJECT) continue;
+        void *h = (void *)pinRef(t, c);
+        t->ReleaseLocalReference(c);
+        return h;
     }
-    if (c == NULLOBJECT) return nullptr;
-    return (void *)pinRef(t, c);
+    return nullptr;
 }
 inline void *environmentObject(const std::string &name) {
     RexxThreadContext *t = need();
