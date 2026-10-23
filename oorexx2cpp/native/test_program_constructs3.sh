@@ -23,4 +23,5 @@ check method_exit "$OUT/src/method_exit.rex"   # EXIT from a method body returns
 check datatype_options "$OUT/src/datatype_options.rex"   # DATATYPE: every option natively as StringUtil::dataType (B X S V O I 9 were the interpreter's)
 check env_epoch "$OUT/src/env_epoch.rex"   # environment symbols kept by interpreter epoch: interpreted routine, INTERPRET, STRING method, another thread, setEntry
 check env_security "$OUT/src/env_security.rex"   # environment symbols under the package security manager: LOCAL / ENVIRONMENT asked, .nil, no RESULT, 34.903
+check security_manager "$OUT/src/security_manager.rex"   # every security manager check (LOCAL ENVIRONMENT CALL COMMAND STREAM METHOD), taken when an activation starts
 echo "PASS program constructs (3): $(ls "$OUT"/*.expected | wc -l) programs, $(cat "$OUT"/*.expected | wc -l) lines identical to the interpreter"

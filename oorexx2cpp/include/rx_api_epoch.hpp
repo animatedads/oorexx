@@ -72,6 +72,18 @@ template <auto Member, typename R, typename... A> struct ApiBump<Member, R (*)(A
         else { R r = (interpreterApiTable()->*Member)(a...); interpreterChanged(); return r; }
     }
 };
+// Called before CallRoutine runs a routine (rx_object_bridge.hpp: a helper is given the library's security manager).
+inline void (*&callRoutineHook())(RexxThreadContext *, RexxRoutineObject) {
+    static void (*hook)(RexxThreadContext *, RexxRoutineObject) = nullptr;
+    return hook;
+}
+inline RexxObjectPtr callRoutineEpoch(RexxThreadContext *t, RexxRoutineObject r, RexxArrayObject a) {
+    if (callRoutineHook()) callRoutineHook()(t, r);
+    interpreterChanged();
+    RexxObjectPtr result = interpreterApiTable()->CallRoutine(t, r, a);
+    interpreterChanged();
+    return result;
+}
 // The interpreter's table with the bumping functions in place (one: the interpreter has one table for all threads).
 inline RexxThreadInterface *epochTable(RexxThreadInterface *original) {
     static RexxThreadInterface table;
@@ -82,6 +94,7 @@ inline RexxThreadInterface *epochTable(RexxThreadInterface *original) {
 #define RX_API_WRAP(name) table.name = &ApiBump<&RexxThreadInterface::name, decltype(RexxThreadInterface::name)>::call;
         RX_API_BUMPS(RX_API_WRAP)
 #undef RX_API_WRAP
+        table.CallRoutine = &callRoutineEpoch;
         made = true;
     }
     return original == interpreterApiTable() ? &table : nullptr;

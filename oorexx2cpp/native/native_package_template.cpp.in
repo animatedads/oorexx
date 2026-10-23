@@ -1392,7 +1392,7 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
                 "numeric digits rx2cppDigits; numeric fuzz rx2cppFuzz; numeric form value rx2cppForm\n"
                 "rx2cppRoutine~callWith(rx2cppArgs)\n"
                 "if var('RESULT') then return result\n";
-            helper = context->NewRoutine("rx2cpp_external_forward", source, std::strlen(source));
+            helper = rxobj::helperRoutine(context->threadContext, context->NewRoutine("rx2cpp_external_forward", source, std::strlen(source)));
             if (helper == NULLOBJECT) return NULLOBJECT;
             context->RequestGlobalReference((RexxObjectPtr)helper);
         }
@@ -1672,6 +1672,11 @@ static void RexxEntry loadPackage(RexxThreadContext *ctx) {
     if (pkg == NULLOBJECT || ctx->CheckCondition()) return;
 #ifdef RX2CPP_HOST_API
     rxobj::libraryPackage() = rxobj::pinRef(ctx, (RexxObjectPtr)pkg);
+    // The interpreter fields compiled code reads (a Directory's SETMETHOD entries and UNKNOWN method, a package's
+    // security manager) are found now, before the program can set a security manager: finding them sends SETMETHOD
+    // and SETSECURITYMANAGER, protected methods a manager would be asked about.
+    (void)rxobj::directoryFields(ctx);
+    (void)rxobj::packageFields(ctx);
 #endif
     // Package scope as interpreted: the declaration packages of the rx2cpp libraries this one requires are imported, so
     // their public classes resolve before .LOCAL / .ENVIRONMENT (e.g. a public class ERROR before the .ERROR stream).
@@ -1712,6 +1717,15 @@ static void RexxEntry loadPackage(RexxThreadContext *ctx) {
     }
 }
 
+// RX2CPP_CALLER_CONTEXT (a private routine of the declaration package): the context of the routine that calls it.
+RexxRoutine0(RexxObjectPtr, rx2cpp_caller_context) { return (RexxObjectPtr)context->GetCallerContext(); }
+// RX2CPP_TAKE(key[, keep]): the .local entry compiled code left for the code of an INTERPRET (taken out unless keep).
+RexxRoutine2(RexxObjectPtr, rx2cpp_take, CSTRING, key, OPTIONAL_CSTRING, keep) {
+    RexxDirectoryObject local = context->GetLocalEnvironment();
+    RexxObjectPtr v = context->DirectoryAt(local, key);
+    if (v != NULLOBJECT && keep == nullptr) context->DirectoryRemove(local, key);
+    return v != NULLOBJECT ? v : context->Nil();
+}
 static RexxRoutineEntry nativeRoutines[] = {
 %ROUTINE_ENTRIES%    REXX_LAST_ROUTINE()
 };

@@ -448,6 +448,10 @@ struct ActivationScope {
     std::unique_ptr<std::unordered_map<std::string, Value>> table;
     bool seeded = false;
     std::uint64_t seed = 0;
+    // The security manager of the activation (RexxActivation settings.securityManager: its code's package's when the
+    // activation starts): set by the object bridge (securityHook), the interpreter's SecurityManager wrapper or null.
+    void *security = nullptr;
+    static void *(*&securityHook())() { static void *(*hook)() = nullptr; return hook; }
     ActivationScope *saved;
     static ActivationScope *&current() { return threadState().scope; }
     explicit ActivationScope(Kind k = Method) : ActivationScope(k, threadState()) {}
@@ -460,6 +464,7 @@ struct ActivationScope {
     static void startSettings(ThreadState &t) { t.trace.assign(1, 'N'); t.address.assign("sh", 2); t.alternate.assign("sh", 2); }
     bool settings = false;
     ActivationScope(Kind k, ThreadState &t) : kind(k), saved(t.scope) {
+        if (securityHook()) security = securityHook()();
         if (!t.pendingCallType.empty()) callType = std::exchange(t.pendingCallType, std::string());
         t.scope = this;
         savedNovalue = std::exchange(novalueArmed, nullptr);

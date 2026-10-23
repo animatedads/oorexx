@@ -186,6 +186,9 @@
           guardsMethod = .false
           if method~hasMethod('GUARDS') then guardsMethod = method~guards
           if replyMethod | guardsMethod then resolved~remove(key)   /* (its entry manages its locks) */
+          /* A PROTECTED method is sent through the interpreter, which asks the sender's security manager first
+             (RexxObject::processProtectedMethod): never dispatched directly. */
+          if decl~pos(' PROTECTED ') > 0 then resolved~remove(key)
         end
       end
       if method~isAbstract then do
@@ -452,6 +455,13 @@
   /* the compiled routines' names: routine~CALL of one of them runs natively (template: routineCallImpl) */
   if routineNameList \== '' then
     routineDefs = routineDefs || 'static const char *const rx2cppRoutineNames[] = {' || '0a'x || routineNameList || '    nullptr };' || '0a'x
+  /* The caller's context (RexxCallContext GetCallerContext): what a helper routine asks for its own .CONTEXT without
+     the environment-symbol lookup a security manager would be asked about (rxobj::callerContextRoutine). */
+  source = source || '::routine RX2CPP_CALLER_CONTEXT private external "LIBRARY ' || packageName || ' RX2CPP_CALLER_CONTEXT"' || '0a'x
+  routineEntries = routineEntries || '    { ROUTINE_TYPED_STYLE, 0, "RX2CPP_CALLER_CONTEXT", (void *)rx2cpp_caller_context, 0, 0 },' || '0a'x
+  /* RX2CPP_TAKE(key[, keep]): an entry compiled code left in .local for INTERPRET's code, without a .LOCAL lookup */
+  source = source || '::routine RX2CPP_TAKE private external "LIBRARY ' || packageName || ' RX2CPP_TAKE"' || '0a'x
+  routineEntries = routineEntries || '    { ROUTINE_TYPED_STYLE, 0, "RX2CPP_TAKE", (void *)rx2cpp_take, 0, 0 },' || '0a'x
   output = output~changeStr('%ROUTINE_DEFINITIONS%', routineDefs)
   output = output~changeStr('%ROUTINE_ENTRIES%', routineEntries)
   if self~form == 'tokenized' then output = output~changeStr('%CLASS_SOURCE%', self~tokenized(source))

@@ -31,8 +31,10 @@
       /* .NIL is a singleton, never a string or absent method result. */
       if t~text == 'NIL' then return 'rx::nil()'
       /* .LINE: the line number of the current clause (a constant of the compiled clause). */
+      /* (host API: .LINE .CONTEXT .METHODS .RS are environment symbols first, as RexxDotVariable::evaluate resolves them:
+         an entry of that name, or a security manager, answers before the activation's own value) */
       if t~text == 'LINE' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \== '' & .local['RX2CPP.CLAUSELINE'] \== .nil then
-        return 'rx::Value::number("' || .local['RX2CPP.CLAUSELINE'] || '")'
+        return 'RX_ENV_SPECIAL("LINE", rx::Value::number("' || .local['RX2CPP.CLAUSELINE'] || '"))'
       if t~text == 'CONTEXT' & ctx~hasHostUnit & ctx~hostedEnabled then do
         ctx~markHosted('.CONTEXT')
         return 'rx::host::contextObject()'
@@ -50,11 +52,11 @@
         return 'rx::host::packageRoutines()'
       end
       /* Native library (host API): .CONTEXT answers PACKAGE with the library's own package. */
-      if t~text == 'CONTEXT' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' then return self~activationContext(ctx)
+      if t~text == 'CONTEXT' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' then return 'RX_ENV_SPECIAL("CONTEXT", ' || self~activationContext(ctx) || ')'
       /* .METHODS: the package's floating methods (in a native library: the declaration package carries them) */
-      if t~text == 'METHODS' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' & \ctx~hasProgramClass('METHODS') then return 'rx::packageMethods()'
+      if t~text == 'METHODS' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' & \ctx~hasProgramClass('METHODS') then return 'RX_ENV_SPECIAL("METHODS", rx::packageMethods())'
       /* .RS: the return status of the activation's last command (.nil before any) */
-      if t~text == 'RS' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' & \ctx~hasProgramClass('RS') then return 'rx::returnStatusValue()'
+      if t~text == 'RS' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' & \ctx~hasProgramClass('RS') then return 'RX_ENV_SPECIAL("RS", rx::returnStatusValue())'
       /* Native library: .MUTABLEBUFFER builds native buffers that become the interpreter's own only when they leave. */
       if t~text == 'MUTABLEBUFFER' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' & \ctx~hasProgramClass(t~text) then return 'rx::mutableBufferClass()'
       if t~text == 'ARRAY' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' & \ctx~hasProgramClass(t~text) then return 'rx::nativeArrayClass()'
