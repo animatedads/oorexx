@@ -211,3 +211,17 @@ sorting a valid stem, directly and through CallRoutine from native code, is unch
 Other old-style entries that raise inside a NativeContextBlock (RexxVariablePool catches ActivityException only) may
 have the same exposure; not checked.
 
+---
+
+## Bug 5: checkUninit counts a pending object again; every activation then scans the whole uninit table
+
+Found 2026-10-23 (rx2cpp profiling: 37% of the compiled Rexx Parser's samples in `MemoryObject::runUninits`).
+Reproduction: `uninitscan/uninitscan.rex` (pure Rexx). Patch: `ooRexx-uninit-count.patch` (one condition in
+`MemoryObject::checkUninit`). Ticket text: `TICKET_bug5.md`. Not yet filed.
+
+```
+rexx uninitscan/uninitscan.rex 20000
+```
+
+Unpatched (5.3.0 r13196 release): 100000 calls 0.03 s before, 9.19 s after the trigger, 8.50 s later. Patched: 0.02 s
+after and later; all 999 UNINITs run.

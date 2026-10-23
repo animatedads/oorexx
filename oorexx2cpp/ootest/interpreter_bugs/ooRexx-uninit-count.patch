@@ -1,0 +1,18 @@
+diff --git a/interpreter/memory/RexxMemory.cpp b/interpreter/memory/RexxMemory.cpp
+index 3cfb12f..94e3f4b 100644
+--- a/interpreter/memory/RexxMemory.cpp
++++ b/interpreter/memory/RexxMemory.cpp
+@@ -285,8 +285,11 @@ void MemoryObject::checkUninit()
+     {
+         RexxInternalObject *uninitObject = iterator.value();
+ 
+-        // was this object not marked by the last sweep operation?
+-        if (uninitObject != OREF_NULL && uninitObject->isObjectDead(markWord))
++        // was this object not marked by the last sweep operation?  An object already marked
++        // ready by an earlier collection whose uninit has not run yet is not counted again:
++        // runUninits() subtracts one per uninit it runs, so a second count would keep
++        // pendingUninits above zero for good, and every activation would then scan the table.
++        if (uninitObject != OREF_NULL && uninitObject->isObjectDead(markWord) && !uninitObject->isReadyForUninit())
+         {
+             // mark this as ready for uninit
+             uninitObject->setReadyForUninit();
