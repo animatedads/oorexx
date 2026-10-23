@@ -11,6 +11,9 @@ h = .Hider~new
 say h~describe h~self.describe h~isEmpty
 say .Term~kind (.Term~table == .Term~new~table) (t~table == l~table) t~table~class~id
 say t~sum t~text t~"quoted name" t~"Quoted Name"
+/* Josep Maria Blasco's case: a constant in a subclass hides an inherited attribute (Inserted.Semicolon~value) */
+say 'C (grandchild):' '['.C~new(1)~value']'
+say 'D (child)     :' '['.D~new(1)~value']'
 signal on syntax
 say t~kind('extra')
 exit
@@ -38,3 +41,15 @@ exit
 ::constant describe 'hidden'
 ::method self.describe
   return self~describe
+::class A
+::attribute value
+::method init
+  use strict arg x
+::class B subclass A
+::class C subclass B
+::constant value ";"
+::method init
+  use strict arg x
+  self~init:super(x)
+::class D subclass A
+::constant value "."

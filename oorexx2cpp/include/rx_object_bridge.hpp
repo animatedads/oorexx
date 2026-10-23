@@ -797,6 +797,8 @@ struct EnvObject final : ObjectDispatch {
     MessageResult sendMessage(const std::string &selector, const std::vector<Value> &args) override {
         if (!selector.empty() && selector[0] == '[') if (auto fast = arrayAccess(selector, args)) return *fast;
         if (trappedSendHook()) if (auto trapped = trappedSendHook()(handle, selector, args)) return *trapped;
+        // .nil~isNil: Object's ISNIL (RexxObject::isNilRexx), the interpreter's .NIL itself
+        if (args.empty() && selector.size() == 5 && rx::eqLit(selector, "ISNIL") && isNilObject()) return Value::string("1");
         // routine~CALL / ~CALLWITH of a routine compiled in this library: run it here (routineCallHook), its arguments
         // staying native (no interpreter frame, no interpreter copy of an argument array)
         if (routineCallHook() && (selector.size() == 4 || selector.size() == 8) &&
