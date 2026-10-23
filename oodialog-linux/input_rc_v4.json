@@ -1,0 +1,181 @@
+{
+   "diagnostics": [],
+   "directives": [
+      {
+         "kind": "directive",
+         "line": 1,
+         "raw": "#define IDD_PANEL 700"
+      },
+      {
+         "kind": "directive",
+         "line": 2,
+         "raw": "#define IDC_NAME 701"
+      },
+      {
+         "kind": "directive",
+         "line": 3,
+         "raw": "#define IDC_ALIAS IDC_NAME"
+      },
+      {
+         "kind": "directive",
+         "line": 4,
+         "raw": "#define IDM_CLOSE 702"
+      },
+      {
+         "kind": "directive",
+         "line": 5,
+         "raw": "#define TEMP 777"
+      },
+      {
+         "kind": "directive",
+         "line": 6,
+         "raw": "#undef TEMP"
+      }
+   ],
+   "format": "windows-rc-json-v4",
+   "lines": [
+      "#define IDD_PANEL 700",
+      "#define IDC_NAME 701",
+      "#define IDC_ALIAS IDC_NAME",
+      "#define IDM_CLOSE 702",
+      "#define TEMP 777",
+      "#undef TEMP",
+      "IDD_PANEL DIALOGEX 0, 0, 220, 90",
+      "CAPTION \"Tools, Settings\"",
+      "BEGIN",
+      "    LTEXT \"Name, address\", IDC_ALIAS, 10, 10, 120, 10",
+      "    EDITTEXT IDC_NAME, 10, 30, 120, 12",
+      "END",
+      "IDR_MENU MENU",
+      "BEGIN",
+      "    POPUP \"&File\"",
+      "    BEGIN",
+      "        MENUITEM \"Close\", IDM_CLOSE",
+      "    END",
+      "END",
+      "STRINGTABLE",
+      "BEGIN",
+      "    IDS_NAME \"Name, address\"",
+      "END"
+   ],
+   "resources": [
+      {
+         "closer": "END",
+         "endLine": 12,
+         "entries": [
+            {
+               "kind": "property",
+               "line": 8,
+               "name": "CAPTION",
+               "raw": "CAPTION \"Tools, Settings\"",
+               "value": "\"Tools, Settings\""
+            },
+            {
+               "arguments": [
+                  "\"Name, address\"",
+                  "IDC_ALIAS",
+                  10,
+                  10,
+                  120,
+                  10
+               ],
+               "controlType": "LTEXT",
+               "kind": "control",
+               "line": 10,
+               "raw": "LTEXT \"Name, address\", IDC_ALIAS, 10, 10, 120, 10",
+               "resolvedControlId": 701
+            },
+            {
+               "arguments": [
+                  "IDC_NAME",
+                  10,
+                  30,
+                  120,
+                  12
+               ],
+               "controlType": "EDITTEXT",
+               "kind": "control",
+               "line": 11,
+               "raw": "EDITTEXT IDC_NAME, 10, 30, 120, 12",
+               "resolvedControlId": 701
+            }
+         ],
+         "id": "IDD_PANEL",
+         "kind": "resource",
+         "line": 7,
+         "opener": "BEGIN",
+         "parameters": "0, 0, 220, 90",
+         "raw": "IDD_PANEL DIALOGEX 0, 0, 220, 90",
+         "resolvedId": 700,
+         "type": "DIALOGEX"
+      },
+      {
+         "closer": "END",
+         "endLine": 19,
+         "entries": [
+            {
+               "arguments": [
+                  "\"&File\""
+               ],
+               "closer": "END",
+               "endLine": 18,
+               "entries": [
+                  {
+                     "arguments": [
+                        "\"Close\"",
+                        "IDM_CLOSE"
+                     ],
+                     "itemType": "MENUITEM",
+                     "kind": "menuItem",
+                     "line": 17,
+                     "raw": "MENUITEM \"Close\", IDM_CLOSE",
+                     "resolvedCommandId": 702
+                  }
+               ],
+               "itemType": "POPUP",
+               "kind": "menuItem",
+               "line": 15,
+               "opener": "BEGIN",
+               "raw": "POPUP \"&File\""
+            }
+         ],
+         "id": "IDR_MENU",
+         "kind": "resource",
+         "line": 13,
+         "opener": "BEGIN",
+         "parameters": "",
+         "raw": "IDR_MENU MENU",
+         "resolvedId": "IDR_MENU",
+         "type": "MENU"
+      },
+      {
+         "closer": "END",
+         "endLine": 23,
+         "entries": [
+            {
+               "id": "IDS_NAME",
+               "kind": "string",
+               "line": 22,
+               "raw": "IDS_NAME \"Name, address\"",
+               "resolvedId": "IDS_NAME",
+               "value": "\"Name, address\""
+            }
+         ],
+         "id": "",
+         "kind": "resource",
+         "line": 20,
+         "opener": "BEGIN",
+         "parameters": "",
+         "raw": "STRINGTABLE",
+         "type": "STRINGTABLE"
+      }
+   ],
+   "source": "\/mnt\/data\/rc_to_json_v4_regression.rc",
+   "symbols": {
+      "IDC_ALIAS": "IDC_NAME",
+      "IDC_NAME": 701,
+      "IDD_PANEL": 700,
+      "IDM_CLOSE": 702
+   },
+   "unclassified": []
+}
