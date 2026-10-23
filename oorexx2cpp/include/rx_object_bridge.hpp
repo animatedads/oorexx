@@ -411,6 +411,9 @@ inline std::string interpreterVersion() {
     return version;
 }
 inline void bifStat(const std::string &name);
+// RX2CPP_BIF_STATS: a native instance whose interpreter object was just made to be an argument (named with the send it
+// goes to)
+inline thread_local std::string pendingArgumentStat;
 inline bool send(void *target, const std::string &selector, const std::vector<Arg> &args, Result &out,
                  std::string &code, std::string &text) {
     RexxThreadContext *t = need();
@@ -420,6 +423,7 @@ inline bool send(void *target, const std::string &selector, const std::vector<Ar
         // A class object: name the class itself (.Directory~new, .MathInteger~coerce, ...).
         if (cls == "The Class class") cls = std::string("class ") + t->ObjectToStringValue(t->SendMessage0((RexxObjectPtr)target, "ID"));
         bifStat("~" + selector + " to " + cls);
+        if (!pendingArgumentStat.empty()) { bifStat(pendingArgumentStat + " to ~" + selector + " to " + cls); pendingArgumentStat.clear(); }
         // RX2CPP_TRAP_SEND="~NEW to class X": stop in the debugger at that send (where does it come from?).
         static const char *trap = std::getenv("RX2CPP_TRAP_SEND");
         if (trap && ("~" + selector + " to " + cls) == trap) std::raise(SIGTRAP);

@@ -302,6 +302,9 @@
       else source = source || '::constant ' || constant[1]
       if constant[2] \== '' then source = source || ' ' || constant[2]
       source = source || '0a'x
+      /* compiled code answers it with the interpreter's value, asked once (MethodInfo::constant), and it hides an
+         inherited method of the same name as the interpreter's own constant method does */
+      if \classSide then resolved[constant[1]~upper] = name 1 0 'C'
     end
     if \classSide then do
       tables[name] = resolved
@@ -418,7 +421,9 @@
     t = tables[cn]
     do key over t~allIndexes
       parts = t[key]
-      direct = direct || '      {' || .RxQuote~cpp(key) || ', {' || .RxQuote~cpp(parts~word(1)) || ', ' || self~cppBool(parts~word(2)) || ', ' || self~cppBool(parts~word(3)) || '}},' || '0a'x
+      constantFlag = ''
+      if parts~word(4) == 'C' then constantFlag = ', true'
+      direct = direct || '      {' || .RxQuote~cpp(key) || ', {' || .RxQuote~cpp(parts~word(1)) || ', ' || self~cppBool(parts~word(2)) || ', ' || self~cppBool(parts~word(3)) || constantFlag || '}},' || '0a'x
     end
     direct = direct || '    }},' || '0a'x
   end

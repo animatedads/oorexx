@@ -108,7 +108,8 @@ static std::shared_ptr<CompiledObject> create(const std::string &className) {
 struct PendingCondition : std::runtime_error {
     PendingCondition() : std::runtime_error("ooRexx condition pending") {}
 };
-struct MethodInfo { const char *definingClass; bool isPublic; bool noResult; };
+// constant: a ::CONSTANT of definingClass (its value is the interpreter's: constantValue)
+struct MethodInfo { const char *definingClass; bool isPublic; bool noResult; bool constant = false; };
 /* Selector and class names are case-insensitive in ooRexx; the tables hold the upper-case spelling and are searched without
    making an upper-case copy of the incoming name. */
 // (ASCII upper case, inline: what std::toupper does to a symbol's characters in the C locale, without a library call
@@ -546,7 +547,7 @@ public:
     NativeInstanceRef &operator=(const NativeInstanceRef &) = delete;
     void *materialize() override {
         static const bool sendStats = std::getenv("RX2CPP_BIF_STATS") != nullptr;
-        if (sendStats && !(st_->alive && st_->handle)) rxobj::bifStat("materialize " + st_->dynamicClass + " as an argument");
+        if (sendStats && !(st_->alive && st_->handle)) rxobj::pendingArgumentStat = "materialize " + st_->dynamicClass + " as an argument";
         return materializeState(st_);
     }
     rx::MessageResult sendMessage(const std::string &selector, const std::vector<rx::Value> &args) override {
@@ -649,9 +650,36 @@ public:
         return r->bytes;
     }
 };
+/* The value of a ::CONSTANT of a class of this library: the interpreter evaluated it when the package was installed
+   (the declaration package has the directive as written); its class object answers the same value (a constant is a
+   method of the class and of its instances). Asked once: the value never changes. */
+rx::Value constantValue(const char *definingClass, const std::string &selector) {
+    static std::mutex gate;
+    static std::map<std::pair<std::string, std::string>, rx::Value> known;
+    const auto key = std::make_pair(std::string(definingClass), selector);
+    { std::lock_guard<std::mutex> lock(gate); auto it = known.find(key); if (it != known.end()) return it->second; }
+    void *cls = rxobj::findClass(definingClass);
+    if (!cls) throw std::runtime_error(std::string("native class is not registered: ") + definingClass);
+    rxobj::Result r; std::string code, text;
+    const bool ok = rxobj::send(cls, selector, {}, r, code, text);
+    rxobj::release(cls);
+    if (!ok) throw rx::SyntaxCondition(code, text, false);
+    if (r.kind == 0) throw std::runtime_error("constant without a value: " + selector);
+    rx::Value v = rx::EnvObject::wrap(r);
+    std::lock_guard<std::mutex> lock(gate);
+    return known.emplace(key, v).first->second;
+}
 std::optional<rx::Value> runNative(const std::shared_ptr<InstanceState> &st, Resolved &method,
                                    const std::vector<std::optional<rx::Value>> &args) {
     const MethodInfo &info = method.second;
+    if (info.constant) {
+        if (!args.empty()) {   // (the interpreter's error)
+            std::vector<rx::Value> values;
+            for (const auto &a : args) values.push_back(a ? *a : rx::omittedArgument());
+            return interpreterSend(st, method.first, values);
+        }
+        return constantValue(info.definingClass, method.first);
+    }
     auto obj = st->at(info.definingClass);
     std::lock_guard<ScopeLock> hold(obj->scope_lock);
     NativeFrame frame(st, info.definingClass, args);
