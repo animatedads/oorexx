@@ -398,6 +398,9 @@ void *materializeState(const std::shared_ptr<InstanceState> &st, ProxyHold *hold
 std::optional<rx::Value> interpreterSend(const std::shared_ptr<InstanceState> &st, const std::string &selector,
                                          const std::vector<rx::Value> &args) {
     ProxyHold hold;
+    // RX2CPP_BIF_STATS: which message makes a native instance's interpreter object
+    static const bool sendStats = std::getenv("RX2CPP_BIF_STATS") != nullptr;
+    if (sendStats && !(st->alive && st->handle)) rxobj::bifStat("materialize " + st->dynamicClass + " for ~" + selector);
     void *h = materializeState(st, &hold);
     std::vector<rxobj::Arg> in; rx::EnvObject::convert(args, in);
     rxobj::Result r; std::string code, text;
@@ -541,7 +544,11 @@ public:
     }
     NativeInstanceRef(const NativeInstanceRef &) = delete;
     NativeInstanceRef &operator=(const NativeInstanceRef &) = delete;
-    void *materialize() override { return materializeState(st_); }
+    void *materialize() override {
+        static const bool sendStats = std::getenv("RX2CPP_BIF_STATS") != nullptr;
+        if (sendStats && !(st_->alive && st_->handle)) rxobj::bifStat("materialize " + st_->dynamicClass + " as an argument");
+        return materializeState(st_);
+    }
     rx::MessageResult sendMessage(const std::string &selector, const std::vector<rx::Value> &args) override {
         if (Resolved *method = lookupMethod(*st_, selector)) {
             if (method->second.isPublic || privateAllowedFor(st_.get(), method->second)) return runNative(st_, *method, optionalsOf(args));
