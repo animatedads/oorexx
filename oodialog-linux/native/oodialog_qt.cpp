@@ -51,14 +51,17 @@ void callListener(int id, const char* name) {
   PyObject* callback = callbacks.value(key(id, QString::fromLatin1(name)), nullptr);
   if (!callback) return;
   // A callback is synchronous and executed on the Python/Qt owner thread.
+  Py_INCREF(callback); // Retain across reentrant listener replacement/removal.
   PyObject* result = PyObject_CallFunction(callback, "is", id, name);
   if (!result) {
     // GUI event callbacks cannot propagate through the Qt signal ABI.
     // Report through Python's unraisable hook rather than silently clearing it.
     PyErr_WriteUnraisable(callback);
+    Py_DECREF(callback);
     return;
   }
   Py_XSETREF(lastResult, result); // Own the return for explicit inspection.
+  Py_DECREF(callback);
 }
 PyObject* openDialog(PyObject*, PyObject* args) {
   const char* title = "ooDialog Linux";
@@ -128,6 +131,24 @@ PyObject* bind(PyObject*, PyObject* args) {
   callbacks.insert(eventKey,listener);
   Py_XDECREF(previous);
   Py_RETURN_NONE;
+}
+PyObject* unbind(PyObject*, PyObject* args) {
+  int id;
+  const char* eventName;
+  if (!PyArg_ParseTuple(args, "is", &id, &eventName)) return nullptr;
+  if (!owner()) return nullptr;
+  const QString eventKey = key(id, QString::fromUtf8(eventName));
+  auto it = callbacks.find(eventKey);
+  if (it == callbacks.end()) Py_RETURN_FALSE;
+  PyObject* previous = it.value();
+  callbacks.erase(it);
+  Py_DECREF(previous);
+  Py_RETURN_TRUE;
+}
+PyObject* listenerCount(PyObject*, PyObject* args) {
+  if (!PyArg_ParseTuple(args, "")) return nullptr;
+  if (!owner()) return nullptr;
+  return PyLong_FromSsize_t(callbacks.size());
 }
 PyObject* addCheckBox(PyObject*, PyObject* args) {
   int id,x,y,w,h;
@@ -233,6 +254,8 @@ PyMethodDef methods[] = {
   {"add_button",addButton,METH_VARARGS,"Add button (id,text,x,y,width,height)."},
   {"add_edit",addEdit,METH_VARARGS,"Add edit (id,text,x,y,width,height)."},
   {"bind",bind,METH_VARARGS,"Bind listener(id, eventName, callable) to a control."},
+  {"unbind",unbind,METH_VARARGS,"Remove an event listener; return whether one existed."},
+  {"listener_count",listenerCount,METH_VARARGS,"Inspect registered listener count."},
   {"add_checkbox",addCheckBox,METH_VARARGS,"Add checkbox (id,text,x,y,width,height)."},
   {"add_label",addLabel,METH_VARARGS,"Add label (id,text,x,y,width,height)."},
   {"add_combo",addCombo,METH_VARARGS,"Add combo box (id,x,y,width,height)."},
