@@ -1,0 +1,13 @@
+{
+  "schema": "oodialog.resource.model/0.1-proposal",
+  "dialog": {
+    "id": "IDD_EXAMPLE",
+    "title": "Imported test dialog",
+    "width": 280,
+    "height": 120,
+    "controls": [
+      {"id": 101, "symbol": "IDC_SAVE", "type": "PUSHBUTTON", "text": "Save", "x": 10, "y": 10, "width": 70, "height": 14, "style": "WS_TABSTOP"},
+      {"id": 102, "symbol": "IDC_TEXT", "type": "EDIT", "text": "initial", "x": 10, "y": 30, "width": 160, "height": 14, "style": "ES_AUTOHSCROLL"}
+    ]
+  }
+}
