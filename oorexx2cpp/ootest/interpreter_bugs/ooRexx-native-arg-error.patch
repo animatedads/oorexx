@@ -1,0 +1,46 @@
+diff --git a/interpreter/execution/NativeActivation.cpp b/interpreter/execution/NativeActivation.cpp
+index fb868e6..634ac9f 100644
+--- a/interpreter/execution/NativeActivation.cpp
++++ b/interpreter/execution/NativeActivation.cpp
+@@ -1293,14 +1293,16 @@ void NativeActivation::run(MethodClass *_method, NativeMethod *_code, RexxObject
+     // get the entry point address of the target method
+     PNATIVEMETHOD methp = _code->getEntry();
+ 
+-    // retrieve the argument signatures and process them
+-    uint16_t *types = (*methp)((RexxMethodContext *)&context, NULL);
+-    processArguments(argCount, argList, types, arguments, MaxNativeArguments);
+-
+     size_t activityLevel = activity->getActivationLevel();
+     trapErrors = true;                       // we trap errors from here
+     try
+     {
++        // retrieve the argument signatures and process them. An argument error is trapped here like any other
++        // error of this activation (and raised again by checkConditions() after the cleanup below): raised outside
++        // the try, it left this activation on the stack with argList pointing at an unwound C stack when the caller
++        // was native code (wrong CheckCondition() in the caller, then a crash in the next garbage collection).
++        uint16_t *types = (*methp)((RexxMethodContext *)&context, NULL);
++        processArguments(argCount, argList, types, arguments, MaxNativeArguments);
+         activity->releaseAccess();           /* force this to "safe" mode         */
+         /* process the method call           */
+         (*methp)((RexxMethodContext *)&context, arguments);
+@@ -1408,14 +1410,16 @@ void NativeActivation::callNativeRoutine(RoutineClass *_routine, NativeRoutine *
+     // get the entry point address of the target method
+     PNATIVEROUTINE methp = _code->getEntry();
+ 
+-    // retrieve the argument signatures and process them
+-    uint16_t *types = (*methp)((RexxCallContext *)&context, NULL);
+-    processArguments(argCount, argList, types, arguments, MaxNativeArguments);
+-
+     size_t activityLevel = activity->getActivationLevel();
+     trapErrors = true;                       // we trap error conditions now
+     try
+     {
++        // retrieve the argument signatures and process them. An argument error is trapped here like any other
++        // error of this activation (and raised again by checkConditions() after the cleanup below): raised outside
++        // the try, it left this activation on the stack with argList pointing at an unwound C stack when the caller
++        // was native code (wrong CheckCondition() in the caller, then a crash in the next garbage collection).
++        uint16_t *types = (*methp)((RexxCallContext *)&context, NULL);
++        processArguments(argCount, argList, types, arguments, MaxNativeArguments);
+         enableVariablepool();                // enable the variable pool interface here
+         activity->releaseAccess();           // force this to "safe" mode
+                                              // process the method call

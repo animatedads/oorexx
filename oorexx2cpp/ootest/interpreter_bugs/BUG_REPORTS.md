@@ -2,7 +2,9 @@
 
 Status (2026-10-23, checked against trunk r13284 through the GitHub mirror, ooRexx/oorexx a4210fc):
 - Bug 1: fixed upstream in r13257 (bug #2100, "ReleaseGlobalReference never releases": the same one-line fix as ours).
-- Bug 2: still present in trunk r13284 (NativeActivation::run / callNativeRoutine unchanged). To be filed.
+- Bug 2: still present in trunk r13284 (NativeActivation::run / callNativeRoutine unchanged). To be filed:
+  `TICKET_bug2.md`, patch `ooRexx-native-arg-error.patch` (applies to a4210fc; verified on a trunk build: unpatched
+  segfault 3/3, patched CheckCondition=1 and no crash 3/3).
 - Issue 3: fixed upstream in r13267 (bug #2106, "Linux: entering the interpreter is slow (pthread_getattr_np)": a
   thread_local cache in currentThreadStack; stackbench 1.7 us per call on the r13271 portable build). Not to be filed.
 - Bug 4: fixed upstream in r13284 (bug #2120, "SysStemSort crashes when its error is not trapped").
