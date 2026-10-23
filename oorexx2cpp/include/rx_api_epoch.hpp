@@ -34,10 +34,10 @@ inline void interpreterChanged() { interpreterEpochCounter().fetch_add(1, std::m
     X(IsDirectory) X(ArrayAt) X(ArraySize) X(ArrayItems) X(ArrayDimension) X(NewArray) X(ArrayOfOne) X(ArrayOfTwo) \
     X(ArrayOfThree) X(ArrayOfFour) X(IsArray) X(BufferData) X(BufferLength) X(NewBuffer) X(IsBuffer) X(PointerValue) \
     X(NewPointer) X(IsPointer) X(IsStem) X(CheckCondition) X(IsMutableBuffer) X(MutableBufferData) \
-    X(MutableBufferLength) X(MutableBufferCapacity) X(IsVariableReference) X(NewStringTable) \
+    X(MutableBufferLength) X(MutableBufferCapacity) X(IsVariableReference) X(StringTableAt) X(NewStringTable) \
     X(IsStringTable) X(GetInterpreterInstance) X(NewMutableBuffer) X(VariableReferenceName)
 // Everything else: may run Rexx code (sends, calls, package loading, string and number conversions of objects; a
-// Directory's get runs an entry's SETMETHOD method or its UNKNOWN method: DirectoryAt, StringTableAt),
+// Directory's get runs an entry's SETMETHOD method or its UNKNOWN method: DirectoryAt; a StringTable has neither),
 // change a collection, a stem or a variable, let another thread run, or is not worth proving pure.
 #define RX_API_BUMPS(X) \
     X(DetachThread) X(HaltThread) X(SetThreadTrace) X(SendMessage) X(SendMessage0) X(SendMessage1) X(SendMessage2) \
@@ -47,7 +47,7 @@ inline void interpreterChanged() { interpreterEpochCounter().fetch_add(1, std::m
     X(GetMethodPackage) X(ObjectToCSelf) X(ValueToObject) X(ValuesToObject) X(ObjectToValue) X(ObjectToWholeNumber) \
     X(ObjectToStringSize) X(ObjectToInt64) X(ObjectToUnsignedInt64) X(ObjectToInt32) X(ObjectToUnsignedInt32) \
     X(ObjectToUintptr) X(ObjectToIntptr) X(ObjectToLogical) X(ObjectToDouble) X(ObjectToString) X(ObjectToStringValue) \
-    X(FinishBufferString) X(DirectoryAt) X(StringTableAt) X(DirectoryPut) X(DirectoryRemove) X(ArrayPut) X(ArrayAppend) X(ArrayAppendString) \
+    X(FinishBufferString) X(DirectoryAt) X(DirectoryPut) X(DirectoryRemove) X(ArrayPut) X(ArrayAppend) X(ArrayAppendString) \
     X(SupplierItem) X(SupplierIndex) X(SupplierAvailable) X(SupplierNext) X(NewSupplier) X(NewStem) X(SetStemElement) \
     X(GetStemElement) X(DropStemElement) X(SetStemArrayElement) X(GetStemArrayElement) X(DropStemArrayElement) \
     X(GetAllStemElements) X(GetStemValue) X(RaiseException0) X(RaiseException1) X(RaiseException2) X(RaiseException) \

@@ -207,6 +207,39 @@ inline void *findClass(const std::string &name) {
     return h;
 }
 // .LOCAL / .ENVIRONMENT are environment directories, not classes.
+// The part of PackageClass::findClass whose answer the interpreter keeps for a .NAME (cachedValue): a class of the
+// package (installed, installed public), one a required package made public (merged), or a public class of the REXX
+// package. Asked of the collections the package answers (CLASSES, PUBLICCLASSES, IMPORTEDCLASSES): no environment
+// directory is read (their entries, and a Directory's SETMETHOD entry or UNKNOWN method, are the dynamic part).
+inline void *packageClass(const std::string &name) {
+    RexxThreadContext *t = need();
+    LocalRefs temps(t);
+    auto at = [&](RexxObjectPtr owner, const char *selector) -> RexxObjectPtr {
+        if (owner == NULLOBJECT) return NULLOBJECT;
+        RexxObjectPtr table = temps(t->SendMessage0(owner, selector));
+        if (t->CheckCondition()) { t->ClearCondition(); return NULLOBJECT; }
+        if (table == NULLOBJECT || table == t->Nil()) return NULLOBJECT;
+        RexxObjectPtr v = temps(t->SendMessage1(table, "[]", temps((RexxObjectPtr)t->String(name.c_str()))));
+        if (t->CheckCondition()) { t->ClearCondition(); return NULLOBJECT; }
+        return v == t->Nil() ? NULLOBJECT : v;
+    };
+    RexxObjectPtr pkg = libraryPackage();
+    RexxObjectPtr c = at(pkg, "CLASSES");
+    if (c == NULLOBJECT) c = at(pkg, "PUBLICCLASSES");
+    if (c == NULLOBJECT) c = at(pkg, "IMPORTEDCLASSES");
+    if (c == NULLOBJECT) {
+        static thread_local RexxObjectPtr rexxPackage = NULLOBJECT;
+        if (rexxPackage == NULLOBJECT) {
+            RexxObjectPtr object = temps((RexxObjectPtr)t->FindClass("OBJECT"));
+            RexxObjectPtr p = object == NULLOBJECT ? NULLOBJECT : temps(t->SendMessage0(object, "PACKAGE"));
+            if (t->CheckCondition()) t->ClearCondition();
+            else if (p != NULLOBJECT && p != t->Nil()) rexxPackage = pinRef(t, p);
+        }
+        c = at(rexxPackage, "PUBLICCLASSES");
+    }
+    if (c == NULLOBJECT) return nullptr;
+    return (void *)pinRef(t, c);
+}
 inline void *environmentObject(const std::string &name) {
     RexxThreadContext *t = need();
     RexxObjectPtr d = NULLOBJECT;
@@ -257,9 +290,64 @@ inline void *environmentEntry(const std::string &name) {
 // environmentEntry's lookup without its per-call costs: the three directories (the package's LOCAL, .local,
 // .environment) are found once per thread and kept; DirectoryAt is the interpreter's own get(), as
 // PackageClass::findClass does. Answers a local reference (the caller releases it), or NULLOBJECT.
-inline RexxObjectPtr environmentLookup(RexxThreadContext *t, const std::string &name) {
-    struct Dirs { RexxDirectoryObject pkg = NULLOBJECT, local = NULLOBJECT, global = NULLOBJECT; bool pkgDone = false; };
-    static thread_local Dirs d;
+struct EnvDirs { RexxDirectoryObject pkg = NULLOBJECT, local = NULLOBJECT, global = NULLOBJECT; bool pkgDone = false; };
+inline EnvDirs &envDirs() { static thread_local EnvDirs d; return d; }
+// Does this Directory have SETMETHOD entries or an UNKNOWN method (DirectoryClass::methodTable, ::unknownMethod)? Its
+// get() runs them, so a value read from it may be computed every time. The two fields are found once by comparing
+// Directories made for the purpose (none, a SETMETHOD entry, an UNKNOWN method) and checked again after UNSETMETHOD of
+// the UNKNOWN; when they cannot be found exactly the answer is always true (nothing is kept). A methodTable once made
+// stays (empty) after UNSETMETHOD: still true, the safe side.
+struct DirectoryFields { int methodTable = -1, unknownMethod = -1; bool known = false; };
+inline DirectoryFields &directoryFields(RexxThreadContext *t) {
+    static DirectoryFields f;
+    if (f.known) return f;
+    f.known = true;
+    constexpr int words = 8;
+    auto make = [&](const char *selector, const char *name) -> RexxObjectPtr {
+        RexxObjectPtr d = (RexxObjectPtr)t->NewDirectory();
+        if (d == NULLOBJECT) return NULLOBJECT;
+        d = pinRef(t, d);
+        if (selector) {
+            RexxObjectPtr src = (RexxObjectPtr)t->String("return 1");
+            t->SendMessage2(d, selector, (RexxObjectPtr)t->String(name), src);
+            if (t->CheckCondition()) { t->ClearCondition(); return NULLOBJECT; }
+        }
+        return d;
+    };
+    RexxObjectPtr none1 = make(nullptr, nullptr), none2 = make(nullptr, nullptr);
+    RexxObjectPtr method1 = make("SETMETHOD", "X"), method2 = make("SETMETHOD", "Y");
+    RexxObjectPtr unknown1 = make("SETMETHOD", "UNKNOWN"), unknown2 = make("SETMETHOD", "UNKNOWN");
+    if (!none1 || !none2 || !method1 || !method2 || !unknown1 || !unknown2) return f;
+    auto word = [](RexxObjectPtr o, int i) { return reinterpret_cast<void *const *>(o)[i]; };
+    int mt = -1, um = -1, mtCount = 0, umCount = 0;
+    for (int i = 0; i < words; ++i) {
+        const bool noneZero = !word(none1, i) && !word(none2, i);
+        if (noneZero && word(method1, i) && word(method2, i) && !word(unknown1, i) && !word(unknown2, i)) { mt = i; ++mtCount; }
+        if (noneZero && !word(method1, i) && !word(method2, i) && word(unknown1, i) && word(unknown2, i)) { um = i; ++umCount; }
+    }
+    if (mtCount != 1 || umCount != 1 || um != mt + 1) return f;   // (declared one after the other)
+    t->SendMessage1(unknown1, "UNSETMETHOD", (RexxObjectPtr)t->String("UNKNOWN"));
+    if (t->CheckCondition()) { t->ClearCondition(); return f; }
+    if (word(unknown1, um)) return f;
+    f.methodTable = mt; f.unknownMethod = um;
+    return f;
+}
+inline bool directoryComputesEntries(RexxThreadContext *t, RexxDirectoryObject d) {
+    if (d == NULLOBJECT) return false;
+    const DirectoryFields &f = directoryFields(t);
+    if (f.methodTable < 0) return true;
+    auto word = [&](int i) { return reinterpret_cast<void *const *>(d)[i]; };
+    return word(f.methodTable) != nullptr || word(f.unknownMethod) != nullptr;
+}
+// The three directories of an environment symbol answer only their own entries (no SETMETHOD entry, no UNKNOWN):
+// a value found there stays the same while the interpreter epoch does not move.
+inline EnvDirs &findEnvDirs(RexxThreadContext *t);
+inline bool environmentEntriesOnly(RexxThreadContext *t) {
+    EnvDirs &d = findEnvDirs(t);
+    return !directoryComputesEntries(t, d.pkg) && !directoryComputesEntries(t, d.local) && !directoryComputesEntries(t, d.global);
+}
+inline EnvDirs &findEnvDirs(RexxThreadContext *t) {
+    EnvDirs &d = envDirs();
     if (!d.pkgDone && libraryPackage() != NULLOBJECT) {
         d.pkgDone = true;
         RexxObjectPtr l = t->SendMessage0(libraryPackage(), "LOCAL");
@@ -273,6 +361,10 @@ inline RexxObjectPtr environmentLookup(RexxThreadContext *t, const std::string &
         RexxObjectPtr g = (RexxObjectPtr)t->GetGlobalEnvironment();
         d.global = (RexxDirectoryObject)pinRef(t, g); t->ReleaseLocalReference(g);
     }
+    return d;
+}
+inline RexxObjectPtr environmentLookup(RexxThreadContext *t, const std::string &name) {
+    EnvDirs &d = findEnvDirs(t);
     RexxObjectPtr o = NULLOBJECT;
     if (d.pkg != NULLOBJECT) o = t->DirectoryAt(d.pkg, name.c_str());
     if (o == NULLOBJECT && d.local != NULLOBJECT) o = t->DirectoryAt(d.local, name.c_str());
@@ -1665,7 +1757,11 @@ inline Value envValue(EnvName &e) {
     const std::string &name = e.name;
     if (e.state == 0) {
         if (packageClassHook) if (auto v = packageClassHook(name)) { e.value = *v; e.state = 1; return e.value; }
+#ifdef RX2CPP_HOST_API
+        void *h = (rx::eqLit(name, "LOCAL") || rx::eqLit(name, "ENVIRONMENT")) ? rxobj::environmentObject(name) : rxobj::packageClass(name);
+#else
         void *h = (rx::eqLit(name, "LOCAL") || rx::eqLit(name, "ENVIRONMENT")) ? rxobj::environmentObject(name) : rxobj::findClass(name);
+#endif
         if (h) { e.value = Value::fromObject(std::make_shared<EnvObject>(h)); e.state = 1; return e.value; }
         e.state = 2;
     }
@@ -1675,12 +1771,16 @@ inline Value envValue(EnvName &e) {
         return e.value;
     }
     RexxThreadContext *t = rxobj::need();
+    // Kept only when the three directories answer their own entries (rxobj::environmentEntriesOnly, asked before the
+    // lookup: no SETMETHOD entry or UNKNOWN method, whose value is computed at each read). The lookup's calls then run
+    // no Rexx code (DirectoryAt of entries, below the string value of a String and the pin table): the epoch read
+    // after them is the one the answer belongs to.
+    const bool keep = rxobj::environmentEntriesOnly(t);
     RexxObjectPtr o = rxobj::environmentLookup(t, name);
-    // (the lookup's own calls are pure: DirectoryAt, and below the string value of a String and the pin table; the
-    // epoch read after them is the one the answer belongs to)
-    if (o == NULLOBJECT) { e.unknown = true; e.epoch = rxobj::interpreterEpoch(); return Value::string("." + name); }   // an unknown environment symbol is its own name (.FOO)
+    auto remember = [&]() { e.epoch = keep ? rxobj::interpreterEpoch() : 0; };
+    if (o == NULLOBJECT) { e.unknown = true; remember(); return Value::string("." + name); }   // an unknown environment symbol is its own name (.FOO)
     e.unknown = false;
-    if ((void *)o == e.last) { t->ReleaseLocalReference(o); e.epoch = rxobj::interpreterEpoch(); return e.value; }
+    if ((void *)o == e.last) { t->ReleaseLocalReference(o); remember(); return e.value; }
     Value v = Value::string(std::string());
     if (rxobj::isPlainString(t, o)) {
         // A String entry (.local~v1 = 'a') is a string value in compiled code, as strings are everywhere.
@@ -1694,7 +1794,7 @@ inline Value envValue(EnvName &e) {
     e.last = kept;
     e.value = v;
     t->ReleaseLocalReference(o);
-    e.epoch = rxobj::interpreterEpoch();
+    e.epoch = keep ? rxobj::interpreterEpoch() : 0;
     return v;
 #else
     if (void *entry = rxobj::environmentEntry(name)) return Value::fromObject(std::make_shared<EnvObject>(entry));

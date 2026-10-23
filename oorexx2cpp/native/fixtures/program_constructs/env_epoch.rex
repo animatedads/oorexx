@@ -37,6 +37,28 @@ say .ee3
 .local~remove('EE1')
 .environment~remove('EE1')
 say .ee1
+/* a SETMETHOD entry and an UNKNOWN method run every time they are read, as interpreted: never kept */
+.environment['EECOUNTER'] = 0
+.local~setMethod('EECOUNT', "n = .environment['EECOUNTER'] + 1; .environment['EECOUNTER'] = n; return n")
+line = ''
+do i = 1 to 4
+  line = line .eecount
+end
+say 'method entry:' line
+.local~unsetMethod('EECOUNT')
+say .eecount .ee2
+.environment~setMethod('UNKNOWN', "use arg name; n = .environment['EECOUNTER'] + 1; .environment['EECOUNTER'] = n; if name = 'EEMISS' then return n")
+line = ''
+do i = 1 to 3
+  line = line .eemiss .ee2
+end
+say 'unknown:' line
+.environment~unsetMethod('UNKNOWN')
+line = ''
+do i = 1 to 3
+  line = line .eemiss .ee2
+end
+say 'unknown unset:' line
 exit
 ::class Worker
 ::method set
