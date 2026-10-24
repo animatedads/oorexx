@@ -396,6 +396,74 @@ inline std::size_t objectWords(RexxObjectPtr o) {
     if (bytes < 4 * sizeof(void *) || bytes > 65536 || bytes % sizeof(void *) != 0) return 0;
     return bytes / sizeof(void *);
 }
+// A result String's bytes without calls into the interpreter (ObjectToString, StringData, StringLength: each an API
+// context; with the release of ObjectToString's reference, a third of a message's cost): read where the String
+// keeps them (RexxString::length and ::stringData, StringClass.hpp; a String never changes and does not move). The
+// words are found once, by comparing Strings made for the purpose: the length word holds each one's length, the
+// bytes follow, and the behaviour word is the one every plain String shares and a String subclass's instance, a
+// Directory and an Array do not (an exact String: its methods the String class's own). Not found: the API's way.
+struct StringFields { int behaviourWord = -1, lengthWord = -1; std::size_t dataOffset = 0; void *behaviour = nullptr; bool known = false; };
+inline StringFields &stringFields(RexxThreadContext *t) {
+    static StringFields f;
+    if (f.known) return f;
+    f.known = true;
+    static const char *const texts[] = {"rx2cpp string probe ABCDEFGHIJKLMNOPQRSTUVWXYZ", "xy", "12345", "q r s t u v w"};
+    constexpr int count = 4;
+    RexxObjectPtr strings[count];
+    for (int i = 0; i < count; ++i) {
+        RexxObjectPtr o = (RexxObjectPtr)t->NewString(texts[i], std::strlen(texts[i]));
+        if (o == NULLOBJECT) return f;
+        strings[i] = pinRef(t, o);
+    }
+    RexxObjectPtr dir = pinRef(t, (RexxObjectPtr)t->NewDirectory());
+    RexxObjectPtr arr = pinRef(t, (RexxObjectPtr)t->NewArray(3));
+    static const char source[] = "return .rx2cppProbeString~new('abc')\n::class rx2cppProbeString subclass string\n";
+    RexxRoutineObject maker = internalRoutine(t, t->NewRoutine("rx2cpp_string_probe", source, sizeof(source) - 1));
+    RexxObjectPtr sub = maker == NULLOBJECT ? NULLOBJECT : t->CallRoutine(maker, t->NewArray(0));
+    if (t->CheckCondition() || sub == NULLOBJECT) { t->ClearCondition(); return f; }
+    sub = pinRef(t, sub);
+    auto word = [](RexxObjectPtr o, std::size_t i) { return reinterpret_cast<void *const *>(o)[i]; };
+    std::size_t size = std::min({objectWords(dir), objectWords(arr), objectWords(sub)});
+    for (RexxObjectPtr o : strings) size = std::min(size, objectWords(o));
+    if (size < 4) return f;
+    int lengthWord = -1, lengths = 0;
+    for (std::size_t i = 1; i < size; ++i) {
+        bool all = true;
+        for (int k = 0; k < count; ++k) all = all && reinterpret_cast<const std::size_t *>(strings[k])[i] == std::strlen(texts[k]);
+        if (all) { lengthWord = static_cast<int>(i); ++lengths; }
+    }
+    if (lengths != 1) { bifStat("string fields not found (length)"); return f; }
+    const std::size_t bytes0 = objectWords(strings[0]) * sizeof(void *), len0 = std::strlen(texts[0]);
+    std::size_t offset = 0;
+    for (std::size_t at = (lengthWord + 1) * sizeof(void *); at + len0 <= bytes0; ++at)
+        if (std::memcmp(reinterpret_cast<const char *>(strings[0]) + at, texts[0], len0) == 0) { offset = at; break; }
+    if (offset == 0) { bifStat("string fields not found (data)"); return f; }
+    for (int k = 1; k < count; ++k)
+        if (std::memcmp(reinterpret_cast<const char *>(strings[k]) + offset, texts[k], std::strlen(texts[k])) != 0) {
+            bifStat("string fields not found (data)"); return f;
+        }
+    int behaviourWord = -1;
+    for (std::size_t i = 1; i < static_cast<std::size_t>(lengthWord); ++i) {
+        void *w = word(strings[0], i);
+        if (!w) continue;
+        bool same = true;
+        for (int k = 1; k < count; ++k) same = same && word(strings[k], i) == w;
+        if (same && word(sub, i) != w && word(dir, i) != w && word(arr, i) != w) { behaviourWord = static_cast<int>(i); break; }
+    }
+    if (behaviourWord < 0) { bifStat("string fields not found (behaviour)"); return f; }
+    f.behaviourWord = behaviourWord; f.lengthWord = lengthWord; f.dataOffset = offset; f.behaviour = word(strings[0], behaviourWord);
+    bifStat("string fields " + std::to_string(behaviourWord) + "/" + std::to_string(lengthWord) + "/" + std::to_string(offset));
+    return f;
+}
+// An exact String's bytes, read in place (stringFields); false: not one, or not known (use the API).
+inline bool plainStringBytes(RexxThreadContext *t, RexxObjectPtr o, const char *&data, std::size_t &length) {
+    const StringFields &f = stringFields(t);
+    if (f.behaviourWord < 0 || o == NULLOBJECT) return false;
+    if (reinterpret_cast<void *const *>(o)[f.behaviourWord] != f.behaviour) return false;
+    length = reinterpret_cast<const std::size_t *>(o)[f.lengthWord];
+    data = reinterpret_cast<const char *>(o) + f.dataOffset;
+    return true;
+}
 struct DirectoryFields { int methodTable = -1, unknownMethod = -1; bool known = false; };
 inline DirectoryFields &directoryFields(RexxThreadContext *t) {
     static DirectoryFields f;
@@ -783,6 +851,13 @@ inline bool send(void *target, const std::string &selector, const std::vector<Ar
         return false;
     }
     if (r == NULLOBJECT) { out.kind = 0; return true; }
+    {
+        const char *data = nullptr; std::size_t length = 0;
+        if (plainStringBytes(t, r, data, length)) { out.kind = 1; out.bytes.assign(data, length); return true; }
+        // .true / .false (RexxInteger objects, the thread interface's own): their string values
+        if (r == t->True()) { out.kind = 1; out.bytes.assign("1", 1); return true; }
+        if (r == t->False()) { out.kind = 1; out.bytes.assign("0", 1); return true; }
+    }
     if (isPlainString(t, r)) {
         RexxStringObject str = (RexxStringObject)temps((RexxObjectPtr)t->ObjectToString(r));
         out.kind = 1; out.bytes.assign(t->StringData(str), t->StringLength(str));
@@ -1049,6 +1124,14 @@ struct EnvObject final : ObjectDispatch {
             RexxThreadContext *t = rxobj::need();
             RexxObjectPtr r = t->ArrayAt((RexxArrayObject)handle, index);
             if (r == NULLOBJECT) return std::nullopt;       // empty or beyond the end: the message answers .nil
+            {
+                const char *data = nullptr; std::size_t length = 0;
+                if (rxobj::plainStringBytes(t, r, data, length)) {
+                    Value v = Value::string(std::string(data, length));
+                    t->ReleaseLocalReference(r);
+                    return MessageResult(std::move(v));
+                }
+            }
             if (t->IsString(r)) {
                 Value v = Value::string(std::string(t->StringData((RexxStringObject)r), t->StringLength((RexxStringObject)r)));
                 t->ReleaseLocalReference(r);
@@ -2108,7 +2191,9 @@ inline std::optional<Value> envFind(EnvName &e) {
     e.unknown = false;
     if ((void *)o == e.last) { t->ReleaseLocalReference(o); remember(); return e.value; }
     Value v = Value::string(std::string());
-    if (rxobj::isPlainString(t, o)) {
+    const char *plainData = nullptr; std::size_t plainLength = 0;
+    if (rxobj::plainStringBytes(t, o, plainData, plainLength)) v = Value::string(std::string(plainData, plainLength));
+    else if (rxobj::isPlainString(t, o)) {
         // A String entry (.local~v1 = 'a') is a string value in compiled code, as strings are everywhere.
         RexxStringObject so = (RexxStringObject)t->ObjectToString(o);
         v = Value::string(std::string(t->StringData(so), t->StringLength(so)));

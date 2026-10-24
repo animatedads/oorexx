@@ -1683,6 +1683,7 @@ static void RexxEntry loadPackage(RexxThreadContext *ctx) {
     // and SETSECURITYMANAGER, protected methods a manager would be asked about.
     (void)rxobj::directoryFields(ctx);
     (void)rxobj::packageFields(ctx);
+    (void)rxobj::stringFields(ctx);
 #endif
     // Package scope as interpreted: the declaration packages of the rx2cpp libraries this one requires are imported, so
     // their public classes resolve before .LOCAL / .ENVIRONMENT (e.g. a public class ERROR before the .ERROR stream).
