@@ -756,6 +756,19 @@ public:
             runNative(st, *init, optionalsOf(args));
             return rx::Value::fromObject(std::make_shared<NativeInstanceRef>(st));
         }
+        // cls~sendWith('NEW', array) and cls~send('NEW', ...): Object's SENDWITH / SEND send that message with those
+        // arguments (RexxObject::sendWith): the NEW above, natively, when nothing is omitted (the Rexx Parser makes its
+        // expressions so: .Comparison.Expression~sendWith('new', ...)).
+        if (!classesChanged() && !args.empty() && !args[0].isObject() && same(args[0].bytes.str(), "NEW") &&
+            (same(selector, "SEND") || (same(selector, "SENDWITH") && args.size() == 2))) {
+            std::vector<rx::Value> newArgs;
+            bool plain = true;
+            if (same(selector, "SEND")) newArgs.assign(args.begin() + 1, args.end());
+            else if (auto *a = args[1].isObject() ? dynamic_cast<rx::NativeArray *>(args[1].object.get()) : nullptr; a && !a->real) {
+                for (const auto &slot : a->slots) { if (!slot) { plain = false; break; } newArgs.push_back(*slot); }
+            } else plain = false;
+            if (plain) return sendMessage("NEW", newArgs);
+        }
         if (same(selector, "NEW")) rx2cpp_class_stat(name_);
         return iclass().sendMessage(selector, args);
     }
