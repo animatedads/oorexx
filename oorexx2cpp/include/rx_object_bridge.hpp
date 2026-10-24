@@ -433,19 +433,31 @@ inline DirectoryFields &directoryFields(RexxThreadContext *t) {
     bifStat("directory fields " + std::to_string(mt) + "/" + std::to_string(um));
     return f;
 }
-inline bool directoryComputesEntries(RexxThreadContext *t, RexxDirectoryObject d) {
+// Would DirectoryClass::get of NAME from this Directory run code? get() answers an entry of its contents first; only
+// when there is none does it run a SETMETHOD entry of that name (methodTable), then the UNKNOWN method. So a NAME is
+// computed when the Directory has an UNKNOWN method, or a SETMETHOD entry of that very name. (.environment always has
+// one SETMETHOD entry, LOCAL: the interpreter's own ActivityManager::getLocalRexx, Setup.cpp; only .LOCAL is computed.)
+// StringTableAt is the method table's own get: no Rexx code. Fields not found: always computed (nothing is kept).
+inline bool directoryComputes(RexxThreadContext *t, RexxDirectoryObject d, const char *name) {
     if (d == NULLOBJECT) return false;
     const DirectoryFields &f = directoryFields(t);
     if (f.methodTable < 0) return true;
     auto word = [&](int i) { return reinterpret_cast<void *const *>(d)[i]; };
-    return word(f.methodTable) != nullptr || word(f.unknownMethod) != nullptr;
+    if (word(f.unknownMethod) != nullptr) return true;
+    void *methods = word(f.methodTable);
+    if (methods == nullptr) return false;
+    RexxObjectPtr m = t->StringTableAt((RexxStringTableObject)methods, name);
+    if (m == NULLOBJECT) return false;
+    t->ReleaseLocalReference(m);
+    return true;
 }
-// The three directories of an environment symbol answer only their own entries (no SETMETHOD entry, no UNKNOWN):
-// a value found there stays the same while the interpreter epoch does not move.
+// The three directories of an environment symbol answer NAME from their own entries (no SETMETHOD entry of that name,
+// no UNKNOWN method): a value found there stays the same while the interpreter epoch does not move.
 inline EnvDirs &findEnvDirs(RexxThreadContext *t);
-inline bool environmentEntriesOnly(RexxThreadContext *t) {
+inline bool environmentEntriesOnly(RexxThreadContext *t, const std::string &name) {
     EnvDirs &d = findEnvDirs(t);
-    return !directoryComputesEntries(t, d.pkg) && !directoryComputesEntries(t, d.local) && !directoryComputesEntries(t, d.global);
+    return !directoryComputes(t, d.pkg, name.c_str()) && !directoryComputes(t, d.local, name.c_str()) &&
+           !directoryComputes(t, d.global, name.c_str());
 }
 inline EnvDirs &findEnvDirs(RexxThreadContext *t) {
     EnvDirs &d = envDirs();
@@ -2073,14 +2085,14 @@ inline std::optional<Value> envFind(EnvName &e) {
         return e.value;
     }
     RexxThreadContext *t = rxobj::need();
-    // Kept only when the three directories answer their own entries (rxobj::environmentEntriesOnly, asked before the
+    // Kept only when the three directories answer this name from their entries (rxobj::environmentEntriesOnly, asked before the
     // lookup: no SETMETHOD entry or UNKNOWN method, whose value is computed at each read) and the package has no
     // security manager (asked at every lookup, as interpreted). The lookup's calls then run no Rexx code (DirectoryAt
     // of entries, below the string value of a String and the pin table): the epoch read after them is the one the
     // answer belongs to.
     RexxObjectPtr manager = NULLOBJECT;
     const int secured = rxobj::packageSecurityManager(t, rxobj::libraryPackage(), manager);
-    const bool keep = secured == 0 && rxobj::environmentEntriesOnly(t);
+    const bool keep = secured == 0 && rxobj::environmentEntriesOnly(t, name);
     // (kept: the lookup below runs no Rexx code, so it does not move the epoch either; otherwise every miss would throw
     // away the values other symbols keep, and interleaved symbols would never be answered from the cache)
     std::optional<rxobj::QuietEpoch> quiet;
