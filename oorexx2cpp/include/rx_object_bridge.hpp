@@ -1769,14 +1769,33 @@ inline Value libraryContext() { static const Value c = Value::fromObject(std::ma
 inline Value libraryContext(const char *sourcePath) { return Value::fromObject(std::make_shared<LibraryContext>(sourcePath)); }
 inline Value argumentArray(const std::vector<std::optional<Value>> &args);
 inline Value selfObject();
-// .METHODS in a native library: the floating methods of its package (PackageClass::getMethods, DEFINEDMETHODS).
-inline Value packageMethods() {
-    MessageResult pkg = libraryContext().object->sendMessage("PACKAGE", {});
-    if (!pkg) throw std::runtime_error(".METHODS: no package");
-    MessageResult methods = pkg->object->sendMessage("DEFINEDMETHODS", {});
-    if (!methods) throw std::runtime_error(".METHODS: no methods");
-    return *methods;
+// .METHODS / .ROUTINES / .RESOURCES in a native library (RexxActivation::rexxVariable: the package's own table,
+// settings.parentCode->getMethods() / getRoutines() / getResources(); the symbol's own name when the package has none).
+// The Package methods answer copies (DEFINEDMETHODS, ROUTINES, RESOURCES), so one is taken at the first use and
+// answered every time after, as the same object, as interpreted. A package with none has an empty copy: the name.
+struct PackageTable { bool taken = false; std::optional<Value> table; };
+inline Value packageTable(PackageTable &kept, const char *selector, const char *symbol) {
+    if (!kept.taken) {
+        RexxThreadContext *t = rxobj::need();
+        RexxObjectPtr pkg = rxobj::libraryPackage();
+        RexxObjectPtr v = pkg == NULLOBJECT ? NULLOBJECT : t->SendMessage0(pkg, selector);
+        if (t->CheckCondition()) { t->ClearCondition(); v = NULLOBJECT; }
+        if (v != NULLOBJECT && v != t->Nil()) {
+            RexxObjectPtr n = t->SendMessage0(v, "ITEMS");
+            wholenumber_t items = 0;
+            if (n == NULLOBJECT || !t->ObjectToWholeNumber(n, &items)) { t->ClearCondition(); items = 0; }
+            if (n != NULLOBJECT) t->ReleaseLocalReference(n);
+            if (items > 0) kept.table = Value::fromObject(std::make_shared<EnvObject>((void *)rxobj::pinRef(t, v)));
+            t->ReleaseLocalReference(v);
+        }
+        kept.taken = true;
+    }
+    if (!kept.table) return Value::string(symbol);
+    return *kept.table;
 }
+inline Value packageMethodsSpecial() { static PackageTable k; return packageTable(k, "DEFINEDMETHODS", ".METHODS"); }
+inline Value packageRoutinesSpecial() { static PackageTable k; return packageTable(k, "ROUTINES", ".ROUTINES"); }
+inline Value packageResourcesSpecial() { static PackageTable k; return packageTable(k, "RESOURCES", ".RESOURCES"); }
 // .CONTEXT of a compiled activation (RexxContext, ContextClass.cpp): taken where .CONTEXT is evaluated - the NUMERIC
 // settings, arguments, condition, clause line, name and (unless only another method follows) the variables.
 struct ActivationContext final : ObjectDispatch {
