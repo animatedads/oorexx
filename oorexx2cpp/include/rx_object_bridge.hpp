@@ -24,6 +24,7 @@ inline bool send(void *t, const std::string &s, const std::vector<Arg> &a, Resul
 }
 #else
 #include <oorexxapi.h>
+#include "rx_api_epoch.hpp"
 #include <mutex>
 #include <condition_variable>
 #include <typeinfo>
@@ -68,9 +69,12 @@ inline void *returnPin(void *h);
 // Set by every native method/routine entry for the duration of the call (self is NULLOBJECT in routines).
 struct Scope {
     RexxThreadContext *previous; RexxObjectPtr previousSelf; Scope *outer;
+    RexxThreadInterface *replaced = nullptr;   // the context's function table, while the epoch table is in place
     static Scope *&innermost() { static thread_local Scope *s = nullptr; return s; }
     explicit Scope(RexxThreadContext *c, RexxObjectPtr self = NULLOBJECT)
         : previous(current), previousSelf(currentSelf), outer(innermost()) {
+        interpreterChanged();   // (the interpreter ran before this entry)
+        replaced = installEpochTable(c);
         current = c; currentSelf = self; innermost() = this;
         if (!returnPins().empty()) for (void *h : std::exchange(returnPins(), std::vector<void *>())) unpinRef(c, h);
         if (nativeDepth++ == 0) {
@@ -82,6 +86,8 @@ struct Scope {
     }
     ~Scope() {
         innermost() = outer;
+        restoreEpochTable(current, replaced);
+        interpreterChanged();   // (the interpreter runs after this entry returns)
         current = previous; currentSelf = previousSelf;
         if (--nativeDepth == 0) { NativeGate &g = nativeGate(); std::lock_guard<std::mutex> l(g.m); --g.active; }
     }
@@ -201,6 +207,50 @@ inline void *findClass(const std::string &name) {
     return h;
 }
 // .LOCAL / .ENVIRONMENT are environment directories, not classes.
+// The part of PackageClass::findClass whose answer the interpreter keeps for a .NAME (cachedValue): a class of the
+// package (installed, installed public), one a required package made public (merged), or a public class of the REXX
+// package. Asked of the collections the package answers (CLASSES, PUBLICCLASSES, IMPORTEDCLASSES): no environment
+// directory is read (their entries, and a Directory's SETMETHOD entry or UNKNOWN method, are the dynamic part).
+// The interpreter answers CLASSES / PUBLICCLASSES / IMPORTEDCLASSES with a copy (PackageClass::getClassesRexx), so they
+// are asked once, when the library is loaded (takeFixedClassTables, after the packages it requires are imported), and
+// looked up with StringTableAt afterwards: a lookup allocates nothing, as the interpreter's own findClass does not (the
+// copies made at each first lookup moved what the interpreter's save stack still held: test_object_lifetime.sh).
+struct FixedClassTables { RexxObjectPtr tables[4] = { NULLOBJECT, NULLOBJECT, NULLOBJECT, NULLOBJECT }; bool made = false; };
+inline FixedClassTables &fixedClassTables() { static FixedClassTables f; return f; }
+inline void takeFixedClassTables(RexxThreadContext *t) {
+    FixedClassTables &f = fixedClassTables();
+    LocalRefs temps(t);
+    auto table = [&](RexxObjectPtr owner, const char *selector) -> RexxObjectPtr {
+        if (owner == NULLOBJECT) return NULLOBJECT;
+        RexxObjectPtr v = temps(t->SendMessage0(owner, selector));
+        if (t->CheckCondition()) { t->ClearCondition(); return NULLOBJECT; }
+        if (v == NULLOBJECT || v == t->Nil() || !t->IsStringTable(v)) return NULLOBJECT;
+        return pinRef(t, v);
+    };
+    RexxObjectPtr pkg = libraryPackage();
+    f.tables[0] = table(pkg, "CLASSES");
+    f.tables[1] = table(pkg, "PUBLICCLASSES");
+    f.tables[2] = table(pkg, "IMPORTEDCLASSES");
+    RexxObjectPtr object = temps((RexxObjectPtr)t->FindClass("OBJECT"));
+    RexxObjectPtr rexxPackage = object == NULLOBJECT ? NULLOBJECT : temps(t->SendMessage0(object, "PACKAGE"));
+    if (t->CheckCondition()) { t->ClearCondition(); rexxPackage = NULLOBJECT; }
+    if (rexxPackage != NULLOBJECT && rexxPackage != t->Nil()) f.tables[3] = table(rexxPackage, "PUBLICCLASSES");
+    f.made = true;
+}
+inline void *packageClass(const std::string &name) {
+    RexxThreadContext *t = need();
+    FixedClassTables &f = fixedClassTables();
+    if (!f.made) takeFixedClassTables(t);   // (a library loaded without the template's loader)
+    for (RexxObjectPtr tab : f.tables) {
+        if (tab == NULLOBJECT) continue;
+        RexxObjectPtr c = t->StringTableAt((RexxStringTableObject)tab, name.c_str());
+        if (c == NULLOBJECT) continue;
+        void *h = (void *)pinRef(t, c);
+        t->ReleaseLocalReference(c);
+        return h;
+    }
+    return nullptr;
+}
 inline void *environmentObject(const std::string &name) {
     RexxThreadContext *t = need();
     RexxObjectPtr d = NULLOBJECT;
@@ -211,11 +261,90 @@ inline void *environmentObject(const std::string &name) {
 }
 // The package that declares a native library's classes (set by its loader): .CONTEXT~PACKAGE, package-local symbols.
 inline RexxObjectPtr &libraryPackage() { static RexxObjectPtr p = NULLOBJECT; return p; }
+// A routine compiled code makes to run interpreter code for it (a helper) runs under the security manager of the
+// compiled code's package, as that code would interpreted: RexxActivation takes its security manager from its code's
+// package (settings.securityManager), so the helper's package is given the library package's (its PackageClass::
+// securityManager field, packageFields). helperRoutine: kept and given it again before every call (CallRoutine, the
+// epoch table: the library's manager may change); transientRoutine: used at once and dropped, given it now.
+struct PackageFields { int securityManager = -1, manager = -1; bool known = false; };
+inline std::unordered_map<void *, void *> &helperPackages() { static std::unordered_map<void *, void *> m; return m; }
+inline PackageFields &packageFields(RexxThreadContext *t);
+// The security manager (the interpreter's SecurityManager wrapper) compiled code runs under: its activation's, taken
+// when it started (rx::ActivationScope::security), else the library package's now.
+inline void *librarySecurity(RexxThreadContext *t) {
+    if (libraryPackage() == NULLOBJECT) return nullptr;
+    const PackageFields &f = packageFields(t);
+    if (f.securityManager < 0) return nullptr;
+    return reinterpret_cast<void *const *>(libraryPackage())[f.securityManager];
+}
+inline void *activationSecurity(RexxThreadContext *t) {
+    if (rx::ActivationScope *s = rx::ActivationScope::current()) return s->security;
+    return librarySecurity(t);
+}
+// (set while compiled code asks a security manager itself: that message is sent as is)
+inline bool &securityCallInProgress() { static thread_local bool on = false; return on; }
+inline void *securityAtActivationStart() { return current ? librarySecurity(current) : nullptr; }
+inline const bool securityHookInstalled = (rx::ActivationScope::securityHook() = &securityAtActivationStart, true);
+// The manager object of a SecurityManager wrapper (NULLOBJECT: none).
+inline RexxObjectPtr securityManagerObject(RexxThreadContext *t, void *wrapper) {
+    if (!wrapper) return NULLOBJECT;
+    const PackageFields &f = packageFields(t);
+    if (f.manager < 0) return NULLOBJECT;
+    return (RexxObjectPtr)reinterpret_cast<void *const *>(wrapper)[f.manager];
+}
+inline void giveLibrarySecurity(RexxThreadContext *t, void *package) {
+    if (!package || libraryPackage() == NULLOBJECT) return;
+    const PackageFields &f = packageFields(t);
+    if (f.securityManager < 0) return;
+    void *const wanted = activationSecurity(t);
+    void *&mine = reinterpret_cast<void **>(package)[f.securityManager];
+    if (mine != wanted) mine = wanted;   // (OrefSet of an object made at run time: a plain store)
+}
+// The library's RX2CPP_CALLER_CONTEXT routine (NativeLibraryEmitter): a helper's own context, from ~CALL of it, without a
+// .CONTEXT lookup (which a security manager is asked about, as for any environment symbol). NULLOBJECT: none.
+inline RexxObjectPtr callerContextRoutine(RexxThreadContext *t) {
+    static RexxObjectPtr routine = NULLOBJECT;
+    static bool looked = false;
+    if (looked) return routine;
+    looked = true;
+    if (libraryPackage() == NULLOBJECT) return routine;
+    RexxDirectoryObject all = t->GetPackageRoutines((RexxPackageObject)libraryPackage());
+    if (t->CheckCondition()) { t->ClearCondition(); return routine; }
+    if (all == NULLOBJECT) return routine;
+    RexxObjectPtr r = t->DirectoryAt(all, "RX2CPP_CALLER_CONTEXT");
+    if (t->CheckCondition()) { t->ClearCondition(); return routine; }
+    if (r != NULLOBJECT) routine = pinRef(t, r);
+    return routine;
+}
+// A routine of the compiled code's own machinery (merging packages, the interpreter's version, a collection): no
+// security manager, as the interpreter's own work has none.
+inline RexxRoutineObject internalRoutine(RexxThreadContext *, RexxRoutineObject r) { return r; }
+inline RexxRoutineObject transientRoutine(RexxThreadContext *t, RexxRoutineObject r) {
+    if (r == NULLOBJECT) return r;
+    RexxPackageObject p = t->GetRoutinePackage(r);
+    giveLibrarySecurity(t, (void *)p);
+    return r;
+}
+inline RexxRoutineObject helperRoutine(RexxThreadContext *t, RexxRoutineObject r) {
+    if (r == NULLOBJECT) return r;
+    RexxPackageObject p = t->GetRoutinePackage(r);
+    helperPackages()[(void *)r] = (void *)p;
+    giveLibrarySecurity(t, (void *)p);
+    return r;
+}
+// (the epoch table's CallRoutine: a helper's package is given the library package's security manager first)
+inline void beforeCallRoutine(RexxThreadContext *t, RexxRoutineObject r) {
+    auto &m = helperPackages();
+    if (m.empty()) return;
+    auto it = m.find((void *)r);
+    if (it != m.end()) giveLibrarySecurity(t, it->second);
+}
+inline const bool beforeCallRoutineInstalled = (callRoutineHook() = &beforeCallRoutine, true);
 // An interpreter routine for compiled code to run: created in the library's declaration package when there is one, so
 // it resolves names as the compiled code's own package would (public routines and classes of its ::REQUIRES, e.g. PP of
 // ooTest.frm); otherwise a routine of its own.
 inline RexxRoutineObject packageRoutine(RexxThreadContext *t, const char *name, const std::string &source) {
-    if (libraryPackage() == NULLOBJECT) return t->NewRoutine(name, source.c_str(), source.size());
+    if (libraryPackage() == NULLOBJECT) return rxobj::helperRoutine(t, t->NewRoutine(name, source.c_str(), source.size()));
     RexxObjectPtr routineClass = (RexxObjectPtr)t->FindClass("ROUTINE");
     RexxArrayObject lines = t->NewArray(0);
     std::size_t from = 0;
@@ -228,7 +357,7 @@ inline RexxRoutineObject packageRoutine(RexxThreadContext *t, const char *name, 
     RexxArrayObject args = t->ArrayOfThree((RexxObjectPtr)t->String(name), (RexxObjectPtr)lines, libraryPackage());
     RexxObjectPtr r = t->SendMessage(routineClass, "NEW", args);
     if (t->CheckCondition()) { t->ClearCondition(); return NULLOBJECT; }
-    return (RexxRoutineObject)r;
+    return helperRoutine(t, (RexxRoutineObject)r);
 }
 // An environment symbol that is not a class: the package's LOCAL directory, then .local, then .environment.
 inline void *environmentEntry(const std::string &name) {
@@ -251,9 +380,75 @@ inline void *environmentEntry(const std::string &name) {
 // environmentEntry's lookup without its per-call costs: the three directories (the package's LOCAL, .local,
 // .environment) are found once per thread and kept; DirectoryAt is the interpreter's own get(), as
 // PackageClass::findClass does. Answers a local reference (the caller releases it), or NULLOBJECT.
-inline RexxObjectPtr environmentLookup(RexxThreadContext *t, const std::string &name) {
-    struct Dirs { RexxDirectoryObject pkg = NULLOBJECT, local = NULLOBJECT, global = NULLOBJECT; bool pkgDone = false; };
-    static thread_local Dirs d;
+inline void bifStat(const std::string &name);
+struct EnvDirs { RexxDirectoryObject pkg = NULLOBJECT, local = NULLOBJECT, global = NULLOBJECT; bool pkgDone = false; };
+inline EnvDirs &envDirs() { static thread_local EnvDirs d; return d; }
+// Does this Directory have SETMETHOD entries or an UNKNOWN method (DirectoryClass::methodTable, ::unknownMethod)? Its
+// get() runs them, so a value read from it may be computed every time. The two fields are found once by comparing
+// Directories made for the purpose (none, a SETMETHOD entry, an UNKNOWN method) and checked again after UNSETMETHOD of
+// the UNKNOWN; when they cannot be found exactly the answer is always true (nothing is kept). A methodTable once made
+// stays (empty) after UNSETMETHOD: still true, the safe side.
+// An interpreter object's size in pointers (RexxInternalObject: its vtable, then ObjectHeader::objectSize in bytes);
+// 0 when the size is not plausible. Bounds the scans below.
+inline std::size_t objectWords(RexxObjectPtr o) {
+    if (o == NULLOBJECT) return 0;
+    const std::size_t bytes = reinterpret_cast<const std::size_t *>(o)[1];
+    if (bytes < 4 * sizeof(void *) || bytes > 65536 || bytes % sizeof(void *) != 0) return 0;
+    return bytes / sizeof(void *);
+}
+struct DirectoryFields { int methodTable = -1, unknownMethod = -1; bool known = false; };
+inline DirectoryFields &directoryFields(RexxThreadContext *t) {
+    static DirectoryFields f;
+    if (f.known) return f;
+    f.known = true;
+    constexpr int words = 8;
+    auto make = [&](const char *selector, const char *name) -> RexxObjectPtr {
+        RexxObjectPtr d = (RexxObjectPtr)t->NewDirectory();
+        if (d == NULLOBJECT) return NULLOBJECT;
+        d = pinRef(t, d);
+        if (selector) {
+            RexxObjectPtr src = (RexxObjectPtr)t->String("return 1");
+            t->SendMessage2(d, selector, (RexxObjectPtr)t->String(name), src);
+            if (t->CheckCondition()) { t->ClearCondition(); return NULLOBJECT; }
+        }
+        return d;
+    };
+    RexxObjectPtr none1 = make(nullptr, nullptr), none2 = make(nullptr, nullptr);
+    RexxObjectPtr method1 = make("SETMETHOD", "X"), method2 = make("SETMETHOD", "Y");
+    RexxObjectPtr unknown1 = make("SETMETHOD", "UNKNOWN"), unknown2 = make("SETMETHOD", "UNKNOWN");
+    if (!none1 || !none2 || !method1 || !method2 || !unknown1 || !unknown2) return f;
+    auto word = [](RexxObjectPtr o, int i) { return reinterpret_cast<void *const *>(o)[i]; };
+    int mt = -1, um = -1, mtCount = 0, umCount = 0;
+    const int size = static_cast<int>(std::min({objectWords(none1), objectWords(method1), objectWords(unknown1)}));
+    for (int i = 3; i < words && i < size; ++i) {
+        const bool noneZero = !word(none1, i) && !word(none2, i);
+        if (noneZero && word(method1, i) && word(method2, i) && !word(unknown1, i) && !word(unknown2, i)) { mt = i; ++mtCount; }
+        if (noneZero && !word(method1, i) && !word(method2, i) && word(unknown1, i) && word(unknown2, i)) { um = i; ++umCount; }
+    }
+    if (mtCount != 1 || umCount != 1 || um != mt + 1) { bifStat("directory fields not found"); return f; }   // (declared one after the other)
+    t->SendMessage1(unknown1, "UNSETMETHOD", (RexxObjectPtr)t->String("UNKNOWN"));
+    if (t->CheckCondition()) { t->ClearCondition(); return f; }
+    if (word(unknown1, um)) return f;
+    f.methodTable = mt; f.unknownMethod = um;
+    bifStat("directory fields " + std::to_string(mt) + "/" + std::to_string(um));
+    return f;
+}
+inline bool directoryComputesEntries(RexxThreadContext *t, RexxDirectoryObject d) {
+    if (d == NULLOBJECT) return false;
+    const DirectoryFields &f = directoryFields(t);
+    if (f.methodTable < 0) return true;
+    auto word = [&](int i) { return reinterpret_cast<void *const *>(d)[i]; };
+    return word(f.methodTable) != nullptr || word(f.unknownMethod) != nullptr;
+}
+// The three directories of an environment symbol answer only their own entries (no SETMETHOD entry, no UNKNOWN):
+// a value found there stays the same while the interpreter epoch does not move.
+inline EnvDirs &findEnvDirs(RexxThreadContext *t);
+inline bool environmentEntriesOnly(RexxThreadContext *t) {
+    EnvDirs &d = findEnvDirs(t);
+    return !directoryComputesEntries(t, d.pkg) && !directoryComputesEntries(t, d.local) && !directoryComputesEntries(t, d.global);
+}
+inline EnvDirs &findEnvDirs(RexxThreadContext *t) {
+    EnvDirs &d = envDirs();
     if (!d.pkgDone && libraryPackage() != NULLOBJECT) {
         d.pkgDone = true;
         RexxObjectPtr l = t->SendMessage0(libraryPackage(), "LOCAL");
@@ -267,11 +462,65 @@ inline RexxObjectPtr environmentLookup(RexxThreadContext *t, const std::string &
         RexxObjectPtr g = (RexxObjectPtr)t->GetGlobalEnvironment();
         d.global = (RexxDirectoryObject)pinRef(t, g); t->ReleaseLocalReference(g);
     }
+    return d;
+}
+// The package's security manager (PackageClass::securityManager, a SecurityManager whose ::manager is the object set by
+// SETSECURITYMANAGER): PackageClass::findClass asks it (LOCAL, ENVIRONMENT) before .local and .environment. The two
+// fields are found once: in a package given a security manager (an object made for the purpose) the one pointer
+// that is empty in a package without one, and in the object it points to, the manager itself.
+inline PackageFields &packageFields(RexxThreadContext *t) {
+    static PackageFields f;
+    if (f.known) return f;
+    f.known = true;
+    RexxObjectPtr packageClass = (RexxObjectPtr)t->FindClass("PACKAGE"), objectClass = (RexxObjectPtr)t->FindClass("OBJECT");
+    if (packageClass == NULLOBJECT || objectClass == NULLOBJECT) { t->ClearCondition(); return f; }
+    auto make = [&](const char *name) -> RexxObjectPtr {
+        RexxObjectPtr p = t->SendMessage2(packageClass, "NEW", (RexxObjectPtr)t->String(name), (RexxObjectPtr)t->String("nop"));
+        if (t->CheckCondition()) { t->ClearCondition(); return NULLOBJECT; }
+        return p == NULLOBJECT ? NULLOBJECT : pinRef(t, p);
+    };
+    RexxObjectPtr plain1 = make("RX2CPP_PROBE_1"), plain2 = make("RX2CPP_PROBE_2"), managed = make("RX2CPP_PROBE_3");
+    RexxObjectPtr m = t->SendMessage0(objectClass, "NEW");
+    if (!plain1 || !plain2 || !managed || m == NULLOBJECT || t->CheckCondition()) { t->ClearCondition(); return f; }
+    m = pinRef(t, m);
+    t->SendMessage1(managed, "SETSECURITYMANAGER", m);
+    if (t->CheckCondition()) { t->ClearCondition(); return f; }
+    auto word = [](RexxObjectPtr o, std::size_t i) { return reinterpret_cast<void *const *>(o)[i]; };
+    const std::size_t size = std::min({objectWords(plain1), objectWords(plain2), objectWords(managed)});
+    int sm = -1, mg = -1, found = 0;
+    for (std::size_t i = 3; i < size; ++i) {
+        if (word(plain1, i) || word(plain2, i) || !word(managed, i)) continue;
+        RexxObjectPtr wrapper = (RexxObjectPtr)word(managed, i);
+        const std::size_t wsize = objectWords(wrapper);
+        for (std::size_t j = 3; j < wsize; ++j)
+            if (word(wrapper, j) == (void *)m) { sm = static_cast<int>(i); mg = static_cast<int>(j); ++found; }
+    }
+    if (found != 1) { bifStat("security manager fields not found"); return f; }
+    f.securityManager = sm; f.manager = mg;
+    bifStat("security manager fields " + std::to_string(sm) + "/" + std::to_string(mg));
+    return f;
+}
+// The security manager of a package: 0 none, 1 one (its manager object in m), -1 not known (its fields were not found).
+inline int packageSecurityManager(RexxThreadContext *t, RexxObjectPtr package, RexxObjectPtr &m) {
+    m = NULLOBJECT;
+    if (package == NULLOBJECT) return 0;
+    const PackageFields &f = packageFields(t);
+    if (f.securityManager < 0) return -1;
+    void *wrapper = reinterpret_cast<void *const *>(package)[f.securityManager];
+    if (!wrapper) return 0;
+    m = (RexxObjectPtr)reinterpret_cast<void *const *>(wrapper)[f.manager];
+    return 1;
+}
+inline RexxObjectPtr environmentLookup(RexxThreadContext *t, const std::string &name) {
+    EnvDirs &d = findEnvDirs(t);
+    // (a condition raised by a SETMETHOD entry or an UNKNOWN method stays pending for the caller: rx::envValue raises it)
     RexxObjectPtr o = NULLOBJECT;
     if (d.pkg != NULLOBJECT) o = t->DirectoryAt(d.pkg, name.c_str());
+    if (t->CheckCondition()) return NULLOBJECT;
     if (o == NULLOBJECT && d.local != NULLOBJECT) o = t->DirectoryAt(d.local, name.c_str());
+    if (t->CheckCondition()) return NULLOBJECT;
     if (o == NULLOBJECT && d.global != NULLOBJECT) o = t->DirectoryAt(d.global, name.c_str());
-    if (t->CheckCondition()) { t->ClearCondition(); if (o != NULLOBJECT) t->ReleaseLocalReference(o); return NULLOBJECT; }
+    if (t->CheckCondition()) { if (o != NULLOBJECT) t->ReleaseLocalReference(o); return NULLOBJECT; }
     return o;
 }
 // Does this object run Object's own == and \== (identity, RexxObject::strictEqual)? Asked of the object's behaviour
@@ -381,7 +630,7 @@ inline void *conditionObject(const std::string &code, const std::vector<Arg> &su
             "if subs~items = 0 then raise syntax (code)\n"
             "raise syntax (code) additional (subs)\n"
             "syntax: return condition('O')\n";
-        RexxRoutineObject made = t->NewRoutine("rx2cpp_condition", source, sizeof(source) - 1);
+        RexxRoutineObject made = rxobj::internalRoutine(t, t->NewRoutine("rx2cpp_condition", source, sizeof(source) - 1));
         if (made == NULLOBJECT || t->CheckCondition()) { t->ClearCondition(); throw std::runtime_error("cannot build a condition object"); }
         routine = rxobj::pinRef(t, (RexxObjectPtr)made);
     }
@@ -403,7 +652,7 @@ inline std::string interpreterVersion() {
     std::call_once(once, [] {
         RexxThreadContext *t = need();
         static const char source[] = "parse version v\nreturn v\n";
-        RexxRoutineObject r = t->NewRoutine("rx2cpp_version", source, sizeof(source) - 1);
+        RexxRoutineObject r = rxobj::internalRoutine(t, t->NewRoutine("rx2cpp_version", source, sizeof(source) - 1));
         RexxObjectPtr v = r == NULLOBJECT ? NULLOBJECT : t->CallRoutine(r, t->NewArray(0));
         if (t->CheckCondition() || v == NULLOBJECT) { t->ClearCondition(); throw std::runtime_error("cannot read PARSE VERSION"); }
         version = t->ObjectToStringValue(v);
@@ -411,6 +660,9 @@ inline std::string interpreterVersion() {
     return version;
 }
 inline void bifStat(const std::string &name);
+// RX2CPP_BIF_STATS: a native instance whose interpreter object was just made to be an argument (named with the send it
+// goes to)
+inline thread_local std::string pendingArgumentStat;
 inline bool send(void *target, const std::string &selector, const std::vector<Arg> &args, Result &out,
                  std::string &code, std::string &text) {
     RexxThreadContext *t = need();
@@ -420,6 +672,7 @@ inline bool send(void *target, const std::string &selector, const std::vector<Ar
         // A class object: name the class itself (.Directory~new, .MathInteger~coerce, ...).
         if (cls == "The Class class") cls = std::string("class ") + t->ObjectToStringValue(t->SendMessage0((RexxObjectPtr)target, "ID"));
         bifStat("~" + selector + " to " + cls);
+        if (!pendingArgumentStat.empty()) { bifStat(pendingArgumentStat + " to ~" + selector + " to " + cls); pendingArgumentStat.clear(); }
         // RX2CPP_TRAP_SEND="~NEW to class X": stop in the debugger at that send (where does it come from?).
         static const char *trap = std::getenv("RX2CPP_TRAP_SEND");
         if (trap && ("~" + selector + " to " + cls) == trap) std::raise(SIGTRAP);
@@ -453,7 +706,7 @@ inline bool send(void *target, const std::string &selector, const std::vector<Ar
             if (helper == NULLOBJECT) {
                 static const char source[] = "use arg rx2cppR, rx2cppM, rx2cppA\nrx2cppR~sendWith(rx2cppM, rx2cppA)\n"
                                              "if var('RESULT') then return result\nreturn\n";
-                helper = t->NewRoutine("rx2cpp_routine_call", source, sizeof(source) - 1);
+                helper = rxobj::helperRoutine(t, t->NewRoutine("rx2cpp_routine_call", source, sizeof(source) - 1));
                 if (helper != NULLOBJECT) rxobj::pinRef(t, (RexxObjectPtr)helper);
                 else t->ClearCondition();
             }
@@ -466,6 +719,28 @@ inline bool send(void *target, const std::string &selector, const std::vector<Ar
                 viaHelper = helper;
                 r = temps(t->CallRoutine(helper, call));
             }
+        }
+    }
+    // Under a security manager (the activation's: activationSecurity) the message is sent from a helper that runs under
+    // it: the interpreter asks the sender's manager about a PROTECTED method (RexxObject::processProtectedMethod, the
+    // top frame's: a helper activation takes its package's), as it would of this code interpreted.
+    if (viaHelper == NULLOBJECT && !securityCallInProgress() && securityManagerObject(t, activationSecurity(t)) != NULLOBJECT) {
+        static RexxRoutineObject secured = NULLOBJECT;
+        if (secured == NULLOBJECT) {
+            static const char source[] = "use arg rx2cppO, rx2cppM, rx2cppA\nrx2cppO~sendWith(rx2cppM, rx2cppA)\n"
+                                         "if var('RESULT') then return result\nreturn\n";
+            secured = helperRoutine(t, t->NewRoutine("rx2cpp_secured_send", source, sizeof(source) - 1));
+            if (secured != NULLOBJECT) rxobj::pinRef(t, (RexxObjectPtr)secured);
+            else t->ClearCondition();
+        }
+        if (secured != NULLOBJECT) {
+            RexxArrayObject arr = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(args.size()));
+            for (std::size_t i = 0; i < args.size(); i++)
+                if (!args[i].omitted) t->ArrayPut(arr, argObj(args[i]), i + 1);
+            RexxArrayObject call = (RexxArrayObject)temps((RexxObjectPtr)t->ArrayOfThree((RexxObjectPtr)target,
+                temps((RexxObjectPtr)t->String(selector.c_str())), (RexxObjectPtr)arr));
+            viaHelper = secured;
+            r = temps(t->CallRoutine(secured, call));
         }
     }
     // Up to two arguments and no omitted ones: no argument array is built.
@@ -531,7 +806,7 @@ inline bool sendStringNumeric(const std::string &receiver, const std::string &se
     RexxRoutineObject routine;
     auto it = cache.find(source);
     if (it == cache.end()) {
-        routine = t->NewRoutine("rx2cpp_msg", source.c_str(), source.size());
+        routine = rxobj::helperRoutine(t, t->NewRoutine("rx2cpp_msg", source.c_str(), source.size()));
         if (routine == NULLOBJECT) { code = "98.900"; text = "cannot create message routine for " + selector; t->ClearCondition(); return false; }
         rxobj::pinRef(t, (RexxObjectPtr)routine);
         cache.emplace(source, routine);
@@ -575,7 +850,7 @@ inline std::string callBif(const std::string &name, const std::vector<std::pair<
     auto it = cache.find(source);
     RexxRoutineObject routine;
     if (it == cache.end()) {
-        routine = t->NewRoutine("rx2cpp_bif", source.c_str(), source.size());
+        routine = rxobj::helperRoutine(t, t->NewRoutine("rx2cpp_bif", source.c_str(), source.size()));
         if (routine == NULLOBJECT) throw std::runtime_error("cannot create BIF routine for " + name);
         rxobj::pinRef(t, (RexxObjectPtr)routine);
         cache.emplace(source, routine);
@@ -709,7 +984,10 @@ struct EnvObject final : ObjectDispatch {
         bool user = false;
         RexxObjectPtr pkg = temps(t->SendMessage0(cls, "PACKAGE"));
         if (t->CheckCondition()) t->ClearCondition();
-        else if (pkg != NULLOBJECT && pkg != t->Nil()) {
+        // a class made at run time (.object~subclass(...), .class~new) has no package: not built in either (its instances'
+        // behaviour is not primitive: RexxInternalObject::isBaseClass)
+        else if (pkg == NULLOBJECT || pkg == t->Nil()) user = true;
+        else {
             RexxObjectPtr name = temps(t->SendMessage0(pkg, "NAME"));
             if (t->CheckCondition()) t->ClearCondition();
             else if (name != NULLOBJECT) user = std::string(t->ObjectToStringValue(name)) != "REXX";
@@ -793,6 +1071,8 @@ struct EnvObject final : ObjectDispatch {
     MessageResult sendMessage(const std::string &selector, const std::vector<Value> &args) override {
         if (!selector.empty() && selector[0] == '[') if (auto fast = arrayAccess(selector, args)) return *fast;
         if (trappedSendHook()) if (auto trapped = trappedSendHook()(handle, selector, args)) return *trapped;
+        // .nil~isNil: Object's ISNIL (RexxObject::isNilRexx), the interpreter's .NIL itself
+        if (args.empty() && selector.size() == 5 && rx::eqLit(selector, "ISNIL") && isNilObject()) return Value::string("1");
         // routine~CALL / ~CALLWITH of a routine compiled in this library: run it here (routineCallHook), its arguments
         // staying native (no interpreter frame, no interpreter copy of an argument array)
         if (routineCallHook() && (selector.size() == 4 || selector.size() == 8) &&
@@ -1065,8 +1345,8 @@ inline std::shared_ptr<ObjectDispatch> raisedConditionObject(const RaiseToCaller
     // would do, but the interpreter loses a condition raised in an internal routine of a routine run by CALL).
     static const char outer[] = "use arg rx2cppInner, rx2cppArgs\nsignal on any name rx2cppCaught\n"
                                 "rx2cppIgnored = rx2cppInner~callWith(rx2cppArgs)\nreturn .nil\nrx2cppCaught: return condition('O')\n";
-    RexxRoutineObject inner = (RexxRoutineObject)temps((RexxObjectPtr)t->NewRoutine("rx2cpp_raise", cmd.c_str(), cmd.size()));
-    RexxRoutineObject routine = (RexxRoutineObject)temps((RexxObjectPtr)t->NewRoutine("rx2cpp_raised", outer, sizeof(outer) - 1));
+    RexxRoutineObject inner = (RexxRoutineObject)temps((RexxObjectPtr)rxobj::transientRoutine(t, t->NewRoutine("rx2cpp_raise", cmd.c_str(), cmd.size())));
+    RexxRoutineObject routine = (RexxRoutineObject)temps((RexxObjectPtr)rxobj::transientRoutine(t, t->NewRoutine("rx2cpp_raised", outer, sizeof(outer) - 1)));
     RexxArrayObject innerArgs = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(args.size()));
     std::vector<rxobj::Arg> conv;
     for (std::size_t i = 0; i < args.size(); ++i) {
@@ -1477,7 +1757,7 @@ inline std::string interpreterSystem() {
     std::call_once(once, [] {
         RexxThreadContext *t = rxobj::need();
         static const char source[] = "parse source s .\nreturn s\n";
-        RexxRoutineObject r = t->NewRoutine("rx2cpp_system", source, sizeof(source) - 1);
+        RexxRoutineObject r = rxobj::internalRoutine(t, t->NewRoutine("rx2cpp_system", source, sizeof(source) - 1));
         RexxObjectPtr v = r == NULLOBJECT ? NULLOBJECT : t->CallRoutine(r, t->NewArray(0));
         if (t->CheckCondition() || v == NULLOBJECT) { t->ClearCondition(); throw std::runtime_error("cannot read PARSE SOURCE"); }
         name = t->ObjectToStringValue(v);
@@ -1632,6 +1912,10 @@ struct EnvName {
     int state = 0;            // 0 not yet resolved, 1 fixed, 2 looked up each time
     Value value;
     void *last = nullptr;     // (2) the object `value` came from, pinned while kept
+    // (2) the interpreter epoch (rx_api_epoch.hpp) when `value` was looked up: while it has not moved, nothing can have
+    // changed the three directories, and `value` is the answer (an unknown name too: the empty `last`)
+    unsigned long epoch = 0;
+    bool unknown = false;
     explicit EnvName(std::string n) : name(std::move(n)), value(Value::string(std::string())) {}
 };
 inline EnvName &envName(const std::string &name) {
@@ -1641,20 +1925,134 @@ inline EnvName &envName(const std::string &name) {
     if (!slot) slot = std::make_unique<EnvName>(name);
     return *slot;
 }
-inline Value envValue(EnvName &e) {
+#ifdef RX2CPP_HOST_API
+// A condition the interpreter left pending (a SETMETHOD entry, an UNKNOWN method or a security manager that raised):
+// raised in compiled code as the interpreter's, with its condition object.
+[[noreturn]] inline void raisePending(RexxThreadContext *t, const std::string &what) {
+    RexxDirectoryObject info = t->GetConditionInfo();
+    RexxCondition cd; t->DecodeConditionInfo(info, &cd);
+    const std::string code = std::to_string(cd.code / 1000) + "." + std::to_string(cd.code % 1000);
+    const std::string text = (cd.message && t->IsString(cd.message)) ? t->ObjectToStringValue(cd.message) : "error in " + what;
+    rxobj::keepCondition(t);
+    t->ClearCondition();
+    rxobj::captureAdditional(t, info);
+    SyntaxCondition raised(code, text, false);
+    for (const std::string &a : rxobj::lastAdditional()) raised.substitutions.push_back(Value::string(a));
+    raised.conditionObject = takeKeptCondition();
+    throw raised;
+}
+// SecurityManager::callSecurityManager: the message (LOCAL, ENVIRONMENT, STREAM, ...) sent to the manager with its
+// Directory of arguments; a result is required (91.999) and must be exactly 0 or 1 (34.903): true, the manager
+// handled it (its answer in the RESULT entry).
+inline bool askSecurityManager(RexxThreadContext *t, RexxObjectPtr manager, const char *what, RexxDirectoryObject args) {
+    std::vector<rxobj::Arg> in(1); in[0].obj = (void *)args;
+    rxobj::Result r; std::string code, text;
+    struct Asking { bool saved; Asking() : saved(std::exchange(rxobj::securityCallInProgress(), true)) {} ~Asking() { rxobj::securityCallInProgress() = saved; } } asking;
+    if (!rxobj::send((void *)manager, what, in, r, code, text)) {
+        SyntaxCondition raised(code, text, false);
+        for (const std::string &a : rxobj::lastAdditional()) raised.substitutions.push_back(Value::string(a));
+        raised.conditionObject = takeKeptCondition();
+        throw raised;
+    }
+    if (r.kind == 0) {
+        SyntaxCondition missing("91.999", std::string("Message \"") + what + "\" did not return a result.", false);
+        missing.substitutions.push_back(Value::string(what));
+        throw missing;
+    }
+    std::string answer = r.bytes;
+    if (r.kind == 2) { answer = t->ObjectToStringValue((RexxObjectPtr)r.obj); rxobj::release(r.obj); }
+    if (answer != "0" && answer != "1") {
+        SyntaxCondition bad("34.903", "Authorization return value must be exactly \"0\" or \"1\"; found \"" + answer + "\".", false);
+        bad.substitutions.push_back(Value::string(answer));
+        throw bad;
+    }
+    return answer == "1";
+}
+inline RexxObjectPtr securityResult(RexxThreadContext *t, RexxDirectoryObject args) {
+    RexxObjectPtr result = t->DirectoryAt(args, "RESULT");
+    if (t->CheckCondition()) raisePending(t, "AT");
+    return result;
+}
+// PackageClass::findClass's search for a name that is not a class, with the package's security manager (manager; secured
+// -1: its fields were not found, so the package answers it: PackageClass~findClass): the package LOCAL, the manager's
+// LOCAL, .local, its ENVIRONMENT, .environment. SecurityManager::callSecurityManager: LOCAL / ENVIRONMENT sent with a
+// Directory holding NAME; a result is required and must be exactly 0 or 1; 1 answers the RESULT entry (none: the
+// search goes on). found: the answer is an entry whose value is .nil (the object answered is then NULLOBJECT).
+inline RexxObjectPtr securedEnvironmentLookup(RexxThreadContext *t, const std::string &name, int secured, RexxObjectPtr manager, bool &found) {
+    found = false;
+    if (secured < 0) {
+        // (only an entry that is .nil and no entry at all both answer .nil here: .nil it is when a directory has the name)
+        RexxObjectPtr r = t->SendMessage1(rxobj::libraryPackage(), "FINDCLASS", (RexxObjectPtr)t->String(name.c_str()));
+        if (t->CheckCondition()) raisePending(t, "FINDCLASS");
+        if (r != NULLOBJECT && r != t->Nil()) return r;
+        rxobj::EnvDirs &d = rxobj::findEnvDirs(t);
+        for (RexxDirectoryObject dir : {d.pkg, d.local, d.global}) {
+            if (dir == NULLOBJECT) continue;
+            RexxObjectPtr has = t->SendMessage1((RexxObjectPtr)dir, "HASINDEX", (RexxObjectPtr)t->String(name.c_str()));
+            if (t->CheckCondition()) raisePending(t, "HASINDEX");
+            if (has != NULLOBJECT && t->IsString(has) && std::string(t->ObjectToStringValue(has)) == "1") { found = true; break; }
+        }
+        return NULLOBJECT;
+    }
+    rxobj::EnvDirs &d = rxobj::findEnvDirs(t);
+    auto get = [&](RexxDirectoryObject dir) -> RexxObjectPtr {
+        if (dir == NULLOBJECT) return NULLOBJECT;
+        RexxObjectPtr o = t->DirectoryAt(dir, name.c_str());
+        if (t->CheckCondition()) raisePending(t, "AT");
+        return o;
+    };
+    auto ask = [&](const char *what) -> RexxObjectPtr {
+        RexxDirectoryObject args = t->NewDirectory();
+        t->DirectoryPut(args, (RexxObjectPtr)t->String(name.c_str()), "NAME");
+        return askSecurityManager(t, manager, what, args) ? securityResult(t, args) : NULLOBJECT;
+    };
+    RexxObjectPtr o = get(d.pkg);
+    if (o == NULLOBJECT && manager != NULLOBJECT) o = ask("LOCAL");
+    if (o == NULLOBJECT) o = get(d.local);
+    if (o == NULLOBJECT && manager != NULLOBJECT) o = ask("ENVIRONMENT");
+    if (o == NULLOBJECT) o = get(d.global);
+    return o;
+}
+#endif
+// An environment symbol's value (PackageClass::findClass), or none when no source has it (the symbol is then a
+// special name's value, or its own name).
+inline std::optional<Value> envFind(EnvName &e) {
     if (e.state == 1) return e.value;
     const std::string &name = e.name;
     if (e.state == 0) {
         if (packageClassHook) if (auto v = packageClassHook(name)) { e.value = *v; e.state = 1; return e.value; }
+#ifdef RX2CPP_HOST_API
+        // (.LOCAL and .ENVIRONMENT are entries of .environment, found as any other: a security manager is asked for them
+        // too, as interpreted)
+        void *h = rxobj::packageClass(name);
+#else
         void *h = (rx::eqLit(name, "LOCAL") || rx::eqLit(name, "ENVIRONMENT")) ? rxobj::environmentObject(name) : rxobj::findClass(name);
+#endif
         if (h) { e.value = Value::fromObject(std::make_shared<EnvObject>(h)); e.state = 1; return e.value; }
         e.state = 2;
     }
 #ifdef RX2CPP_HOST_API
+    if (e.epoch != 0 && e.epoch == rxobj::interpreterEpoch()) {
+        if (e.unknown) return std::nullopt;
+        return e.value;
+    }
     RexxThreadContext *t = rxobj::need();
-    RexxObjectPtr o = rxobj::environmentLookup(t, name);
-    if (o == NULLOBJECT) return Value::string("." + name);   // an unknown environment symbol is its own name (.FOO)
-    if ((void *)o == e.last) { t->ReleaseLocalReference(o); return e.value; }
+    // Kept only when the three directories answer their own entries (rxobj::environmentEntriesOnly, asked before the
+    // lookup: no SETMETHOD entry or UNKNOWN method, whose value is computed at each read) and the package has no
+    // security manager (asked at every lookup, as interpreted). The lookup's calls then run no Rexx code (DirectoryAt
+    // of entries, below the string value of a String and the pin table): the epoch read after them is the one the
+    // answer belongs to.
+    RexxObjectPtr manager = NULLOBJECT;
+    const int secured = rxobj::packageSecurityManager(t, rxobj::libraryPackage(), manager);
+    const bool keep = secured == 0 && rxobj::environmentEntriesOnly(t);
+    bool found = false;
+    RexxObjectPtr o = secured == 0 ? rxobj::environmentLookup(t, name) : securedEnvironmentLookup(t, name, secured, manager, found);
+    if (secured == 0 && t->CheckCondition()) raisePending(t, "AT");
+    if (found && o == NULLOBJECT) { e.epoch = 0; e.unknown = false; e.value = nil(); return e.value; }   // (an entry that is .nil)
+    auto remember = [&]() { e.epoch = keep ? rxobj::interpreterEpoch() : 0; };
+    if (o == NULLOBJECT) { e.unknown = true; remember(); return std::nullopt; }
+    e.unknown = false;
+    if ((void *)o == e.last) { t->ReleaseLocalReference(o); remember(); return e.value; }
     Value v = Value::string(std::string());
     if (rxobj::isPlainString(t, o)) {
         // A String entry (.local~v1 = 'a') is a string value in compiled code, as strings are everywhere.
@@ -1668,14 +2066,29 @@ inline Value envValue(EnvName &e) {
     e.last = kept;
     e.value = v;
     t->ReleaseLocalReference(o);
+    e.epoch = keep ? rxobj::interpreterEpoch() : 0;
     return v;
 #else
     if (void *entry = rxobj::environmentEntry(name)) return Value::fromObject(std::make_shared<EnvObject>(entry));
-    return Value::string("." + name);
+    return std::nullopt;
 #endif
+}
+// An unknown environment symbol is its own name (.FOO).
+inline Value envValue(EnvName &e) {
+    if (e.state == 1) return e.value;
+    if (auto v = envFind(e)) return std::move(*v);
+    return Value::string("." + e.name);
+}
+// .RS .LINE .CONTEXT .METHODS .RESOURCES .ROUTINES: an environment symbol first, as any (RexxDotVariable::evaluate:
+// resolveDotVariable, which asks a security manager too), the activation's special value when no source has it.
+template <class F> inline Value envOrSpecial(EnvName &e, F &&special) {
+    if (auto v = envFind(e)) return std::move(*v);
+    return special();
 }
 // One environment symbol of the compiled code: its EnvName found once per site and thread.
 #define RX_ENV(N) ([]() -> ::rx::Value { static thread_local ::rx::EnvName *_rxE = nullptr; if (!_rxE) _rxE = &::rx::envName(N); return ::rx::envValue(*_rxE); }())
+// A special name (.RS, .LINE, ...): the environment symbol of that name first, else SPECIAL (an expression).
+#define RX_ENV_SPECIAL(N, ...) ([&]() -> ::rx::Value { static thread_local ::rx::EnvName *_rxE = nullptr; if (!_rxE) _rxE = &::rx::envName(N); return ::rx::envOrSpecial(*_rxE, [&]() -> ::rx::Value { return __VA_ARGS__; }); }())
 // .NAME environment symbols resolve to the interpreter's own classes (.ARRAY, .DIRECTORY, .LIST, ...).
 inline Value envClass(const std::string &name) { return envValue(envName(name)); }
 #ifdef RX2CPP_HOST_API
@@ -1880,6 +2293,7 @@ struct NativeArray final : NativeRefBase, ItemSnapshot, std::enable_shared_from_
         return promote().object->sendMessage(selector, args);
     }
     MessageResult sendMessage(const std::string &selector, const std::vector<Value> &args) override;
+    bool answer(const std::string &selector, const std::vector<Value> &args, MessageResult &result);
     Value sendBinary(const std::string &selector, const Value &rhs) override {
         if (!real && (rx::eqLit(selector, "==") || rx::eqLit(selector, "=") || rx::eqLit(selector, "\\==") || rx::eqLit(selector, "\\=") || rx::eqLit(selector, "<>") || rx::eqLit(selector, "><"))) {
             const bool same = rhs.isObject() && rhs.object.get() == this;
@@ -2143,6 +2557,25 @@ struct NativeDirectoryClass final : NativeRefBase {
         { std::string sel; std::vector<Value> sent; if (nativeSendWith(selector, args, sel, sent)) return sendMessage(sel, sent); }
         // Only ~new without arguments: an initial size changes the interpreter's table layout (and order).
         if (rx::eqLit(selector, "NEW") && args.empty()) return Value::fromObject(std::make_shared<NativeDirectory>(kind));
+        // MapCollection OF (CoreClasses.orx): a new collection, then for each argument, an array of exactly two items
+        // (index, item), PUT(item, index). Native when every argument is a native array of two items whose index is a
+        // string; anything else (and every error) is the interpreter's.
+        if (rx::eqLit(selector, "OF")) {
+            bool plain = true;
+            for (const Value &a : args) {
+                auto *pair = a.isObject() ? dynamic_cast<NativeArray *>(a.object.get()) : nullptr;
+                if (!pair || pair->real || pair->count != 2 || pair->slots.size() < 2 || !pair->slots[0] || !pair->slots[1] ||
+                    pair->slots[0]->isObject()) { plain = false; break; }
+            }
+            if (plain) {
+                auto made = std::make_shared<NativeDirectory>(kind);
+                for (const Value &a : args) {
+                    auto *pair = static_cast<NativeArray *>(a.object.get());
+                    made->sendMessage("PUT", {*pair->slots[1], *pair->slots[0]});
+                }
+                return Value::fromObject(made);
+            }
+        }
         return envClass(kind).object->sendMessage(selector, args);
     }
     Value sendBinary(const std::string &selector, const Value &rhs) override {
@@ -2160,40 +2593,50 @@ inline Value nativeStringTableClass() {
 }
 inline MessageResult NativeArray::sendMessage(const std::string &selector, const std::vector<Value> &args) {
     if (real) return real->object->sendMessage(selector, args);
+    MessageResult out;
+    if (answer(selector, args, out)) return out;
+    return forward(selector, args);
+}
+// The messages answered natively (false: the interpreter's Array must answer it). The array part of an instance of a
+// compiled .Array subclass (InstanceState::builtin) asks this too, so nothing here may answer with the array itself
+// or its class: FILL, CLASS and ISA are the caller's to leave out.
+inline bool NativeArray::answer(const std::string &selector, const std::vector<Value> &args, MessageResult &result) {
     std::size_t i = 0;
     const std::size_t n = args.size();
     switch (selector.empty() ? 0 : selector[0]) {
     case '[':
         if (rx::eqLit(selector, "[]") && n == 1 && index(args[0], i))
-            return i <= slots.size() && slots[i - 1] ? *slots[i - 1] : nil();
-        if (rx::eqLit(selector, "[]=") && n == 2 && !omitted(args[0]) && index(args[1], i) && place(i, args[0])) return std::nullopt;
+            { result = i <= slots.size() && slots[i - 1] ? *slots[i - 1] : nil(); return true; }
+        if (rx::eqLit(selector, "[]=") && n == 2 && !omitted(args[0]) && index(args[1], i) && place(i, args[0])) { result = std::nullopt; return true; }
         break;
     case 'A':
         if (rx::eqLit(selector, "AT") && n == 1 && index(args[0], i))
-            return i <= slots.size() && slots[i - 1] ? *slots[i - 1] : nil();
+            { result = i <= slots.size() && slots[i - 1] ? *slots[i - 1] : nil(); return true; }
         if (rx::eqLit(selector, "APPEND") && n == 1 && !omitted(args[0])) {
             const std::size_t at = lastIndex() + 1;
-            if (place(at, args[0])) return number(at);
+            if (place(at, args[0])) { result = number(at); return true; }
         }
-        if (rx::eqLit(selector, "ALLITEMS") && n == 0) return newArrayOf(*snapshotItems());
+        if (rx::eqLit(selector, "ALLITEMS") && n == 0) { result = newArrayOf(*snapshotItems()); return true; }
         if (rx::eqLit(selector, "ALLINDEXES") && n == 0) {
             std::vector<Value> ix;
             for (std::size_t k = 0; k < slots.size(); ++k) if (slots[k]) ix.push_back(number(k + 1));
-            return newArrayOf(std::move(ix));
+            result = newArrayOf(std::move(ix));
+            return true;
         }
         break;
     case 'C':
-        if (rx::eqLit(selector, "CLASS") && n == 0) return nativeArrayClass();
+        if (rx::eqLit(selector, "CLASS") && n == 0) { result = nativeArrayClass(); return true; }
         break;
     case 'D':
         // ArrayClass::deleteRexx / deleteItem / closeGap: past the size, .nil and no change; otherwise the item there
         // (or .nil) is taken out and every later slot moves down one (the size one less)
         if (rx::eqLit(selector, "DELETE") && n == 1 && index(args[0], i)) {
-            if (i > slots.size()) return nil();
+            if (i > slots.size()) { result = nil(); return true; }
             std::optional<Value> out = std::move(slots[i - 1]);
             slots.erase(slots.begin() + static_cast<std::ptrdiff_t>(i - 1));
-            if (out) { --count; return std::move(*out); }
-            return nil();
+            if (out) --count;
+            result = out ? std::move(*out) : nil();
+            return true;
         }
         break;
     case 'F':
@@ -2201,58 +2644,61 @@ inline MessageResult NativeArray::sendMessage(const std::string &selector, const
         if (rx::eqLit(selector, "FILL") && n == 1 && !omitted(args[0])) {
             for (auto &s : slots) s = args[0];
             count = slots.size();
-            return self();
+            result = self();
+            return true;
         }
         if (rx::eqLit(selector, "FIRST") && n == 0) {
-            for (std::size_t k = 0; k < slots.size(); ++k) if (slots[k]) return number(k + 1);
-            return nil();
+            for (std::size_t k = 0; k < slots.size(); ++k) if (slots[k]) { result = number(k + 1); return true; }
+            { result = nil(); return true; }
         }
         if (rx::eqLit(selector, "FIRSTITEM") && n == 0) {
-            for (const auto &s : slots) if (s) return *s;
-            return nil();
+            for (const auto &s : slots) if (s) { result = *s; return true; }
+            { result = nil(); return true; }
         }
         break;
     case 'H':
         if (rx::eqLit(selector, "HASINDEX") && n == 1 && index(args[0], i))
-            return Value::string(i <= slots.size() && slots[i - 1] ? "1" : "0");
+            { result = Value::string(i <= slots.size() && slots[i - 1] ? "1" : "0"); return true; }
         break;
     case 'I':
-        if (rx::eqLit(selector, "ITEMS") && n == 0) return number(count);
-        if (rx::eqLit(selector, "ISEMPTY") && n == 0) return Value::string(count == 0 ? "1" : "0");
+        if (rx::eqLit(selector, "ITEMS") && n == 0) { result = number(count); return true; }
+        if (rx::eqLit(selector, "ISEMPTY") && n == 0) { result = Value::string(count == 0 ? "1" : "0"); return true; }
         if (rx::eqLit(selector, "ISA") && n == 1 && args[0].isObject()) {
-            if (dynamic_cast<NativeArrayClass *>(args[0].object.get())) return Value::string("1");
+            if (dynamic_cast<NativeArrayClass *>(args[0].object.get())) { result = Value::string("1"); return true; }
             // An Array instance: isA(c) is c == .Array or .Array~isSubclassOf(c) (no promotion needed).
             Value cls = NativeArrayClass::interpreterClass();
             if (auto *e = dynamic_cast<EnvObject *>(args[0].object.get()))
-                if (e->handle == static_cast<EnvObject *>(cls.object.get())->handle) return Value::string("1");
-            return cls.object->sendMessage("ISSUBCLASSOF", args);
+                if (e->handle == static_cast<EnvObject *>(cls.object.get())->handle) { result = Value::string("1"); return true; }
+            result = cls.object->sendMessage("ISSUBCLASSOF", args);
+            return true;
         }
         break;
     case 'L':
-        if (rx::eqLit(selector, "LAST") && n == 0) { const std::size_t l = lastIndex(); return l ? number(l) : nil(); }
-        if (rx::eqLit(selector, "LASTITEM") && n == 0) { const std::size_t l = lastIndex(); return l ? *slots[l - 1] : nil(); }
+        if (rx::eqLit(selector, "LAST") && n == 0) { const std::size_t l = lastIndex(); result = l ? number(l) : nil(); return true; }
+        if (rx::eqLit(selector, "LASTITEM") && n == 0) { const std::size_t l = lastIndex(); result = l ? *slots[l - 1] : nil(); return true; }
         break;
     case 'M':
-        if (rx::eqLit(selector, "MAKEARRAY") && n == 0) return newArrayOf(*snapshotItems());
+        if (rx::eqLit(selector, "MAKEARRAY") && n == 0) { result = newArrayOf(*snapshotItems()); return true; }
         break;
     case 'P':
-        if (rx::eqLit(selector, "PUT") && n == 2 && !omitted(args[0]) && index(args[1], i) && place(i, args[0])) return std::nullopt;
+        if (rx::eqLit(selector, "PUT") && n == 2 && !omitted(args[0]) && index(args[1], i) && place(i, args[0])) { result = std::nullopt; return true; }
         break;
     case 'R':
         if (rx::eqLit(selector, "REMOVE") && n == 1 && index(args[0], i)) {
-            if (i > slots.size() || !slots[i - 1]) return nil();
+            if (i > slots.size() || !slots[i - 1]) { result = nil(); return true; }
             Value out = std::move(*slots[i - 1]);
             slots[i - 1].reset();
             --count;
-            return out;
+            result = std::move(out);
+            return true;
         }
         break;
     case 'S':
-        if (rx::eqLit(selector, "SIZE") && n == 0) return number(slots.size());
+        if (rx::eqLit(selector, "SIZE") && n == 0) { result = number(slots.size()); return true; }
         break;
     default: break;
     }
-    return forward(selector, args);
+    return false;
 }
 #endif
 #ifdef RX2CPP_HOST_API
@@ -2285,7 +2731,7 @@ inline void mergeExternalCall(RexxThreadContext *t, RexxRoutineObject helper, st
             "do rx2cppName over rx2cppRoutines~allIndexes; rx2cppMerged~addPublicRoutine(rx2cppName, rx2cppRoutines[rx2cppName]); end\n"
             "do rx2cppName over rx2cppClasses~allIndexes; rx2cppMerged~addPublicClass(rx2cppName, rx2cppClasses[rx2cppName]); end\n"
             "rx2cppLibrary~addPackage(rx2cppMerged)\n";
-        merge = t->NewRoutine("rx2cpp_merge", source, std::strlen(source));
+        merge = rxobj::internalRoutine(t, t->NewRoutine("rx2cpp_merge", source, std::strlen(source)));
         if (merge == NULLOBJECT) return;
         rxobj::pinRef(t, (RexxObjectPtr)merge);
     }
@@ -2466,18 +2912,25 @@ inline void interpreterCommand(Variables &vars, const Value &environment, const 
     RexxRoutineObject &routine = routines[mode];
     if (routine == NULLOBJECT) {
         // (the activation's TRACE setting: TRACE OFF keeps a failing command quiet, as interpreted)
-        std::string source = "use arg rx2cppEnvironment, rx2cppCommand, rx2cppTrace\ntrace value rx2cppTrace\nrx2cppQueue = .array~new\n";
+        std::string source = "use arg rx2cppEnvironment, rx2cppCommand, rx2cppTrace, rx2cppContext\ntrace value rx2cppTrace\nrx2cppQueue = .array~new\n";
         if (mode & 1) source += "call on error name rx2cppQueued\n";
         if (mode & 2) source += "call on failure name rx2cppQueued\n";
         if (mode & 4) source += "call on any name rx2cppQueued\n";
-        source += "address value rx2cppEnvironment\nrx2cppCommand\nreturn .array~of(rc, rx2cppQueue, .rs)\n"
+        // (.RS through the caller-context routine: the helper's own, with no environment symbol to look up)
+        source += "address value rx2cppEnvironment\nrx2cppCommand\n"
+                  "if rx2cppContext == .nil then return .array~of(rc, rx2cppQueue, .context~rs)\n"
+                  "return .array~of(rc, rx2cppQueue, rx2cppContext~call~rs)\n"
                   "rx2cppQueued: if rx2cppQueue~append(condition('O')) > 0 then nop\nreturn\n";
-        routine = t->NewRoutine("rx2cpp_address", source.c_str(), source.size());
+        routine = rxobj::helperRoutine(t, t->NewRoutine("rx2cpp_address", source.c_str(), source.size()));
         if (routine == NULLOBJECT) throw std::runtime_error("cannot create interpreter ADDRESS helper");
         rxobj::pinRef(t, (RexxObjectPtr)routine);
     }
     std::vector<rxobj::Arg> conv;
-    RexxArrayObject arr = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(3));
+    RexxArrayObject arr = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(4));
+    {
+        RexxObjectPtr context = rxobj::callerContextRoutine(t);
+        t->ArrayPut(arr, context != NULLOBJECT ? context : t->Nil(), 4);
+    }
     std::size_t index = 0;
     const Value trace = Value::string(traceSetting());
     for (const Value *v : {&environment, &command, &trace}) {
@@ -2561,7 +3014,9 @@ inline const bool foreignStemInstalled = (StemObject::foreignStemHook() = &forei
 inline RexxObjectPtr interpreterHelper(RexxThreadContext *t, rxobj::LocalRefs &temps, RexxRoutineObject &routine,
                                        const char *name, const char *source, const std::vector<Value> &args) {
     if (routine == NULLOBJECT) {
-        routine = t->NewRoutine(name, source, std::strlen(source));
+        // (the collection helper is the compiled code's machinery, not its code: no security manager is asked for it)
+        RexxRoutineObject made = t->NewRoutine(name, source, std::strlen(source));
+        routine = std::strcmp(name, "rx2cpp_gc") == 0 ? rxobj::internalRoutine(t, made) : rxobj::helperRoutine(t, made);
         if (routine == NULLOBJECT) throw std::runtime_error(std::string("cannot create interpreter helper ") + name);
         rxobj::pinRef(t, (RexxObjectPtr)routine);
     }
@@ -2789,7 +3244,9 @@ inline std::optional<Value> interpretInActivation(Variables &vars, const Value &
     RexxDirectoryObject local = (RexxDirectoryObject)temps((RexxObjectPtr)t->GetLocalEnvironment());
     t->DirectoryPut(local, (RexxObjectPtr)in, key.c_str());
     const ActivationNumeric &num = vars.numeric;
-    std::string source = "rx2cppIn = .local~remove('" + key + "')\n"
+    // (the code's scaffolding names no environment symbol, which a security manager would be asked about: RX2CPP_TAKE and
+    // RX2CPP_CALLER_CONTEXT are routines of the declaration package, the code's package's parent)
+    std::string source = "rx2cppIn = RX2CPP_TAKE('" + key + "')\n"
         "do rx2cppName over rx2cppIn~allIndexes; call value rx2cppName, rx2cppIn~at(rx2cppName); end\n"
         "drop rx2cppIn rx2cppName\n"
         "numeric digits " + std::to_string(num.digits) + "; numeric fuzz " + std::to_string(num.fuzz) +
@@ -2805,10 +3262,10 @@ inline std::optional<Value> interpretInActivation(Variables &vars, const Value &
     const std::string queueKey = key + ".Q";
     if (callArmed) t->DirectoryPut(local, temps((RexxObjectPtr)t->NewArray(0)), queueKey.c_str());
     source += code.bytes.str();
-    source += "\nreturn .array~of('" + key + "', .context~variables, digits(), fuzz(), form())\n";
+    source += "\nreturn .array~of('" + key + "', RX2CPP_CALLER_CONTEXT()~variables, digits(), fuzz(), form())\n";
     if (signalArmed)
-        source += "rx2cppTrapped: return .array~of('" + key + "', .context~variables, digits(), fuzz(), form(), condition('O'))\n";
-    if (callArmed) source += "rx2cppQueued: if .local['" + queueKey + "']~append(condition('O')) > 0 then nop\nreturn\n";
+        source += "rx2cppTrapped: return .array~of('" + key + "', RX2CPP_CALLER_CONTEXT()~variables, digits(), fuzz(), form(), condition('O'))\n";
+    if (callArmed) source += "rx2cppQueued: if RX2CPP_TAKE('" + queueKey + "', 'K')~append(condition('O')) > 0 then nop\nreturn\n";
     // hand the queued conditions to this activation (MethodTraps::deliver)
     auto deliverQueued = [&] {
         if (!callArmed) return;
@@ -2835,25 +3292,48 @@ inline std::optional<Value> interpretInActivation(Variables &vars, const Value &
         conv.clear(); EnvObject::convert({args[i]}, conv);
         t->ArrayPut(argArray, conv[0].obj ? (RexxObjectPtr)conv[0].obj : temps((RexxObjectPtr)t->NewString(conv[0].bytes.data(), conv[0].bytes.size())), i + 1);
     }
+    // The code is a method (SELF) or routine of a package whose parent is the declaration package, made here so that its
+    // package is given the activation's security manager (an INTERPRET runs under its activation's: giveLibrarySecurity).
     static thread_local RexxRoutineObject helper = NULLOBJECT;
     static const char body[] =
-        "use arg rx2cppSelf, rx2cppSource, rx2cppArgs, rx2cppPackage\n"
-        "rx2cppSource = rx2cppSource~makeArray('0a'x)\n"
-        "if rx2cppSelf \\== .nil then do\n"
-        "  rx2cppCode = .Method~new('INTERPRET', rx2cppSource, rx2cppPackage)\n"
-        "  rx2cppCode~setUnguarded\n"
-        "  rx2cppMsg = .Message~new(rx2cppSelf, 'RX2CPP_INTERPRET', 'I', rx2cppCode, rx2cppArgs)\n"
-        "end\n"
-        "else rx2cppMsg = .Message~new(.Routine~new('INTERPRET', rx2cppSource, rx2cppPackage), 'CALLWITH', 'I', rx2cppArgs)\n"
+        "use arg rx2cppSelf, rx2cppCode, rx2cppArgs\n"
+        "if rx2cppSelf \\== .nil then rx2cppMsg = .Message~new(rx2cppSelf, 'RX2CPP_INTERPRET', 'I', rx2cppCode, rx2cppArgs)\n"
+        "else rx2cppMsg = .Message~new(rx2cppCode, 'CALLWITH', 'I', rx2cppArgs)\n"
         "rx2cppMsg~send\n"
         "if rx2cppMsg~hasResult then return .array~of(1, rx2cppMsg~result)\n"
         "return .array~of(0)\n";
-    Value package = nil();
-    if (rxobj::libraryPackage() != NULLOBJECT) package = EnvObject::adopt((void *)rxobj::pinRef(t, rxobj::libraryPackage()));
+    Value codeObject = nil();
+    {
+        const bool asMethod = !self.isObject() || !self.object->isNilObject();
+        RexxObjectPtr codeClass = temps((RexxObjectPtr)t->FindClass(asMethod ? "METHOD" : "ROUTINE"));
+        RexxArrayObject lines = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(0));
+        const std::string text = source;
+        std::size_t from = 0;
+        while (from <= text.size()) {
+            std::size_t nl = text.find('\n', from);
+            if (nl == std::string::npos) nl = text.size();
+            t->ArrayAppend(lines, temps((RexxObjectPtr)t->NewString(text.data() + from, nl - from)));
+            from = nl + 1;
+        }
+        RexxObjectPtr name = temps((RexxObjectPtr)t->String("INTERPRET"));
+        RexxArrayObject made = rxobj::libraryPackage() != NULLOBJECT
+            ? (RexxArrayObject)temps((RexxObjectPtr)t->ArrayOfThree(name, (RexxObjectPtr)lines, rxobj::libraryPackage()))
+            : (RexxArrayObject)temps((RexxObjectPtr)t->ArrayOfTwo(name, (RexxObjectPtr)lines));
+        RexxObjectPtr code = t->SendMessage(codeClass, "NEW", made);
+        if (t->CheckCondition()) raisePending(t, "NEW");
+        if (asMethod) {
+            t->SendMessage0(code, "SETUNGUARDED");
+            if (t->CheckCondition()) raisePending(t, "SETUNGUARDED");
+            rxobj::giveLibrarySecurity(t, (void *)t->GetMethodPackage((RexxMethodObject)code));
+        }
+        else rxobj::giveLibrarySecurity(t, (void *)t->GetRoutinePackage((RexxRoutineObject)code));
+        codeObject = EnvObject::adopt((void *)rxobj::pinRef(t, code));
+        t->ReleaseLocalReference(code);
+    }
     std::optional<Value> outcome;
     try {
         RexxObjectPtr r = interpreterHelper(t, temps, helper, "rx2cpp_interpret", body,
-            {self, Value::string(source), EnvObject::adopt((void *)rxobj::pinRef(t, (RexxObjectPtr)argArray)), package});
+            {self, codeObject, EnvObject::adopt((void *)rxobj::pinRef(t, (RexxObjectPtr)argArray))});
         RexxArrayObject out = (RexxArrayObject)r;
         if (t->ArraySize(out) < 2) { deliverQueued(); return Value(noResult()); }           // RETURN / EXIT without a value
         outcome = EnvObject::wrap([&] {
@@ -2987,6 +3467,28 @@ inline Value streamBif(Variables &vars, const std::string &name, const std::vect
         fullName = qualifyStreamName(*streamName);
         auto it = table.find(fullName);
         if (it != table.end()) return it->second;
+        // RexxActivation::resolveStream: a stream not yet open is the security manager's first (STREAM, NAME the
+        // qualified name; its STREAM entry, when it gives one, is the stream)
+        {
+            RexxThreadContext *t = rxobj::need();
+            // (the activation's manager: RexxActivation::getEffectiveSecurityManager)
+            RexxObjectPtr manager = rxobj::securityManagerObject(t, rxobj::activationSecurity(t));
+            if (manager != NULLOBJECT) {
+                RexxDirectoryObject args = t->NewDirectory();
+                t->DirectoryPut(args, (RexxObjectPtr)t->String(fullName.c_str()), "NAME");
+                if (askSecurityManager(t, manager, "STREAM", args)) {
+                    // (SecurityManager::checkStreamAccess: the answer is the STREAM entry)
+                    RexxObjectPtr given = t->DirectoryAt(args, "STREAM");
+                    if (t->CheckCondition()) raisePending(t, "AT");
+                    if (given != NULLOBJECT) {
+                        Value stream = EnvObject::adopt((void *)rxobj::pinRef(t, given));
+                        t->ReleaseLocalReference(given);
+                        table.emplace(fullName, stream);
+                        return stream;
+                    }
+                }
+            }
+        }
         MessageResult made = envClass("STREAM").object->sendMessage("NEW", {Value::string(*streamName)});
         if (!made || !made->isObject()) throw std::runtime_error("cannot create stream " + *streamName);
         if (add) table.emplace(fullName, *made);

@@ -510,6 +510,43 @@ inline std::optional<Value> numericBif(const std::string &name, const std::vecto
             const cpp_int &p = decimalPow10Ref(-d.exponent);
             return Value::string((d.coefficient % p) == 0 ? "1" : "0");
         }
+        // StringUtil::dataType's other options, as the interpreter checks them (validateGroupedSetQuiet,
+        // LanguageParser::scanSymbol, NumberString::numberValue)
+        case 'B': case 'X': {
+            if (v.empty()) return Value::string("1");
+            const bool hex = type == 'X';
+            const std::size_t modulus = hex ? 2 : 4;
+            auto inSet = [&](unsigned char c) {
+                if (!hex) return c == '0' || c == '1';
+                return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+            };
+            auto blank = [](unsigned char c) { return c == ' ' || c == '\t'; };
+            if (blank(static_cast<unsigned char>(v[0]))) return Value::string("0");
+            bool spaceFound = false;
+            std::size_t count = 0, residue = 0;
+            for (unsigned char c : v) {
+                if (inSet(c)) ++count;
+                else if (blank(c)) {
+                    if (!spaceFound) { residue = count % modulus; spaceFound = true; }
+                    else if (residue != count % modulus) return Value::string("0");
+                }
+                else return Value::string("0");
+            }
+            const unsigned char last = static_cast<unsigned char>(v.back());
+            if (blank(last) || (spaceFound && count % modulus != residue)) return Value::string("0");
+            return Value::string("1");
+        }
+        case 'S': return Value::string(scanSymbol(v) != SymbolScan::Bad ? "1" : "0");
+        case 'V': {
+            const SymbolScan k = scanSymbol(v);
+            return Value::string(k == SymbolScan::Name || k == SymbolScan::Stem || k == SymbolScan::Compound ? "1" : "0");
+        }
+        case 'O': return Value::string(v.size() == 1 && (v[0] == '1' || v[0] == '0') ? "1" : "0");
+        case 'I': case '9': {   // numberValue(value, ARGUMENT_DIGITS (18, 64-bit)) / numberValue(value) (DEFAULT_DIGITS 9)
+            if (!tryParseRexxDecimal(*a[0], d, err)) return Value::string("0");
+            std::int64_t out = 0;
+            return Value::string(oorexxWholeNumber(d, type == 'I' ? 18 : 9, true, out) ? "1" : "0");
+        }
         default: return std::nullopt;
         }
     }

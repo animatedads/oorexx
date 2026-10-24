@@ -23,6 +23,14 @@
   return .directory~new
 ::method hasInternalCalls
   return self~internalCalls~items > 0
+/* A method the compiler made (the default INIT of a root class that declares none: RxHybridCompiler~ensureInit). */
+::method setSynthetic
+  expose synthetic
+  use arg synthetic
+::method synthetic
+  expose synthetic
+  if var('SYNTHETIC') then return synthetic
+  return .false
 /* SELF is a variable of this method (RxStream~methodBodySelfVariable): set at the start, read as a variable. */
 ::method setSelfVariable
   expose selfVariable

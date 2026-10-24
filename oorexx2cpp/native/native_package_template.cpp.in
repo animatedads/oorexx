@@ -22,6 +22,15 @@
 #include <stdexcept>
 
 namespace rx2cpp {
+// A method context call that may let the interpreter run (ForwardMessage, SetGuardOn / SetGuardOff): it moves the
+// interpreter epoch (rx_api_epoch.hpp) where the library has one.
+template <class F> inline auto viaInterpreter(F &&f) {
+#ifdef RX_API_PURE
+    return rxobj::viaInterpreter(std::forward<F>(f));
+#else
+    return f();
+#endif
+}
 Registry &Registry::instance() { static Registry registry; return registry; }
 std::string Registry::add(std::shared_ptr<CompiledObject> obj) {
     if (!obj) throw std::invalid_argument("null compiled object");
@@ -108,7 +117,8 @@ static std::shared_ptr<CompiledObject> create(const std::string &className) {
 struct PendingCondition : std::runtime_error {
     PendingCondition() : std::runtime_error("ooRexx condition pending") {}
 };
-struct MethodInfo { const char *definingClass; bool isPublic; bool noResult; };
+// constant: a ::CONSTANT of definingClass (its value is the interpreter's: constantValue)
+struct MethodInfo { const char *definingClass; bool isPublic; bool noResult; bool constant = false; };
 /* Selector and class names are case-insensitive in ooRexx; the tables hold the upper-case spelling and are searched without
    making an upper-case copy of the incoming name. */
 // (ASCII upper case, inline: what std::toupper does to a symbol's characters in the C locale, without a library call
@@ -171,6 +181,11 @@ struct InstanceState : std::enable_shared_from_this<InstanceState> {
 #endif
     }
     std::string token;
+#ifdef RX2CPP_HOST_API
+    // An instance of a compiled .Array subclass made by compiled code (arrayNewTable): its array part, native until the
+    // instance needs its interpreter object (materializeState copies the items into it, and this goes).
+    std::shared_ptr<rx::NativeArray> builtin;
+#endif
     std::vector<std::pair<std::string, std::shared_ptr<CompiledObject>>> scopes;   // instances have a handful of scopes: a scan beats hashing
     std::shared_ptr<CompiledObject> at(const std::string &cls) {
         std::lock_guard<std::mutex> lock(gate);
@@ -366,14 +381,36 @@ void *materializeState(const std::shared_ptr<InstanceState> &st, ProxyHold *hold
     // (the new object's own reference: kept for the caller's send, else released: the state's pin keeps it, or for a
     // disposable state the caller's own (an argument's hold, the entry's result: rxobj::returnPin), taken before the
     // interpreter allocates again)
+    if (!st->alive) { if (r.kind == 2) rxobj::release(r.obj); throw std::runtime_error("cannot create the interpreter object for a native instance"); }
+    if (st->builtin) {
+        // the array part goes into the interpreter object, as it is: each item at its index, and the size (an empty
+        // slot at the end: .nil put there and removed, which leaves the size); the instance is the interpreter's from now on
+        std::shared_ptr<rx::NativeArray> items = std::move(st->builtin);
+        st->builtin.reset();
+        auto put = [&](const char *selector, std::vector<rx::Value> args) {
+            std::vector<rxobj::Arg> in; rx::EnvObject::convert(args, in);
+            rxobj::Result done; std::string c, t;
+            if (!rxobj::send(st->handle, selector, in, done, c, t)) throw rx::SyntaxCondition(c, t, false);
+            if (done.kind == 2) rxobj::release(done.obj);
+        };
+        const std::size_t size = items->slots.size();
+        for (std::size_t i = 0; i < size; ++i)
+            if (items->slots[i]) put("PUT", {*items->slots[i], rx::NativeArray::number(i + 1)});
+        if (size > 0 && !items->slots[size - 1]) {
+            put("PUT", {rx::nil(), rx::NativeArray::number(size)});
+            put("REMOVE", {rx::NativeArray::number(size)});
+        }
+    }
     if (r.kind == 2) { if (hold) hold->h = r.obj; else rxobj::release(r.obj); }
-    if (!st->alive) throw std::runtime_error("cannot create the interpreter object for a native instance");
     { std::lock_guard<std::mutex> lock(st->gate); st->notePin(); }   // compiled code holds it: keep it
     return st->handle;
 }
 std::optional<rx::Value> interpreterSend(const std::shared_ptr<InstanceState> &st, const std::string &selector,
                                          const std::vector<rx::Value> &args) {
     ProxyHold hold;
+    // RX2CPP_BIF_STATS: which message makes a native instance's interpreter object
+    static const bool sendStats = std::getenv("RX2CPP_BIF_STATS") != nullptr;
+    if (sendStats && !(st->alive && st->handle)) rxobj::bifStat("materialize " + st->dynamicClass + " for ~" + selector);
     void *h = materializeState(st, &hold);
     std::vector<rxobj::Arg> in; rx::EnvObject::convert(args, in);
     rxobj::Result r; std::string code, text;
@@ -394,6 +431,19 @@ std::optional<rx::Value> interpreterSend(const std::shared_ptr<InstanceState> &s
 }
 std::optional<rx::Value> runNative(const std::shared_ptr<InstanceState> &st, Resolved &method,
                                    const std::vector<std::optional<rx::Value>> &args);
+/* A message to an instance of a compiled .Array subclass that its class does not define, answered by its native array
+   part (InstanceState::builtin) when that answers it as the interpreter's Array would for this object. Not the
+   messages whose answer is the array itself or its class (FILL, CLASS, ISA): those are the instance's own. */
+bool builtinSend(InstanceState &st, const std::string &selector, const std::vector<rx::Value> &args, std::optional<rx::Value> &out) {
+    if (!st.builtin) return false;
+    static const CiEq same;
+    if (same(selector, "FILL") || same(selector, "CLASS") || same(selector, "ISA")) return false;
+    // (the selector as the native array knows it: upper case)
+    rx::MessageResult r;
+    if (!st.builtin->answer(upperOf(selector), args, r)) return false;
+    out = std::move(r);
+    return true;
+}
 /* SELF~selector(args) from compiled code in an exact instance: dispatch inside the library when the method is compiled. */
 bool nativeSelfSend(const std::shared_ptr<InstanceState> &st, const std::string &definingClass, const std::string &selector,
                     const std::vector<rx::Value> &args, std::optional<rx::Value> &out) {
@@ -483,6 +533,11 @@ bool objectIdentityOp(const std::shared_ptr<InstanceState> &st, const std::strin
     return identity;
 }
 rx::Value nativeClassValue(const std::string &name);
+class NativeInstanceRef;
+/* A message to a compiled instance that its class has no compiled method for (from compiled code holding it, or SELF
+   in one of its methods): its array part, the messages answered here without its interpreter object, else the
+   interpreter object. */
+rx::MessageResult inheritedSend(const std::shared_ptr<InstanceState> &st, const std::string &selector, const std::vector<rx::Value> &args);
 class NativeInstanceRef final : public rx::NativeRefBase {
     std::shared_ptr<InstanceState> st_;
     std::shared_ptr<rx::EnvObject> keep_;   // adopted from the interpreter: holds its global reference (no early UNINIT)
@@ -499,34 +554,20 @@ public:
     }
     NativeInstanceRef(const NativeInstanceRef &) = delete;
     NativeInstanceRef &operator=(const NativeInstanceRef &) = delete;
-    void *materialize() override { return materializeState(st_); }
+    void *materialize() override {
+        static const bool sendStats = std::getenv("RX2CPP_BIF_STATS") != nullptr;
+        const bool made = sendStats && !(st_->alive && st_->handle);
+        void *h = materializeState(st_);
+        // (named with the send it goes to: the next one, after the NEW that made it)
+        if (made) rxobj::pendingArgumentStat = "materialize " + st_->dynamicClass + " as an argument";
+        return h;
+    }
     rx::MessageResult sendMessage(const std::string &selector, const std::vector<rx::Value> &args) override {
-        // ISA of a compiled instance whose class does not define ISA: the answer depends on its class and the class asked
-        // about, so the interpreter answers once per pair.
-        if (args.size() == 1 && args[0].isObject() && !st_->classSide && selector == "ISA" && !lookupMethod(*st_, "ISA")) {
-            void *key = nullptr;
-            if (auto *e = dynamic_cast<rx::EnvObject *>(args[0].object.get())) key = e->handle;
-            else if (auto *n = dynamic_cast<rx::NativeRefBase *>(args[0].object.get()); n && !dynamic_cast<NativeInstanceRef *>(n)) key = n->materialize();
-            if (key) {
-                static thread_local std::map<std::pair<std::string, void *>, bool> known;
-                const auto k = std::make_pair(st_->dynamicClass, key);
-                auto it = known.find(k);
-                if (it != known.end()) return rx::Value::string(it->second ? "1" : "0");
-                auto r = interpreterSend(st_, selector, args);
-                if (r && !r->isObject()) known.emplace(k, r->bytes == "1");
-                return r;
-            }
-        }
-        if (Resolved *method = lookupMethod(*st_, selector))
+        if (Resolved *method = lookupMethod(*st_, selector)) {
             if (method->second.isPublic || privateAllowedFor(st_.get(), method->second)) return runNative(st_, *method, optionalsOf(args));
-        // .Object's ISNIL and CLASS of an instance of a class of this library whose state is all native: answered here
-        // (the class defines neither: the lookup above found none), without making its interpreter object
-        if (args.empty() && !st_->classSide && stateDisposable(*st_)) {
-            static const CiEq same;
-            if (same(selector, "ISNIL")) return rx::Value::string("0");
-            if (same(selector, "CLASS")) return nativeClassValue(st_->dynamicClass);
+            return interpreterSend(st_, selector, args);   // (the interpreter's error, or its own check)
         }
-        return interpreterSend(st_, selector, args);
+        return inheritedSend(st_, selector, args);
     }
     const InstanceState *state() const { return st_.get(); }
     const std::shared_ptr<InstanceState> &stateRef() const { return st_; }   // (the cycle collector's edge)
@@ -555,6 +596,36 @@ public:
         return r->bytes;
     }
 };
+rx::MessageResult inheritedSend(const std::shared_ptr<InstanceState> &st, const std::string &selector, const std::vector<rx::Value> &args) {
+    static const CiEq same;
+    if (st->builtin) {
+        std::optional<rx::Value> out;
+        if (builtinSend(*st, selector, args, out)) return out;
+    }
+    // ISA (the class defines none: no compiled method was found): the answer depends on the instance's class and the
+    // class asked about, so the interpreter answers once per pair.
+    if (args.size() == 1 && args[0].isObject() && !st->classSide && same(selector, "ISA")) {
+        void *key = nullptr;
+        if (auto *e = dynamic_cast<rx::EnvObject *>(args[0].object.get())) key = e->handle;
+        else if (auto *n = dynamic_cast<rx::NativeRefBase *>(args[0].object.get()); n && !dynamic_cast<NativeInstanceRef *>(n)) key = n->materialize();
+        if (key) {
+            static thread_local std::map<std::pair<std::string, void *>, bool> known;
+            const auto k = std::make_pair(st->dynamicClass, key);
+            auto it = known.find(k);
+            if (it != known.end()) return rx::Value::string(it->second ? "1" : "0");
+            auto r = interpreterSend(st, selector, args);
+            if (r && !r->isObject()) known.emplace(k, r->bytes == "1");
+            return r;
+        }
+    }
+    // .Object's ISNIL and CLASS of an instance of a class of this library whose state is all native: answered here
+    // (the class defines neither), without making its interpreter object
+    if (args.empty() && !st->classSide && stateDisposable(*st)) {
+        if (same(selector, "ISNIL")) return rx::Value::string("0");
+        if (same(selector, "CLASS")) return nativeClassValue(st->dynamicClass);
+    }
+    return interpreterSend(st, selector, args);
+}
 class NativeFrame final : public SelfSender {
     std::shared_ptr<InstanceState> st_; std::string definingClass_;
     const std::vector<std::optional<rx::Value>> &args_; SelfSender *previous_;
@@ -565,7 +636,9 @@ public:
     std::optional<rx::Value> sendValues(const std::string &selector, const std::vector<rx::Value> &args) override {
         std::optional<rx::Value> out;
         if (nativeSelfSend(st_, definingClass_, selector, args, out)) return out;
-        return interpreterSend(st_, selector, args);
+        // (a super helper nativeSelfSend leaves, or a message the class has no compiled method for)
+        if (selector.compare(0, 7, "RX2CPP_") == 0 || lookupMethod(*st_, selector)) return interpreterSend(st_, selector, args);
+        return inheritedSend(st_, selector, args);
     }
     std::string send(const std::string &selector, const std::vector<std::string> &args) override {
         std::vector<rx::Value> values;
@@ -589,9 +662,36 @@ public:
         return r->bytes;
     }
 };
+/* The value of a ::CONSTANT of a class of this library: the interpreter evaluated it when the package was installed
+   (the declaration package has the directive as written); its class object answers the same value (a constant is a
+   method of the class and of its instances). Asked once: the value never changes. */
+rx::Value constantValue(const char *definingClass, const std::string &selector) {
+    static std::mutex gate;
+    static std::map<std::pair<std::string, std::string>, rx::Value> known;
+    const auto key = std::make_pair(std::string(definingClass), selector);
+    { std::lock_guard<std::mutex> lock(gate); auto it = known.find(key); if (it != known.end()) return it->second; }
+    void *cls = rxobj::findClass(definingClass);
+    if (!cls) throw std::runtime_error(std::string("native class is not registered: ") + definingClass);
+    rxobj::Result r; std::string code, text;
+    const bool ok = rxobj::send(cls, selector, {}, r, code, text);
+    rxobj::release(cls);
+    if (!ok) throw rx::SyntaxCondition(code, text, false);
+    if (r.kind == 0) throw std::runtime_error("constant without a value: " + selector);
+    rx::Value v = rx::EnvObject::wrap(r);
+    std::lock_guard<std::mutex> lock(gate);
+    return known.emplace(key, v).first->second;
+}
 std::optional<rx::Value> runNative(const std::shared_ptr<InstanceState> &st, Resolved &method,
                                    const std::vector<std::optional<rx::Value>> &args) {
     const MethodInfo &info = method.second;
+    if (info.constant) {
+        if (!args.empty()) {   // (the interpreter's error)
+            std::vector<rx::Value> values;
+            for (const auto &a : args) values.push_back(a ? *a : rx::omittedArgument());
+            return interpreterSend(st, method.first, values);
+        }
+        return constantValue(info.definingClass, method.first);
+    }
     auto obj = st->at(info.definingClass);
     std::lock_guard<ScopeLock> hold(obj->scope_lock);
     NativeFrame frame(st, info.definingClass, args);
@@ -631,7 +731,17 @@ public:
         static const CiEq same;
         if (same(selector, "DEFINE") || same(selector, "DELETE") || same(selector, "INHERIT") || same(selector, "UNINHERIT"))
             classesChanged() = true;
-        if (same(selector, "NEW") && !classesChanged()) {
+        if (same(selector, "NEW") && args.empty() && !classesChanged() && arrayNewTable().count(name_)) {
+            // .Array's NEW without arguments, then INIT, which for this class does nothing (arrayNewTable: no INIT of
+            // its own): the instance with an empty native array part, made without its interpreter object
+            auto st = std::make_shared<InstanceState>();
+            st->dynamicClass = name_;
+            st->exact = true;
+            st->builtin = std::make_shared<rx::NativeArray>(0, false);
+            trackState(st);
+            return rx::Value::fromObject(std::make_shared<NativeInstanceRef>(st));
+        }
+        if (same(selector, "NEW") && !classesChanged() && directNewTable().count(name_)) {
             auto st = std::make_shared<InstanceState>();
             st->dynamicClass = name_;
             st->exact = true;
@@ -660,7 +770,7 @@ public:
 rx::Value nativeClassValue(const std::string &name) { return rx::Value::fromObject(std::make_shared<NativeClassObj>(name)); }
 std::optional<rx::Value> packageClassImpl(const std::string &name) {
     const std::string up = upperOf(name);
-    if (!directNewTable().count(up)) return std::nullopt;
+    if (!directNewTable().count(up) && !arrayNewTable().count(up)) return std::nullopt;
     return rx::Value::fromObject(std::make_shared<NativeClassObj>(up));
 }
 /* This library's class objects that compiled code may instantiate directly (directNewTable), by interpreter handle. */
@@ -671,6 +781,8 @@ const std::unordered_map<void *, std::string> &classByHandle() {
         filled = true;
         for (const auto &name : directNewTable())
             if (void *h = rxobj::findClass(name)) table.emplace(h, name);   // class objects live as long as the interpreter
+        for (const auto &name : arrayNewTable())
+            if (void *h = rxobj::findClass(name)) table.emplace(h, name);
     }
     return table;
 }
@@ -823,7 +935,11 @@ void collectCycles() {
             }
             edge(child);
         };
-        if (n.state) { for (const auto &scope : n.state->scopes) scope.second->gcFields(onValue); return; }
+        if (n.state) {
+            for (const auto &scope : n.state->scopes) scope.second->gcFields(onValue);
+            if (n.state->builtin) n.state->builtin->gcValues(onValue);
+            return;
+        }
         auto o = n.object.lock();
         if (!o) return;
         if (auto *ref = dynamic_cast<NativeInstanceRef *>(o.get())) {
@@ -859,7 +975,10 @@ void collectCycles() {
             std::fprintf(stderr, "rx2cpp collect: freed %s%s (references %ld)\n", st->dynamicClass.c_str(), st->classSide ? " class" : "",
                          static_cast<long>(st.use_count()));
     states.clear();
-    for (const auto &st : deadStates) for (const auto &scope : st->scopes) scope.second->gcClear();
+    for (const auto &st : deadStates) {
+        for (const auto &scope : st->scopes) scope.second->gcClear();
+        if (st->builtin) st->builtin->gcClear();
+    }
     for (const auto &o : deadObjects) o->gcClear();
     if (std::getenv("RX2CPP_GC_STATS")) {
         std::size_t held = 0;   // held from outside compiled objects and containers (after the subtraction)
@@ -909,10 +1028,10 @@ public:
     void guardSet(bool on) {
         if (on == guardHeld_) return;
         if (on) {
-            { ReleaseAndReacquire released(lock_); ctx_->SetGuardOn(); }
+            { ReleaseAndReacquire released(lock_); viaInterpreter([&] { ctx_->SetGuardOn(); }); }
             if (held_) held_->hold(self_, className_);
         } else {
-            ctx_->SetGuardOff();
+            viaInterpreter([&] { ctx_->SetGuardOff(); });
             if (held_) held_->drop();
         }
         guardHeld_ = on;
@@ -934,7 +1053,7 @@ public:
     // locks (a nested call) takes the compiled scope lock.
     void afterReply(bool guarded) {
         if (guarded) {
-            { ReleaseAndReacquire released(lock_); ctx_->SetGuardOn(); }
+            { ReleaseAndReacquire released(lock_); viaInterpreter([&] { ctx_->SetGuardOn(); }); }
             if (held_) held_->hold(self_, className_);
         }
         if (pendingScope_) { pendingScope_->lock(); pendingScope_ = nullptr; }
@@ -942,7 +1061,7 @@ public:
     std::string forward(const std::string &selector) override {
         RexxObjectPtr result;
         { ReleaseAndReacquire released(lock_);
-          result = ctx_->ForwardMessage(self_, selector.c_str(), NULLOBJECT, ctx_->GetArguments()); }
+          result = viaInterpreter([&] { return ctx_->ForwardMessage(self_, selector.c_str(), NULLOBJECT, ctx_->GetArguments()); }); }
         if (ctx_->CheckCondition()) throw PendingCondition();
         if (result == NULLOBJECT)
             throw std::runtime_error("FORWARD returned no scalar result");
@@ -952,7 +1071,7 @@ public:
     std::optional<rx::Value> forwardValues(const std::string &selector) override {
         RexxObjectPtr result;
         { ReleaseAndReacquire released(lock_);
-          result = ctx_->ForwardMessage(self_, selector.c_str(), NULLOBJECT, ctx_->GetArguments()); }
+          result = viaInterpreter([&] { return ctx_->ForwardMessage(self_, selector.c_str(), NULLOBJECT, ctx_->GetArguments()); }); }
         if (ctx_->CheckCondition()) throw PendingCondition();
         if (result == NULLOBJECT) return std::nullopt;
         if (rxobj::isPlainString(ctx_->threadContext, result)) return rx::Value::string(stringValue(ctx_, result));
@@ -1030,7 +1149,7 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
             if (definingRoot == NULLOBJECT) throw std::runtime_error("compiled superclass missing: " + rootClass);
             RexxArrayObject tokenArgs = ctx->NewArray(1);
             ctx->ArrayAppend(tokenArgs, ctx->String(value.c_str()));
-            ctx->ForwardMessage(ctx->GetSelf(), "RX2CPP_NATIVE_SETTOKEN", definingRoot, tokenArgs);
+            viaInterpreter([&] { return ctx->ForwardMessage(ctx->GetSelf(), "RX2CPP_NATIVE_SETTOKEN", definingRoot, tokenArgs); });
             if (ctx->CheckCondition()) throw PendingCondition();
         };
         if (initializer) {
@@ -1058,7 +1177,7 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
                 // are per class scope, so the token is read and written through the root class's own accessors.
                 auto definingRoot = ctx->FindClass(rootClass.c_str());
                 if (definingRoot == NULLOBJECT) throw std::runtime_error("compiled superclass missing: " + rootClass);
-                RexxObjectPtr rootToken = ctx->ForwardMessage(ctx->GetSelf(), "RX2CPP_NATIVE_TOKEN", definingRoot, ctx->NewArray(0));
+                RexxObjectPtr rootToken = viaInterpreter([&] { return ctx->ForwardMessage(ctx->GetSelf(), "RX2CPP_NATIVE_TOKEN", definingRoot, ctx->NewArray(0)); });
                 if (ctx->CheckCondition()) throw PendingCondition();
                 if (rootToken != NULLOBJECT) {
                     // INIT:SUPER (or FORWARD CLASS (SUPER)) from a further-derived INIT, or INIT sent again: the object
@@ -1108,7 +1227,7 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
                 if (definingRoot == NULLOBJECT)
                     throw std::runtime_error("compiled superclass missing: " + rootClass);
                 // Explicit scope-directed message dispatch, bypassing a possible subclass override of the internal accessor.
-                old = ctx->ForwardMessage(ctx->GetSelf(), "RX2CPP_NATIVE_TOKEN", definingRoot, ctx->NewArray(0));
+                old = viaInterpreter([&] { return ctx->ForwardMessage(ctx->GetSelf(), "RX2CPP_NATIVE_TOKEN", definingRoot, ctx->NewArray(0)); });
             }
             if (old == NULLOBJECT && classSide && isRoot) {
                 // The class object has no native state until its first CLASS method runs (no INIT CLASS declared).
@@ -1273,7 +1392,7 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
                 "numeric digits rx2cppDigits; numeric fuzz rx2cppFuzz; numeric form value rx2cppForm\n"
                 "rx2cppRoutine~callWith(rx2cppArgs)\n"
                 "if var('RESULT') then return result\n";
-            helper = context->NewRoutine("rx2cpp_external_forward", source, std::strlen(source));
+            helper = rxobj::helperRoutine(context->threadContext, context->NewRoutine("rx2cpp_external_forward", source, std::strlen(source)));
             if (helper == NULLOBJECT) return NULLOBJECT;
             context->RequestGlobalReference((RexxObjectPtr)helper);
         }
@@ -1553,6 +1672,11 @@ static void RexxEntry loadPackage(RexxThreadContext *ctx) {
     if (pkg == NULLOBJECT || ctx->CheckCondition()) return;
 #ifdef RX2CPP_HOST_API
     rxobj::libraryPackage() = rxobj::pinRef(ctx, (RexxObjectPtr)pkg);
+    // The interpreter fields compiled code reads (a Directory's SETMETHOD entries and UNKNOWN method, a package's
+    // security manager) are found now, before the program can set a security manager: finding them sends SETMETHOD
+    // and SETSECURITYMANAGER, protected methods a manager would be asked about.
+    (void)rxobj::directoryFields(ctx);
+    (void)rxobj::packageFields(ctx);
 #endif
     // Package scope as interpreted: the declaration packages of the rx2cpp libraries this one requires are imported, so
     // their public classes resolve before .LOCAL / .ENVIRONMENT (e.g. a public class ERROR before the .ERROR stream).
@@ -1569,6 +1693,9 @@ static void RexxEntry loadPackage(RexxThreadContext *ctx) {
         ctx->SendMessage1((RexxObjectPtr)pkg, "ADDPACKAGE", other);
         if (ctx->CheckCondition()) return;
     }
+#ifdef RX2CPP_HOST_API
+    rxobj::takeFixedClassTables(ctx);   // the package's classes as the program will see them (imports included)
+#endif
     ctx->DirectoryPut(ctx->GetGlobalEnvironment(), (RexxObjectPtr)pkg, packageKey(%PACKAGE_NAME%).c_str());
     auto classes = ctx->GetPackagePublicClasses(pkg);
     auto allClasses = ctx->GetPackageClasses(pkg);
@@ -1593,6 +1720,15 @@ static void RexxEntry loadPackage(RexxThreadContext *ctx) {
     }
 }
 
+// RX2CPP_CALLER_CONTEXT (a private routine of the declaration package): the context of the routine that calls it.
+RexxRoutine0(RexxObjectPtr, rx2cpp_caller_context) { return (RexxObjectPtr)context->GetCallerContext(); }
+// RX2CPP_TAKE(key[, keep]): the .local entry compiled code left for the code of an INTERPRET (taken out unless keep).
+RexxRoutine2(RexxObjectPtr, rx2cpp_take, CSTRING, key, OPTIONAL_CSTRING, keep) {
+    RexxDirectoryObject local = context->GetLocalEnvironment();
+    RexxObjectPtr v = context->DirectoryAt(local, key);
+    if (v != NULLOBJECT && keep == nullptr) context->DirectoryRemove(local, key);
+    return v != NULLOBJECT ? v : context->Nil();
+}
 static RexxRoutineEntry nativeRoutines[] = {
 %ROUTINE_ENTRIES%    REXX_LAST_ROUTINE()
 };

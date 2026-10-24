@@ -352,6 +352,8 @@ struct NilObject final : ObjectDispatch {
         std::transform(canonical.begin(), canonical.end(), canonical.begin(),
                        [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
         if (rx::eqLit(canonical, "STRING") && args.empty()) return Value::string(display());
+        // .nil is an instance of .Object: Object's ISNIL (RexxObject::isNilRexx: this == TheNilObject)
+        if (rx::eqLit(canonical, "ISNIL") && args.empty()) return Value::string("1");
         if (nilMessageFallback()) return nilMessageFallback()(canonical, args);
         return ObjectDispatch::sendMessage(canonical, args);
     }
@@ -360,6 +362,14 @@ struct NilObject final : ObjectDispatch {
         if (rx::eqLit(selector, "||") || rx::eqLit(selector, "") || rx::eqLit(selector, " ")) {
             const std::string right = rhs.isObject() ? rhs.object->display() : rhs.bytes.str();
             return Value::string(display() + (rx::eqLit(selector, " ") ? " " : "") + right);
+        }
+        // Object's comparisons are identity (RexxObject::equal / strictEqual / notEqual): answered here when the other
+        // side is .nil itself or a string (never .nil); any other object is the interpreter's question
+        const bool positive = rx::eqLit(selector, "==") || rx::eqLit(selector, "=");
+        if ((positive || rx::eqLit(selector, "\\==") || rx::eqLit(selector, "\\=") || rx::eqLit(selector, "<>") || rx::eqLit(selector, "><")) &&
+            (!rhs.isObject() || rhs.object->isNilObject())) {
+            const bool same = rhs.isObject();
+            return Value::string(same == positive ? "1" : "0");
         }
         return ObjectDispatch::sendBinary(selector, rhs);
     }
@@ -438,6 +448,10 @@ struct ActivationScope {
     std::unique_ptr<std::unordered_map<std::string, Value>> table;
     bool seeded = false;
     std::uint64_t seed = 0;
+    // The security manager of the activation (RexxActivation settings.securityManager: its code's package's when the
+    // activation starts): set by the object bridge (securityHook), the interpreter's SecurityManager wrapper or null.
+    void *security = nullptr;
+    static void *(*&securityHook())() { static void *(*hook)() = nullptr; return hook; }
     ActivationScope *saved;
     static ActivationScope *&current() { return threadState().scope; }
     explicit ActivationScope(Kind k = Method) : ActivationScope(k, threadState()) {}
@@ -450,6 +464,7 @@ struct ActivationScope {
     static void startSettings(ThreadState &t) { t.trace.assign(1, 'N'); t.address.assign("sh", 2); t.alternate.assign("sh", 2); }
     bool settings = false;
     ActivationScope(Kind k, ThreadState &t) : kind(k), saved(t.scope) {
+        if (securityHook()) security = securityHook()();
         if (!t.pendingCallType.empty()) callType = std::exchange(t.pendingCallType, std::string());
         t.scope = this;
         savedNovalue = std::exchange(novalueArmed, nullptr);

@@ -1,3 +1,6 @@
+> **Do not file: already fixed upstream** in r13259 (bug #2102, "pendingUninits never returns to zero", Erich,
+> 2026-10-08), with the same condition. Measured here on r13196, which predates it.
+
 # Ticket text: checkUninit counts a pending object again; every activation then scans the uninit table
 
 **Summary.** `MemoryObject::checkUninit` (interpreter/memory/RexxMemory.cpp) counts every unreachable object of the

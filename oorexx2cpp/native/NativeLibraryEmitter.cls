@@ -44,6 +44,7 @@
   tableOrder = .array~new
   parentOf = .directory~new
   newOk = .directory~new        /* class can be instantiated by compiled code without an interpreter object */
+  arrayOk = .directory~new      /* a subclass of .Array compiled code makes natively (arrayNewTable) */
   do unit over units
     name = unit~className
     classSide = unit~isClassSide
@@ -71,6 +72,20 @@
         if cm~selector~upper == 'NEW' then ok = .false
       end
       newOk[name] = ok
+      /* A subclass of .Array whose own methods are all compiled and that makes nothing at NEW (no class NEW, no INIT of
+         its own, no UNINIT, no mixin): compiled code makes its instances natively, the array part a native array
+         (arrayNewTable; native_package_template.cpp.in InstanceState::builtin). */
+      aok = \unit~isMixin & unit~mixinNames~items == 0
+      if unit~parentName == '' then aok = aok & unit~externalParent~upper == 'ARRAY'
+      else aok = aok & arrayOk[unit~parentName] == .true
+      do m over unit~methods
+        if m~selector~upper == 'UNINIT' | m~selector~upper == 'RX2CPP_USER_UNINIT' then aok = .false
+        if m~selector~upper == 'INIT' & \m~synthetic then aok = .false
+      end
+      do cm over unit~classMethods
+        if wordpos(cm~selector~upper, 'NEW OF') > 0 then aok = .false
+      end
+      arrayOk[name] = aok
       declared = name
       if unit~hasMethod('DECLAREDNAME') then if unit~declaredName \== '' then declared = '"' || unit~declaredName || '"'
       /* Visibility as written: a class without PUBLIC is private to this package, as interpreted. */
@@ -171,6 +186,9 @@
           guardsMethod = .false
           if method~hasMethod('GUARDS') then guardsMethod = method~guards
           if replyMethod | guardsMethod then resolved~remove(key)   /* (its entry manages its locks) */
+          /* A PROTECTED method is sent through the interpreter, which asks the sender's security manager first
+             (RexxObject::processProtectedMethod): never dispatched directly. */
+          if decl~pos(' PROTECTED ') > 0 then resolved~remove(key)
         end
       end
       if method~isAbstract then do
@@ -287,6 +305,9 @@
       else source = source || '::constant ' || constant[1]
       if constant[2] \== '' then source = source || ' ' || constant[2]
       source = source || '0a'x
+      /* compiled code answers it with the interpreter's value, asked once (MethodInfo::constant), and it hides an
+         inherited method of the same name as the interpreter's own constant method does */
+      if \classSide then resolved[constant[1]~upper] = name 1 0 'C'
     end
     if \classSide then do
       tables[name] = resolved
@@ -403,7 +424,9 @@
     t = tables[cn]
     do key over t~allIndexes
       parts = t[key]
-      direct = direct || '      {' || .RxQuote~cpp(key) || ', {' || .RxQuote~cpp(parts~word(1)) || ', ' || self~cppBool(parts~word(2)) || ', ' || self~cppBool(parts~word(3)) || '}},' || '0a'x
+      constantFlag = ''
+      if parts~word(4) == 'C' then constantFlag = ', true'
+      direct = direct || '      {' || .RxQuote~cpp(key) || ', {' || .RxQuote~cpp(parts~word(1)) || ', ' || self~cppBool(parts~word(2)) || ', ' || self~cppBool(parts~word(3)) || constantFlag || '}},' || '0a'x
     end
     direct = direct || '    }},' || '0a'x
   end
@@ -412,6 +435,12 @@
   direct = direct || '  static const std::unordered_map<std::string, std::string> table = {' || '0a'x
   do cn over tableOrder
     direct = direct || '    {' || .RxQuote~cpp(cn) || ', ' || .RxQuote~cpp(parentOf[cn]) || '},' || '0a'x
+  end
+  direct = direct || '  };' || '0a'x || '  return table;' || '0a'x || '}' || '0a'x
+  direct = direct || '[[maybe_unused]] static const std::unordered_set<std::string> &arrayNewTable() {' || '0a'x
+  direct = direct || '  static const std::unordered_set<std::string> table = {' || '0a'x
+  do cn over tableOrder
+    if arrayOk[cn] == .true then direct = direct || '    ' || .RxQuote~cpp(cn) || ',' || '0a'x
   end
   direct = direct || '  };' || '0a'x || '  return table;' || '0a'x || '}' || '0a'x
   direct = direct || '[[maybe_unused]] static const std::unordered_set<std::string> &directNewTable() {' || '0a'x
@@ -426,6 +455,13 @@
   /* the compiled routines' names: routine~CALL of one of them runs natively (template: routineCallImpl) */
   if routineNameList \== '' then
     routineDefs = routineDefs || 'static const char *const rx2cppRoutineNames[] = {' || '0a'x || routineNameList || '    nullptr };' || '0a'x
+  /* The caller's context (RexxCallContext GetCallerContext): what a helper routine asks for its own .CONTEXT without
+     the environment-symbol lookup a security manager would be asked about (rxobj::callerContextRoutine). */
+  source = source || '::routine RX2CPP_CALLER_CONTEXT private external "LIBRARY ' || packageName || ' RX2CPP_CALLER_CONTEXT"' || '0a'x
+  routineEntries = routineEntries || '    { ROUTINE_TYPED_STYLE, 0, "RX2CPP_CALLER_CONTEXT", (void *)rx2cpp_caller_context, 0, 0 },' || '0a'x
+  /* RX2CPP_TAKE(key[, keep]): an entry compiled code left in .local for INTERPRET's code, without a .LOCAL lookup */
+  source = source || '::routine RX2CPP_TAKE private external "LIBRARY ' || packageName || ' RX2CPP_TAKE"' || '0a'x
+  routineEntries = routineEntries || '    { ROUTINE_TYPED_STYLE, 0, "RX2CPP_TAKE", (void *)rx2cpp_take, 0, 0 },' || '0a'x
   output = output~changeStr('%ROUTINE_DEFINITIONS%', routineDefs)
   output = output~changeStr('%ROUTINE_ENTRIES%', routineEntries)
   if self~form == 'tokenized' then output = output~changeStr('%CLASS_SOURCE%', self~tokenized(source))
