@@ -2068,6 +2068,7 @@ inline std::optional<Value> envFind(EnvName &e) {
     }
 #ifdef RX2CPP_HOST_API
     if (e.epoch != 0 && e.epoch == rxobj::interpreterEpoch()) {
+        rxobj::bifStat("environment symbol kept (epoch)");
         if (e.unknown) return std::nullopt;
         return e.value;
     }
@@ -2084,6 +2085,7 @@ inline std::optional<Value> envFind(EnvName &e) {
     // away the values other symbols keep, and interleaved symbols would never be answered from the cache)
     std::optional<rxobj::QuietEpoch> quiet;
     if (keep) quiet.emplace();
+    rxobj::bifStat(keep ? "environment symbol looked up (kept after)" : "environment symbol looked up (not kept)");
     bool found = false;
     RexxObjectPtr o = secured == 0 ? rxobj::environmentLookup(t, name) : securedEnvironmentLookup(t, name, secured, manager, found);
     if (secured == 0 && t->CheckCondition()) raisePending(t, "AT");
