@@ -21,7 +21,19 @@
 namespace rxobj {
 inline std::atomic<unsigned long> &interpreterEpochCounter() { static std::atomic<unsigned long> e{1}; return e; }
 inline unsigned long interpreterEpoch() { return interpreterEpochCounter().load(std::memory_order_acquire); }
-inline void interpreterChanged() { interpreterEpochCounter().fetch_add(1, std::memory_order_acq_rel); }
+// A stretch of compiled code's own API calls that is known to run no Rexx code and change nothing the interpreter could
+// answer differently (rx::envFind on plain directories without a security manager: DirectoryAt of entries, the string
+// value of a String, the pin table) does not move the epoch: its bumps would only throw away what other caches hold.
+inline int &epochQuietDepth() { static thread_local int depth = 0; return depth; }
+struct QuietEpoch {
+    QuietEpoch() { ++epochQuietDepth(); }
+    ~QuietEpoch() { --epochQuietDepth(); }
+    QuietEpoch(const QuietEpoch &) = delete;
+    QuietEpoch &operator=(const QuietEpoch &) = delete;
+};
+inline void interpreterChanged() {
+    if (epochQuietDepth() == 0) interpreterEpochCounter().fetch_add(1, std::memory_order_acq_rel);
+}
 
 // Cannot run Rexx code, change a variable, or change a collection the interpreter could later answer from.
 #define RX_API_PURE(X) \

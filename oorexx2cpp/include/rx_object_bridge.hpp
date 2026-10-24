@@ -1781,6 +1781,22 @@ inline Value packageTable(PackageTable &kept, const char *selector, const char *
         RexxObjectPtr v = pkg == NULLOBJECT ? NULLOBJECT : t->SendMessage0(pkg, selector);
         if (t->CheckCondition()) { t->ClearCondition(); v = NULLOBJECT; }
         if (v != NULLOBJECT && v != t->Nil()) {
+            // (the declaration package also holds rx2cpp's own routines, RX2CPP_MAIN, RX2CPP_TAKE, ...: not the program's)
+            RexxObjectPtr indexes = t->SendMessage0(v, "ALLINDEXES");
+            if (indexes != NULLOBJECT && !t->CheckCondition() && t->IsArray(indexes)) {
+                size_t count = t->ArrayItems((RexxArrayObject)indexes);
+                for (size_t i = 1; i <= count; ++i) {
+                    RexxObjectPtr index = t->ArrayAt((RexxArrayObject)indexes, i);
+                    if (index == NULLOBJECT || !t->IsString(index)) continue;
+                    if (std::strncmp(t->StringData((RexxStringObject)index), "RX2CPP_", 7) == 0) {
+                        RexxObjectPtr gone = t->SendMessage1(v, "REMOVE", index);
+                        if (gone != NULLOBJECT) t->ReleaseLocalReference(gone);
+                    }
+                    t->ReleaseLocalReference(index);
+                }
+            }
+            if (t->CheckCondition()) t->ClearCondition();
+            if (indexes != NULLOBJECT) t->ReleaseLocalReference(indexes);
             RexxObjectPtr n = t->SendMessage0(v, "ITEMS");
             wholenumber_t items = 0;
             if (n == NULLOBJECT || !t->ObjectToWholeNumber(n, &items)) { t->ClearCondition(); items = 0; }
@@ -2064,6 +2080,10 @@ inline std::optional<Value> envFind(EnvName &e) {
     RexxObjectPtr manager = NULLOBJECT;
     const int secured = rxobj::packageSecurityManager(t, rxobj::libraryPackage(), manager);
     const bool keep = secured == 0 && rxobj::environmentEntriesOnly(t);
+    // (kept: the lookup below runs no Rexx code, so it does not move the epoch either; otherwise every miss would throw
+    // away the values other symbols keep, and interleaved symbols would never be answered from the cache)
+    std::optional<rxobj::QuietEpoch> quiet;
+    if (keep) quiet.emplace();
     bool found = false;
     RexxObjectPtr o = secured == 0 ? rxobj::environmentLookup(t, name) : securedEnvironmentLookup(t, name, secured, manager, found);
     if (secured == 0 && t->CheckCondition()) raisePending(t, "AT");
