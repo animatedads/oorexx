@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Whole programs, one file each (fourth part of test_program_constructs.sh: each run stays under the regression's
-# 30-minute limit): String methods answered natively (ported from the interpreter).
+# 30-minute limit): String methods and .nil comparisons answered natively (ported from the interpreter).
 # Originally: constructs found compiling the Rexx Parser (Josep Maria Blasco's reports,
 # 2026-10-20/21) and the runtime paths they exercise. Output identical to the interpreter.
 set -euo pipefail
@@ -18,4 +18,5 @@ check() {   # name program-path
   diff -u "$OUT/$name.expected" "$OUT/$name.actual" || { echo "FAIL $name differs from the interpreter"; exit 1; }
 }
 check string_match "$OUT/src/string_match.rex"   # STARTSWITH ENDSWITH (caseless too) and MAKEARRAY natively: StringClassMisc.cpp primitiveMatch, StringUtil::makearray
+check nil_compare "$OUT/src/nil_compare.rex"   # a string compared with .nil (no MAKESTRING, no NOSTRING), .nil compared with any object: identity
 echo "PASS program constructs (4): $(ls "$OUT"/*.expected | wc -l) programs, $(cat "$OUT"/*.expected | wc -l) lines identical to the interpreter"
