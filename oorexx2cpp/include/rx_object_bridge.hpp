@@ -2069,6 +2069,7 @@ inline std::optional<Value> envFind(EnvName &e) {
     if (e.state == 0) {
         if (packageClassHook) if (auto v = packageClassHook(name)) { e.value = *v; e.state = 1; return e.value; }
 #ifdef RX2CPP_HOST_API
+        rxobj::bifStat("environment symbol first resolved by the interpreter: " + name);
         // (.LOCAL and .ENVIRONMENT are entries of .environment, found as any other: a security manager is asked for them
         // too, as interpreted)
         void *h = rxobj::packageClass(name);
