@@ -396,6 +396,74 @@ inline std::size_t objectWords(RexxObjectPtr o) {
     if (bytes < 4 * sizeof(void *) || bytes > 65536 || bytes % sizeof(void *) != 0) return 0;
     return bytes / sizeof(void *);
 }
+// A result String's bytes without calls into the interpreter (ObjectToString, StringData, StringLength: each an API
+// context; with the release of ObjectToString's reference, a third of a message's cost): read where the String
+// keeps them (RexxString::length and ::stringData, StringClass.hpp; a String never changes and does not move). The
+// words are found once, by comparing Strings made for the purpose: the length word holds each one's length, the
+// bytes follow, and the behaviour word is the one every plain String shares and a String subclass's instance, a
+// Directory and an Array do not (an exact String: its methods the String class's own). Not found: the API's way.
+struct StringFields { int behaviourWord = -1, lengthWord = -1; std::size_t dataOffset = 0; void *behaviour = nullptr; bool known = false; };
+inline StringFields &stringFields(RexxThreadContext *t) {
+    static StringFields f;
+    if (f.known) return f;
+    f.known = true;
+    static const char *const texts[] = {"rx2cpp string probe ABCDEFGHIJKLMNOPQRSTUVWXYZ", "xy", "12345", "q r s t u v w"};
+    constexpr int count = 4;
+    RexxObjectPtr strings[count];
+    for (int i = 0; i < count; ++i) {
+        RexxObjectPtr o = (RexxObjectPtr)t->NewString(texts[i], std::strlen(texts[i]));
+        if (o == NULLOBJECT) return f;
+        strings[i] = pinRef(t, o);
+    }
+    RexxObjectPtr dir = pinRef(t, (RexxObjectPtr)t->NewDirectory());
+    RexxObjectPtr arr = pinRef(t, (RexxObjectPtr)t->NewArray(3));
+    static const char source[] = "return .rx2cppProbeString~new('abc')\n::class rx2cppProbeString subclass string\n";
+    RexxRoutineObject maker = internalRoutine(t, t->NewRoutine("rx2cpp_string_probe", source, sizeof(source) - 1));
+    RexxObjectPtr sub = maker == NULLOBJECT ? NULLOBJECT : t->CallRoutine(maker, t->NewArray(0));
+    if (t->CheckCondition() || sub == NULLOBJECT) { t->ClearCondition(); return f; }
+    sub = pinRef(t, sub);
+    auto word = [](RexxObjectPtr o, std::size_t i) { return reinterpret_cast<void *const *>(o)[i]; };
+    std::size_t size = std::min({objectWords(dir), objectWords(arr), objectWords(sub)});
+    for (RexxObjectPtr o : strings) size = std::min(size, objectWords(o));
+    if (size < 4) return f;
+    int lengthWord = -1, lengths = 0;
+    for (std::size_t i = 1; i < size; ++i) {
+        bool all = true;
+        for (int k = 0; k < count; ++k) all = all && reinterpret_cast<const std::size_t *>(strings[k])[i] == std::strlen(texts[k]);
+        if (all) { lengthWord = static_cast<int>(i); ++lengths; }
+    }
+    if (lengths != 1) { bifStat("string fields not found (length)"); return f; }
+    const std::size_t bytes0 = objectWords(strings[0]) * sizeof(void *), len0 = std::strlen(texts[0]);
+    std::size_t offset = 0;
+    for (std::size_t at = (lengthWord + 1) * sizeof(void *); at + len0 <= bytes0; ++at)
+        if (std::memcmp(reinterpret_cast<const char *>(strings[0]) + at, texts[0], len0) == 0) { offset = at; break; }
+    if (offset == 0) { bifStat("string fields not found (data)"); return f; }
+    for (int k = 1; k < count; ++k)
+        if (std::memcmp(reinterpret_cast<const char *>(strings[k]) + offset, texts[k], std::strlen(texts[k])) != 0) {
+            bifStat("string fields not found (data)"); return f;
+        }
+    int behaviourWord = -1;
+    for (std::size_t i = 1; i < static_cast<std::size_t>(lengthWord); ++i) {
+        void *w = word(strings[0], i);
+        if (!w) continue;
+        bool same = true;
+        for (int k = 1; k < count; ++k) same = same && word(strings[k], i) == w;
+        if (same && word(sub, i) != w && word(dir, i) != w && word(arr, i) != w) { behaviourWord = static_cast<int>(i); break; }
+    }
+    if (behaviourWord < 0) { bifStat("string fields not found (behaviour)"); return f; }
+    f.behaviourWord = behaviourWord; f.lengthWord = lengthWord; f.dataOffset = offset; f.behaviour = word(strings[0], behaviourWord);
+    bifStat("string fields " + std::to_string(behaviourWord) + "/" + std::to_string(lengthWord) + "/" + std::to_string(offset));
+    return f;
+}
+// An exact String's bytes, read in place (stringFields); false: not one, or not known (use the API).
+inline bool plainStringBytes(RexxThreadContext *t, RexxObjectPtr o, const char *&data, std::size_t &length) {
+    const StringFields &f = stringFields(t);
+    if (f.behaviourWord < 0 || o == NULLOBJECT) return false;
+    if (reinterpret_cast<void *const *>(o)[f.behaviourWord] != f.behaviour) return false;
+    length = reinterpret_cast<const std::size_t *>(o)[f.lengthWord];
+    data = reinterpret_cast<const char *>(o) + f.dataOffset;
+    return true;
+}
 struct DirectoryFields { int methodTable = -1, unknownMethod = -1; bool known = false; };
 inline DirectoryFields &directoryFields(RexxThreadContext *t) {
     static DirectoryFields f;
@@ -433,19 +501,31 @@ inline DirectoryFields &directoryFields(RexxThreadContext *t) {
     bifStat("directory fields " + std::to_string(mt) + "/" + std::to_string(um));
     return f;
 }
-inline bool directoryComputesEntries(RexxThreadContext *t, RexxDirectoryObject d) {
+// Would DirectoryClass::get of NAME from this Directory run code? get() answers an entry of its contents first; only
+// when there is none does it run a SETMETHOD entry of that name (methodTable), then the UNKNOWN method. So a NAME is
+// computed when the Directory has an UNKNOWN method, or a SETMETHOD entry of that very name. (.environment always has
+// one SETMETHOD entry, LOCAL: the interpreter's own ActivityManager::getLocalRexx, Setup.cpp; only .LOCAL is computed.)
+// StringTableAt is the method table's own get: no Rexx code. Fields not found: always computed (nothing is kept).
+inline bool directoryComputes(RexxThreadContext *t, RexxDirectoryObject d, const char *name) {
     if (d == NULLOBJECT) return false;
     const DirectoryFields &f = directoryFields(t);
     if (f.methodTable < 0) return true;
     auto word = [&](int i) { return reinterpret_cast<void *const *>(d)[i]; };
-    return word(f.methodTable) != nullptr || word(f.unknownMethod) != nullptr;
+    if (word(f.unknownMethod) != nullptr) return true;
+    void *methods = word(f.methodTable);
+    if (methods == nullptr) return false;
+    RexxObjectPtr m = t->StringTableAt((RexxStringTableObject)methods, name);
+    if (m == NULLOBJECT) return false;
+    t->ReleaseLocalReference(m);
+    return true;
 }
-// The three directories of an environment symbol answer only their own entries (no SETMETHOD entry, no UNKNOWN):
-// a value found there stays the same while the interpreter epoch does not move.
+// The three directories of an environment symbol answer NAME from their own entries (no SETMETHOD entry of that name,
+// no UNKNOWN method): a value found there stays the same while the interpreter epoch does not move.
 inline EnvDirs &findEnvDirs(RexxThreadContext *t);
-inline bool environmentEntriesOnly(RexxThreadContext *t) {
+inline bool environmentEntriesOnly(RexxThreadContext *t, const std::string &name) {
     EnvDirs &d = findEnvDirs(t);
-    return !directoryComputesEntries(t, d.pkg) && !directoryComputesEntries(t, d.local) && !directoryComputesEntries(t, d.global);
+    return !directoryComputes(t, d.pkg, name.c_str()) && !directoryComputes(t, d.local, name.c_str()) &&
+           !directoryComputes(t, d.global, name.c_str());
 }
 inline EnvDirs &findEnvDirs(RexxThreadContext *t) {
     EnvDirs &d = envDirs();
@@ -771,6 +851,13 @@ inline bool send(void *target, const std::string &selector, const std::vector<Ar
         return false;
     }
     if (r == NULLOBJECT) { out.kind = 0; return true; }
+    {
+        const char *data = nullptr; std::size_t length = 0;
+        if (plainStringBytes(t, r, data, length)) { out.kind = 1; out.bytes.assign(data, length); return true; }
+        // .true / .false (RexxInteger objects, the thread interface's own): their string values
+        if (r == t->True()) { out.kind = 1; out.bytes.assign("1", 1); return true; }
+        if (r == t->False()) { out.kind = 1; out.bytes.assign("0", 1); return true; }
+    }
     if (isPlainString(t, r)) {
         RexxStringObject str = (RexxStringObject)temps((RexxObjectPtr)t->ObjectToString(r));
         out.kind = 1; out.bytes.assign(t->StringData(str), t->StringLength(str));
@@ -1037,6 +1124,14 @@ struct EnvObject final : ObjectDispatch {
             RexxThreadContext *t = rxobj::need();
             RexxObjectPtr r = t->ArrayAt((RexxArrayObject)handle, index);
             if (r == NULLOBJECT) return std::nullopt;       // empty or beyond the end: the message answers .nil
+            {
+                const char *data = nullptr; std::size_t length = 0;
+                if (rxobj::plainStringBytes(t, r, data, length)) {
+                    Value v = Value::string(std::string(data, length));
+                    t->ReleaseLocalReference(r);
+                    return MessageResult(std::move(v));
+                }
+            }
             if (t->IsString(r)) {
                 Value v = Value::string(std::string(t->StringData((RexxStringObject)r), t->StringLength((RexxStringObject)r)));
                 t->ReleaseLocalReference(r);
@@ -1769,14 +1864,49 @@ inline Value libraryContext() { static const Value c = Value::fromObject(std::ma
 inline Value libraryContext(const char *sourcePath) { return Value::fromObject(std::make_shared<LibraryContext>(sourcePath)); }
 inline Value argumentArray(const std::vector<std::optional<Value>> &args);
 inline Value selfObject();
-// .METHODS in a native library: the floating methods of its package (PackageClass::getMethods, DEFINEDMETHODS).
-inline Value packageMethods() {
-    MessageResult pkg = libraryContext().object->sendMessage("PACKAGE", {});
-    if (!pkg) throw std::runtime_error(".METHODS: no package");
-    MessageResult methods = pkg->object->sendMessage("DEFINEDMETHODS", {});
-    if (!methods) throw std::runtime_error(".METHODS: no methods");
-    return *methods;
+// .METHODS / .ROUTINES / .RESOURCES in a native library (RexxActivation::rexxVariable: the package's own table,
+// settings.parentCode->getMethods() / getRoutines() / getResources(); the symbol's own name when the package has none).
+// The Package methods answer copies (DEFINEDMETHODS, ROUTINES, RESOURCES), so one is taken at the first use and
+// answered every time after, as the same object, as interpreted. A package with none has an empty copy: the name.
+struct PackageTable { bool taken = false; std::optional<Value> table; };
+inline Value packageTable(PackageTable &kept, const char *selector, const char *symbol) {
+    if (!kept.taken) {
+        RexxThreadContext *t = rxobj::need();
+        RexxObjectPtr pkg = rxobj::libraryPackage();
+        RexxObjectPtr v = pkg == NULLOBJECT ? NULLOBJECT : t->SendMessage0(pkg, selector);
+        if (t->CheckCondition()) { t->ClearCondition(); v = NULLOBJECT; }
+        if (v != NULLOBJECT && v != t->Nil()) {
+            // (the declaration package also holds rx2cpp's own routines, RX2CPP_MAIN, RX2CPP_TAKE, ...: not the program's)
+            RexxObjectPtr indexes = t->SendMessage0(v, "ALLINDEXES");
+            if (indexes != NULLOBJECT && !t->CheckCondition() && t->IsArray(indexes)) {
+                size_t count = t->ArrayItems((RexxArrayObject)indexes);
+                for (size_t i = 1; i <= count; ++i) {
+                    RexxObjectPtr index = t->ArrayAt((RexxArrayObject)indexes, i);
+                    if (index == NULLOBJECT || !t->IsString(index)) continue;
+                    if (std::strncmp(t->StringData((RexxStringObject)index), "RX2CPP_", 7) == 0) {
+                        RexxObjectPtr gone = t->SendMessage1(v, "REMOVE", index);
+                        if (gone != NULLOBJECT) t->ReleaseLocalReference(gone);
+                    }
+                    t->ReleaseLocalReference(index);
+                }
+            }
+            if (t->CheckCondition()) t->ClearCondition();
+            if (indexes != NULLOBJECT) t->ReleaseLocalReference(indexes);
+            RexxObjectPtr n = t->SendMessage0(v, "ITEMS");
+            wholenumber_t items = 0;
+            if (n == NULLOBJECT || !t->ObjectToWholeNumber(n, &items)) { t->ClearCondition(); items = 0; }
+            if (n != NULLOBJECT) t->ReleaseLocalReference(n);
+            if (items > 0) kept.table = Value::fromObject(std::make_shared<EnvObject>((void *)rxobj::pinRef(t, v)));
+            t->ReleaseLocalReference(v);
+        }
+        kept.taken = true;
+    }
+    if (!kept.table) return Value::string(symbol);
+    return *kept.table;
 }
+inline Value packageMethodsSpecial() { static PackageTable k; return packageTable(k, "DEFINEDMETHODS", ".METHODS"); }
+inline Value packageRoutinesSpecial() { static PackageTable k; return packageTable(k, "ROUTINES", ".ROUTINES"); }
+inline Value packageResourcesSpecial() { static PackageTable k; return packageTable(k, "RESOURCES", ".RESOURCES"); }
 // .CONTEXT of a compiled activation (RexxContext, ContextClass.cpp): taken where .CONTEXT is evaluated - the NUMERIC
 // settings, arguments, condition, clause line, name and (unless only another method follows) the variables.
 struct ActivationContext final : ObjectDispatch {
@@ -2022,6 +2152,7 @@ inline std::optional<Value> envFind(EnvName &e) {
     if (e.state == 0) {
         if (packageClassHook) if (auto v = packageClassHook(name)) { e.value = *v; e.state = 1; return e.value; }
 #ifdef RX2CPP_HOST_API
+        rxobj::bifStat("environment symbol first resolved by the interpreter: " + name);
         // (.LOCAL and .ENVIRONMENT are entries of .environment, found as any other: a security manager is asked for them
         // too, as interpreted)
         void *h = rxobj::packageClass(name);
@@ -2033,18 +2164,24 @@ inline std::optional<Value> envFind(EnvName &e) {
     }
 #ifdef RX2CPP_HOST_API
     if (e.epoch != 0 && e.epoch == rxobj::interpreterEpoch()) {
+        rxobj::bifStat("environment symbol kept (epoch)");
         if (e.unknown) return std::nullopt;
         return e.value;
     }
     RexxThreadContext *t = rxobj::need();
-    // Kept only when the three directories answer their own entries (rxobj::environmentEntriesOnly, asked before the
+    // Kept only when the three directories answer this name from their entries (rxobj::environmentEntriesOnly, asked before the
     // lookup: no SETMETHOD entry or UNKNOWN method, whose value is computed at each read) and the package has no
     // security manager (asked at every lookup, as interpreted). The lookup's calls then run no Rexx code (DirectoryAt
     // of entries, below the string value of a String and the pin table): the epoch read after them is the one the
     // answer belongs to.
     RexxObjectPtr manager = NULLOBJECT;
     const int secured = rxobj::packageSecurityManager(t, rxobj::libraryPackage(), manager);
-    const bool keep = secured == 0 && rxobj::environmentEntriesOnly(t);
+    const bool keep = secured == 0 && rxobj::environmentEntriesOnly(t, name);
+    // (kept: the lookup below runs no Rexx code, so it does not move the epoch either; otherwise every miss would throw
+    // away the values other symbols keep, and interleaved symbols would never be answered from the cache)
+    std::optional<rxobj::QuietEpoch> quiet;
+    if (keep) quiet.emplace();
+    rxobj::bifStat(keep ? "environment symbol looked up (kept after)" : "environment symbol looked up (not kept)");
     bool found = false;
     RexxObjectPtr o = secured == 0 ? rxobj::environmentLookup(t, name) : securedEnvironmentLookup(t, name, secured, manager, found);
     if (secured == 0 && t->CheckCondition()) raisePending(t, "AT");
@@ -2054,7 +2191,9 @@ inline std::optional<Value> envFind(EnvName &e) {
     e.unknown = false;
     if ((void *)o == e.last) { t->ReleaseLocalReference(o); remember(); return e.value; }
     Value v = Value::string(std::string());
-    if (rxobj::isPlainString(t, o)) {
+    const char *plainData = nullptr; std::size_t plainLength = 0;
+    if (rxobj::plainStringBytes(t, o, plainData, plainLength)) v = Value::string(std::string(plainData, plainLength));
+    else if (rxobj::isPlainString(t, o)) {
         // A String entry (.local~v1 = 'a') is a string value in compiled code, as strings are everywhere.
         RexxStringObject so = (RexxStringObject)t->ObjectToString(o);
         v = Value::string(std::string(t->StringData(so), t->StringLength(so)));

@@ -712,6 +712,11 @@ std::optional<rx::Value> runNative(const std::shared_ptr<InstanceState> &st, Res
    made from then on take their methods from the interpreter (an object's methods are fixed when it is created, so
    existing instances keep direct dispatch). */
 std::atomic<bool> &classesChanged() { static std::atomic<bool> changed{false}; return changed; }
+// RX2CPP_BIF_STATS: why NEW of a class of this library went to the interpreter
+void rx2cpp_class_stat(const std::string &name) {
+    rxobj::bifStat("class NEW by the interpreter: " + name + (classesChanged() ? " (classes changed)" : "") +
+                   (directNewTable().count(name) ? "" : " (not direct)"));
+}
 class NativeClassObj final : public rx::NativeRefBase {
     std::string name_;
     std::shared_ptr<rx::EnvObject> interpreterClass_;
@@ -751,6 +756,20 @@ public:
             runNative(st, *init, optionalsOf(args));
             return rx::Value::fromObject(std::make_shared<NativeInstanceRef>(st));
         }
+        // cls~sendWith('NEW', array) and cls~send('NEW', ...): Object's SENDWITH / SEND send that message with those
+        // arguments (RexxObject::sendWith): the NEW above, natively, when nothing is omitted (the Rexx Parser makes its
+        // expressions so: .Comparison.Expression~sendWith('new', ...)).
+        if (!classesChanged() && !args.empty() && !args[0].isObject() && same(args[0].bytes.str(), "NEW") &&
+            (same(selector, "SEND") || (same(selector, "SENDWITH") && args.size() == 2))) {
+            std::vector<rx::Value> newArgs;
+            bool plain = true;
+            if (same(selector, "SEND")) newArgs.assign(args.begin() + 1, args.end());
+            else if (auto *a = args[1].isObject() ? dynamic_cast<rx::NativeArray *>(args[1].object.get()) : nullptr; a && !a->real) {
+                for (const auto &slot : a->slots) { if (!slot) { plain = false; break; } newArgs.push_back(*slot); }
+            } else plain = false;
+            if (plain) return sendMessage("NEW", newArgs);
+        }
+        if (same(selector, "NEW")) rx2cpp_class_stat(name_);
         return iclass().sendMessage(selector, args);
     }
     rx::Value sendBinary(const std::string &selector, const rx::Value &rhs) override {
@@ -1677,6 +1696,7 @@ static void RexxEntry loadPackage(RexxThreadContext *ctx) {
     // and SETSECURITYMANAGER, protected methods a manager would be asked about.
     (void)rxobj::directoryFields(ctx);
     (void)rxobj::packageFields(ctx);
+    (void)rxobj::stringFields(ctx);
 #endif
     // Package scope as interpreted: the declaration packages of the rx2cpp libraries this one requires are imported, so
     // their public classes resolve before .LOCAL / .ENVIRONMENT (e.g. a public class ERROR before the .ERROR stream).

@@ -26,4 +26,7 @@ check env_security "$OUT/src/env_security.rex"   # environment symbols under the
 check security_manager "$OUT/src/security_manager.rex"   # every security manager check (LOCAL ENVIRONMENT CALL COMMAND STREAM METHOD), taken when an activation starts
 check security_same_activation "$OUT/src/security_same_activation.rex"   # a protected method sent by the activation that set the manager: not checked; by a later routine: checked
 check security_internal_sends "$OUT/src/security_internal_sends.rex"   # protected MAKESTRING / = reached by SAY, ||, LENGTH, comparison, REQUEST under a manager: METHOD asked as interpreted
+check special_symbols "$OUT/src/special_symbols.rex"   # .RS before / after a command, .ROUTINES .RESOURCES .METHODS (the package's, one object), an entry of that name first
+check special_symbols_none "$OUT/src/special_symbols_none.rex"   # .METHODS .ROUTINES .RESOURCES in a package with none: the name
+check sendwith_new "$OUT/src/sendwith_new.rex"   # cls~sendWith('NEW', array) / cls~send('NEW', ...) of a compiled class: its native NEW; holes, errors, other messages as interpreted
 echo "PASS program constructs (3): $(ls "$OUT"/*.expected | wc -l) programs, $(cat "$OUT"/*.expected | wc -l) lines identical to the interpreter"

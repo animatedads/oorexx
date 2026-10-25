@@ -363,12 +363,11 @@ struct NilObject final : ObjectDispatch {
             const std::string right = rhs.isObject() ? rhs.object->display() : rhs.bytes.str();
             return Value::string(display() + (rx::eqLit(selector, " ") ? " " : "") + right);
         }
-        // Object's comparisons are identity (RexxObject::equal / strictEqual / notEqual): answered here when the other
-        // side is .nil itself or a string (never .nil); any other object is the interpreter's question
+        // Object's comparisons are identity (RexxObject::equal / strictEqual / notEqual): .nil is equal only to .nil
+        // itself (this singleton, or the interpreter's .NIL wrapped: isNilObject); a string or any other object is not
         const bool positive = rx::eqLit(selector, "==") || rx::eqLit(selector, "=");
-        if ((positive || rx::eqLit(selector, "\\==") || rx::eqLit(selector, "\\=") || rx::eqLit(selector, "<>") || rx::eqLit(selector, "><")) &&
-            (!rhs.isObject() || rhs.object->isNilObject())) {
-            const bool same = rhs.isObject();
+        if (positive || rx::eqLit(selector, "\\==") || rx::eqLit(selector, "\\=") || rx::eqLit(selector, "<>") || rx::eqLit(selector, "><")) {
+            const bool same = rhs.isObject() && rhs.object->isNilObject();
             return Value::string(same == positive ? "1" : "0");
         }
         return ObjectDispatch::sendBinary(selector, rhs);
@@ -1745,6 +1744,16 @@ inline Value sendBinaryOp(const Value &lhs, const char *sel, std::size_t n, cons
     if (lhs.isObject()) { const std::shared_ptr<ObjectDispatch> receiver = lhs.object; return receiver->sendBinary(std::string(sel, n), rhs); }
     // A string receiver with an object argument (s = obj, s || obj, 1 + obj): the String method requests the
     // argument's string value, as the interpreter's String class does.
+    // A string compared with .nil: the String (and NumberString) comparison methods answer without asking .nil for a
+    // string (StringClass.cpp CompareOperator, notEqual, primitiveIsEqual): false, and true for \= <> >< \==; no
+    // MAKESTRING, no NOSTRING.
+    if (rhs.isObject() && rhs.object->isNilObject() && n >= 1 && n <= 3) {
+        const std::string op(sel, n);
+        if (op == "\\=" || op == "<>" || op == "><" || op == "\\==") return Value::string("1");
+        if (op == "=" || op == "==" || op == ">" || op == "<" || op == ">=" || op == "<=" || op == "\\<" || op == "\\>" ||
+            op == ">>" || op == "<<" || op == ">>=" || op == "<<=" || op == "\\<<" || op == "\\>>")
+            return Value::string("0");
+    }
     if (rhs.isObject()) { const Value argument = rhs; return sendBinaryOp(lhs, sel, n, requestString(argument), numeric); }
     const char c0 = n ? sel[0] : '\0', c1 = n > 1 ? sel[1] : '\0';
     switch (c0) {

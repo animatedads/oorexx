@@ -45,6 +45,9 @@
         return 'rx::host::environmentDirectory(' || .RxQuote~cpp(t~text) || ')'
       end
       /* (In a native library .OUTPUT is the interpreter's own, like any environment symbol: see below.) */
+      /* .ROUTINES .RESOURCES (native library): the package's table, the symbol's name when it has none */
+      if (t~text == 'ROUTINES' | t~text == 'RESOURCES') & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' & \ctx~hasProgramClass(t~text) then
+        return 'RX_ENV_SPECIAL("' || t~text || '", rx::package' || left(t~text, 1) || lower(substr(t~text, 2)) || 'Special())'
       if (t~text == 'OUTPUT' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') == '') | t~text == 'ROUTINES' then do
         if \ctx~hostedEnabled then s~fail('.' || t~text || ' requires RX2CPP_HOSTED=1')
         ctx~markHosted('.' || t~text)
@@ -54,7 +57,7 @@
       /* Native library (host API): .CONTEXT answers PACKAGE with the library's own package. */
       if t~text == 'CONTEXT' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' then return 'RX_ENV_SPECIAL("CONTEXT", ' || self~activationContext(ctx) || ')'
       /* .METHODS: the package's floating methods (in a native library: the declaration package carries them) */
-      if t~text == 'METHODS' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' & \ctx~hasProgramClass('METHODS') then return 'RX_ENV_SPECIAL("METHODS", rx::packageMethods())'
+      if t~text == 'METHODS' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' & \ctx~hasProgramClass('METHODS') then return 'RX_ENV_SPECIAL("METHODS", rx::packageMethodsSpecial())'
       /* .RS: the return status of the activation's last command (.nil before any) */
       if t~text == 'RS' & value('RX2CPP_HOST_API', , 'ENVIRONMENT') \= '' & \ctx~hasProgramClass('RS') then return 'RX_ENV_SPECIAL("RS", rx::returnStatusValue())'
       /* Native library: .MUTABLEBUFFER builds native buffers that become the interpreter's own only when they leave. */

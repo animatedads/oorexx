@@ -1141,6 +1141,59 @@ inline std::optional<MessageResult> quickStringMethod(const std::string &name, c
         return std::nullopt;
     }
     auto plainArgs = [&]() { for (const Value &a : args) if (a.isObject()) return false; return true; };
+    // MAKEARRAY([separator]): StringUtil::makearray, step for step. No separator: lines ended by LF, a CR before the LF
+    // dropped; a separator: exactly it; the null string: one item a character. A tail without a separator is the last
+    // item; an empty string makes an empty array.
+    if (rx::eqLit(name, "MAKEARRAY") && (args.empty() || (args.size() == 1 && !args[0].isObject()))) {
+        std::string sep = "\n";
+        bool checkCR = true;
+        if (args.size() == 1) { sep = args[0].bytes.str(); checkCR = false; }
+        std::vector<Value> items;
+        if (sep.empty()) {
+            for (char c : s) items.push_back(Value::string(std::string(1, c)));
+        } else {
+            const std::size_t length = s.size(), sepSize = sep.size();
+            std::size_t start = 0;
+            if (length >= sepSize) {
+                const std::size_t end = length - sepSize + 1;   // where the scan stops
+                while (start < end) {
+                    std::size_t at = start;
+                    while (at < end && std::memcmp(s.data() + at, sep.data(), sepSize) != 0) ++at;
+                    if (at >= end) break;
+                    std::size_t itemLength = at - start;
+                    // (a CR before the LF: the interpreter reads the byte before the separator; at the very start of
+                    // the string there is none)
+                    if (checkCR && at > 0 && s[at - 1] == '\r') itemLength--;
+                    items.push_back(Value::string(s.substr(start, itemLength)));
+                    start = at + sepSize;
+                }
+            }
+            if (start < length) items.push_back(Value::string(s.substr(start)));
+        }
+        auto a = std::make_shared<NativeArray>(items.size(), !items.empty());   // (new_array(0): no dimension yet)
+        for (std::size_t i = 0; i < items.size(); ++i) a->slots[i] = std::move(items[i]);
+        a->count = items.size();
+        return MessageResult(Value::fromObject(a));
+    }
+    // STARTSWITH / ENDSWITH / CASELESSSTARTSWITH / CASELESSENDSWITH (StringClassMisc.cpp: primitiveMatch /
+    // primitiveCaselessMatch: false for an empty match string or one longer than the receiver; caseless: ASCII
+    // a-z folded, Utilities::toUpper)
+    if (args.size() == 1 && !args[0].isObject() &&
+        (rx::eqLit(name, "STARTSWITH") || rx::eqLit(name, "ENDSWITH") || rx::eqLit(name, "CASELESSSTARTSWITH") ||
+         rx::eqLit(name, "CASELESSENDSWITH"))) {
+        const std::string &m = args[0].bytes.str();
+        const bool caseless = name.compare(0, 8, "CASELESS") == 0;
+        const bool ends = name.size() >= 8 && name.compare(name.size() - 8, 8, "ENDSWITH") == 0;
+        if (m.empty() || m.size() > s.size()) return MessageResult(Value::string("0"));
+        const std::size_t at = ends ? s.size() - m.size() : 0;
+        bool same = std::memcmp(s.data() + at, m.data(), m.size()) == 0;
+        if (!same && caseless) {
+            auto up = [](char c) { return (c >= 'a' && c <= 'z') ? static_cast<char>(c & ~0x20) : c; };
+            same = true;
+            for (std::size_t i = 0; i < m.size() && same; ++i) same = up(s[at + i]) == up(m[i]);
+        }
+        return MessageResult(Value::string(same ? "1" : "0"));
+    }
     // A string's STRING / MAKESTRING / REQUEST('STRING') is the string itself.
     if ((rx::eqLit(name, "STRING") || rx::eqLit(name, "MAKESTRING")) && args.empty()) return MessageResult(receiver);
     if (rx::eqLit(name, "REQUEST") && args.size() == 1 && !args[0].isObject()) {
