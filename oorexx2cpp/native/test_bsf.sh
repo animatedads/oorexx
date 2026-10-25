@@ -23,7 +23,9 @@ for demo in bsf_demo bsf_callback; do
   cp "$F/$demo.cls" "$OUT/"
   { cat "$F/${demo}_client.rex"; printf '\n::requires "%s.cls"\n' $demo; } > "$OUT/i_$demo.rex"
   { cat "$F/${demo}_client.rex"; printf '\n::requires "%s" library\n' $lib; } > "$OUT/c_$demo.rex"
-  (cd "$OUT" && "$REXX_BIN" i_$demo.rex 2>&1 | grep -v '^Picked up JAVA_TOOL_OPTIONS' > e_$demo.txt)
+  # (the interpreted run is the oracle: if it fails, BSF4ooRexx or Java is the problem; show what the interpreter said)
+  (cd "$OUT" && "$REXX_BIN" i_$demo.rex 2>&1 | grep -v '^Picked up JAVA_TOOL_OPTIONS' > e_$demo.txt) ||
+    { rc=$?; echo "FAIL $demo: the interpreted run itself failed (rc=$rc), so BSF4ooRexx or Java does not work here:"; cat "$OUT/e_$demo.txt"; exit 1; }
   RX2CPP_KEEP_INTERPRETED="BSF.CLS" "$ROOT/native/build.sh" "$OUT/$demo.cls" "$OUT" $lib > "$OUT/build.log" 2>&1 || { echo "FAIL build $demo"; tail -30 "$OUT/build.log"; exit 1; }
   (cd "$OUT" && "$REXX_BIN" c_$demo.rex 2>&1 | grep -v '^Picked up JAVA_TOOL_OPTIONS' > a_$demo.txt) || true
   diff -u "$OUT/e_$demo.txt" "$OUT/a_$demo.txt" || { echo "FAIL $demo: output differs from the interpreter"; exit 1; }

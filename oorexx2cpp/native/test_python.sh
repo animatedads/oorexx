@@ -17,7 +17,8 @@ F="$ROOT/native/fixtures"
 cp "$F/py_demo.cls" "$OUT/"
 { cat "$F/py_demo_client.rex"; printf '\n::requires "py_demo.cls"\n'; } > "$OUT/interpreted.rex"
 { cat "$F/py_demo_client.rex"; printf '\n::requires "rxpydemo" library\n'; } > "$OUT/compiled.rex"
-(cd "$OUT" && "$REXX_BIN" interpreted.rex > expected.txt 2>&1)
+(cd "$OUT" && "$REXX_BIN" interpreted.rex > expected.txt 2>&1) ||
+  { rc=$?; echo "FAIL the interpreted run itself failed (rc=$rc), so oorexxpython does not work here:"; cat "$OUT/expected.txt"; exit 1; }
 RX2CPP_KEEP_INTERPRETED="python.cls" "$ROOT/native/build.sh" "$OUT/py_demo.cls" "$OUT" rxpydemo > "$OUT/build.log" 2>&1 || { echo "FAIL build"; tail -30 "$OUT/build.log"; exit 1; }
 (cd "$OUT" && "$REXX_BIN" compiled.rex > actual.txt 2>&1) || true
 if [[ -n "${PY_SHOW:-}" ]]; then cat "$OUT/actual.txt"; fi
