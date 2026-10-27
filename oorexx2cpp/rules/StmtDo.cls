@@ -166,11 +166,14 @@
   do line over setup
     ctx~line(depth + 1, line)
   end
-  ctx~line(depth + 1, 'std::uint64_t _rxPass' || suffix || ' = 0;')
+  /* the pass count, only for a loop that reads it (DO n / FOR, COUNTER): set but never read it is a warning (g++ 16
+     -Wunused-but-set-variable counts ++ as a set, and builds use -Werror) */
+  needPass = hasFor | counter \== ''
+  if needPass then ctx~line(depth + 1, 'std::uint64_t _rxPass' || suffix || ' = 0;')
   ctx~line(depth + 1, 'bool _rxFirst' || suffix || ' = true;')
   ctx~line(depth + 1, 'if (false) { goto ' || iterLabel || '; goto ' || exitLabel || '; }')
   ctx~line(depth + 1, 'while (true) {')
-  ctx~line(depth + 2, '++_rxPass' || suffix || ';')
+  if needPass then ctx~line(depth + 2, '++_rxPass' || suffix || ';')
   /* UNTIL is tested (on every pass but the first) before the increment; WHILE after the other tests */
   if untilCond \== '' then ctx~line(depth + 2, 'if (!_rxFirst' || suffix || ' && ' || untilCond || ') break;')
   if increment~items > 0 then do
