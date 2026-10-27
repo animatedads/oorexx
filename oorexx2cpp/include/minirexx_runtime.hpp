@@ -308,6 +308,13 @@ struct ObjectDispatch {
     // container holds, and dropping them all (a container found unreachable: its references are what keep a cycle).
     virtual void gcValues(const std::function<void(const Value &)> &) const {}
     virtual void gcClear() {}
+    // Whether the collector follows this object's values (a native container or a compiled object's reference), and,
+    // for a compiled object's reference (NativeInstanceRef), its instance state: answered without a dynamic_cast.
+    virtual bool gcFollowed() const { return false; }
+    virtual void *gcRefState() const { return nullptr; }
+    // The collector's bookkeeping: the number of the collection that last met this object, and its node there.
+    mutable std::uint64_t gcMark = 0;
+    mutable std::uint32_t gcIndex = 0;
     // True when the object has no MAKESTRING method (a Stem): its string value comes from STRING, with NOSTRING.
     virtual bool noMakeString() const { return false; }
     // True for an object of a class that is not built in (RexxInternalObject::isBaseClass false): its string value is

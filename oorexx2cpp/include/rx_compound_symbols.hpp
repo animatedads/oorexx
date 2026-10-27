@@ -63,6 +63,7 @@ struct StemObject final : ObjectDispatch {
     // an array indexed by that number while they stay dense (an index at most denseSlack past the end; beyond, the
     // element goes to tails, where get looks for it too). Same tails, same values: only where they are kept.
     std::vector<std::optional<Value>> dense;
+    bool gcFollowed() const override { return true; }
     void gcValues(const std::function<void(const Value &)> &f) const override {
         if (dflt) f(*dflt);
         for (const auto &kv : tails) f(kv.second);

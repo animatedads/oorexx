@@ -2327,6 +2327,7 @@ struct NativeArray final : NativeRefBase, ItemSnapshot, std::enable_shared_from_
     static constexpr std::size_t maxSlots = std::size_t(1) << 20;
     bool sized = true;                          // .array~new gives no dimension yet (DIMENSION 0); NEW(n) and OF give 1
     explicit NativeArray(std::size_t size = 0, bool withSize = true) : slots(size), sized(withSize) {}
+    bool gcFollowed() const override { return true; }
     void gcValues(const std::function<void(const Value &)> &f) const override {
         for (const auto &v : slots) if (v) f(*v);
         if (real) f(*real);
@@ -2542,6 +2543,7 @@ struct NativeDirectory final : NativeRefBase, std::enable_shared_from_this<Nativ
     std::unordered_map<std::string, Value> entries;
     std::optional<Value> real;
     std::vector<std::size_t> hashOrder;                   // positions in order, in the interpreter's order (when asked)
+    bool gcFollowed() const override { return true; }
     void gcValues(const std::function<void(const Value &)> &f) const override {
         for (const auto &kv : entries) f(kv.second);
         if (real) f(*real);
