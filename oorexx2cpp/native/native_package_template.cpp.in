@@ -935,7 +935,10 @@ void collectCycles() {
         bool inUse = false;
         for (const auto &scope : st->scopes) if (scope.second.use_count() > 1) inUse = true;
         if (inUse) { n.refs += 1; ++running; }
-        if (!stateDisposable(*st)) { n.refs += 1; ++kept; }
+        // (an instance of an Array subclass made natively (arrayNewTable) has no interpreter object until one is
+        // needed: its contents are all native, so only an interpreter object of its own makes it held from outside)
+        const bool nativeOnly = st->builtin && !st->classSide && !(st->alive && st->handle);
+        if (!nativeOnly && !stateDisposable(*st)) { n.refs += 1; ++kept; }
         if (st->alive && st->handle) ++proxied;
         order.push_back(st.get());
     }

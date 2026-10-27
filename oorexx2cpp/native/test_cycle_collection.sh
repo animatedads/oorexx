@@ -20,4 +20,13 @@ for mode in combined separate; do
   [[ $freed -gt 500 ]] || { echo "FAIL $mode: the collector freed $freed instances"; cat "$OUT/$mode.stats" | tail -5; exit 1; }
   echo "$mode: $freed instances freed"
 done
-echo "PASS cycle collection: $(wc -l < "$OUT/expected") lines identical, cyclic instances freed (combined, separate packages)"
+# a cycle through an Array subclass made natively: the states stay bounded (they once all stayed live)
+cp -r "$ROOT/native/fixtures/cycles_array" "$OUT/asrc"
+(cd "$OUT/asrc" && LD_LIBRARY_PATH="$OO_ROOT/lib" "$REXX_BIN" xheap.rex) > "$OUT/aexpected" 2>&1
+"$ROOT/native/compile_program.sh" "$OUT/asrc/xheap.rex" "$OUT/array" > "$OUT/array.build" 2>&1 || { echo "FAIL build array"; tail -20 "$OUT/array.build"; exit 1; }
+(cd "$OUT/asrc" && RX2CPP_GC_EVERY=1500 RX2CPP_GC_STATS=1 LD_LIBRARY_PATH="$OUT/array:$OO_ROOT/lib" "$REXX_BIN" "$OUT/array/xheap.rex") > "$OUT/array.actual" 2> "$OUT/array.stats"
+diff -u "$OUT/aexpected" "$OUT/array.actual" || { echo "FAIL array subclass cycle differs from the interpreter"; exit 1; }
+live=$(grep -o '[0-9]* states live' "$OUT/array.stats" | tail -1 | awk '{print $1}')
+[[ -n "$live" && $live -lt 1700 ]] || { echo "FAIL array subclass cycle: $live states live at the last collection"; tail -3 "$OUT/array.stats"; exit 1; }
+echo "array subclass cycle: $live states live at the last collection"
+echo "PASS cycle collection: $(wc -l < "$OUT/expected") + $(wc -l < "$OUT/aexpected") lines identical, cyclic instances freed (combined, separate packages, Array subclass)"
