@@ -18,6 +18,13 @@ n. = 0
 n.[1] = t
 n.["2"] = 5
 say n.1~name n.2 n.3
+say n.~items
+n.7 = "seven"; n.abc = "x"; drop n.2
+say n.~items
+n.2000000 = 1; n.["P", "Q"] = t
+say n.~items
+n. = "reset"
+say n.~items n.1
 exit
 
 f: procedure

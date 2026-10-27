@@ -209,6 +209,13 @@ struct StemObject final : ObjectDispatch {
                 return std::nullopt;
             }
             if (selector == "STRING") return defaultValue();
+            // StemClass::items: the tails with a value of their own (dropped ones have none; the default is not one)
+            if (selector == "ITEMS" && args.empty()) {
+                std::lock_guard<SpinLock> g(lock);
+                std::size_t count = tails.size();
+                for (const auto &v : dense) if (v) ++count;
+                return Value::string(std::to_string(count));
+            }
             // StemClass::hasIndex: an element with a value of its own (not the default); no index: always true
             if (selector == "HASINDEX") {
                 if (args.empty()) return Value::string("1");
