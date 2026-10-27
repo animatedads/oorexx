@@ -2,6 +2,7 @@
 # BSF4ooRexx (Java) from compiled code, and Java calling back into compiled objects (BsfCreateRexxProxy): each demo
 # interpreted and compiled, outputs identical.
 #   BSF4OOREXX_HOME: an unpacked BSF4ooRexx install zip (the directory holding BSF.CLS); unset: SKIP.
+#   JAVA_HOME: the Java to use (default: the java on PATH); it must have lib/server/libjvm.so.
 set -euo pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 [[ -z "${BSF4OOREXX_HOME:-}" ]] && { echo "SKIP bsf: BSF4OOREXX_HOME not set"; exit 0; }
@@ -10,7 +11,12 @@ REXX_BIN=${REXX_BIN:-$OO_ROOT/bin/rexx}
 B=$(cd "$BSF4OOREXX_HOME" && pwd)
 OUT=$(mktemp -d)
 trap 'rm -rf -- "$OUT"' EXIT
-JH=$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")
+# Java: JAVA_HOME if set, else the java on PATH. BSF4ooRexx loads libjvm.so through LD_LIBRARY_PATH.
+if [[ -n "${JAVA_HOME:-}" ]]; then JH=$JAVA_HOME
+elif command -v java >/dev/null; then JH=$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")
+else echo "FAIL bsf: no Java (JAVA_HOME not set and no java on PATH)"; exit 1; fi
+[[ -f "$JH/lib/server/libjvm.so" ]] ||
+  { echo "FAIL bsf: no $JH/lib/server/libjvm.so (set JAVA_HOME to a JDK or JRE directory)"; exit 1; }
 mkdir -p "$OUT/native"
 cp "$B/install/lib/libBSF4ooRexx850.so-64-amd64" "$OUT/native/libBSF4ooRexx850.so"
 ln -s libBSF4ooRexx850.so "$OUT/native/libBSF4ooRexx.so"
