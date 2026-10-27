@@ -83,7 +83,16 @@ struct SelfSender {
     /* Object-capable FORWARD MESSAGE: the original arguments, any result (object or string); nullopt = no result. */
     virtual std::optional<rx::Value> forwardValues(const std::string &selector) { return rx::Value::string(forward(selector)); }
 };
-namespace detail { inline thread_local SelfSender *currentSender = nullptr; }
+namespace detail {
+// The running compiled method's sender, kept in the thread's rx::ThreadState (one thread-local lookup for all of it):
+// reads and assignments as of a SelfSender pointer.
+struct CurrentSenderRef {
+    operator SelfSender *() const { return static_cast<SelfSender *>(rx::threadState().currentSender); }
+    SelfSender *operator->() const { return static_cast<SelfSender *>(rx::threadState().currentSender); }
+    CurrentSenderRef &operator=(SelfSender *s) { rx::threadState().currentSender = s; return *this; }
+};
+inline CurrentSenderRef currentSender;
+}
 inline std::string selfSend(const std::string &selector, const std::vector<std::string> &args) {
     if (!detail::currentSender)
         throw std::runtime_error("SELF send outside an interpreter-invoked native method");

@@ -672,9 +672,16 @@ inline bool radixBifName(const std::string &name) { return rx::eqLit(name, "X2C"
 // The native number / radix code covers the ordinary inputs only; anything else is the interpreter's (its results,
 // NUMERIC DIGITS limits and errors, e.g. 93.929 for D2C(209) under DIGITS 1). True when this call must go there.
 inline bool numericEdgeName(const std::string &name) {
-    static const std::unordered_set<std::string> numeric{"DATATYPE","ABS","SIGN","MAX","MIN","TRUNC","FORMAT","D2C","D2X",
-        "C2D","X2D","DIGITS","FUZZ"};
-    return numeric.count(name) != 0;
+    // (asked for every string method: compared by length first, no hashing)
+    switch (name.size()) {
+    case 3: return rx::eqLit(name, "ABS") || rx::eqLit(name, "MAX") || rx::eqLit(name, "MIN") || rx::eqLit(name, "D2C") ||
+                   rx::eqLit(name, "D2X") || rx::eqLit(name, "C2D") || rx::eqLit(name, "X2D");
+    case 4: return rx::eqLit(name, "SIGN") || rx::eqLit(name, "FUZZ");
+    case 5: return rx::eqLit(name, "TRUNC");
+    case 6: return rx::eqLit(name, "FORMAT") || rx::eqLit(name, "DIGITS");
+    case 8: return rx::eqLit(name, "DATATYPE");
+    default: return false;
+    }
 }
 // (name is one of numericEdgeName's)
 inline bool numericEdgeArgs(const std::string &name, const std::vector<BifSlot> &a, const ActivationNumeric &num);
@@ -1101,8 +1108,12 @@ inline void *stringIsAKey(const Value &cls) {
 inline std::optional<MessageResult> quickStringMethod(const std::string &name, const Value &receiver, const std::vector<Value> &args) {
     const std::string &s = receiver.bytes;
     auto count = [](const Value &v, std::size_t &out, bool positive) {
-        if (v.isObject() || v.bytes.empty() || v.bytes.size() > 9 || v.bytes.find_first_not_of("0123456789") != std::string::npos) return false;
-        out = std::stoul(v.bytes); return !(positive && out == 0);
+        if (v.isObject()) return false;
+        const std::string &t = v.bytes.str();
+        if (t.empty() || t.size() > 9) return false;
+        std::size_t n = 0;   // (at most 9 digits: no overflow)
+        for (char c : t) { if (c < '0' || c > '9') return false; n = n * 10 + static_cast<std::size_t>(c - '0'); }
+        out = n; return !(positive && out == 0);
     };
     if (rx::eqLit(name, "[]") && (args.size() == 1 || args.size() == 2)) {
         std::size_t n, len = 1;
@@ -1294,11 +1305,11 @@ inline MessageResult hostStringBif(const Value &receiver, const std::string &sel
     for (char &c : name) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
     auto fallback = [&]() -> MessageResult { return hostStringBifPrevious()(receiver, selector, args); };
     if (radixBifName(name) && !receiver.isObject() && !plainRadixDigits(name, receiver.bytes.str())) return fallback();
-    {
+    if (numericEdgeName(name)) {   // (the arguments are looked at only for the numeric methods)
         std::vector<BifSlot> asSlots{BifSlot(receiver)};
         for (const Value &v : args) asSlots.emplace_back(v);
         const ActivationNumeric def0;
-        if (numericEdgeForInterpreter(name, asSlots, currentNumeric ? *currentNumeric : def0)) return fallback();
+        if (numericEdgeArgs(name, asSlots, currentNumeric ? *currentNumeric : def0)) return fallback();
     }
     if (rx::eqLit(name, "C2D") || rx::eqLit(name, "D2C") || rx::eqLit(name, "X2D") || rx::eqLit(name, "D2X")) {
         const ActivationNumeric def0;

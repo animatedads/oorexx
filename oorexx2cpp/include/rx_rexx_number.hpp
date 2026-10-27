@@ -393,6 +393,7 @@ inline bool smallDecimalRelation(const Value &a, const Value &b, const Activatio
     return true;
 }
 inline void checkLostDigits(const RexxDecimal &d, const Value &operand, const ActivationNumeric &ctx) {
+    const bool *lostDigitsArmed = threadState().lostDigitsArmed;
     if (!lostDigitsArmed || !*lostDigitsArmed || !lostDigitsHook() || d.coefficient == 0) return;
     if (decimalDigits(d.coefficient) > static_cast<int>(ctx.digits)) lostDigitsHook()(operand);
 }

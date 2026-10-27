@@ -381,6 +381,7 @@ inline void *environmentEntry(const std::string &name) {
 // .environment) are found once per thread and kept; DirectoryAt is the interpreter's own get(), as
 // PackageClass::findClass does. Answers a local reference (the caller releases it), or NULLOBJECT.
 inline void bifStat(const std::string &name);
+inline void bifStat(const char *name);
 struct EnvDirs { RexxDirectoryObject pkg = NULLOBJECT, local = NULLOBJECT, global = NULLOBJECT; bool pkgDone = false; };
 inline EnvDirs &envDirs() { static thread_local EnvDirs d; return d; }
 // Does this Directory have SETMETHOD entries or an UNKNOWN method (DirectoryClass::methodTable, ::unknownMethod)? Its
@@ -740,6 +741,7 @@ inline std::string interpreterVersion() {
     return version;
 }
 inline void bifStat(const std::string &name);
+inline void bifStat(const char *name);
 // RX2CPP_BIF_STATS: a native instance whose interpreter object was just made to be an argument (named with the send it
 // goes to)
 inline thread_local std::string pendingArgumentStat;
@@ -865,9 +867,9 @@ inline bool send(void *target, const std::string &selector, const std::vector<Ar
     return true;
 }
 // RX2CPP_BIF_STATS=1: count the BIFs/String methods that went to the interpreter (printed at exit): the next native candidates.
+inline bool bifStatsOn() { static const bool stats = std::getenv("RX2CPP_BIF_STATS") != nullptr; return stats; }
 inline void bifStat(const std::string &name) {
-    static const bool stats = std::getenv("RX2CPP_BIF_STATS") != nullptr;
-    if (!stats) return;
+    if (!bifStatsOn()) return;
     static std::mutex m;
     static std::map<std::string, std::size_t> counts;
     std::lock_guard<std::mutex> g(m);
@@ -875,6 +877,8 @@ inline void bifStat(const std::string &name) {
     (void)registered;
     ++counts[name];
 }
+// (a literal name: no string is made unless the statistics are on; the environment-symbol cache asks millions of times)
+inline void bifStat(const char *name) { if (bifStatsOn()) bifStat(std::string(name)); }
 // Delegated BIFs run in the host interpreter: a tiny routine per (name, omission pattern, NUMERIC settings), cached.
 // receiver~selector(args) for a String receiver, executed under the caller's NUMERIC settings (omitted arguments stay omitted).
 inline bool sendStringNumeric(const std::string &receiver, const std::string &selector, const std::vector<Arg> &args,
@@ -1524,7 +1528,8 @@ struct MethodTraps {
     struct Handing { std::string name; std::shared_ptr<ObjectDispatch> object; bool active = false; };
     static Handing &handing() { static thread_local Handing h; return h; }   // a CALL ON handler's condition
     // The running activation's traps are known to the stream built-ins (NOTREADY), through its ActivationScope.
-    MethodTraps() : savedNovalue(novalueArmed), savedLostDigits(lostDigitsArmed) {
+    MethodTraps() : MethodTraps(threadState()) {}
+    explicit MethodTraps(ThreadState &t) : savedNovalue(t.novalueArmed), savedLostDigits(t.lostDigitsArmed) {
         if (MethodTraps *from = std::exchange(inheritNext(), nullptr)) {
             internal = true;
             std::memcpy(on, from->on, sizeof on); std::memcpy(callMode, from->callMode, sizeof callMode);
@@ -1534,15 +1539,16 @@ struct MethodTraps {
         }
         Handing &h = handing();
         if (h.active) { has = true; name = h.name; instruction = "CALL"; object = h.object; h = Handing(); }
-        if (ActivationScope *a = ActivationScope::current()) { saved = a->traps; a->traps = this; }
-        novalueArmed = &novalueOn;
-        lostDigitsArmed = &lostDigitsOn;
+        if (ActivationScope *a = t.scope) { saved = a->traps; a->traps = this; }
+        t.novalueArmed = &novalueOn;
+        t.lostDigitsArmed = &lostDigitsOn;
         syncNovalue();
     }
     ~MethodTraps() {
-        if (ActivationScope *a = ActivationScope::current()) if (a->traps == this) a->traps = saved;
-        novalueArmed = savedNovalue;
-        lostDigitsArmed = savedLostDigits;
+        ThreadState &t = threadState();
+        if (ActivationScope *a = t.scope) if (a->traps == this) a->traps = saved;
+        t.novalueArmed = savedNovalue;
+        t.lostDigitsArmed = savedLostDigits;
     }
     // The slot that traps condition c (k its slot or -1), or -1: c's own trap, else ANY (CALL ON ANY cannot take the
     // conditions CALL ON does not trap: TrapHandler::canHandle).
@@ -2152,7 +2158,7 @@ inline std::optional<Value> envFind(EnvName &e) {
     if (e.state == 0) {
         if (packageClassHook) if (auto v = packageClassHook(name)) { e.value = *v; e.state = 1; return e.value; }
 #ifdef RX2CPP_HOST_API
-        rxobj::bifStat("environment symbol first resolved by the interpreter: " + name);
+        if (rxobj::bifStatsOn()) rxobj::bifStat("environment symbol first resolved by the interpreter: " + name);
         // (.LOCAL and .ENVIRONMENT are entries of .environment, found as any other: a security manager is asked for them
         // too, as interpreted)
         void *h = rxobj::packageClass(name);
@@ -2903,7 +2909,7 @@ inline MessageResult interpreterCall(Variables &vars, const std::string &name, c
                                      const std::optional<Value> &dynamicName = std::nullopt) {
     RexxThreadContext *t = rxobj::need();
     rxobj::LocalRefs temps(t);
-    rxobj::bifStat("CALL " + name);
+    if (rxobj::bifStatsOn()) rxobj::bifStat("CALL " + name);
     // The stem copy-back below is needed only when an argument may name a stem (a string ending in '.', or an object,
     // whose string value the helper reads); without one the helper is the call alone.
     bool stemArgs = false;
@@ -3060,7 +3066,7 @@ inline MessageResult interpreterCall(Variables &vars, const std::string &name, c
 inline void interpreterCommand(Variables &vars, const Value &environment, const Value &command) {
     RexxThreadContext *t = rxobj::need();
     rxobj::LocalRefs temps(t);
-    rxobj::bifStat("ADDRESS " + environment.bytes.str());
+    if (rxobj::bifStatsOn()) rxobj::bifStat("ADDRESS " + environment.bytes.str());
     // ERROR / FAILURE: when the activation traps them, the helper does too (CALL ON: the command completes, RC is set,
     // and its condition comes back), so the interpreter decides which one a command raises (FAILURE untrapped: ERROR).
     const int mode = MethodTraps::commandConditionMode() & 7;

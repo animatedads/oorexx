@@ -198,6 +198,17 @@ struct InstanceState : std::enable_shared_from_this<InstanceState> {
         scopes.emplace_back(cls, created);
         return created;
     }
+    // (a class name from the method tables: compared in place, a string made only for a new scope)
+    std::shared_ptr<CompiledObject> at(const char *cls) {
+        const std::size_t n = std::strlen(cls);
+        std::lock_guard<std::mutex> lock(gate);
+        for (const auto &entry : scopes)
+            if (entry.first.size() == n && std::memcmp(entry.first.data(), cls, n) == 0) return entry.second;
+        std::string name(cls, n);
+        auto created = create(name);
+        scopes.emplace_back(std::move(name), created);
+        return created;
+    }
 };
 class InstanceTable {
     std::mutex gate_;
@@ -278,7 +289,13 @@ struct ReleaseAndReacquire {
 }
 #ifdef RX2CPP_HOST_API
 namespace {
-thread_local InstanceState *currentState = nullptr;           // exact instance whose compiled method is running
+// the exact instance whose compiled method is running (kept in the thread's rx::ThreadState)
+struct CurrentStateRef {
+    operator InstanceState *() const { return static_cast<InstanceState *>(rx::threadState().currentState); }
+    InstanceState *operator->() const { return static_cast<InstanceState *>(rx::threadState().currentState); }
+    CurrentStateRef &operator=(InstanceState *s) { rx::threadState().currentState = s; return *this; }
+};
+CurrentStateRef currentState;
 thread_local std::shared_ptr<InstanceState> pendingAdopt;      // set while an interpreter object is made for a native state
 struct StateScope {
     InstanceState *previous;
@@ -329,7 +346,12 @@ struct FastMethods {
         static const CiEq same;
         const std::uint32_t k = keyOf(selector);
         for (std::size_t i = spread(k) & mask; slots[i].entry; i = (i + 1) & mask)
-            if (slots[i].key == k && same(slots[i].entry->first, selector)) return slots[i].entry;
+            if (slots[i].key == k) {
+                // (compiled selectors are upper case already: the exact comparison first, the caseless one if it differs)
+                const std::string &name = slots[i].entry->first;
+                if (name.size() == selector.size() && (std::memcmp(name.data(), selector.data(), name.size()) == 0 || same(name, selector)))
+                    return slots[i].entry;
+            }
         return nullptr;
     }
 };
@@ -500,7 +522,7 @@ static bool instanceOfScope(const std::string &cls, const char *scope) {
 }
 static bool privateAllowedFor(const InstanceState *receiver, const MethodInfo &info) {
     if (!currentState) return false;
-    if (currentState == receiver) return true;
+    if (static_cast<InstanceState *>(currentState) == receiver) return true;
     return instanceOfScope(currentState->dynamicClass, info.definingClass);
 }
 /* Does an instance of this compiled class answer the comparison `op` with .Object's own method (identity)? Exact for
@@ -704,15 +726,16 @@ std::optional<rx::Value> runNative(const std::shared_ptr<InstanceState> &st, Res
     StateScope current(st.get());
     rx::noResultPending() = false;
 #ifdef RX2CPP_HOST_API
-    rx::Value result = rx::Value::string(std::string());
-    try { result = obj->invokeValues(method.first, args); }
-    catch (const rx::RaiseToCaller &r) { rx::noResultPending() = false; return rx::raisedInCaller(r); }
-#else
-    rx::Value result = obj->invokeValues(method.first, args);
+    try {
 #endif
-    const bool noValue = std::exchange(rx::noResultPending(), false);
-    if (info.noResult || noValue) return std::nullopt;
-    return result;
+        rx::Value result = obj->invokeValues(method.first, args);
+        const bool noValue = std::exchange(rx::noResultPending(), false);
+        if (info.noResult || noValue) return std::nullopt;
+        return result;
+#ifdef RX2CPP_HOST_API
+    }
+    catch (const rx::RaiseToCaller &r) { rx::noResultPending() = false; return rx::raisedInCaller(r); }
+#endif
 }
 /* A class of this library changed at run time (DEFINE, DELETE, INHERIT, UNINHERIT sent by compiled code): instances
    made from then on take their methods from the interpreter (an object's methods are fixed when it is created, so
@@ -720,6 +743,7 @@ std::optional<rx::Value> runNative(const std::shared_ptr<InstanceState> &st, Res
 std::atomic<bool> &classesChanged() { static std::atomic<bool> changed{false}; return changed; }
 // RX2CPP_BIF_STATS: why NEW of a class of this library went to the interpreter
 void rx2cpp_class_stat(const std::string &name) {
+    if (!rxobj::bifStatsOn()) return;
     rxobj::bifStat("class NEW by the interpreter: " + name + (classesChanged() ? " (classes changed)" : "") +
                    (directNewTable().count(name) ? "" : " (not direct)"));
 }
@@ -1174,13 +1198,13 @@ public:
 #ifdef RX2CPP_HOST_API
 namespace {
 void guardImpl(int op) {
-    auto *f = dynamic_cast<Frame *>(detail::currentSender);
+    auto *f = dynamic_cast<Frame *>(static_cast<SelfSender *>(detail::currentSender));
     if (!f) throw std::runtime_error("GUARD outside a native method entry");
     if (op == 2) f->guardWait();
     else f->guardSet(op == 1);
 }
 [[maybe_unused]] const bool guardInstalled = (rx::guardHook() = &guardImpl, true);
-void replyLocksImpl(bool guarded) { if (auto *f = dynamic_cast<Frame *>(detail::currentSender)) f->afterReply(guarded); }
+void replyLocksImpl(bool guarded) { if (auto *f = dynamic_cast<Frame *>(static_cast<SelfSender *>(detail::currentSender))) f->afterReply(guarded); }
 [[maybe_unused]] const bool replyLocksInstalled = (rx::replyLocksHook() = &replyLocksImpl, true);
 }
 #endif

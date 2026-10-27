@@ -383,7 +383,7 @@ struct NilObject final : ObjectDispatch {
 // A method or routine that ends without a result (bare RETURN, end of the code, FORWARD to a method that returned
 // nothing) returns noResult(): the flag tells the entry point to hand the interpreter no result, as interpreted
 // (RESULT dropped; an expression using it raises the interpreter's own error). Read and cleared right after the call.
-inline bool &noResultPending() { static thread_local bool pending = false; return pending; }
+inline bool &noResultPending();   // (in the thread's ThreadState, below)
 inline Value noResult();
 inline Value nil() {
     static const std::shared_ptr<ObjectDispatch> singleton = std::make_shared<NilObject>();
@@ -420,8 +420,30 @@ struct ThreadState {
     std::string pendingCallType;
     std::string trace = "N", address = "sh", alternate = "sh";
     ActivationScope *scope = nullptr;
+    // SIGNAL ON NOVALUE (or ANY) of the running activation: reading an unset variable raises NOVALUE while *novalueArmed.
+    const bool *novalueArmed = nullptr;
+    // SIGNAL ON LOSTDIGITS (or ANY) of the running activation: an arithmetic operand longer than DIGITS raises LOSTDIGITS.
+    const bool *lostDigitsArmed = nullptr;
+    // The compiled method running on this thread, as SELF sends see it (compiled_registry.hpp detail::currentSender), and
+    // its native instance (the native library's currentState); whether it returned no value (noResultPending). Kept here
+    // with the rest so that a method call reaches all of them through one thread-local lookup.
+    void *currentSender = nullptr;
+    void *currentState = nullptr;
+    bool noResultPending = false;
 };
-inline ThreadState &threadState() { static thread_local ThreadState t; return t; }
+// (reached through a plain pointer: a thread_local with a constructor is checked for its initialisation at every use, a
+// second thread-local lookup; the pointer needs none, and the state is made once per thread)
+__attribute__((noinline)) inline ThreadState *makeThreadState() {
+    static thread_local std::unique_ptr<ThreadState> owner;   // (frees it when the thread ends)
+    owner = std::make_unique<ThreadState>();
+    return owner.get();
+}
+inline ThreadState &threadState() {
+    static thread_local ThreadState *t = nullptr;
+    if (__builtin_expect(t == nullptr, 0)) t = makeThreadState();
+    return *t;
+}
+inline bool &noResultPending() { return threadState().noResultPending; }
 inline std::string &pendingCallType() { return threadState().pendingCallType; }
 // The clock of an activation (RexxActivation::getTime / getElapsed): one time stamp per clause, read at the first
 // TIME / DATE of the clause; the elapsed-time origin of TIME('E') / TIME('R'). Microseconds since 0001-01-01.
@@ -434,10 +456,6 @@ struct ClauseClock {
 inline std::string &traceSetting();
 inline std::string &addressEnvironment();
 inline std::string &alternateEnvironment();
-// SIGNAL ON NOVALUE (or ANY) of the running activation: reading an unset variable raises NOVALUE while *novalueArmed.
-inline thread_local const bool *novalueArmed = nullptr;
-// SIGNAL ON LOSTDIGITS (or ANY) of the running activation: an arithmetic operand longer than DIGITS raises LOSTDIGITS.
-inline thread_local const bool *lostDigitsArmed = nullptr;
 // Raises the LOSTDIGITS condition for an operand (set by the object bridge: the condition object is the interpreter's).
 inline void (*&lostDigitsHook())(const Value &) { static void (*hook)(const Value &) = nullptr; return hook; }
 struct ActivationScope {
@@ -473,8 +491,8 @@ struct ActivationScope {
         if (securityHook()) security = securityHook()();
         if (!t.pendingCallType.empty()) callType = std::exchange(t.pendingCallType, std::string());
         t.scope = this;
-        savedNovalue = std::exchange(novalueArmed, nullptr);
-        savedLostDigits = std::exchange(lostDigitsArmed, nullptr);
+        savedNovalue = std::exchange(t.novalueArmed, nullptr);
+        savedLostDigits = std::exchange(t.lostDigitsArmed, nullptr);
         if (!defaultSettings(t)) {
             settings = true;
             savedTrace = std::move(t.trace); savedAddress = std::move(t.address); savedAlternate = std::move(t.alternate);
@@ -494,7 +512,7 @@ struct ActivationScope {
     }
     ~ActivationScope() {
         ThreadState &t = threadState();
-        t.scope = saved; novalueArmed = savedNovalue; lostDigitsArmed = savedLostDigits;
+        t.scope = saved; t.novalueArmed = savedNovalue; t.lostDigitsArmed = savedLostDigits;
         if (settings) { t.trace = std::move(savedTrace); t.address = std::move(savedAddress); t.alternate = std::move(savedAlternate); }
         else if (!defaultSettings(t)) startSettings(t);
     }
@@ -1029,7 +1047,7 @@ struct NoValueCondition : std::runtime_error {
 inline Value get(const Variables &vars, const std::string &name) {
     const Value *v = lookup(vars, name);
     if (v) return *v;
-    if (novalueArmed && *novalueArmed) throw NoValueCondition(name);
+    if (const bool *armed = threadState().novalueArmed; armed && *armed) throw NoValueCondition(name);
     return Value::string(name);
 }
 inline void set(Variables &vars, const std::string &name, Value value) {
@@ -1095,12 +1113,12 @@ struct VarSlot {
         const Variables &owner = variableOwner(vars, key);
         if (std::optional<Value> *f = frameEntry(owner, key)) {
             if (*f) return **f;
-            if (novalueArmed && *novalueArmed) throw NoValueCondition(name);
+            if (const bool *armed = threadState().novalueArmed; armed && *armed) throw NoValueCondition(name);
             return Value::string(name);
         }
         auto found = owner.find(key);
         if (found == owner.end()) {
-            if (novalueArmed && *novalueArmed) throw NoValueCondition(name);
+            if (const bool *armed = threadState().novalueArmed; armed && *armed) throw NoValueCondition(name);
             return Value::string(name);
         }
         remember(vars, owner, g, const_cast<Value *>(&found->second));
@@ -1149,7 +1167,7 @@ struct VarSlot {
 // (1; 2: and its characters are exactly that number's digits, NumCache canonical).
 // An unset variable's value: its name, or the NOVALUE condition when it is trapped (get()).
 __attribute__((noinline)) inline Value unsetVariable(const char *name) {
-    if (novalueArmed && *novalueArmed) throw NoValueCondition(name);
+    if (const bool *armed = threadState().novalueArmed; armed && *armed) throw NoValueCondition(name);
     return Value::string(name);
 }
 template <std::size_t K> struct LocalSlots {
@@ -1373,20 +1391,20 @@ struct TrapState {
     TrapState() = default;
     TrapState(const TrapState &) = delete;
     TrapState &operator=(const TrapState &) = delete;
-    ~TrapState() { if (novalueArmed == &novalueOn) novalueArmed = nullptr; }
+    ~TrapState() { ThreadState &t = threadState(); if (t.novalueArmed == &novalueOn) t.novalueArmed = nullptr; }
     void on(const std::string &condition, const std::string &label) {
         if (condition == "SYNTAX") { syntaxOn = true; syntaxLabel = label; }
-        if (condition == "NOVALUE") { novalueOn = true; novalueLabel = label; novalueArmed = &novalueOn; }
+        if (condition == "NOVALUE") { novalueOn = true; novalueLabel = label; threadState().novalueArmed = &novalueOn; }
     }
     void off(const std::string &condition) {
         if (condition == "SYNTAX") syntaxOn = false;
-        if (condition == "NOVALUE") { novalueOn = false; if (novalueArmed == &novalueOn) novalueArmed = nullptr; }
+        if (condition == "NOVALUE") { novalueOn = false; ThreadState &t = threadState(); if (t.novalueArmed == &novalueOn) t.novalueArmed = nullptr; }
     }
     // Rexx disables the trap when it fires.
     bool take(std::string &label, const std::exception &error, bool topLevel) {
         if (dynamic_cast<const NoValueCondition *>(&error)) {
             if (!novalueOn) return false;
-            novalueOn = false; if (novalueArmed == &novalueOn) novalueArmed = nullptr;
+            novalueOn = false; { ThreadState &t = threadState(); if (t.novalueArmed == &novalueOn) t.novalueArmed = nullptr; }
             label = novalueLabel; return true;
         }
         if (!syntaxOn) return false;
