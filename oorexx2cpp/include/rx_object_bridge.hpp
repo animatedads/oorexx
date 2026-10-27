@@ -2674,6 +2674,21 @@ struct NativeDirectory final : NativeRefBase, std::enable_shared_from_this<Nativ
                 if (e->handle == static_cast<EnvObject *>(cls.object.get())->handle) return Value::string("1");
             return cls.object->sendMessage("ISSUBCLASSOF", args);
         }
+        // Collection's UNION (CoreClasses.orx, single_union): a copy of this collection, then each entry of the other's
+        // supplier (its interpreter order) whose index the copy lacks, PUT in that order. With both collections native
+        // the result is native: its insertion order is the copy's then the PUTs', which interpreterOrder replays.
+        if (rx::eqLit(selector, "UNION") && n == 1 && args[0].isObject()) {
+            if (auto *other = dynamic_cast<NativeDirectory *>(args[0].object.get()); other && !other->real) {
+                auto made = std::make_shared<NativeDirectory>(kind);
+                made->order = order; made->entries = entries; made->hashOrder = hashOrder;
+                const std::vector<std::size_t> at = other->interpreterOrder();
+                for (std::size_t i : at) {
+                    const std::string &k = other->order[i];
+                    if (!made->entries.count(k)) { made->order.push_back(k); made->entries.emplace(k, other->entries.at(k)); }
+                }
+                return Value::fromObject(made);
+            }
+        }
         return promote().object->sendMessage(selector, args);
     }
     Value sendBinary(const std::string &selector, const Value &rhs) override {
