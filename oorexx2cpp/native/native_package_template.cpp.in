@@ -9,6 +9,7 @@
 #include <cctype>
 #include <dlfcn.h>
 #include <fstream>
+#include <chrono>
 #include <map>
 #include <sstream>
 #include <memory>
@@ -917,6 +918,7 @@ std::shared_ptr<InstanceState> stateOfObject(void *handle) {
    in compiled code (rxobj::exclusiveNative), when enough states have been made since the last collection. */
 namespace {
 void collectCycles() {
+    const auto started = std::chrono::steady_clock::now();
     std::vector<std::shared_ptr<InstanceState>> states = InstanceTable::instance().liveStates();
     // states whose interpreter object the interpreter no longer has (collected by the interpreter collection just
     // requested, trackState) are given up first: that object no longer holds them
@@ -997,6 +999,7 @@ void collectCycles() {
         const std::size_t key = stack.back(); stack.pop_back();
         edgesOf(key);
     }
+    const auto marked = std::chrono::steady_clock::now();
     // the rest: dropped (held here while their references go, so none is freed under the loop)
     std::vector<std::shared_ptr<InstanceState>> deadStates;
     std::vector<std::shared_ptr<rx::ObjectDispatch>> deadObjects;
@@ -1017,6 +1020,11 @@ void collectCycles() {
         if (st->builtin) st->builtin->gcClear();
     }
     for (const auto &o : deadObjects) o->gcClear();
+    const std::size_t deadObjectCount = deadObjects.size();
+    deadObjects.clear();   // (the freeing happens here and below, as the last references go)
+    const std::size_t deadStateCount = deadStates.size();
+    deadStates.clear();
+    const auto freed = std::chrono::steady_clock::now();
     if (std::getenv("RX2CPP_GC_STATS")) {
         std::size_t held = 0;   // held from outside compiled objects and containers (after the subtraction)
         std::map<std::string, std::size_t> heldBy;   // RX2CPP_GC_STATS=3: the classes of the states held from outside
@@ -1029,12 +1037,12 @@ void collectCycles() {
             }
         }
         for (const auto &kv : heldBy) std::fprintf(stderr, "rx2cpp collect: held from outside %zu %s\n", kv.second, kv.first.c_str());
+        auto ms = [](std::chrono::steady_clock::duration d) { return std::chrono::duration<double, std::milli>(d).count(); };
         std::fprintf(stderr, "rx2cpp collect: %zu states live, %zu freed, %zu containers freed (held from outside %zu: "
-                     "with an interpreter object %zu, running %zu, kept by class %zu)\n",
-                     survivors, deadStates.size(), deadObjects.size(), held, proxied, running, kept);
+                     "with an interpreter object %zu, running %zu, kept by class %zu); %zu nodes, mark %.1f ms, free %.1f ms\n",
+                     survivors, deadStateCount, deadObjectCount, held, proxied, running, kept, nodes.size(),
+                     ms(marked - started), ms(freed - marked));
     }
-    deadObjects.clear();
-    deadStates.clear();
     InstanceTable::instance().collected(survivors);
 }
 }
