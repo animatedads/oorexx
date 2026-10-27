@@ -1019,7 +1019,16 @@ void collectCycles() {
     for (const auto &o : deadObjects) o->gcClear();
     if (std::getenv("RX2CPP_GC_STATS")) {
         std::size_t held = 0;   // held from outside compiled objects and containers (after the subtraction)
-        for (std::size_t i = 0; i < stateCount; i++) if (nodes[i].refs > 0) ++held;
+        std::map<std::string, std::size_t> heldBy;   // RX2CPP_GC_STATS=3: the classes of the states held from outside
+        const bool byClass = std::getenv("RX2CPP_GC_STATS")[0] == '3';
+        for (std::size_t i = 0; i < stateCount; i++) if (nodes[i].refs > 0) {
+            ++held;
+            if (byClass) {
+                const InstanceState &s = *nodes[i].state;
+                heldBy[s.dynamicClass + (s.classSide ? " class" : "") + (s.alive && s.handle ? (s.pin ? " (interpreter object, pinned)" : " (interpreter object)") : "")]++;
+            }
+        }
+        for (const auto &kv : heldBy) std::fprintf(stderr, "rx2cpp collect: held from outside %zu %s\n", kv.second, kv.first.c_str());
         std::fprintf(stderr, "rx2cpp collect: %zu states live, %zu freed, %zu containers freed (held from outside %zu: "
                      "with an interpreter object %zu, running %zu, kept by class %zu)\n",
                      survivors, deadStates.size(), deadObjects.size(), held, proxied, running, kept);
