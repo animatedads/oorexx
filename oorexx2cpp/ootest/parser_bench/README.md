@@ -27,5 +27,6 @@ The two dumps must be identical (class, category, from, to and value of every el
 | 2026-10-23, d9a3834 | Claude (rx2cpp CI machine, idle) | dump pass 40.8 s; 3 passes 127.6 s | dump pass 19.3 s; 3 passes 55.4 s (2.3x) | dumps identical; 107k crossings |
 | 2026-10-23, ca25535 | Josep Maria Blasco (his machine) | level | level | dumps identical over 171,372 elements; 114,327 crossings |
 | 2026-10-26, e3d8d00 (main) | Claude (rx2cpp CI machine, idle) | dump pass 50.5 s; 3 passes 144.8 s | dump pass 17.7 s; 3 passes 54.1 s (2.68x) | dumps identical over 162,260 elements; 79,398 crossings |
+| 2026-10-27, 59d2019 (wip) | Claude (rx2cpp CI machine, idle) | 3 passes 114 s | 3 passes 39.0 / 39.8 s (2.9x) | dumps identical; cycle leak closed (peak 315 MB); 65.6 G instructions a pass (callgrind) |
 
 Crossings are calls between compiled code and the interpreter (RX2CPP_BIF_STATS=1 reports them).
