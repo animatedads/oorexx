@@ -199,8 +199,9 @@ struct StemObject final : ObjectDispatch {
             }
             return t;
         };
+        // (plain: every index a string; the value []= stores may be any object, as in a compound assignment)
         bool plain = true;
-        for (const Value &a : args) if (a.isObject()) plain = false;
+        for (std::size_t i = selector == "[]=" ? 1 : 0; i < args.size(); ++i) if (args[i].isObject()) plain = false;
         if (plain) {
             if (selector == "[]") return args.empty() ? defaultValue() : get(tailOf(0));
             if (selector == "[]=" && !args.empty()) {

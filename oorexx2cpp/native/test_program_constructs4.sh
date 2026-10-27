@@ -19,4 +19,5 @@ check() {   # name program-path
 }
 check string_match "$OUT/src/string_match.rex"   # STARTSWITH ENDSWITH (caseless too) and MAKEARRAY natively: StringClassMisc.cpp primitiveMatch, StringUtil::makearray
 check nil_compare "$OUT/src/nil_compare.rex"   # a string compared with .nil (no MAKESTRING, no NOSTRING), .nil compared with any object: identity
+check stem_object_values "$OUT/src/stem_object_values.rex"   # s.[tail] = object answered by the native stem (only the indexes must be strings)
 echo "PASS program constructs (4): $(ls "$OUT"/*.expected | wc -l) programs, $(cat "$OUT"/*.expected | wc -l) lines identical to the interpreter"
