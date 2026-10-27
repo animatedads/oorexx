@@ -50,6 +50,9 @@
     code = code || 'auto _rxR = rx::interpreterCall(vars, "(dynamic)", _rxCallArgs, std::optional<rx::Value>(' || nameExpr || ')); '
     code = code || 'if (_rxR) rx::set(vars, "RESULT", *_rxR); else rx::drop(vars, "RESULT"); } }'
     ctx~line(depth, code)
+    /* an EXIT in the routine called: this method (or the routine running this CALL) ends now (StmtExit) */
+    if labels~items > 0 then ctx~line(depth, 'if (_rxExitPending) { if (!_rxInternal) { std::optional<rx::Value> _rxEv = std::move(*_rxExitPending); _rxExitPending.reset(); return _rxEv ? *_rxEv : rx::noResult(); } ' || -
+             'if (_rxExitByReturn) return rx::Value::string(std::string()); std::optional<rx::Value> _rxEv = std::move(*_rxExitPending); _rxExitPending.reset(); throw rx::MethodExit{std::move(_rxEv)}; }')
     s~separator
     return
   end
@@ -64,6 +67,9 @@
         if \s~accept(',') then leave
       end
       ctx~line(depth, '(void)' || ctx~builtinExpr~internalCall(ctx, name, args, 'CALL', token~line) || ';')
+      /* an EXIT in the routine called: this method (or the routine running this CALL) ends now (StmtExit) */
+      ctx~line(depth, 'if (_rxExitPending) { if (!_rxInternal) { std::optional<rx::Value> _rxEv = std::move(*_rxExitPending); _rxExitPending.reset(); return _rxEv ? *_rxEv : rx::noResult(); } ' || -
+             'if (_rxExitByReturn) return rx::Value::string(std::string()); std::optional<rx::Value> _rxEv = std::move(*_rxExitPending); _rxExitPending.reset(); throw rx::MethodExit{std::move(_rxEv)}; }')
       s~separator
       return
     end

@@ -63,6 +63,7 @@ struct StemObject final : ObjectDispatch {
     // an array indexed by that number while they stay dense (an index at most denseSlack past the end; beyond, the
     // element goes to tails, where get looks for it too). Same tails, same values: only where they are kept.
     std::vector<std::optional<Value>> dense;
+    bool gcFollowed() const override { return true; }
     void gcValues(const std::function<void(const Value &)> &f) const override {
         if (dflt) f(*dflt);
         for (const auto &kv : tails) f(kv.second);
@@ -198,8 +199,9 @@ struct StemObject final : ObjectDispatch {
             }
             return t;
         };
+        // (plain: every index a string; the value []= stores may be any object, as in a compound assignment)
         bool plain = true;
-        for (const Value &a : args) if (a.isObject()) plain = false;
+        for (std::size_t i = selector == "[]=" ? 1 : 0; i < args.size(); ++i) if (args[i].isObject()) plain = false;
         if (plain) {
             if (selector == "[]") return args.empty() ? defaultValue() : get(tailOf(0));
             if (selector == "[]=" && !args.empty()) {
@@ -207,6 +209,13 @@ struct StemObject final : ObjectDispatch {
                 return std::nullopt;
             }
             if (selector == "STRING") return defaultValue();
+            // StemClass::items: the tails with a value of their own (dropped ones have none; the default is not one)
+            if (selector == "ITEMS" && args.empty()) {
+                std::lock_guard<SpinLock> g(lock);
+                std::size_t count = tails.size();
+                for (const auto &v : dense) if (v) ++count;
+                return Value::string(std::to_string(count));
+            }
             // StemClass::hasIndex: an element with a value of its own (not the default); no index: always true
             if (selector == "HASINDEX") {
                 if (args.empty()) return Value::string("1");

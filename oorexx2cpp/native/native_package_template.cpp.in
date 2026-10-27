@@ -9,6 +9,7 @@
 #include <cctype>
 #include <dlfcn.h>
 #include <fstream>
+#include <chrono>
 #include <map>
 #include <sstream>
 #include <memory>
@@ -160,6 +161,9 @@ struct InstanceState : std::enable_shared_from_this<InstanceState> {
     // 1: the interpreter object holds nothing the native state does not (stateDisposable): it is not pinned for compiled
     // code's references, the interpreter collects it when it holds it no more, and one is made again when needed.
     signed char disposable = -1;
+    // the cycle collector's bookkeeping (collectCycles): the collection that last met this state, and its node there
+    std::uint64_t gcMark = 0;
+    std::uint32_t gcIndex = 0;
     // the class's method table (lookupMethod(InstanceState &, ...)): found on the first send; a marker when the class has none
     std::atomic<const void *> methods{nullptr};
     // A WeakReference (pinned) to the state's interpreter object: says whether the interpreter still has it (cleared by
@@ -192,6 +196,17 @@ struct InstanceState : std::enable_shared_from_this<InstanceState> {
         for (const auto &entry : scopes) if (entry.first == cls) return entry.second;
         auto created = create(cls);
         scopes.emplace_back(cls, created);
+        return created;
+    }
+    // (a class name from the method tables: compared in place, a string made only for a new scope)
+    std::shared_ptr<CompiledObject> at(const char *cls) {
+        const std::size_t n = std::strlen(cls);
+        std::lock_guard<std::mutex> lock(gate);
+        for (const auto &entry : scopes)
+            if (entry.first.size() == n && std::memcmp(entry.first.data(), cls, n) == 0) return entry.second;
+        std::string name(cls, n);
+        auto created = create(name);
+        scopes.emplace_back(std::move(name), created);
         return created;
     }
 };
@@ -274,7 +289,13 @@ struct ReleaseAndReacquire {
 }
 #ifdef RX2CPP_HOST_API
 namespace {
-thread_local InstanceState *currentState = nullptr;           // exact instance whose compiled method is running
+// the exact instance whose compiled method is running (kept in the thread's rx::ThreadState)
+struct CurrentStateRef {
+    operator InstanceState *() const { return static_cast<InstanceState *>(rx::threadState().currentState); }
+    InstanceState *operator->() const { return static_cast<InstanceState *>(rx::threadState().currentState); }
+    CurrentStateRef &operator=(InstanceState *s) { rx::threadState().currentState = s; return *this; }
+};
+CurrentStateRef currentState;
 thread_local std::shared_ptr<InstanceState> pendingAdopt;      // set while an interpreter object is made for a native state
 struct StateScope {
     InstanceState *previous;
@@ -325,7 +346,12 @@ struct FastMethods {
         static const CiEq same;
         const std::uint32_t k = keyOf(selector);
         for (std::size_t i = spread(k) & mask; slots[i].entry; i = (i + 1) & mask)
-            if (slots[i].key == k && same(slots[i].entry->first, selector)) return slots[i].entry;
+            if (slots[i].key == k) {
+                // (compiled selectors are upper case already: the exact comparison first, the caseless one if it differs)
+                const std::string &name = slots[i].entry->first;
+                if (name.size() == selector.size() && (std::memcmp(name.data(), selector.data(), name.size()) == 0 || same(name, selector)))
+                    return slots[i].entry;
+            }
         return nullptr;
     }
 };
@@ -496,7 +522,7 @@ static bool instanceOfScope(const std::string &cls, const char *scope) {
 }
 static bool privateAllowedFor(const InstanceState *receiver, const MethodInfo &info) {
     if (!currentState) return false;
-    if (currentState == receiver) return true;
+    if (static_cast<InstanceState *>(currentState) == receiver) return true;
     return instanceOfScope(currentState->dynamicClass, info.definingClass);
 }
 /* Does an instance of this compiled class answer the comparison `op` with .Object's own method (identity)? Exact for
@@ -571,6 +597,8 @@ public:
     }
     const InstanceState *state() const { return st_.get(); }
     const std::shared_ptr<InstanceState> &stateRef() const { return st_; }   // (the cycle collector's edge)
+    bool gcFollowed() const override { return true; }
+    void *gcRefState() const override { return st_.get(); }
     rx::Value sendBinary(const std::string &selector, const rx::Value &rhs) override {
         // .Object's comparisons are identity: answered here when that is the method the object would run.
         const bool positive = selector == "==" || selector == "=";
@@ -698,15 +726,16 @@ std::optional<rx::Value> runNative(const std::shared_ptr<InstanceState> &st, Res
     StateScope current(st.get());
     rx::noResultPending() = false;
 #ifdef RX2CPP_HOST_API
-    rx::Value result = rx::Value::string(std::string());
-    try { result = obj->invokeValues(method.first, args); }
-    catch (const rx::RaiseToCaller &r) { rx::noResultPending() = false; return rx::raisedInCaller(r); }
-#else
-    rx::Value result = obj->invokeValues(method.first, args);
+    try {
 #endif
-    const bool noValue = std::exchange(rx::noResultPending(), false);
-    if (info.noResult || noValue) return std::nullopt;
-    return result;
+        rx::Value result = obj->invokeValues(method.first, args);
+        const bool noValue = std::exchange(rx::noResultPending(), false);
+        if (info.noResult || noValue) return std::nullopt;
+        return result;
+#ifdef RX2CPP_HOST_API
+    }
+    catch (const rx::RaiseToCaller &r) { rx::noResultPending() = false; return rx::raisedInCaller(r); }
+#endif
 }
 /* A class of this library changed at run time (DEFINE, DELETE, INHERIT, UNINHERIT sent by compiled code): instances
    made from then on take their methods from the interpreter (an object's methods are fixed when it is created, so
@@ -714,6 +743,7 @@ std::optional<rx::Value> runNative(const std::shared_ptr<InstanceState> &st, Res
 std::atomic<bool> &classesChanged() { static std::atomic<bool> changed{false}; return changed; }
 // RX2CPP_BIF_STATS: why NEW of a class of this library went to the interpreter
 void rx2cpp_class_stat(const std::string &name) {
+    if (!rxobj::bifStatsOn()) return;
     rxobj::bifStat("class NEW by the interpreter: " + name + (classesChanged() ? " (classes changed)" : "") +
                    (directNewTable().count(name) ? "" : " (not direct)"));
 }
@@ -912,80 +942,95 @@ std::shared_ptr<InstanceState> stateOfObject(void *handle) {
    in compiled code (rxobj::exclusiveNative), when enough states have been made since the last collection. */
 namespace {
 void collectCycles() {
+    const auto started = std::chrono::steady_clock::now();
     std::vector<std::shared_ptr<InstanceState>> states = InstanceTable::instance().liveStates();
     // states whose interpreter object the interpreter no longer has (collected by the interpreter collection just
     // requested, trackState) are given up first: that object no longer holds them
     for (const auto &st : states) if (st->alive && st->handle && st->weak) proxyLive(*st);
+    // Every state and followed container is a node, found by the number of this collection in the object itself
+    // (gcMark, gcIndex) rather than by a table: the number is unique to this collection in this process (this
+    // library's counter, with the counter's own address so that two libraries' collections never share one).
+    static std::uint64_t collections = 0;
+    const std::uint64_t mark = (static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(&collections)) << 20) ^ ++collections;
     struct Node { long refs = 0; bool live = false; InstanceState *state = nullptr; std::weak_ptr<rx::ObjectDispatch> object; };
-    std::unordered_map<const void *, Node> nodes;
+    std::vector<Node> nodes;
     nodes.reserve(states.size() * 2);
-    std::vector<const void *> order;
-    // the containers a value refers to that the collector follows: native instances' references, arrays, directories,
-    // stems (anything else (a string, an interpreter object) refers to nothing native)
-    auto followed = [](const rx::ObjectDispatch *o) {
-        return dynamic_cast<const NativeInstanceRef *>(o) || dynamic_cast<const rx::NativeArray *>(o) ||
-               dynamic_cast<const rx::NativeDirectory *>(o) || dynamic_cast<const rx::StemObject *>(o);
-    };
     std::size_t proxied = 0, running = 0, kept = 0;
     for (const auto &st : states) {
-        Node &n = nodes[st.get()];
+        Node n;
         n.state = st.get();
         n.refs = static_cast<long>(st.use_count()) - 1;   // (less this list's own)
         // a scope in use (a method running) or a state that must keep its interpreter object: live
         bool inUse = false;
         for (const auto &scope : st->scopes) if (scope.second.use_count() > 1) inUse = true;
         if (inUse) { n.refs += 1; ++running; }
-        if (!stateDisposable(*st)) { n.refs += 1; ++kept; }
+        // (an instance of an Array subclass made natively (arrayNewTable) has no interpreter object until one is
+        // needed: its contents are all native, so only an interpreter object of its own makes it held from outside)
+        const bool nativeOnly = st->builtin && !st->classSide && !(st->alive && st->handle);
+        if (!nativeOnly && !stateDisposable(*st)) { n.refs += 1; ++kept; }
         if (st->alive && st->handle) ++proxied;
-        order.push_back(st.get());
+        st->gcMark = mark;
+        st->gcIndex = static_cast<std::uint32_t>(nodes.size());
+        nodes.push_back(std::move(n));
     }
-    // edges: each reference held by a state or container is one count of what it refers to
-    std::vector<const void *> pending(order.begin(), order.end());
-    auto edgesOf = [&](const void *key, const std::function<void(const void *)> &edge) {
-        Node &n = nodes[key];
-        auto onValue = [&](const rx::Value &v) {
-            if (!v.isObject() || !followed(v.object.get())) return;
-            const void *child = v.object.get();
-            auto it = nodes.find(child);
-            if (it == nodes.end()) {
-                Node c; c.refs = static_cast<long>(v.object.use_count()); c.object = v.object;
-                nodes.emplace(child, std::move(c));
-                pending.push_back(child);
-            }
-            edge(child);
-        };
-        if (n.state) {
-            for (const auto &scope : n.state->scopes) scope.second->gcFields(onValue);
-            if (n.state->builtin) n.state->builtin->gcValues(onValue);
+    const std::size_t stateCount = nodes.size();
+    // Edges: each reference held by a state or container is one count of what it refers to. One callback for the whole
+    // collection (its one capture fits std::function's own storage: no allocation per node); the phase says what an
+    // edge does: first each one is subtracted from its target's count, then the live mark spreads along it.
+    struct Walk { std::vector<Node> *nodes; std::vector<std::size_t> *stack; std::uint64_t mark; bool marking; } walk;
+    std::vector<std::size_t> stack;
+    walk.nodes = &nodes; walk.stack = &stack; walk.mark = mark; walk.marking = false;
+    auto edge = [](Walk &w, std::size_t child) {
+        Node &c = (*w.nodes)[child];
+        if (!w.marking) c.refs -= 1;
+        else if (!c.live) { c.live = true; w.stack->push_back(child); }
+    };
+    const std::function<void(const rx::Value &)> onValue = [w = &walk, &edge](const rx::Value &v) {
+        if (!v.isObject() || !v.object->gcFollowed()) return;
+        const rx::ObjectDispatch *o = v.object.get();
+        std::size_t child;
+        if (o->gcMark == w->mark) child = o->gcIndex;
+        else {
+            Node c; c.refs = static_cast<long>(v.object.use_count()); c.object = v.object;
+            child = w->nodes->size();
+            o->gcMark = w->mark; o->gcIndex = static_cast<std::uint32_t>(child);
+            w->nodes->push_back(std::move(c));
+        }
+        edge(*w, child);
+    };
+    auto edgesOf = [&](std::size_t key) {
+        // (onValue may add nodes: no reference into nodes is held across it)
+        if (InstanceState *s = nodes[key].state) {
+            for (const auto &scope : s->scopes) scope.second->gcFields(onValue);
+            if (s->builtin) s->builtin->gcValues(onValue);
             return;
         }
-        auto o = n.object.lock();
+        auto o = nodes[key].object.lock();
         if (!o) return;
-        if (auto *ref = dynamic_cast<NativeInstanceRef *>(o.get())) {
-            const void *child = ref->stateRef().get();
-            if (nodes.count(child)) edge(child);   // (every state is a node; one made during the collection is not)
+        if (void *ref = o->gcRefState()) {
+            auto *target = static_cast<InstanceState *>(ref);
+            if (target->gcMark == mark) edge(walk, target->gcIndex);   // (every state is a node; one made during the collection is not)
             return;
         }
         o->gcValues(onValue);
     };
-    for (std::size_t i = 0; i < pending.size(); i++) {
-        const void *key = pending[i];
-        edgesOf(key, [&](const void *child) { nodes[child].refs -= 1; });
-    }
+    for (std::size_t i = 0; i < nodes.size(); i++) edgesOf(i);
     // live: held from outside, and everything reachable from it
-    std::vector<const void *> stack;
-    for (const void *key : pending) { Node &n = nodes[key]; if (n.refs > 0 && !n.live) { n.live = true; stack.push_back(key); } }
+    walk.marking = true;
+    const std::size_t found = nodes.size();
+    for (std::size_t i = 0; i < found; i++) { Node &n = nodes[i]; if (n.refs > 0 && !n.live) { n.live = true; stack.push_back(i); } }
     while (!stack.empty()) {
-        const void *key = stack.back(); stack.pop_back();
-        edgesOf(key, [&](const void *child) { Node &c = nodes[child]; if (!c.live) { c.live = true; stack.push_back(child); } });
+        const std::size_t key = stack.back(); stack.pop_back();
+        edgesOf(key);
     }
+    const auto marked = std::chrono::steady_clock::now();
     // the rest: dropped (held here while their references go, so none is freed under the loop)
     std::vector<std::shared_ptr<InstanceState>> deadStates;
     std::vector<std::shared_ptr<rx::ObjectDispatch>> deadObjects;
-    for (const auto &st : states) if (!nodes[st.get()].live) deadStates.push_back(st);
-    for (const void *key : pending) {
-        Node &n = nodes[key];
-        if (n.live || n.state) continue;
+    for (std::size_t i = 0; i < stateCount; i++) if (!nodes[i].live) deadStates.push_back(states[i]);
+    for (std::size_t i = stateCount; i < nodes.size(); i++) {
+        Node &n = nodes[i];
+        if (n.live) continue;
         if (auto o = n.object.lock()) deadObjects.push_back(std::move(o));
     }
     const std::size_t survivors = states.size() - deadStates.size();
@@ -999,15 +1044,29 @@ void collectCycles() {
         if (st->builtin) st->builtin->gcClear();
     }
     for (const auto &o : deadObjects) o->gcClear();
+    const std::size_t deadObjectCount = deadObjects.size();
+    deadObjects.clear();   // (the freeing happens here and below, as the last references go)
+    const std::size_t deadStateCount = deadStates.size();
+    deadStates.clear();
+    const auto freed = std::chrono::steady_clock::now();
     if (std::getenv("RX2CPP_GC_STATS")) {
         std::size_t held = 0;   // held from outside compiled objects and containers (after the subtraction)
-        for (const void *key : order) if (nodes[key].refs > 0) ++held;
+        std::map<std::string, std::size_t> heldBy;   // RX2CPP_GC_STATS=3: the classes of the states held from outside
+        const bool byClass = std::getenv("RX2CPP_GC_STATS")[0] == '3';
+        for (std::size_t i = 0; i < stateCount; i++) if (nodes[i].refs > 0) {
+            ++held;
+            if (byClass) {
+                const InstanceState &s = *nodes[i].state;
+                heldBy[s.dynamicClass + (s.classSide ? " class" : "") + (s.alive && s.handle ? (s.pin ? " (interpreter object, pinned)" : " (interpreter object)") : "")]++;
+            }
+        }
+        for (const auto &kv : heldBy) std::fprintf(stderr, "rx2cpp collect: held from outside %zu %s\n", kv.second, kv.first.c_str());
+        auto ms = [](std::chrono::steady_clock::duration d) { return std::chrono::duration<double, std::milli>(d).count(); };
         std::fprintf(stderr, "rx2cpp collect: %zu states live, %zu freed, %zu containers freed (held from outside %zu: "
-                     "with an interpreter object %zu, running %zu, kept by class %zu)\n",
-                     survivors, deadStates.size(), deadObjects.size(), held, proxied, running, kept);
+                     "with an interpreter object %zu, running %zu, kept by class %zu); %zu nodes, mark %.1f ms, free %.1f ms\n",
+                     survivors, deadStateCount, deadObjectCount, held, proxied, running, kept, nodes.size(),
+                     ms(marked - started), ms(freed - marked));
     }
-    deadObjects.clear();
-    deadStates.clear();
     InstanceTable::instance().collected(survivors);
 }
 }
@@ -1139,13 +1198,13 @@ public:
 #ifdef RX2CPP_HOST_API
 namespace {
 void guardImpl(int op) {
-    auto *f = dynamic_cast<Frame *>(detail::currentSender);
+    auto *f = dynamic_cast<Frame *>(static_cast<SelfSender *>(detail::currentSender));
     if (!f) throw std::runtime_error("GUARD outside a native method entry");
     if (op == 2) f->guardWait();
     else f->guardSet(op == 1);
 }
 [[maybe_unused]] const bool guardInstalled = (rx::guardHook() = &guardImpl, true);
-void replyLocksImpl(bool guarded) { if (auto *f = dynamic_cast<Frame *>(detail::currentSender)) f->afterReply(guarded); }
+void replyLocksImpl(bool guarded) { if (auto *f = dynamic_cast<Frame *>(static_cast<SelfSender *>(detail::currentSender))) f->afterReply(guarded); }
 [[maybe_unused]] const bool replyLocksInstalled = (rx::replyLocksHook() = &replyLocksImpl, true);
 }
 #endif

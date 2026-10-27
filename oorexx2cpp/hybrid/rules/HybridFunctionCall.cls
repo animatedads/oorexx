@@ -136,7 +136,12 @@
     call = '[&]() -> rx::Value { try { return ' || call || '; } catch (const rx::RaiseToCaller &_rxR) { if (_rxR.exitForm || _rxR.delivered) throw; ' || -
            'rx::noResultPending() = false; auto _rxV = rx::raisedInCaller(_rxR); return _rxV ? *_rxV : rx::noResult(); } }()'
   /* (the caller's variable slots kept across the call: rx::SlotsKept) */
-  code = code || 'rx::noResultPending() = false; rx::InternalCallClock _rxClock; const auto _rxKept = rx::keepSlots(_rxL); (void)_rxKept; rx::MethodTraps::inheritNext() = &_rxTrap; rx::Value _rxIr = ' || call || '; '
+  /* (CALL: an EXIT in the routine comes back as _rxExitPending, StmtExit / StmtCall; a function call throws it) */
+  byReturn = 'false'
+  if mode \== 'FUNCTION' then byReturn = 'true'
+  code = code || 'rx::noResultPending() = false; rx::InternalCallClock _rxClock; const auto _rxKept = rx::keepSlots(_rxL); (void)_rxKept; rx::MethodTraps::inheritNext() = &_rxTrap; '
+  code = code || 'rx::Value _rxIr = [&]() -> rx::Value { rx::FlagScope _rxFs(_rxExitByReturn, ' || byReturn || '); return ' || call || '; }(); '
+  if mode \== 'FUNCTION' then code = code || 'if (_rxExitPending) { rx::noResultPending() = false; return rx::Value::string(std::string()); } '
   code = code || 'const bool _rxNone = std::exchange(rx::noResultPending(), false); vars.numeric = _rxSavedNumeric; '
   if mode == 'FUNCTION' then do
     code = code || 'if (_rxNone) { rx::SyntaxCondition _rxNo("44.1", "No data returned from function", false); '
