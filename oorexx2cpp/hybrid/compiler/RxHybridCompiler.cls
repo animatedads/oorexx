@@ -496,7 +496,7 @@
          value. A C++ exception through these bodies cost the compiled Rexx Parser 9,110 throws a pass, each a scan
          of this function's whole unwind table (about 10% of the run). Called as a function (an expression) the
          routine still throws MethodExit. */
-      current~addRaw('std::optional<std::optional<rx::Value>> _rxExitPending; bool _rxExitByReturn = false;')
+      current~addRaw('std::optional<std::optional<rx::Value>> _rxExitPending; bool _rxExitByReturn = false; (void)_rxExitPending; (void)_rxExitByReturn;')
       current~addRaw('std::function<rx::Value(int, const std::vector<std::optional<rx::Value>> &, rx::Variables &, bool)> _rxBody;')
       current~addRaw('_rxBody = [&](int _rxEntry, const std::vector<std::optional<rx::Value>> &arguments, rx::Variables &vars, bool _rxInternal) -> rx::Value {')
       current~addRaw('(void)_rxInternal; (void)arguments;')
