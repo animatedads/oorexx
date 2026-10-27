@@ -1308,6 +1308,14 @@ struct SignalJump { int target; std::size_t line; };
 struct ProgramExit { int code; };
 // EXIT inside an internal routine of a compiled method leaves the method (with its value, or no result).
 struct MethodExit { std::optional<Value> value; };
+// A flag set for a scope and given back after it (compiled internal calls: _rxExitByReturn).
+struct FlagScope {
+    bool &flag; bool saved;
+    FlagScope(bool &f, bool v) : flag(f), saved(f) { f = v; }
+    ~FlagScope() { flag = saved; }
+    FlagScope(const FlagScope &) = delete;
+    FlagScope &operator=(const FlagScope &) = delete;
+};
 // The interpreter's process status for an uncaught SYNTAX error is 256 minus the error number
 // (98 -> 158, 42 -> 214, 93 -> 163).  Runtime errors that carry no "Error N" prefix keep status 2.
 inline int uncaughtStatus(const std::string &what) {

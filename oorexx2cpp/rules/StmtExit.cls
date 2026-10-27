@@ -19,10 +19,12 @@
        body's return: the value the catch would return, without the C++ exception (15% of the compiled Rexx
        Parser's samples were unwinding, PreClauser~nextClause's EXITs). */
     if ctx~current~hasInternalCalls then do
+      /* (in a routine a CALL instruction called: the value goes back through _rxExitPending, no exception; see
+         RxHybridCompiler, where _rxBody is made) */
       if \hasValue | ctx~current~selector == 'INIT' then
-        ctx~current~addRaw('{ if (!_rxInternal) return rx::noResult(); throw rx::MethodExit{std::nullopt}; }')
+        ctx~current~addRaw('{ if (!_rxInternal) return rx::noResult(); if (_rxExitByReturn) { _rxExitPending.emplace(std::nullopt); return rx::Value::string(std::string()); } throw rx::MethodExit{std::nullopt}; }')
       else
-        ctx~current~addRaw('{ rx::Value _rxExitValue = ' || code || '; if (!_rxInternal) return _rxExitValue; throw rx::MethodExit{std::optional<rx::Value>(std::move(_rxExitValue))}; }')
+        ctx~current~addRaw('{ rx::Value _rxExitValue = ' || code || '; if (!_rxInternal) return _rxExitValue; if (_rxExitByReturn) { _rxExitPending.emplace(std::move(_rxExitValue)); return rx::Value::string(std::string()); } throw rx::MethodExit{std::optional<rx::Value>(std::move(_rxExitValue))}; }')
       s~separator
       return
     end

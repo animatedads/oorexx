@@ -21,4 +21,5 @@ check string_match "$OUT/src/string_match.rex"   # STARTSWITH ENDSWITH (caseless
 check nil_compare "$OUT/src/nil_compare.rex"   # a string compared with .nil (no MAKESTRING, no NOSTRING), .nil compared with any object: identity
 check stem_object_values "$OUT/src/stem_object_values.rex"   # s.[tail] = object answered by the native stem (only the indexes must be strings)
 check collection_union "$OUT/src/collection_union.rex"   # StringTable / Directory UNION natively (CoreClasses.orx single_union), interpreter order
+check internal_exit "$OUT/src/internal_exit.rex"   # EXIT in internal routines reached by CALL (no C++ exception) and by function calls, CALL ON, PROCEDURE, loops, SIGNAL ON
 echo "PASS program constructs (4): $(ls "$OUT"/*.expected | wc -l) programs, $(cat "$OUT"/*.expected | wc -l) lines identical to the interpreter"
