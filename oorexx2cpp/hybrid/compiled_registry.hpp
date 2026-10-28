@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <atomic>
 #include <mutex>
 #include <condition_variable>
 #include <thread>
@@ -19,53 +20,75 @@ namespace rx2cpp {
    method calls back into the interpreter, then restored. Holding a C++ lock
    across an interpreter callout would hide a deadlock from ooRexx's detector. */
 class ScopeLock {
+    // The holder (this thread's token, 0 = free) is atomic: taking and giving back a free lock, or taking it again in
+    // the thread that holds it, costs no mutex (compiled methods take it on every call). The mutex and condition
+    // variable are for waiting only: a waiter counts itself in waiters_ before it looks, and a release that sees a
+    // waiter wakes it under the mutex, so no wake-up is lost.
     std::mutex m_;
     std::condition_variable cv_;
-    std::thread::id owner_{};
-    unsigned depth_ = 0;
-    unsigned long long version_ = 0;   // counts full releases: the compiled variables may have changed (GUARD WHEN)
+    std::atomic<std::uintptr_t> owner_{0};
+    unsigned depth_ = 0;                          // (written by the holder only)
+    std::atomic<unsigned> waiters_{0};
+    std::atomic<unsigned long long> version_{0};  // counts full releases: the compiled variables may have changed (GUARD WHEN)
+    static std::uintptr_t me() { static thread_local char token; return reinterpret_cast<std::uintptr_t>(&token); }
+    bool take(std::uintptr_t self) { std::uintptr_t free = 0; return owner_.compare_exchange_strong(free, self, std::memory_order_seq_cst); }
+    void giveBack() {   // (the holder, depth now 0)
+        version_.fetch_add(1, std::memory_order_seq_cst);
+        owner_.store(0, std::memory_order_seq_cst);
+        if (waiters_.load(std::memory_order_seq_cst) > 0) { std::lock_guard<std::mutex> g(m_); cv_.notify_all(); }
+    }
+    void waitToTake(std::uintptr_t self, unsigned depth) {   // (not the holder)
+        std::unique_lock<std::mutex> g(m_);
+        waiters_.fetch_add(1, std::memory_order_seq_cst);
+        while (!take(self)) cv_.wait(g);
+        waiters_.fetch_sub(1, std::memory_order_seq_cst);
+        depth_ = depth;
+    }
 public:
     void lock() {
-        std::unique_lock<std::mutex> g(m_);
-        const auto me = std::this_thread::get_id();
-        cv_.wait(g, [&] { return depth_ == 0 || owner_ == me; });
-        owner_ = me; ++depth_;
+        const std::uintptr_t self = me();
+        if (owner_.load(std::memory_order_relaxed) == self) { ++depth_; return; }
+        if (take(self)) { depth_ = 1; return; }
+        waitToTake(self, 1);
     }
     void unlock() {
-        std::lock_guard<std::mutex> g(m_);
-        if (--depth_ == 0) { owner_ = std::thread::id(); ++version_; cv_.notify_all(); }
+        if (--depth_ == 0) giveBack();
     }
     // (only this thread's hold: a method running under another thread's hold - a REPLY method before its reply,
     // while its caller waits - has nothing to release)
     unsigned release_all() {
-        std::lock_guard<std::mutex> g(m_);
-        if (depth_ == 0 || owner_ != std::this_thread::get_id()) return 0;
+        if (owner_.load(std::memory_order_relaxed) != me() || depth_ == 0) return 0;
         const unsigned d = depth_;
-        depth_ = 0; owner_ = std::thread::id(); ++version_; cv_.notify_all();
+        depth_ = 0;
+        giveBack();
         return d;
     }
     // GUARD WHEN: let this thread's hold go and wait until another thread has held and released the lock (it may have
     // changed the compiled variables), then hold it again as deep as before.
     void waitForChange() {
-        std::unique_lock<std::mutex> g(m_);
+        const std::uintptr_t self = me();
         unsigned d = 0;
-        if (depth_ > 0 && owner_ == std::this_thread::get_id()) { d = depth_; depth_ = 0; owner_ = std::thread::id(); cv_.notify_all(); }
-        const unsigned long long seen = version_;
-        cv_.wait(g, [&] { return version_ != seen; });
-        if (d > 0) {
-            cv_.wait(g, [&] { return depth_ == 0; });
-            owner_ = std::this_thread::get_id(); depth_ = d;
+        std::unique_lock<std::mutex> g(m_);
+        waiters_.fetch_add(1, std::memory_order_seq_cst);
+        if (owner_.load(std::memory_order_relaxed) == self && depth_ > 0) {
+            d = depth_; depth_ = 0;
+            version_.fetch_add(1, std::memory_order_seq_cst);
+            owner_.store(0, std::memory_order_seq_cst);
+            cv_.notify_all();
         }
+        const unsigned long long seen = version_.load(std::memory_order_seq_cst);
+        while (version_.load(std::memory_order_seq_cst) == seen) cv_.wait(g);
+        if (d > 0) { while (!take(self)) cv_.wait(g); depth_ = d; }
+        waiters_.fetch_sub(1, std::memory_order_seq_cst);
     }
     bool heldByMe() {
-        std::lock_guard<std::mutex> g(m_);
-        return depth_ > 0 && owner_ == std::this_thread::get_id();
+        return owner_.load(std::memory_order_relaxed) == me() && depth_ > 0;
     }
     void reacquire(unsigned d) {
         if (d == 0) return;
-        std::unique_lock<std::mutex> g(m_);
-        cv_.wait(g, [&] { return depth_ == 0; });
-        owner_ = std::this_thread::get_id(); depth_ = d;
+        const std::uintptr_t self = me();
+        if (take(self)) { depth_ = d; return; }
+        waitToTake(self, d);
     }
 };
 /* SELF~selector(arg): the sender is installed only for the duration of one

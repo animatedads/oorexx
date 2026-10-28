@@ -13,7 +13,10 @@ OUT=$(mktemp -d)
 trap 'rm -rf -- "$OUT"' EXIT
 # Java: JAVA_HOME if set, else the java on PATH. BSF4ooRexx loads libjvm.so through LD_LIBRARY_PATH.
 if [[ -n "${JAVA_HOME:-}" ]]; then JH=$JAVA_HOME
-elif command -v java >/dev/null; then JH=$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")
+elif command -v java >/dev/null; then
+  # (java's own java.home: on SUSE /usr/bin/java resolves to the alternatives wrapper /usr/bin/alts, not into the JDK)
+  JH=$(java -XshowSettings:properties -version 2>&1 | sed -n 's/^ *java\.home = //p' | head -1)
+  [[ -n "$JH" ]] || JH=$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")
 else echo "FAIL bsf: no Java (JAVA_HOME not set and no java on PATH)"; exit 1; fi
 [[ -f "$JH/lib/server/libjvm.so" ]] ||
   { echo "FAIL bsf: no $JH/lib/server/libjvm.so (set JAVA_HOME to a JDK or JRE directory)"; exit 1; }

@@ -107,9 +107,9 @@
     /* REPLY: the stub passes the reply box as the last argument (rx::ReplyScope) */
     if replies then do
       guarded = wordpos('UNGUARDED', method~declaration~upper) = 0
-      call dispatchLine method~selector, '      if (selector == ' || .RxQuote~cpp(method~selector) || ') { rx::ReplyScope _rxReply(arguments, ' || word('false true', 1 + guarded) || '); return rxMethod' || index || '(selector, _rxReply.arguments); }'
+      call dispatchLine method~selector, '      if (rx::eqLit(selector, ' || .RxQuote~cpp(method~selector) || ')) { rx::ReplyScope _rxReply(arguments, ' || word('false true', 1 + guarded) || '); return rxMethod' || index || '(selector, _rxReply.arguments); }'
     end
-    else call dispatchLine method~selector, '      if (selector == ' || .RxQuote~cpp(method~selector) || ') return rxMethod' || index || '(selector, arguments);'
+    else call dispatchLine method~selector, '      if (rx::eqLit(selector, ' || .RxQuote~cpp(method~selector) || ')) return rxMethod' || index || '(selector, arguments);'
     target = lines
     lines = bodies
     lines~append('  rx::Value rxMethod' || index || '(const std::string &selector, const std::vector<std::optional<rx::Value>> &arguments) {')
@@ -202,7 +202,7 @@ dispatchLine:
   use arg lines, unit, options
   do method over unit~methods
     count = method~parameters~items
-    lines~append('    if (selector == ' || .RxQuote~cpp(method~selector) || ') {')
+    lines~append('    if (rx::eqLit(selector, ' || .RxQuote~cpp(method~selector) || ')) {')
     lines~append('      rx::Variables vars;')
     lines~append('      std::vector<rx::Value> _rxProgramArgs;')
     lines~append('      for (const auto &_a : arguments) _rxProgramArgs.push_back(rx::Value::string(_a ? *_a : std::string()));')

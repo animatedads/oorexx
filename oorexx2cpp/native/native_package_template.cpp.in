@@ -601,8 +601,8 @@ public:
     void *gcRefState() const override { return st_.get(); }
     rx::Value sendBinary(const std::string &selector, const rx::Value &rhs) override {
         // .Object's comparisons are identity: answered here when that is the method the object would run.
-        const bool positive = selector == "==" || selector == "=";
-        if ((positive || selector == "\\==" || selector == "\\=" || selector == "<>" || selector == "><") &&
+        const bool positive = rx::eqLit(selector, "==") || rx::eqLit(selector, "=");
+        if ((positive || rx::eqLit(selector, "\\==") || rx::eqLit(selector, "\\=") || rx::eqLit(selector, "<>") || rx::eqLit(selector, "><")) &&
             objectIdentityOp(st_, selector)) {
             bool same = false;
             if (auto *other = dynamic_cast<NativeInstanceRef *>(rhs.object.get())) same = other->state() == st_.get();
@@ -804,8 +804,8 @@ public:
     }
     rx::Value sendBinary(const std::string &selector, const rx::Value &rhs) override {
         // a class object compared with a class object: the Class class's comparisons are identity (x~class == .Foo)
-        const bool positive = selector == "==" || selector == "=";
-        if (positive || selector == "\\==" || selector == "\\=" || selector == "<>" || selector == "><") {
+        const bool positive = rx::eqLit(selector, "==") || rx::eqLit(selector, "=");
+        if (positive || rx::eqLit(selector, "\\==") || rx::eqLit(selector, "\\=") || rx::eqLit(selector, "<>") || rx::eqLit(selector, "><")) {
             bool known = false, same = false;
             if (auto *other = dynamic_cast<NativeClassObj *>(rhs.object.get())) { known = true; same = other->name_ == name_; }
             else if (auto *env = dynamic_cast<rx::EnvObject *>(rhs.object.get())) { if (env->handle) { known = true; same = env->handle == iclass().handle; } }
