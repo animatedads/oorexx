@@ -227,7 +227,7 @@ dispatchLine:
     lines~append('      };')
     lines~append('      rx::Value _rxResult = _rxBody();')
     lines~append('      if (_rxResult.isObject()) throw std::runtime_error("non-scalar return requires interpreter proxy");')
-    lines~append('      return _rxResult.bytes;')
+    lines~append('      return _rxResult.bytes.str();')
     lines~append('    }')
   end
 ::requires 'core/RxQuote.cls'

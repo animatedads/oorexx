@@ -44,7 +44,7 @@ inline std::optional<std::string> readSymbol(const std::string &raw) {
     }
     if (!v) return std::nullopt;
     if (v->isObject()) throw std::runtime_error("object-valued variable crosses the external library boundary");
-    return v->bytes;
+    return v->bytes.str();
 }
 inline void bind(rxext::Host &h) {
     h.varSet = [](const std::string &n, const std::string &v) { setSymbol(cur(), fold(n), Value::string(v)); };
@@ -58,7 +58,7 @@ inline void bind(rxext::Host &h) {
         const Value *v = lookup(cur(), stem + tail);
         if (!v) return std::nullopt;
         if (v->isObject()) throw std::runtime_error("object-valued variable crosses the external library boundary");
-        return v->bytes; };
+        return v->bytes.str(); };
     h.tailDrop = [](const std::string &stem, const std::string &tail) { drop(cur(), stem + tail); };
 }
 inline void require(const std::string &name) {

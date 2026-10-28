@@ -20,7 +20,7 @@ int main() {
     };
     host.varGet = [&](const std::string& name) -> std::optional<std::string> {
         const rx::Value value = rx::getSymbol(child, name);
-        return value.bytes;
+        return value.bytes.str();
     };
     host.varDrop = [&](const std::string& name) {
         const auto resolved = rx::compoundSymbol(name) ? rx::compoundKey(child, name) : name;
