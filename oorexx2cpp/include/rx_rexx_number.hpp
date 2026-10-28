@@ -160,7 +160,7 @@ inline bool tryParseRexxDecimal(const Value &v, RexxDecimal &out, const char *&e
     // not a number: remembered with the characters (the next comparison or BIF reading them does not scan again)
     auto notNumber = [&]() { v.bytes.numCache().meta.fetch_or(NumCache::notNumber, std::memory_order_relaxed); err = "invalid Rexx decimal number"; return false; };
     // No copies: scan the bytes between leading and trailing blanks in place.
-    const std::string &src = v.bytes;
+    const std::string_view src = v.bytes.view();
     std::size_t i = 0, n = src.size();
     while (i < n && rexxBlank(src[i])) ++i;
     while (n > i && rexxBlank(src[n - 1])) --n;
@@ -843,7 +843,7 @@ inline Value truthValue(bool b) {
     return Value(Value::PendingTag{}, b ? 1 : 0, kNumKnown | kNumDecimal | kNumInteger | (128u << 8));
 }
 // Non-strict string comparison: leading/trailing blanks ignored, the shorter string padded with blanks.
-inline int rexxPaddedCompare(const std::string &a, const std::string &b) {
+inline int rexxPaddedCompare(std::string_view a, std::string_view b) {
     std::size_t ai = 0, an = a.size(), bi = 0, bn = b.size();
     while (ai < an && rexxBlank(a[ai])) ++ai;
     while (an > ai && rexxBlank(a[an - 1])) --an;

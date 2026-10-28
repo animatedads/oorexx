@@ -16,7 +16,7 @@ inline Value argumentAt(const std::vector<Value> &args, std::size_t i) {
 }
 inline Value parseUpper(const Value &v) {
     if (v.isObject()) throw std::runtime_error("PARSE UPPER requires string conversion");
-    std::string b = v.bytes;
+    std::string b = v.bytes.str();
     // ASCII-alphabetic subset; full ooRexx locale-aware string casing
     // remains a separately qualified runtime semantics task.
     for (char &c : b) {
@@ -28,7 +28,7 @@ inline Value parseUpper(const Value &v) {
 }
 inline Value parseLower(const Value &v) {
     if (v.isObject()) throw std::runtime_error("PARSE LOWER requires string conversion");
-    std::string b = v.bytes;
+    std::string b = v.bytes.str();
     for (char &c : b) {
         if (static_cast<unsigned char>(c) >= 128)
             throw std::runtime_error("PARSE LOWER non-ASCII casing not qualified");

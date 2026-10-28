@@ -344,8 +344,8 @@ inline void interpret(Variables &vars, const Value &code) {
     for (const std::string &name : before) if (!after.count(name)) drop(vars, name);
     variablesErased();
     for (auto &kv : after) {
-        if (kv.first == "_RX_D") vars.numeric.digits = std::stoul(kv.second.bytes);
-        else if (kv.first == "_RX_F") vars.numeric.fuzz = std::stoul(kv.second.bytes);
+        if (kv.first == "_RX_D") vars.numeric.digits = std::stoul(kv.second.bytes.str());
+        else if (kv.first == "_RX_F") vars.numeric.fuzz = std::stoul(kv.second.bytes.str());
         else if (kv.first == "_RX_FM") vars.numeric.engineering = kv.second.bytes == "ENGINEERING";
         else set(vars, kv.first, kv.second);
     }

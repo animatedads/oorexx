@@ -15,6 +15,7 @@
 #include <iomanip>
 #include <sstream>
 #include <cstdint>
+#include <string_view>
 #include <iostream>
 #include <functional>
 #include <limits>
@@ -91,172 +92,205 @@ struct NumCache {
     }
     void reset() noexcept { meta.store(0, std::memory_order_relaxed); }
 };
+// A string of compiled code: its characters and their numeric form (NumCache). Up to 22 characters are kept in the
+// object itself; a longer string lives in one shared, reference-counted buffer, so copying a Value (an argument, an
+// assignment, a PARSE source) copies a pointer, never the characters. A writer that finds the buffer shared takes its
+// own copy first. 24 bytes of characters / buffer pointer and the 16-byte numeric form: a copy is a few word moves
+// (the 32-byte std::string this replaced had to be constructed on every copy). Readers get a std::string_view (view(),
+// or the implicit conversion); str() makes a std::string (a copy) for an interface that needs one.
 class RxStr {
+    struct Block { std::atomic<long> refs{1}; std::string s; };
+    static constexpr unsigned char heapTag = 0xFF;
+    static constexpr std::size_t inlineCap = 22;    // characters kept in place (a NUL after them)
+    // in_[23]: the inline length (0..22), or heapTag (the first 8 bytes hold the buffer's address). mutable: a pending
+    // number's characters are written into a const string when first read (materialize).
+    alignas(8) mutable char in_[24];
+    bool onHeap() const { return static_cast<unsigned char>(in_[23]) == heapTag; }
+    Block *block() const { Block *b; std::memcpy(&b, in_, sizeof b); return b; }
+    void release() noexcept {
+        if (onHeap()) { Block *b = block(); if (b->refs.fetch_sub(1, std::memory_order_acq_rel) == 1) delete b; }
+    }
+    void setEmpty() noexcept { in_[0] = 0; in_[23] = 0; }
+    void setInline(const char *p, std::size_t n) noexcept { std::memcpy(in_, p, n); in_[n] = 0; in_[23] = static_cast<char>(n); }
+    void setHeap(std::string &&s) {
+        notePressure(s.capacity());
+        Block *b = new Block; b->s = std::move(s);
+        std::memcpy(in_, &b, sizeof b); in_[23] = static_cast<char>(heapTag);
+    }
+    void put(std::string &&v) {   // (empty before: released by the caller)
+        if (v.size() <= inlineCap) setInline(v.data(), v.size()); else setHeap(std::move(v));
+    }
+    void putCopy(const char *p, std::size_t n) {
+        if (n <= inlineCap) setInline(p, n); else setHeap(std::string(p, n));
+    }
+    // (the characters as they are now; a pending number has none until materialize writes them)
+    std::string_view raw() const noexcept {
+        if (onHeap()) return std::string_view(block()->s);
+        return std::string_view(in_, static_cast<unsigned char>(in_[23]));
+    }
+    void copyChars(const RxStr &o) noexcept {   // (empty before)
+        std::memcpy(in_, o.in_, sizeof in_);
+        if (onHeap()) block()->refs.fetch_add(1, std::memory_order_relaxed);
+    }
 public:
-    static constexpr std::size_t inlineLimit = 15;   // (std::string keeps up to 15 characters without allocating)
+    static constexpr std::size_t inlineLimit = inlineCap;
     using size_type = std::string::size_type;
     static constexpr size_type npos = std::string::npos;
-    RxStr() = default;
+    RxStr() noexcept { setEmpty(); }
+    ~RxStr() { release(); }
     // A pending number is copied as its numeric form (its characters may be being written by another thread).
-    RxStr(const RxStr &o) : RxStr(o, o.num_.meta.load(std::memory_order_acquire)) {}
-    RxStr &operator=(const RxStr &o) { if (this != &o) copyFrom(o); return *this; }
+    RxStr(const RxStr &o) noexcept { setEmpty(); copyFrom(o); }
+    RxStr &operator=(const RxStr &o) noexcept { if (this != &o) { release(); setEmpty(); copyFrom(o); } return *this; }
     // A moved-from string is empty: its numeric form goes with the characters.
-    RxStr(RxStr &&o) noexcept : small_(std::move(o.small_)), big_(std::move(o.big_)), num_(o.num_) { o.small_.clear(); o.num_.reset(); }
+    RxStr(RxStr &&o) noexcept : num_(o.num_) { std::memcpy(in_, o.in_, sizeof in_); o.setEmpty(); o.num_.reset(); }
     RxStr &operator=(RxStr &&o) noexcept {
         if (this != &o) {
-            // (a number made by arithmetic has no characters yet, nor has the variable it replaces: nothing to move)
-            if (o.small_.empty()) small_.clear(); else { small_ = std::move(o.small_); o.small_.clear(); }
-            if (big_ || o.big_) big_ = std::move(o.big_);
+            release();
+            std::memcpy(in_, o.in_, sizeof in_); o.setEmpty();
             num_ = o.num_; o.num_.reset();
         }
         return *this;
     }
-    RxStr(const std::string &v) { put(std::string(v)); }
-    RxStr(std::string &&v) : RxStr(std::move(v), v.size() <= inlineLimit) {}
-    RxStr(const char *v) { put(std::string(v)); }
-    RxStr &operator=(const std::string &v) { big_.reset(); put(std::string(v)); return *this; }
-    RxStr &operator=(std::string &&v) { big_.reset(); put(std::move(v)); return *this; }
-    RxStr &operator=(const char *v) { big_.reset(); put(std::string(v)); return *this; }
-    __attribute__((always_inline)) const std::string &str() const {
+    RxStr(const std::string &v) { setEmpty(); putCopy(v.data(), v.size()); }
+    RxStr(std::string &&v) { setEmpty(); put(std::move(v)); }
+    RxStr(const char *v) { setEmpty(); putCopy(v, std::strlen(v)); }
+    explicit RxStr(std::string_view v) { setEmpty(); putCopy(v.data(), v.size()); }
+    RxStr &operator=(const std::string &v) { release(); setEmpty(); num_.reset(); putCopy(v.data(), v.size()); return *this; }
+    RxStr &operator=(std::string &&v) { release(); setEmpty(); num_.reset(); put(std::move(v)); return *this; }
+    RxStr &operator=(const char *v) { release(); setEmpty(); num_.reset(); putCopy(v, std::strlen(v)); return *this; }
+    // The characters (a pending number's written first).
+    __attribute__((always_inline)) std::string_view view() const {
         if (__builtin_expect(num_.meta.load(std::memory_order_acquire) & NumCache::pending, 0)) materialize();
-        return big_ ? *big_ : small_;
+        return raw();
     }
-    // A number made as its numeric form only (see NumCache): the caller has checked it is one (rx_rexx_number.hpp
-    // pendingNumber).
+    operator std::string_view() const { return view(); }
+    std::string str() const { const std::string_view v = view(); return std::string(v.data(), v.size()); }
     __attribute__((always_inline)) void setPendingNumber(std::int64_t coef, std::uint32_t meta) {   // meta: the classification, exponent included
-        if (big_) big_.reset();
-        small_.clear();
+        release(); setEmpty();
         if (meta & NumCache::integer) meta |= NumCache::canonical;   // (written as plainNumber writes it)
         num_.coef.store(coef, std::memory_order_relaxed);
         num_.meta.store(meta | NumCache::pending, std::memory_order_release);
     }
     // The characters of a short plain number: digits of |coef|, a '.' before the last -exp of them (exp <= 0).
     static std::string plainNumber(std::int64_t coef, int exp) {
+        char out[48]; const int k = plainNumberChars(coef, exp, out);
+        return std::string(out, static_cast<std::size_t>(k));
+    }
+    static int plainNumberChars(std::int64_t coef, int exp, char *out) {
         char d[24]; int n = 0;
         std::uint64_t u = coef < 0 ? 0 - static_cast<std::uint64_t>(coef) : static_cast<std::uint64_t>(coef);
         do { d[n++] = static_cast<char>('0' + u % 10); u /= 10; } while (u);
-        char out[48]; int k = 0;
+        int k = 0;
         if (coef < 0) out[k++] = '-';
         const int point = n + exp;   // digits before the '.'
         if (exp == 0) { while (n) out[k++] = d[--n]; }
         else if (point <= 0) { out[k++] = '0'; out[k++] = '.'; for (int i = 0; i < -point; ++i) out[k++] = '0'; while (n) out[k++] = d[--n]; }
         else { for (int i = 0; i < point; ++i) out[k++] = d[--n]; out[k++] = '.'; while (n) out[k++] = d[--n]; }
-        return std::string(out, static_cast<std::size_t>(k));
+        return k;
     }
-    operator const std::string &() const { return str(); }
     // The numeric form (rx_rexx_number.hpp numMeta fills it); const: it is a cache of the characters.
     NumCache &numCache() const { return num_; }
-    // Write access: unshare first. The characters may change: the numeric form is dropped.
-    std::string &mut() {
-        str();
-        num_.reset();
-        if (big_) {
-            if (big_.use_count() != 1) big_ = std::make_shared<std::string>(*big_);
-            return *big_;
-        }
-        return small_;
+    // Write access: the characters as a std::string, unshared, then put back (the numeric form is dropped).
+    template <typename F> RxStr &edit(F &&f) {
+        const std::string_view v = view();
+        std::string s(v.data(), v.size());
+        f(s);
+        release(); setEmpty(); num_.reset(); put(std::move(s));
+        return *this;
     }
-    bool shared() const { return big_ && big_.use_count() > 1; }
-    size_type size() const { return str().size(); }
-    size_type length() const { return str().size(); }
-    bool empty() const { return str().empty(); }
-    const char *data() const { return str().data(); }
-    const char *c_str() const { return str().c_str(); }
-    char operator[](size_type i) const { return str()[i]; }
-    char front() const { return str().front(); }
-    char back() const { return str().back(); }
-    std::string::const_iterator begin() const { return str().begin(); }
-    std::string::const_iterator end() const { return str().end(); }
-    std::string substr(size_type pos = 0, size_type n = npos) const { return str().substr(pos, n); }
-    template <class... A> size_type find(A &&...a) const { return str().find(std::forward<A>(a)...); }
-    template <class... A> size_type rfind(A &&...a) const { return str().rfind(std::forward<A>(a)...); }
-    template <class... A> size_type find_first_of(A &&...a) const { return str().find_first_of(std::forward<A>(a)...); }
-    template <class... A> size_type find_last_of(A &&...a) const { return str().find_last_of(std::forward<A>(a)...); }
-    template <class... A> size_type find_first_not_of(A &&...a) const { return str().find_first_not_of(std::forward<A>(a)...); }
-    template <class... A> size_type find_last_not_of(A &&...a) const { return str().find_last_not_of(std::forward<A>(a)...); }
-    template <class... A> int compare(A &&...a) const { return str().compare(std::forward<A>(a)...); }
+    bool shared() const { return onHeap() && block()->refs.load(std::memory_order_relaxed) > 1; }
+    size_type size() const { return view().size(); }
+    size_type length() const { return view().size(); }
+    bool empty() const { return view().empty(); }
+    const char *data() const { return view().data(); }
+    // (NUL-terminated: an inline string keeps a NUL after its characters, a buffer is a std::string)
+    const char *c_str() const { (void)view(); return onHeap() ? block()->s.c_str() : in_; }
+    char operator[](size_type i) const { return view()[i]; }
+    char front() const { return view().front(); }
+    char back() const { return view().back(); }
+    std::string_view::const_iterator begin() const { return view().begin(); }
+    std::string_view::const_iterator end() const { return view().end(); }
+    std::string substr(size_type pos = 0, size_type n = npos) const {
+        const std::string_view v = view();
+        if (pos > v.size()) throw std::out_of_range("RxStr::substr");
+        const std::string_view s = v.substr(pos, n);
+        return std::string(s.data(), s.size());
+    }
+    template <class... A> size_type find(A &&...a) const { return view().find(std::forward<A>(a)...); }
+    template <class... A> size_type rfind(A &&...a) const { return view().rfind(std::forward<A>(a)...); }
+    template <class... A> size_type find_first_of(A &&...a) const { return view().find_first_of(std::forward<A>(a)...); }
+    template <class... A> size_type find_last_of(A &&...a) const { return view().find_last_of(std::forward<A>(a)...); }
+    template <class... A> size_type find_first_not_of(A &&...a) const { return view().find_first_not_of(std::forward<A>(a)...); }
+    template <class... A> size_type find_last_not_of(A &&...a) const { return view().find_last_not_of(std::forward<A>(a)...); }
+    template <class... A> int compare(A &&...a) const { return view().compare(std::forward<A>(a)...); }
     template <class... A> RxStr &assign(A &&...a) { std::string t; t.assign(std::forward<A>(a)...); return *this = std::move(t); }
-    template <class... A> RxStr &append(A &&...a) { mut().append(std::forward<A>(a)...); return *this; }
-    template <class... A> RxStr &insert(A &&...a) { mut().insert(std::forward<A>(a)...); return *this; }
-    template <class T> RxStr &operator+=(const T &t) { mut() += t; return *this; }
-    void push_back(char c) { mut().push_back(c); }
-    void clear() { big_.reset(); small_.clear(); num_.reset(); }
-    void reserve(size_type n) { mut().reserve(n); }
-    void resize(size_type n, char c = '\0') { mut().resize(n, c); }
+    template <class... A> RxStr &append(A &&...a) { return edit([&](std::string &s) { s.append(std::forward<A>(a)...); }); }
+    template <class... A> RxStr &insert(A &&...a) { return edit([&](std::string &s) { s.insert(std::forward<A>(a)...); }); }
+    RxStr &operator+=(std::string_view t) { return edit([&](std::string &s) { s.append(t.data(), t.size()); }); }
+    RxStr &operator+=(char c) { return edit([&](std::string &s) { s.push_back(c); }); }
+    void push_back(char c) { *this += c; }
+    void clear() { release(); setEmpty(); num_.reset(); }
+    void reserve(size_type) {}
+    void resize(size_type n, char c = '\0') { edit([&](std::string &s) { s.resize(n, c); }); }
 private:
-    void put(std::string &&v) {
-        num_.reset();
-        if (v.size() > inlineLimit) { notePressure(v.capacity()); small_.clear(); big_ = std::make_shared<std::string>(std::move(v)); }
-        else small_ = std::move(v);
-    }
-    // Copy construction on one reading of the source's state: a pending number as its numeric form (its characters may
-    // be being written), anything else with its characters (stable once the state says so).
-    RxStr(const RxStr &o, std::uint32_t m)
-        : small_((m & NumCache::pending) ? std::string() : o.small_),
-          big_((m & NumCache::pending) ? std::shared_ptr<std::string>() : o.big_) {
-        num_.coef.store(o.num_.coef.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        num_.meta.store(m & ~NumCache::busy, std::memory_order_relaxed);
-    }
-    // (built in place: a short string moved straight into small_, a longer one into its shared buffer)
-    RxStr(std::string &&v, bool inlined) : small_(inlined ? std::move(v) : std::string()) {
-        if (!inlined) { notePressure(v.capacity()); big_ = std::make_shared<std::string>(std::move(v)); }
-    }
-    void copyFrom(const RxStr &o) {
+    void copyFrom(const RxStr &o) noexcept {   // (empty before)
         const std::uint32_t m = o.num_.meta.load(std::memory_order_acquire);
         if (m & NumCache::pending) {
-            big_.reset(); small_.clear();
             num_.coef.store(o.num_.coef.load(std::memory_order_relaxed), std::memory_order_relaxed);
             num_.meta.store(m & ~NumCache::busy, std::memory_order_relaxed);
             // (written by now after all: its characters are there to copy, the pending bit stays off)
             if (o.num_.meta.load(std::memory_order_acquire) & NumCache::pending) return;
         }
-        small_ = o.small_; big_ = o.big_;
+        copyChars(o);
         num_.copyFrom(o.num_);
     }
-    // Writes a pending number's characters (once; a second thread waits for the first).
+    // Writes a pending number's characters (once; a second thread waits for the first). A short number: inline.
     __attribute__((noinline, cold)) void materialize() const {
         std::uint32_t m = num_.meta.load(std::memory_order_acquire);
         while (m & NumCache::pending) {
             if (!(m & NumCache::busy) &&
                 num_.meta.compare_exchange_weak(m, m | NumCache::busy, std::memory_order_acquire)) {
-                small_ = plainNumber(num_.coef.load(std::memory_order_relaxed), static_cast<int>((m >> 8) & 0xff) - 128);
+                char out[48];
+                const int k = plainNumberChars(num_.coef.load(std::memory_order_relaxed), static_cast<int>((m >> 8) & 0xff) - 128, out);
+                RxStr *self = const_cast<RxStr *>(this);
+                self->putCopy(out, static_cast<std::size_t>(k));
                 num_.meta.store(m & ~(NumCache::pending | NumCache::busy), std::memory_order_release);
                 return;
             }
             m = num_.meta.load(std::memory_order_acquire);
         }
     }
-    mutable std::string small_;   // (written once by materialize for a pending number)
-    std::shared_ptr<std::string> big_;
     mutable NumCache num_;
 };
 // Classifies a string's numeric form now (rx_rexx_number.hpp): used for arithmetic results.
 inline std::uint32_t numClassify(const RxStr &s);
 inline bool operator==(const RxStr &a, const RxStr &b) {
-    return (a.size() == b.size()) && (a.data() == b.data() || a.str() == b.str());
+    const std::string_view x = a.view(), y = b.view();
+    return x.size() == y.size() && (x.data() == y.data() || x == y);
 }
-inline bool operator==(const RxStr &a, const std::string &b) { return a.str() == b; }
-inline bool operator==(const std::string &a, const RxStr &b) { return a == b.str(); }
-inline bool operator==(const RxStr &a, const char *b) { return a.str() == b; }
+inline bool operator==(const RxStr &a, const std::string &b) { return a.view() == std::string_view(b); }
+inline bool operator==(const std::string &a, const RxStr &b) { return std::string_view(a) == b.view(); }
+inline bool operator==(const RxStr &a, const char *b) { return a.view() == std::string_view(b); }
 inline bool operator!=(const RxStr &a, const RxStr &b) { return !(a == b); }
-inline bool operator!=(const RxStr &a, const std::string &b) { return a.str() != b; }
-inline bool operator!=(const std::string &a, const RxStr &b) { return a != b.str(); }
-inline bool operator!=(const RxStr &a, const char *b) { return a.str() != b; }
-inline bool operator<(const RxStr &a, const RxStr &b) { return a.str() < b.str(); }
-inline bool operator>(const RxStr &a, const RxStr &b) { return a.str() > b.str(); }
-inline bool operator<=(const RxStr &a, const RxStr &b) { return a.str() <= b.str(); }
-inline bool operator>=(const RxStr &a, const RxStr &b) { return a.str() >= b.str(); }
-inline std::string operator+(const RxStr &a, const std::string &b) { return a.str() + b; }
-inline std::string operator+(const std::string &a, const RxStr &b) { return a + b.str(); }
-inline std::string operator+(const RxStr &a, const char *b) { return a.str() + b; }
-inline std::string operator+(const char *a, const RxStr &b) { return a + b.str(); }
-inline std::string operator+(const RxStr &a, char b) { return a.str() + b; }
-inline std::string operator+(const RxStr &a, const RxStr &b) { return a.str() + b.str(); }
-inline std::ostream &operator<<(std::ostream &o, const RxStr &a) { return o << a.str(); }
+inline bool operator!=(const RxStr &a, const std::string &b) { return a.view() != std::string_view(b); }
+inline bool operator!=(const std::string &a, const RxStr &b) { return std::string_view(a) != b.view(); }
+inline bool operator!=(const RxStr &a, const char *b) { return a.view() != std::string_view(b); }
+inline bool operator<(const RxStr &a, const RxStr &b) { return a.view() < b.view(); }
+inline bool operator>(const RxStr &a, const RxStr &b) { return a.view() > b.view(); }
+inline bool operator<=(const RxStr &a, const RxStr &b) { return a.view() <= b.view(); }
+inline bool operator>=(const RxStr &a, const RxStr &b) { return a.view() >= b.view(); }
+inline std::string operator+(const RxStr &a, const std::string &b) { std::string r = a.str(); r += b; return r; }
+inline std::string operator+(const std::string &a, const RxStr &b) { std::string r = a; r += b.view(); return r; }
+inline std::string operator+(const RxStr &a, const char *b) { std::string r = a.str(); r += b; return r; }
+inline std::string operator+(const char *a, const RxStr &b) { std::string r = a; r += b.view(); return r; }
+inline std::string operator+(const RxStr &a, char b) { std::string r = a.str(); r += b; return r; }
+inline std::string operator+(const RxStr &a, const RxStr &b) { std::string r = a.str(); r += b.view(); return r; }
+inline std::ostream &operator<<(std::ostream &o, const RxStr &a) { return o << a.view(); }
 struct Value {
     RxStr bytes;
     std::shared_ptr<ObjectDispatch> object;
     explicit Value(std::string v) : bytes(std::move(v)) {}
+    explicit Value(std::string_view v) : bytes(v) {}
     // A pending number (rx_rexx_number.hpp pendingNumber): no characters yet.
     struct PendingTag {};
     Value(PendingTag, std::int64_t coef, std::uint32_t meta) { bytes.setPendingNumber(coef, meta); }
@@ -267,6 +301,7 @@ struct Value {
     // (a temporary - substr, to_string, a concatenation - moves into the value instead of being copied)
     static Value string(std::string &&s) { return Value(std::move(s)); }
     static Value string(const char *s) { return Value(std::string(s)); }
+    static Value string(std::string_view s) { return Value(std::string(s)); }
     static Value number(const std::string &s) { Value v(s); numClassify(v.bytes); return v; }
     static Value number(std::string &&s) { Value v(std::move(s)); numClassify(v.bytes); return v; }
     static Value fromObject(std::shared_ptr<ObjectDispatch> target) {
@@ -613,8 +648,8 @@ struct ArrayObject final : ObjectDispatch {
             return Value::string(std::to_string(last));
         }
         if (rx::eqLit(selector, "MAKESTRING") && args.size() <= 2) {
-            const std::string format = args.empty() ? "L" : args[0].bytes;
-            const std::string separator = args.size() == 2 ? args[1].bytes : " ";
+            const std::string format = args.empty() ? std::string("L") : args[0].bytes.str();
+            const std::string separator = args.size() == 2 ? args[1].bytes.str() : std::string(" ");
             if (format != "L")
                 throw std::runtime_error("only .Array~makeString('L') is implemented");
             std::string result;
@@ -674,7 +709,7 @@ inline std::vector<Value> arrayItems(const Value &collection) {
         MessageResult count = made->object->sendMessage("ITEMS", {});
         if (!count || count->isObject()) throw std::runtime_error("LOOP OVER: ITEMS did not return a number");
         std::vector<Value> items;
-        const std::int64_t n = std::stoll(count->bytes);
+        const std::int64_t n = std::stoll(count->bytes.str());
         for (std::int64_t i = 1; i <= n; ++i) {
             MessageResult item = made->object->sendMessage("[]", {Value::string(std::to_string(i))});
             items.push_back(item ? *item : nil());
@@ -925,12 +960,12 @@ inline Value internalRoutineValue(Variables &vars, RoutineRegistry &registry,
     return *returned;
 }
 
-inline std::string trim(std::string s) {
+inline std::string trim(std::string_view s) {
     auto blank = [](unsigned char c) { return c == ' ' || c == '\t'; };  // the interpreter's whitespace: blank, tab
     std::size_t b = 0, e = s.size();
     while (b < e && blank(static_cast<unsigned char>(s[b]))) ++b;
     while (e > b && blank(static_cast<unsigned char>(s[e - 1]))) --e;
-    return s.substr(b, e - b);
+    return std::string(s.substr(b, e - b));
 }
 // Integer literals and whole-number arithmetic are checked signed 64-bit.
 // Division uses an initial nine-significant-digit decimal subset; not a
@@ -1010,7 +1045,7 @@ inline std::string &addressEnvironment() { return threadState().address; }
 [[noreturn]] inline void raiseTraceDebug();
 inline std::string traceSet(const Value &v) {
     const std::string old = traceSetting();
-    std::string t = v.bytes;
+    std::string t = v.bytes.str();
     {   // a numeric TRACE (a debug skip count) is valid only in interactive debugging (RexxActivation::debugSkip): 24.901
         std::size_t b = t.find_first_not_of(' '), e = t.find_last_not_of(' ');
         if (b != std::string::npos) {
@@ -1036,7 +1071,7 @@ inline Value requestString(const Value &v);
 inline std::string addressSet(const Value &in) {
     const Value v = in.isObject() ? requestString(in) : in;
     // SystemInterpreter::validateAddressName (Unix): at most 250 characters, else 29.1
-    if (v.bytes.size() > 250) raiseAddressName(v.bytes);
+    if (v.bytes.size() > 250) raiseAddressName(v.bytes.str());
     const std::string old = addressEnvironment();
     alternateEnvironment() = old;
     addressEnvironment() = v.bytes;
@@ -1336,7 +1371,7 @@ inline std::vector<Value> additionalItems(const Value &v) {
         MessageResult items = v.object->sendMessage("MAKEARRAY", {});
         if (items && items->isObject()) {
             MessageResult n = items->object->sendMessage("ITEMS", {});
-            const long count = n && !n->isObject() ? std::stol(n->bytes) : 0;
+            const long count = n && !n->isObject() ? std::stol(n->bytes.str()) : 0;
             for (long i = 1; i <= count; ++i) {
                 MessageResult item = items->object->sendMessage("[]", {Value::string(std::to_string(i))});
                 out.push_back(item ? *item : Value::string(""));
@@ -1346,11 +1381,11 @@ inline std::vector<Value> additionalItems(const Value &v) {
         out.push_back(v);
         return out;
     }
-    const std::string &s = v.bytes;
+    const std::string_view s = v.bytes.view();
     std::size_t start = 0;
     while (start <= s.size()) {
         std::size_t nl = s.find('\n', start);
-        std::string line = s.substr(start, nl == std::string::npos ? std::string::npos : nl - start);
+        std::string line(s.substr(start, nl == std::string::npos ? std::string::npos : nl - start));
         if (!line.empty() && line.back() == '\r') line.pop_back();
         if (nl == std::string::npos) { if (!line.empty() || out.empty()) out.push_back(Value::string(line)); break; }
         out.push_back(Value::string(line));
@@ -1585,7 +1620,7 @@ inline MessageResult sendMessage(const Value &receiver, const std::string &selec
 }
 inline MessageResult sendStringBuiltin(const Value &receiver, const std::string &selector,
                                        const std::vector<Value> &args) {
-    const std::string &s = receiver.bytes;
+    const std::string_view s = receiver.bytes.view();
     if (args.size() == 1 &&
         (rx::eqLit(selector, "+") || rx::eqLit(selector, "-") || rx::eqLit(selector, "*") || rx::eqLit(selector, "/") ||
          rx::eqLit(selector, "=") || rx::eqLit(selector, "\\=") || rx::eqLit(selector, "==") || rx::eqLit(selector, "\\==") ||
@@ -1606,7 +1641,7 @@ inline MessageResult sendStringBuiltin(const Value &receiver, const std::string 
     if (rx::eqLit(selector, "REVERSE") && args.empty())
         return Value::string(std::string(s.rbegin(), s.rend()));
     if ((rx::eqLit(selector, "UPPER") || rx::eqLit(selector, "LOWER")) && args.empty()) {
-        std::string output = s;
+        std::string output(s);
         // Deliberately ASCII-only; locale-sensitive mappings are not yet qualified.
         for (char &ch : output) {
             unsigned char c = static_cast<unsigned char>(ch);

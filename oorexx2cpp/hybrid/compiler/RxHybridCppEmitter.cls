@@ -63,7 +63,7 @@
   lines~append('    for (const auto &a : arguments) { if (a) values.emplace_back(rx::Value::string(*a)); else values.emplace_back(std::nullopt); }')
   lines~append('    rx::Value result = invokeValues(selector, values);')
   lines~append('    if (result.isObject()) throw std::runtime_error("non-scalar return requires interpreter proxy");')
-  lines~append('    return result.bytes;')
+  lines~append('    return result.bytes.str();')
   lines~append('  }')
   lines~append('  std::string invoke0(const std::string &selector) override { return invokeArgs(selector, {}); }')
   lines~append('  std::string invoke(const std::string &selector, const std::string &argument) override { return invokeArgs(selector, {argument}); }')

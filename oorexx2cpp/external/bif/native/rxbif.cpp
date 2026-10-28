@@ -43,9 +43,9 @@ const std::vector<Signature> kSpecs = {
     if (unsupported) throw NativeSubsetUnsupported(diagnostic);
     throw std::runtime_error(diagnostic);
 }
-const std::string &str(const std::vector<rx::Value> &a, size_t i, const std::string &n) {
+std::string str(const std::vector<rx::Value> &a, size_t i, const std::string &n) {
     if (i >= a.size() || a[i].isObject()) bad(n,"string conversion requires an unbridged object");
-    return a[i].bytes;
+    return a[i].bytes.str();
 }
 // Numeric parameters in this add-on require exact positive / nonnegative
 // integers, like ooRexx's required_integer validations. No silent truncation.
@@ -96,7 +96,7 @@ std::int64_t integer(const std::vector<rx::Value> &a, size_t i, const std::strin
     if (i >= a.size()) bad(n,"required number missing");
     std::int64_t x=0;
     if (!rx::tryInteger(a[i], x)) {
-        if (!a[i].isObject() && numericForm(a[i].bytes))
+        if (!a[i].isObject() && numericForm(a[i].bytes.str()))
             bad(n,"unsupported numeric representation requiring Rexx NUMERIC context");
         bad(n,"invalid numeric integer argument");
     }
@@ -361,7 +361,7 @@ rx::Value invoke(const std::string &name,const std::vector<rx::Value> &a,Context
     for(const auto &s:kSpecs)if(name==s.name){spec=&s;break;}
     if(!spec)bad(name,"not in add-on registry");
     if(a.size()<spec->minArgs||a.size()>spec->maxArgs)bad(name,"incorrect argument count");
-    const auto get=[&](size_t i)->const std::string&{return str(a,i,name);};
+    const auto get=[&](size_t i)->std::string{return str(a,i,name);};
     const auto ct=[&](size_t i,std::int64_t mi=0)->size_t{return count(a,i,name,mi);};
     if(name=="SIGN") {
         const auto result=rxbif_sign::parse(get(0));

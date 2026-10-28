@@ -78,12 +78,12 @@ struct ParseOp {
     static ParseOp literalValue(const Value &v) {
         if (v.isObject()) throw std::runtime_error("PARSE object delimiter conversion unsupported");
         if (v.bytes.empty()) throw std::runtime_error("empty dynamic PARSE delimiter unsupported");
-        return literal(v.bytes);
+        return literal(v.bytes.str());
     }
 };
 
 // PARSE CASELESS: a string pattern matches regardless of case (ASCII letters, as the interpreter's caseless search).
-inline std::size_t parseFindCaseless(const std::string &s, const std::string &needle, std::size_t from) {
+inline std::size_t parseFindCaseless(std::string_view s, std::string_view needle, std::size_t from) {
     auto up = [](char c) { return static_cast<char>(std::toupper(static_cast<unsigned char>(c))); };
     if (needle.size() > s.size()) return std::string::npos;
     for (std::size_t i = from; i + needle.size() <= s.size(); ++i) {
@@ -96,7 +96,7 @@ inline std::size_t parseFindCaseless(const std::string &s, const std::string &ne
 inline std::vector<Value> parseTemplate(const Value &sourceIn, const std::vector<ParseOp> &ops, bool caseless = false) {
     std::optional<Value> converted;
     if (sourceIn.isObject()) converted = parseSourceString(sourceIn);
-    const std::string &s = converted ? converted->bytes : sourceIn.bytes;
+    const std::string_view s = converted ? converted->bytes.view() : sourceIn.bytes.view();
     if (ops.size() > 64) throw std::runtime_error("invalid PARSE template size");
     if (ops.empty()) return {};   // an empty template (PULL alone): the source is read and discarded
     std::vector<Value> values;
@@ -161,7 +161,7 @@ inline std::vector<Value> parseTemplate(const Value &sourceIn, const std::vector
 // evaluated when the trigger runs, after the variables before it are assigned (len +2 val >(len)).
 struct ParseCursor {
     Value holder = Value::string(std::string());
-    const std::string *str = nullptr;
+    std::string_view str;   // (the characters of holder, which this cursor owns: it is never copied or moved)
     std::size_t start = 0, end = 0, patternStart = 0, patternEnd = 0, subcurrent = 0, length = 0;
     bool caseless = false;
     explicit ParseCursor(Value source, bool caselessSearch = false) : holder(parseSourceString(std::move(source))), caseless(caselessSearch) { bind(); }
@@ -173,9 +173,9 @@ struct ParseCursor {
         bind();
     }
     void bind() {
-        str = &holder.bytes.str();
+        str = holder.bytes.view();
         start = end = patternStart = patternEnd = subcurrent = 0;
-        length = str->size();
+        length = str.size();
     }
     // ParseTrigger::integerTrigger: requestUnsignedNumber under DIGITS, else 26.4
     static std::size_t position(const Value &v, const ActivationNumeric &numeric) {
@@ -237,7 +237,7 @@ struct ParseCursor {
         start = patternEnd;
         std::size_t found = std::string::npos;
         if (!needle.empty() && start <= length)
-            found = caseless ? parseFindCaseless(*str, needle, start) : str->find(needle, start);
+            found = caseless ? parseFindCaseless(str, needle, start) : str.find(needle, start);
         if (found == std::string::npos) { end = length; patternStart = length; patternEnd = length; }
         else { end = found; patternStart = found; patternEnd = found + needle.size(); }
         subcurrent = start;
@@ -245,21 +245,21 @@ struct ParseCursor {
     static bool blank(char c) { return c == ' ' || c == '\t'; }
     Value word() {
         if (subcurrent >= end) return Value::string(std::string());
-        while (subcurrent < length && blank((*str)[subcurrent])) ++subcurrent;
+        while (subcurrent < length && blank(str[subcurrent])) ++subcurrent;
         if (subcurrent >= end) return Value::string(std::string());
         const std::size_t first = subcurrent;
         std::size_t scan = first;
-        while (scan < end && !blank((*str)[scan])) ++scan;
-        if (scan >= end) { subcurrent = end; return Value::string(str->substr(first, end - first)); }
+        while (scan < end && !blank(str[scan])) ++scan;
+        if (scan >= end) { subcurrent = end; return Value::string(str.substr(first, end - first)); }
         subcurrent = scan + 1;
-        return Value::string(str->substr(first, scan - first));
+        return Value::string(str.substr(first, scan - first));
     }
     Value rest() {
         if (subcurrent >= end) return Value::string(std::string());
         const std::size_t first = subcurrent;
         subcurrent = end;
         if (first == 0 && end == length) return holder;   // the whole string: the same string (shared, not copied)
-        return Value::string(str->substr(first, end - first));
+        return Value::string(str.substr(first, end - first));
     }
     void skipWord() { (void)word(); }
     void skipRest() { subcurrent = end; }
