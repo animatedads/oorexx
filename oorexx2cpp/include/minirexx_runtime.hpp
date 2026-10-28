@@ -264,7 +264,11 @@ struct Value {
         if (!object) throw std::invalid_argument("null ooRexx object");
     }
     static Value string(const std::string &s) { return Value(s); }
+    // (a temporary - substr, to_string, a concatenation - moves into the value instead of being copied)
+    static Value string(std::string &&s) { return Value(std::move(s)); }
+    static Value string(const char *s) { return Value(std::string(s)); }
     static Value number(const std::string &s) { Value v(s); numClassify(v.bytes); return v; }
+    static Value number(std::string &&s) { Value v(std::move(s)); numClassify(v.bytes); return v; }
     static Value fromObject(std::shared_ptr<ObjectDispatch> target) {
         return Value(std::move(target));
     }
