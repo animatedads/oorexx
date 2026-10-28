@@ -12,6 +12,6 @@ int main(int argc,char **argv){if(argc!=2)return 2;std::ifstream in(argv[1]);std
   if(cols.size()<3)continue;
   try{std::vector<rx::Value> args;for(size_t i=3;i<cols.size();i++)args.push_back(rx::Value::string(decode(cols[i])));
     rxbif::Context context;auto value=rxbif::invoke(cols[1],args,context);
-    std::cout<<cols[0]<<":"<<encode(value.bytes)<<"\n";
+    std::cout<<cols[0]<<":"<<encode(value.bytes.str())<<"\n";
   }catch(const std::exception&e){std::cout<<cols[0]<<":EXCEPTION:"<<e.what()<<"\n";}}
 }

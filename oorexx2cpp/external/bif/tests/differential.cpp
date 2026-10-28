@@ -74,7 +74,7 @@ int main(int argc,char **argv){
     for(size_t i=0;i<cases.size();i++){
         const auto &t=cases[i];std::vector<rx::Value> vs;
         for(const auto &a:t.args)vs.emplace_back(rx::Value::string(a));
-        try{auto ans=rxbif::invoke(t.name,vs,ctx);std::cout<<i<<":"<<hex(ans.bytes)<<"\n";}
+        try{auto ans=rxbif::invoke(t.name,vs,ctx);std::cout<<i<<":"<<hex(ans.bytes.str())<<"\n";}
         catch(const std::exception &e){std::cerr<<"CASE "<<i<<" "<<t.name<<": "<<e.what()<<"\n";return 1;}
     }
 }

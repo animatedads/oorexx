@@ -35,7 +35,7 @@ int main(int argc,char** argv) {
         if(decimals!="-")args.push_back(rx::Value::string(decimals));
         try {
             auto v=rxbif_breadth::invoke("TRUNC",args,ctx);
-            std::cout<<"V"<<encode(v.bytes)<<'\n';
+            std::cout<<"V"<<encode(v.bytes.str())<<'\n';
         } catch(const std::exception&) {std::cout<<"E"<<'\n';}
     }
     std::cerr<<"precision_reads="<<reads<<"\n";

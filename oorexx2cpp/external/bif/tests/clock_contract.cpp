@@ -10,7 +10,7 @@ using namespace std::chrono;
 static std::string clockCall(const std::string& n,std::initializer_list<const char*> in,rxbif::Context&c){
  std::vector<rx::Value> args;
  for(const auto* s:in)args.push_back(rx::Value::string(s));
- return rxbif::invoke(n,args,c).bytes;
+ return rxbif::invoke(n,args,c).bytes.str();
 }
 static void check(bool yes,const char*msg){if(!yes)throw std::runtime_error(msg);}
 static void reject(const std::string&n,std::initializer_list<const char*>arg,rxbif::Context&c){
