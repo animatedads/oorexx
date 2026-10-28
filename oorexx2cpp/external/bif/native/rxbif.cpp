@@ -43,6 +43,11 @@ const std::vector<Signature> kSpecs = {
     if (unsupported) throw NativeSubsetUnsupported(diagnostic);
     throw std::runtime_error(diagnostic);
 }
+// (scratch: where a short string's characters are put; a long one is returned from its shared buffer, not copied)
+const std::string &str(const std::vector<rx::Value> &a, size_t i, const std::string &n, std::string &scratch) {
+    if (i >= a.size() || a[i].isObject()) bad(n,"string conversion requires an unbridged object");
+    return a[i].bytes.stringRef(scratch);
+}
 std::string str(const std::vector<rx::Value> &a, size_t i, const std::string &n) {
     if (i >= a.size() || a[i].isObject()) bad(n,"string conversion requires an unbridged object");
     return a[i].bytes.str();
@@ -361,7 +366,10 @@ rx::Value invoke(const std::string &name,const std::vector<rx::Value> &a,Context
     for(const auto &s:kSpecs)if(name==s.name){spec=&s;break;}
     if(!spec)bad(name,"not in add-on registry");
     if(a.size()<spec->minArgs||a.size()>spec->maxArgs)bad(name,"incorrect argument count");
-    const auto get=[&](size_t i)->std::string{return str(a,i,name);};
+    // (one scratch string per argument: get(i) may be called again while an earlier reference is held)
+    std::string scratch[8];
+    if(a.size()>8)bad(name,"incorrect argument count");
+    const auto get=[&](size_t i)->const std::string&{return str(a,i,name,scratch[i]);};
     const auto ct=[&](size_t i,std::int64_t mi=0)->size_t{return count(a,i,name,mi);};
     if(name=="SIGN") {
         const auto result=rxbif_sign::parse(get(0));

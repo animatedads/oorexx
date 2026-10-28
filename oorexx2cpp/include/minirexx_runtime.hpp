@@ -165,6 +165,14 @@ public:
     }
     operator std::string_view() const { return view(); }
     std::string str() const { const std::string_view v = view(); return std::string(v.data(), v.size()); }
+    // The characters as a const std::string& for an interface that takes one: a long string's shared buffer is one (no
+    // copy); a short one is copied into scratch, which must outlive the reference.
+    const std::string &stringRef(std::string &scratch) const {
+        const std::string_view v = view();
+        if (onHeap()) return block()->s;
+        scratch.assign(v.data(), v.size());
+        return scratch;
+    }
     __attribute__((always_inline)) void setPendingNumber(std::int64_t coef, std::uint32_t meta) {   // meta: the classification, exponent included
         release(); setEmpty();
         if (meta & NumCache::integer) meta |= NumCache::canonical;   // (written as plainNumber writes it)
@@ -193,6 +201,12 @@ public:
     // Write access: the characters as a std::string, unshared, then put back (the numeric form is dropped).
     template <typename F> RxStr &edit(F &&f) {
         const std::string_view v = view();
+        // (a buffer nobody else holds is changed where it is: appending to a long string copies nothing)
+        if (onHeap() && block()->refs.load(std::memory_order_acquire) == 1) {
+            num_.reset(); f(block()->s);
+            if (block()->s.size() <= inlineCap) { std::string s = std::move(block()->s); release(); setEmpty(); put(std::move(s)); }
+            return *this;
+        }
         std::string s(v.data(), v.size());
         f(s);
         release(); setEmpty(); num_.reset(); put(std::move(s));
