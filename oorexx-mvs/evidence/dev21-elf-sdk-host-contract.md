@@ -46,3 +46,23 @@ and top-level `sdk_manifest_sha256`.
 - The inherited MVS cfront -> cc370 core frontier remains **190/199**.
 - The independent `oorexx2cpp/` project is untouched.
 - Autobuilder was not used or invoked.
+
+## Re-run of inherited dev20 adapter/runtime host checks (2026-10-29)
+
+Inputs: exact extracted `oorexx-mvs24-cfront-dev20-source.zip`, with
+`oorexx_recordset_v0.1-dev11.zip` as the separate RecordSet dependency.
+
+- `bash tests/run-recordset-host.sh RECORDSET_DEV11_ROOT`:
+  **PASS** RecordSet seam, EOF, retryable close, positioning, metadata,
+  unknown count and pending cleanup (2 executable host test programs).
+- `bash tests/run-unwind-host.sh`: **PASS** frame selection and
+  SIGABRT fail-closed unmatched, bad-pop, double-pop, duplicate-push,
+  invalid-frame-type scenarios.
+- `bash tests/run-dev20-guard.sh`: **PASS** idempotent native catch release
+  and four API guard transformation tests.
+- `python3 -m unittest discover -s tests -p 'test_dev*.py' -q`:
+  **16 tests PASS**, dev19/dev20 preflight/API transform suites.
+
+These are Linux-host regressions on an earlier source archive, not new
+cc370-generated S/370 assembler, not a new MVS JES execution and not
+modern z/OS. No autobuilder or target guest was invoked.
