@@ -4,11 +4,11 @@ Experimental translation of the Open Object Rexx interpreter for IBM
 System/370 / MVS 3.8J, with a **separate** Mainframe ELF SDK compiler
 experiment for z/OS TSO31 and TSO24.
 
-## Qualification snapshot — 23 October 2026
+## Qualification snapshot — 29 October 2026
 
 The accepted Linux-hosted core translation checkpoint is **190/199 permitted
 ooRexx C++ units** reaching cfront C and `cc370 -S` nonempty assembler at
-dev16. This is unchanged through the dev20 runtime/harness line.
+dev16. This remains unchanged through the dev21 SDK host-receipt work.
 
 The nine cfront-blocked files remain:
 `NativeActivation.cpp`, `CommandIOConfiguration.cpp`, `Setup.cpp`,
@@ -31,7 +31,7 @@ successful ooRexx port execution.
   logical record semantics and retryable DD cleanup (separate dev11 dependency).
 - [Unwind runtime](runtime/MvsUnwind.cpp): fail-closed single-task SJLJ
   bootstrap. Actual MVS setjmp/longjmp ABI remains unqualified.
-- [ELF SDK experiment](experimental/elf-sdk/README.md): isolated C-only
+- [ELF SDK experiment](experimental/elf-sdk/README.md): dev21 fail-closed installed-SDK host receipt validator; isolated C-only
   GCC16.2 SDK host packaging path for TSO31/TSO24. Not deployed to MVS 3.8J
   and not accepted as the primary backend.
 - [Historical evidence](evidence/SOURCE-EVIDENCE.md): restored exact source

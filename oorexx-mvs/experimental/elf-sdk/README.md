@@ -92,3 +92,30 @@ the Library search as of 2026-10-15.
 Original SDK code is MIT; GCC, binutils, newlib, native tools and PDPCLIB
 retain distinct original component notices. This spike links or vendors none
 of their code. No SDK target runtime is represented as our MVS implementation.
+
+## dev21 (2026-10-29): fail-closed SDK host-result contract
+
+`run-sdk-host-smoke.py` now requires **the installed SDK 0.1.0's
+`result.json`**, not merely a nonempty `.XMI`. Before reporting a host PASS
+it verifies the exact one-profile receipt and compares:
+
+- SDK manifest SHA-256 against the inspected installed manifest;
+- copied C source SHA-256 against `z_backend_contract.c`;
+- ELF image and native object-deck digests against their actual files;
+- native XMIT digest, expected member `RXMVS24` or `RXMVS31`, and
+  AMODE/RMODE (`24/24` or `31/ANY`);
+- that expected output files are ordinary nonempty files, not symlinks.
+
+The child process has a bounded timeout (`--timeout-sec`, default 900; maximum
+3600). Existing output directories, missing SDK/source, overlapping paths,
+invalid profiles and timeout failures are refused. An emitted
+`oorexx-mvs-host-report.json` records the reason and always reports
+`guest_executed=false`, `guest_return_code=null` and
+`guest_qualified=false`.
+
+The 23 isolated Python host contract controls passed in groups on 2026-10-29.
+Python syntax and C99 host syntax checks also passed. All Python controls use a
+**synthetic** installed SDK consumer; the downloaded GCC SDK, ELF exporter,
+Classic Linker, XMIT restore, live MVS 3.8J and modern z/OS were **NOT_RUN**.
+See [dev21 qualification evidence](../../evidence/dev21-elf-sdk-host-contract.md).
+No increase from the inherited **190/199** cfront/cc370 units is claimed.

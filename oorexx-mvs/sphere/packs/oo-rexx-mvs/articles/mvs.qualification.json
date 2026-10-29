@@ -11,7 +11,9 @@
     "Each successful target claim needs executable/build identity, toolchain, target OS and JES/log or terminal witness.",
     "Native loader and C ABI must be qualified before interpreter execution.",
     "Recheck all 199 source units after a changed backend; alternate compilation is not inherited cc370 evidence.",
-    "The Gopher sphere's structural checks are not equivalent to running LLM Gopher's own validate/lint or to target execution."
+    "The Gopher sphere's structural checks are not equivalent to running LLM Gopher's own validate/lint or to target execution.",
+    "The dev21 TSO SDK runner refuses a nonempty XMIT as sufficient evidence without the recorded SDK 0.1.0 native-link and SHA receipts.",
+    "A synthetic SDK consumer is PASS_HOST_MOCK only; guest return code and qualification fields remain false/null even after a successful host result."
   ],
   "authority": "project-artifact",
   "provenance": [
@@ -29,6 +31,11 @@
       "repository": "animatedads/oorexx",
       "path": "oorexx-mvs/experimental/elf-sdk/qualification.json",
       "claim": "Documented source/evidence; independent guest qualification not implied"
+    },
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/experimental/elf-sdk/tests/test_runner.py",
+      "claim": "Dev21 isolated negative controls; never counts as GCC/Classic Linker execution"
     }
   ],
   "related": [

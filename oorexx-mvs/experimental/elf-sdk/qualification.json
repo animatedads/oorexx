@@ -1,16 +1,63 @@
 {
   "schema": "oorexx.mvs.sdk.backend.qual/1",
-  "snapshot": "2026-10-15",
+  "snapshot": "2026-10-29",
   "upstream_repository": "https://github.com/adesutherland/mainframe-elf-sdk",
   "upstream_main_sha": "8801bfe1f4b554b21a435bdf8b049b20bb2eb49e",
   "upstream_develop_sha": "a9aa863c6b657128522b41252b7b72785020e912",
   "sdk_release": "v0.1.0",
   "sdk_linux_x64_sha256": "b8c4c9dfba07122d6983a6aa84d9e00681572630a1dccc6bcf268099ac75ef61",
-  "ooRexx_core_last_proven": {"passed": 190, "permitted": 199, "source": "dev16; inherited through dev20"},
-  "host_harness": {"mock_tests": 12, "mock_tests_pass": 12, "actual_sdk_consumer": "NOT_RUN", "native_cross_compile": "NOT_RUN"},
+  "ooRexx_core_last_proven": {
+    "passed": 190,
+    "permitted": 199,
+    "source": "dev16; inherited through dev21 (no new full translation)"
+  },
+  "host_harness": {
+    "mock_tests": 23,
+    "mock_tests_pass": 23,
+    "real_compiler": "NOT_RUN",
+    "actual_sdk_consumer": "NOT_RUN",
+    "native_cross_compile": "NOT_RUN",
+    "receipt_contract": "PASS_HOST_MOCK",
+    "sdk_result_format": "mainframe-compiler-sdk-consumer-v1",
+    "report_schema": "oorexx.mvs.elf_sdk.host_smoke/2",
+    "bounded_timeout_seconds": 900,
+    "artifact_hashes_checked": [
+      "SDK-MANIFEST.json",
+      "consumer.c",
+      "consumer.elf",
+      "consumer.obj",
+      "RXMVS24.XMI or RXMVS31.XMI"
+    ],
+    "identities_checked": [
+      "profile",
+      "native-member",
+      "AMODE",
+      "RMODE"
+    ],
+    "evidence_path": "oorexx-mvs/evidence/dev21-elf-sdk-host-contract.md"
+  },
   "target_matrix": {
-    "MVS_38J_TK5": {"backend": "legacy cc370 primary; ELF S/370 experimental only", "execution_host": "ED209Z via ED209C", "sdk_runtime_compatible": "NOT_ESTABLISHED", "sdk_native_link": "NOT_RUN", "guest_sdk_probe": "NOT_RUN"},
-    "zOS_TSO31": {"backend": "experimental GCC16.2 ILP32", "sdk_upstream_zos15_entry_qual": "REPORTED_BY_SDK", "sdk_upstream_zos15_selected_file_qual": "REPORTED_BY_SDK", "own_elf_sdk_build": "NOT_RUN", "own_guest_qual": "NOT_RUN", "approved_modern_zos_access": "NOT_ESTABLISHED"},
-    "zOS_TSO24": {"backend": "experimental GCC16.2 S370 ILP32 24-bit addressing", "sdk_upstream_zos15_entry_qual": "REPORTED_BY_SDK", "sdk_upstream_tso24_file_qual": "EXCLUDED", "own_elf_sdk_build": "NOT_RUN", "own_guest_qual": "NOT_RUN"}
+    "MVS_38J_TK5": {
+      "backend": "legacy cc370 primary; ELF S/370 experimental only",
+      "execution_host": "ED209Z via ED209C",
+      "sdk_runtime_compatible": "NOT_ESTABLISHED",
+      "sdk_native_link": "NOT_RUN",
+      "guest_sdk_probe": "NOT_RUN"
+    },
+    "zOS_TSO31": {
+      "backend": "experimental GCC16.2 ILP32",
+      "sdk_upstream_zos15_entry_qual": "REPORTED_BY_SDK",
+      "sdk_upstream_zos15_selected_file_qual": "REPORTED_BY_SDK",
+      "own_elf_sdk_build": "NOT_RUN",
+      "own_guest_qual": "NOT_RUN",
+      "approved_modern_zos_access": "NOT_ESTABLISHED"
+    },
+    "zOS_TSO24": {
+      "backend": "experimental GCC16.2 S370 ILP32 24-bit addressing",
+      "sdk_upstream_zos15_entry_qual": "REPORTED_BY_SDK",
+      "sdk_upstream_tso24_file_qual": "EXCLUDED",
+      "own_elf_sdk_build": "NOT_RUN",
+      "own_guest_qual": "NOT_RUN"
+    }
   }
 }

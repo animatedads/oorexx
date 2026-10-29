@@ -11,7 +11,8 @@
     "Do not relabel profile objects to bypass MLAB1 ABI/service identity checks.",
     "TSO31 ILP32 does not imply its runtime can be executed on MVS 3.8J.",
     "The installed SDK reports upstream z/OS1.5 TSO31 entry plus selected dataset I/O, but our ooRexx SDK consumer has not been run with actual SDK.",
-    "TSO24 dataset I/O is excluded by SDK 0.1.0; do not substitute native entry24 for ooRexx's RecordSet support."
+    "TSO24 dataset I/O is excluded by SDK 0.1.0; do not substitute native entry24 for ooRexx's RecordSet support.",
+    "dev21 host pass is accepted only when the SDK result.json, actual ELF/native deck/XMIT digests, expected native member and AMODE/RMODE match; this is still a host-only result."
   ],
   "authority": "project-artifact",
   "provenance": [
@@ -29,6 +30,11 @@
       "repository": "animatedads/oorexx",
       "path": "oorexx-mvs/experimental/elf-sdk/run-sdk-host-smoke.py",
       "claim": "Documented source/evidence; independent guest qualification not implied"
+    },
+    {
+      "repository": "animatedads/oorexx",
+      "path": "oorexx-mvs/evidence/dev21-elf-sdk-host-contract.md",
+      "claim": "2026-10-29 synthetic-consumer contract test evidence, not real SDK execution"
     }
   ],
   "related": [
