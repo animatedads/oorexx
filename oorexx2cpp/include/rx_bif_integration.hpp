@@ -87,7 +87,7 @@ inline bool decimalLiteral(const std::string& s) {
 }
 // LanguageParser::scanSymbol: what kind of symbol a string is (SYMBOL, VAR and VALUE classify their name with it).
 enum class SymbolScan { Bad, LiteralDot, Numeric, Literal, Name, Stem, Compound };
-inline SymbolScan scanSymbol(const std::string &s) {
+inline SymbolScan scanSymbol(std::string_view s) {
     const std::size_t n = s.size();
     if (n == 0 || n > 250) return SymbolScan::Bad;
     auto symbolChar = [](unsigned char c) {
@@ -205,7 +205,7 @@ inline Value argBif(const std::vector<Value>& args, const Vec& a) {
         const Value* v=slotPtr(a[i]);
         if(!v) return std::string();
         if(v->isObject()) throw std::runtime_error("BIF ARG: invalid arguments");
-        return v->bytes;
+        return v->bytes.str();
     };
     std::size_t count=args.size();
     if(a.empty()) return Value::string(std::to_string(count));
@@ -282,7 +282,7 @@ inline Value formatBifFixed(const std::vector<BifSlot>& a, const ActivationNumer
         given = i<a.size() && a[i];
         if(!given) return dflt;
         if(a[i]->isObject()) throw std::runtime_error("BIF FORMAT: invalid arguments");
-        const std::string& t=a[i]->bytes; std::size_t k=0; long v=0;
+        const std::string_view t = a[i]->bytes.view(); std::size_t k=0; long v=0;
         if(t.empty()) throw std::runtime_error("BIF FORMAT: argument must be a whole number");
         for(;k<t.size();++k){ if(t[k]<'0'||t[k]>'9') throw std::runtime_error("BIF FORMAT: argument must be a whole number"); v=v*10+(t[k]-'0'); }
         return v;
@@ -342,7 +342,7 @@ inline bool quickCount(const Value *slot, std::size_t &out, bool positive) {
             out = static_cast<std::size_t>(c); return true;
         }
     }
-    const std::string &t = slot->bytes;
+    const std::string_view t = slot->bytes.view();
     if (t.empty() || t.size() > 9) return false;
     std::size_t v = 0;
     for (char c : t) { if (c < '0' || c > '9') return false; v = v * 10 + static_cast<std::size_t>(c - '0'); }
@@ -356,7 +356,7 @@ inline bool quickPad(const Value *const *a, std::size_t n, std::size_t i, char &
     if (!quickText(a[i]) || a[i]->bytes.size() != 1) return false;
     pad = a[i]->bytes[0]; return true;
 }
-inline bool quickBlanksOnly(const std::string &s) {
+inline bool quickBlanksOnly(std::string_view s) {
     for (char c : s) if (c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f') return false;
     return true;
 }
@@ -383,7 +383,7 @@ inline QuickBif quickBifOf(const std::string &name) {
 }
 inline std::optional<Value> quickBif(QuickBif which, const Value *const *a, std::size_t n) {
     if (which == QuickBif::None || n == 0 || !quickText(a[0])) return std::nullopt;
-    const std::string &s = a[0]->bytes;
+    const std::string_view s = a[0]->bytes.view();
     switch (which) {
     case QuickBif::Length:
         if (n == 1) return fromInteger(static_cast<std::int64_t>(s.size()));
@@ -391,7 +391,7 @@ inline std::optional<Value> quickBif(QuickBif which, const Value *const *a, std:
     case QuickBif::Lastpos:
         if (n == 2 || n == 3) {
             if (!quickText(a[1])) return std::nullopt;
-            const std::string &hay = a[1]->bytes;
+            const std::string_view hay = a[1]->bytes.view();
             std::size_t start = hay.size();
             if (n == 3 && !quickCount(a[2], start, true)) return std::nullopt;
             if (s.empty() || s.size() > hay.size()) return fromInteger(0);
@@ -406,7 +406,7 @@ inline std::optional<Value> quickBif(QuickBif which, const Value *const *a, std:
         if (n == 2 || n == 3) {
             std::size_t len; char pad;
             if (!quickCount(a[1], len, false) || !quickPad(a, n, 2, pad)) return std::nullopt;
-            std::string out = s.substr(0, std::min(len, s.size()));
+            std::string out(s.substr(0, std::min(len, s.size())));
             out.resize(len, pad);
             return Value(std::move(out));
         }
@@ -414,7 +414,7 @@ inline std::optional<Value> quickBif(QuickBif which, const Value *const *a, std:
     case QuickBif::Pos:
         if (n == 2 || n == 3) {
             if (!quickText(a[1])) return std::nullopt;
-            const std::string &hay = a[1]->bytes;
+            const std::string_view hay = a[1]->bytes.view();
             std::size_t start = 1;
             if (n == 3 && !quickCount(a[2], start, true)) return std::nullopt;
             if (s.empty() || start > hay.size()) return fromInteger(0);
@@ -427,7 +427,7 @@ inline std::optional<Value> quickBif(QuickBif which, const Value *const *a, std:
             std::size_t len; char pad;
             if (!quickCount(a[1], len, false) || !quickPad(a, n, 2, pad)) return std::nullopt;
             if (len <= s.size()) return Value(s.substr(s.size() - len));
-            return Value(std::string(len - s.size(), pad) + s);
+            return Value(std::string(len - s.size(), pad) + std::string(s));
         }
         break;
     case QuickBif::Substr:
@@ -437,7 +437,7 @@ inline std::optional<Value> quickBif(QuickBif which, const Value *const *a, std:
             const std::size_t from = start - 1;
             if (n == 2) return Value(from < s.size() ? s.substr(from) : std::string());
             if (!quickCount(a[2], len, false)) return std::nullopt;
-            std::string out = from < s.size() ? s.substr(from, len) : std::string();
+            std::string out = from < s.size() ? std::string(s.substr(from, len)) : std::string();
             out.resize(len, pad);
             return Value(std::move(out));
         }
@@ -483,10 +483,10 @@ inline std::optional<Value> numericBif(const std::string &name, const std::vecto
     for (const auto &x : a) if (!x || x->isObject()) return std::nullopt;
     if (num.digits < 1 || num.digits > 100000 || num.fuzz >= num.digits) return std::nullopt;
     if (rx::eqLit(name, "DATATYPE") && (a.size() == 1 || a.size() == 2)) {
-        const std::string &v = a[0]->bytes;
+        const std::string_view v = a[0]->bytes.view();
         RexxDecimal d; const char *err = nullptr;
         if (a.size() == 1) return Value::string(tryParseRexxDecimal(*a[0], d, err) ? "NUM" : "CHAR");
-        const std::string &t = a[1]->bytes;
+        const std::string_view t = a[1]->bytes.view();
         if (t.empty()) return std::nullopt;
         const char type = static_cast<char>(std::toupper(static_cast<unsigned char>(t[0])));
         auto all = [&](auto pred) { if (v.empty()) return false; for (unsigned char c : v) if (!pred(c)) return false; return true; };
@@ -575,12 +575,12 @@ inline std::optional<Value> numericBif(const std::string &name, const std::vecto
         return true;
     };
     auto lengthOf = [&](std::size_t i, std::size_t &out) -> bool {
-        const std::string &t = a[i]->bytes;
+        const std::string_view t = a[i]->bytes.view();
         if (t.empty() || t.size() > 9 || t.find_first_not_of("0123456789") != std::string::npos) return false;
-        out = std::stoul(t); return true;
+        out = std::stoul(std::string(t)); return true;
     };
     auto fits = [&](const cpp_int &v) { return decimalDigits(v < 0 ? cpp_int(-v) : v) <= static_cast<int>(num.digits); };
-    auto unsignedOf = [](const std::string &bytes) { cpp_int v = 0; for (unsigned char c : bytes) { v <<= 8; v += c; } return v; };
+    auto unsignedOf = [](std::string_view bytes) { cpp_int v = 0; for (unsigned char c : bytes) { v <<= 8; v += c; } return v; };
     auto hexBytes = [](const std::string &hex, std::string &bytes) -> bool {
         std::string h;
         for (char c : hex) { if (std::isxdigit(static_cast<unsigned char>(c))) h += c; else return false; }
@@ -610,12 +610,12 @@ inline std::optional<Value> numericBif(const std::string &name, const std::vecto
     if (rx::eqLit(name, "C2D") && (a.size() == 1 || a.size() == 2)) {
         cpp_int v;
         if (a.size() == 1) v = unsignedOf(a[0]->bytes);
-        else { std::size_t n; if (!lengthOf(1, n)) return std::nullopt; v = n ? signedOf(a[0]->bytes, n) : cpp_int(0); }
+        else { std::size_t n; if (!lengthOf(1, n)) return std::nullopt; v = n ? signedOf(a[0]->bytes.str(), n) : cpp_int(0); }
         if (!fits(v)) return std::nullopt;
         return Value::string(v.convert_to<std::string>());
     }
     if (rx::eqLit(name, "X2D") && (a.size() == 1 || a.size() == 2)) {
-        std::string hex = a[0]->bytes, bytes;
+        std::string hex = a[0]->bytes.str(), bytes;
         if (hex.find_first_of(" \t") != std::string::npos) return std::nullopt;
         cpp_int v;
         if (a.size() == 1) { if (!hexBytes(hex, bytes)) return std::nullopt; v = unsignedOf(bytes); }
@@ -702,7 +702,7 @@ inline bool numericEdgeArgs(const std::string &name, const std::vector<BifSlot> 
         // length; anything else (decimals, exponents, blanks, a bad length: their errors) is the interpreter's
         if (a.size() > 1) {
             if (!a[1] || a[1]->isObject()) return true;
-            const std::string &len = a[1]->bytes;
+            const std::string_view len = a[1]->bytes.view();
             if (len.empty() || len.size() > 9 || len.find_first_not_of("0123456789") != std::string::npos) return true;
             const std::size_t start = (!first.empty() && first[0] == '-') ? 1 : 0;
             if (first.size() == start || first.find_first_not_of("0123456789", start) != std::string::npos) return true;
@@ -979,7 +979,7 @@ inline std::string u128ToDecimal(unsigned __int128 v) {
     while (v) { out.insert(out.begin(), static_cast<char>('0' + static_cast<int>(v % 10))); v /= 10; }
     return out;
 }
-inline std::optional<unsigned __int128> decimalToU128(const std::string &t) {
+inline std::optional<unsigned __int128> decimalToU128(std::string_view t) {
     if (t.empty() || t.size() > 38 || t.find_first_not_of("0123456789") != std::string::npos) return std::nullopt;
     unsigned __int128 v = 0;
     for (char c : t) v = v * 10 + static_cast<unsigned>(c - '0');
@@ -987,7 +987,7 @@ inline std::optional<unsigned __int128> decimalToU128(const std::string &t) {
 }
 inline std::optional<std::string> fastRadix(const std::string &name, const Value &recv, const std::vector<Value> &args, std::size_t digits) {
     for (const Value &a : args) if (a.isObject()) return std::nullopt;
-    const std::string &r = recv.bytes;
+    const std::string_view r = recv.bytes.view();
     static const char *hexd = "0123456789ABCDEF";
     if (rx::eqLit(name, "C2D") && args.empty()) {
         if (r.size() > 16) return std::nullopt;
@@ -1044,20 +1044,20 @@ inline StringMessageFallback &hostStringBifPrevious() { static StringMessageFall
 // (plain digit arguments, no pad character); every other shape returns nullopt and takes the general engine.
 inline bool plainCount(const Value &v, std::size_t &out) {
     if (v.isObject() || v.bytes.empty() || v.bytes.size() > 9 || v.bytes.find_first_not_of("0123456789") != std::string::npos) return false;
-    out = static_cast<std::size_t>(std::stoul(v.bytes));
+    out = static_cast<std::size_t>(std::stoul(v.bytes.str()));
     return true;
 }
 inline std::optional<std::string> quickStringBif(const std::string &name, const Value &receiver, const std::vector<Value> &args) {
-    const std::string &s = receiver.bytes;
+    const std::string_view s = receiver.bytes.view();
     switch (name.size()) {
     case 6:
         if (rx::eqLit(name, "LENGTH") && args.empty()) return std::to_string(s.size());
         if (rx::eqLit(name, "BITXOR") || rx::eqLit(name, "BITAND")) {
             if (args.size() != 1 || args[0].isObject()) return std::nullopt;
-            const std::string &t = args[0].bytes;
-            const std::string &longer = s.size() >= t.size() ? s : t;
+            const std::string_view t = args[0].bytes.view();
+            const std::string_view longer = s.size() >= t.size() ? s : t;
             const std::size_t m = s.size() < t.size() ? s.size() : t.size();
-            std::string r = longer;                       // BITXOR keeps the longer operand's tail; BITAND likewise (no pad)
+            std::string r(longer);                       // BITXOR keeps the longer operand's tail; BITAND likewise (no pad)
             if (rx::eqLit(name, "BITXOR")) for (std::size_t i = 0; i < m; i++) r[i] = static_cast<char>(s[i] ^ t[i]);
             else for (std::size_t i = 0; i < m; i++) r[i] = static_cast<char>(s[i] & t[i]);
             return r;
@@ -1066,10 +1066,10 @@ inline std::optional<std::string> quickStringBif(const std::string &name, const 
     default: break;
     }
     if (rx::eqLit(name, "BITOR") && args.size() == 1 && !args[0].isObject()) {
-        const std::string &t = args[0].bytes;
-        const std::string &longer = s.size() >= t.size() ? s : t;
+        const std::string_view t = args[0].bytes.view();
+        const std::string_view longer = s.size() >= t.size() ? s : t;
         const std::size_t m = s.size() < t.size() ? s.size() : t.size();
-        std::string r = longer;
+        std::string r(longer);
         for (std::size_t i = 0; i < m; i++) r[i] = static_cast<char>(s[i] | t[i]);
         return r;
     }
@@ -1078,16 +1078,16 @@ inline std::optional<std::string> quickStringBif(const std::string &name, const 
         std::size_t n, len = 0;
         if (!plainCount(args[0], n) || n < 1) return std::nullopt;
         const std::size_t start = n - 1, avail = start < s.size() ? s.size() - start : 0;
-        if (args.size() == 1) return s.substr(start < s.size() ? start : s.size());
+        if (args.size() == 1) return std::string(s.substr(start < s.size() ? start : s.size()));
         if (!plainCount(args[1], len)) return std::nullopt;
         const std::size_t take = len < avail ? len : avail;
-        return (avail ? s.substr(start, take) : std::string()) + std::string(len - take, ' ');
+        return (avail ? std::string(s.substr(start, take)) : std::string()) + std::string(len - take, ' ');
     }
     if ((rx::eqLit(name, "LEFT") || rx::eqLit(name, "RIGHT")) && args.size() == 1) {
         std::size_t len;
         if (!plainCount(args[0], len)) return std::nullopt;
-        if (rx::eqLit(name, "LEFT")) return len <= s.size() ? s.substr(0, len) : s + std::string(len - s.size(), ' ');
-        return len <= s.size() ? s.substr(s.size() - len) : std::string(len - s.size(), ' ') + s;
+        if (rx::eqLit(name, "LEFT")) return len <= s.size() ? std::string(s.substr(0, len)) : std::string(s) + std::string(len - s.size(), ' ');
+        return len <= s.size() ? std::string(s.substr(s.size() - len)) : std::string(len - s.size(), ' ') + std::string(s);
     }
     if (rx::eqLit(name, "C2X") && args.empty()) {
         static const char hex[] = "0123456789ABCDEF";
@@ -1106,7 +1106,7 @@ inline void *stringIsAKey(const Value &cls) {
 }
 // String methods that are hot in parsers (json.cls): [] (no padding), VERIFY with options, ISA of a class object.
 inline std::optional<MessageResult> quickStringMethod(const std::string &name, const Value &receiver, const std::vector<Value> &args) {
-    const std::string &s = receiver.bytes;
+    const std::string_view s = receiver.bytes.view();
     auto count = [](const Value &v, std::size_t &out, bool positive) {
         if (v.isObject()) return false;
         const std::string &t = v.bytes.str();
@@ -1208,7 +1208,7 @@ inline std::optional<MessageResult> quickStringMethod(const std::string &name, c
     // A string's STRING / MAKESTRING / REQUEST('STRING') is the string itself.
     if ((rx::eqLit(name, "STRING") || rx::eqLit(name, "MAKESTRING")) && args.empty()) return MessageResult(receiver);
     if (rx::eqLit(name, "REQUEST") && args.size() == 1 && !args[0].isObject()) {
-        std::string w = args[0].bytes;
+        std::string w = args[0].bytes.str();
         for (char &c : w) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
         if (w == "STRING") return MessageResult(receiver);
         return std::nullopt;
@@ -1225,7 +1225,7 @@ inline std::optional<MessageResult> quickStringMethod(const std::string &name, c
         std::size_t start = 1, range = std::string::npos;
         if (args.size() >= 2 && !count(args[1], start, true)) return std::nullopt;
         if (args.size() == 3 && !count(args[2], range, false)) return std::nullopt;
-        const std::string &needle = args[0].bytes;
+        const std::string_view needle = args[0].bytes.view();
         const std::size_t from = start - 1;
         if (from >= s.size() || needle.empty()) return MessageResult(Value::string("0"));
         range = std::min(range, s.size() - from);
@@ -1240,7 +1240,7 @@ inline std::optional<MessageResult> quickStringMethod(const std::string &name, c
     if ((caselessWord || rx::eqLit(name, "CONTAINSWORD")) && !args.empty() && args.size() <= 2 && plainArgs()) {
         std::size_t start = 1;
         if (args.size() == 2 && !count(args[1], start, true)) return std::nullopt;
-        auto words = [](const std::string &t) {
+        auto words = [](std::string_view t) {
             std::vector<std::pair<std::size_t, std::size_t>> w;
             std::size_t i = 0;
             while (i < t.size()) {
@@ -1252,7 +1252,7 @@ inline std::optional<MessageResult> quickStringMethod(const std::string &name, c
             }
             return w;
         };
-        const std::string &phrase = args[0].bytes;
+        const std::string_view phrase = args[0].bytes.view();
         const auto hw = words(s), nw = words(phrase);
         if (nw.empty() || start > hw.size() || nw.size() > hw.size() - start + 1) return MessageResult(Value::string("0"));
         auto up = [](unsigned char c) { return (c >= 'a' && c <= 'z') ? c - 32 : c; };
@@ -1271,14 +1271,14 @@ inline std::optional<MessageResult> quickStringMethod(const std::string &name, c
         return MessageResult(Value::string("0"));
     }
     if (rx::eqLit(name, "COUNTSTR") && args.size() == 1 && plainArgs()) {
-        const std::string &needle = args[0].bytes;
+        const std::string_view needle = args[0].bytes.view();
         std::size_t n = 0;
         if (!needle.empty())
             for (std::size_t at = s.find(needle); at != std::string::npos; at = s.find(needle, at + needle.size())) ++n;
         return MessageResult(Value::string(std::to_string(n)));
     }
     if (rx::eqLit(name, "CHANGESTR") && (args.size() == 2 || args.size() == 3) && plainArgs()) {
-        const std::string &needle = args[0].bytes, &repl = args[1].bytes;
+        const std::string_view needle = args[0].bytes.view(), repl = args[1].bytes.view();
         std::size_t limit = std::string::npos;
         if (args.size() == 3 && !count(args[2], limit, false)) return std::nullopt;
         if (needle.empty() || limit == 0) return MessageResult(receiver);
@@ -1326,7 +1326,7 @@ inline MessageResult hostStringBif(const Value &receiver, const std::string &sel
         }
     if (rx::eqLit(name, "SUBCHAR") && args.size() == 1 && !args[0].isObject() && !args[0].bytes.empty() && args[0].bytes.size() < 10 &&
         args[0].bytes.find_first_not_of("0123456789") == std::string::npos) {
-        const unsigned long n = std::stoul(args[0].bytes);   // SUBCHAR(n): the n-th character, "" beyond the end
+        const unsigned long n = std::stoul(args[0].bytes.str());   // SUBCHAR(n): the n-th character, "" beyond the end
         if (n >= 1) return MessageResult(Value::string(n <= receiver.bytes.size() ? std::string(1, receiver.bytes[n - 1]) : std::string()));
     }
     if (rx::eqLit(name, "DATATYPE") || rx::eqLit(name, "ABS") || rx::eqLit(name, "MAX") || rx::eqLit(name, "MIN") || rx::eqLit(name, "C2D") || rx::eqLit(name, "D2C") || rx::eqLit(name, "X2D") || rx::eqLit(name, "D2X")) {

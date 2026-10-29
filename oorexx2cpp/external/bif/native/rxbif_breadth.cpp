@@ -128,7 +128,7 @@ rx::Value invoke(const std::string& requested, const std::vector<Slot>& a, Conte
         const bool supplied=a.size()==2 && a[1].has_value();
         std::size_t width=0;
         if(supplied){
-            const auto parsed=rxbif_x2d::parseWidth(a[1]->bytes);
+            const auto parsed=rxbif_x2d::parseWidth(a[1]->bytes.str());
             if(parsed.kind==rxbif_x2d::WidthKind::Invalid)
                 throw std::runtime_error("BIF X2D: invalid width");
             if(parsed.kind==rxbif_x2d::WidthKind::Unqualified)
@@ -139,7 +139,7 @@ rx::Value invoke(const std::string& requested, const std::vector<Slot>& a, Conte
             ? std::optional<NumericContext>{ctx.currentNumeric()} : ctx.numeric;
         if(!numeric)throw std::runtime_error("BIF X2D: original NUMERIC context required");
         validateNumericContext(*numeric);
-        const auto result=rxbif_x2d::run(a[0]->bytes,supplied,width,numeric->digits);
+        const auto result=rxbif_x2d::run(a[0]->bytes.str(),supplied,width,numeric->digits);
         if(result.status==rxbif_x2d::Status::Value)return rx::Value::string(result.decimal);
         if(result.status==rxbif_x2d::Status::InvalidHex)
             throw std::runtime_error("BIF X2D: invalid hex digits or grouping");
@@ -154,7 +154,7 @@ rx::Value invoke(const std::string& requested, const std::vector<Slot>& a, Conte
             std::size_t decimals=0;
             bool qualified=true;
             if(a.size()==2 && a[1]) {
-                const auto places=rxbif_trunc::parsePlaces(a[1]->bytes);
+                const auto places=rxbif_trunc::parsePlaces(a[1]->bytes.str());
                 if(places.kind==rxbif_trunc::PlacesKind::Invalid)
                     throw std::runtime_error("BIF TRUNC: invalid decimal places");
                 if(places.kind==rxbif_trunc::PlacesKind::Canonical)
@@ -168,7 +168,7 @@ rx::Value invoke(const std::string& requested, const std::vector<Slot>& a, Conte
                   ? std::optional<NumericContext>{ctx.currentNumeric()}:ctx.numeric;
                 if(!settings)throw std::runtime_error("BIF TRUNC: caller NUMERIC context missing");
                 validateNumericContext(*settings);
-                auto value=rxbif_trunc::run(a[0]->bytes,settings->digits,decimals);
+                auto value=rxbif_trunc::run(a[0]->bytes.str(),settings->digits,decimals);
                 if(value.status==rxbif_trunc::Status::Valid)
                     return rx::Value::string(value.bytes);
                 if(value.status==rxbif_trunc::Status::Invalid)
@@ -187,7 +187,7 @@ rx::Value invoke(const std::string& requested, const std::vector<Slot>& a, Conte
         const unsigned char ch = static_cast<unsigned char>(a[1]->bytes[0]);
         if (ch == 'S' || ch == 's' || ch == 'V' || ch == 'v')
             return rx::Value::string(rxbif_symbol::datatype(
-                a[0]->bytes, static_cast<char>(ch == 's' ? 'S' : ch == 'v' ? 'V' : ch)) ? "1" : "0");
+                a[0]->bytes.str(), static_cast<char>(ch == 's' ? 'S' : ch == 'v' ? 'V' : ch)) ? "1" : "0");
     }
 
     const std::string mode = found->mode;

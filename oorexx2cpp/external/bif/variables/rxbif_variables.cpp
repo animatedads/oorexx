@@ -11,7 +11,7 @@ std::string upper(std::string s) {
 std::string scalar(const Slot& a, const char* what) {
   if (!a || a->isObject())
     throw std::runtime_error(std::string("BIF variable: missing or unqualified ")+what);
-  return a->bytes;
+  return a->bytes.str();
 }
 // A variable's value: any object (rx::Value keeps its identity and lifetime, as a variable does).
 rx::Value priorResult(const Slot& value) {

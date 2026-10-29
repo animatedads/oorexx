@@ -104,7 +104,7 @@ inline rx::Value sysSleep(const std::vector<Slot>& args, Sleeper sleep=posixLong
     if(args.empty() || !args[0]) throw ArgumentError(ErrorKind::Missing);
     if(args.size()!=1) throw ArgumentError(ErrorKind::TooMany);
     if(args[0]->isObject())throw ArgumentError(ErrorKind::ObjectUnqualified);
-    const double seconds=secondsFromString(args[0]->bytes);
+    const double seconds=secondsFromString(args[0]->bytes.str());
     if(seconds<0.0 || seconds>2147483.0)
         throw ArgumentError(ErrorKind::Range);
     // Source implementation converts seconds to integer microseconds, truncating.

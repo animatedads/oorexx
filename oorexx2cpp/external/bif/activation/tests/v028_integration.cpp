@@ -37,7 +37,7 @@ int main(int argc,char**argv){
         throw std::runtime_error("unreachable");
     };
     rxbif_v028::Router bridge(native,pool,[&]{return frame;},control);
-    auto invoke=[&](const std::string& name,const std::vector<Slot>& args=std::vector<Slot>{})->std::string {return bridge.invoke(name,args).bytes;};
+    auto invoke=[&](const std::string& name,const std::vector<Slot>& args=std::vector<Slot>{})->std::string {return bridge.invoke(name,args).bytes.str();};
     assert(invoke("digits")=="9"); assert(invoke("fuzz")=="0"); assert(invoke("form")=="SCIENTIFIC");
     outer.numeric.digits=16;outer.numeric.fuzz=3;outer.numeric.engineering=true;
     assert(invoke("DIGITS")=="16");assert(invoke("FUZZ")=="3");assert(invoke("FORM")=="ENGINEERING");

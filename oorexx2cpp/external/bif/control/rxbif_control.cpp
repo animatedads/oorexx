@@ -12,7 +12,7 @@ std::string upper(std::string s) {
 std::string scalar(const Slot& value, const char* name) {
     if (!value || value->isObject())
         throw std::runtime_error(std::string("BIF ") + name + ": missing or object argument requires interpreter ABI");
-    return value->bytes;
+    return value->bytes.str();
 }
 std::size_t sourcePosition(const Slot& slot) {
     const auto text = scalar(slot, "SOURCELINE");

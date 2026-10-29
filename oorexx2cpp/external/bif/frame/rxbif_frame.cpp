@@ -16,7 +16,7 @@ std::string upper(std::string in) {
 std::size_t positivePosition(const Slot& value) {
     if (!value || value->isObject())
         throw std::runtime_error("BIF ARG: position must be a positive whole number");
-    const std::string& s = value->bytes;
+    const std::string s = value->bytes.str();
     if (s.empty()) throw std::runtime_error("BIF ARG: empty position");
     std::size_t n = 0;
     for (unsigned char c : s) {

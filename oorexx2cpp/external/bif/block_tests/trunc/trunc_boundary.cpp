@@ -12,7 +12,7 @@ int main() {
         }, {}, [&] { ++snapshots;return rxbif_breadth::NumericContext{
                    static_cast<std::size_t>(digits),0,rxbif_breadth::NumericForm::Scientific}; });
     auto invoke=[&](const std::string& s)->std::string {
-        return rxbif_breadth::invoke("TRUNC",{rx::Value::string(s),rx::Value::string("4")},context).bytes;
+        return rxbif_breadth::invoke("TRUNC",{rx::Value::string(s),rx::Value::string("4")},context).bytes.str();
     };
     assert(invoke("1.9999")=="2.0000");
     digits=5;

@@ -17,7 +17,7 @@ inline void *environmentObject(const std::string &) { return nullptr; }
 inline void *environmentEntry(const std::string &) { return nullptr; }
 inline void *selfHandle() { return nullptr; }   // the kernel backend has no receiver
 inline void *nilObject() { return rxkernel::nil(); }
-inline void *stringHandle(const std::string &) { throw std::runtime_error("interpreter String fallback is not available in kernel mode"); }
+inline void *stringHandle(std::string_view) { throw std::runtime_error("interpreter String fallback is not available in kernel mode"); }
 inline bool send(void *t, const std::string &s, const std::vector<Arg> &a, Result &r, std::string &c, std::string &x) {
     return rxkernel::send(t, s, a, r, c, x);
 }
@@ -164,7 +164,7 @@ inline void *selfHandle() {
     if (!current || currentSelf == NULLOBJECT) return nullptr;
     return (void *)rxobj::pinRef(current, currentSelf);
 }
-inline void *stringHandle(const std::string &bytes) {
+inline void *stringHandle(std::string_view bytes) {
     RexxThreadContext *t = current;
     if (!t) throw std::runtime_error("interpreter object used outside a native entry");
     RexxStringObject str = t->NewString(bytes.data(), bytes.size());
@@ -881,7 +881,7 @@ inline void bifStat(const std::string &name) {
 inline void bifStat(const char *name) { if (bifStatsOn()) bifStat(std::string(name)); }
 // Delegated BIFs run in the host interpreter: a tiny routine per (name, omission pattern, NUMERIC settings), cached.
 // receiver~selector(args) for a String receiver, executed under the caller's NUMERIC settings (omitted arguments stay omitted).
-inline bool sendStringNumeric(const std::string &receiver, const std::string &selector, const std::vector<Arg> &args,
+inline bool sendStringNumeric(std::string_view receiver, const std::string &selector, const std::vector<Arg> &args,
                               std::size_t digits, std::size_t fuzz, bool engineering, Result &out,
                               std::string &code, std::string &text) {
     RexxThreadContext *t = need();
@@ -2297,14 +2297,14 @@ struct NativeMutableBufferClass final : NativeRefBase {
         // NEW([string] [, buffersize]): the initial content; the size is only a capacity hint.
         if (rx::eqLit(selector, "NEW") && args.size() <= 2 && NativeMutableBuffer::plain(args)) {
             if (args.size() == 2) {
-                const std::string &n = args[1].bytes;
+                const std::string_view n = args[1].bytes.view();
                 if (n.empty() || n.find_first_not_of("0123456789") != std::string::npos)
                     return interpreterClass().object->sendMessage(selector, args);   // let the interpreter raise its error
             }
             auto buffer = std::make_shared<NativeMutableBuffer>(args.empty() ? std::string() : args[0].bytes.str());
             if (args.size() == 2) {
-                const std::string &n = args[1].bytes;
-                buffer->data.reserve(n.size() > 8 ? std::size_t(1) << 26 : std::min<std::size_t>(std::stoull(n), std::size_t(1) << 26));
+                const std::string_view n = args[1].bytes.view();
+                buffer->data.reserve(n.size() > 8 ? std::size_t(1) << 26 : std::min<std::size_t>(std::stoull(std::string(n)), std::size_t(1) << 26));
             }
             return Value::fromObject(buffer);
         }
@@ -2353,7 +2353,7 @@ struct NativeArray final : NativeRefBase, ItemSnapshot, std::enable_shared_from_
             if (c <= 0) return false;
             if ((m & NumCache::pending) || v.bytes.size() <= 9) { out = static_cast<std::size_t>(c); return true; }
         }
-        const std::string &s = v.bytes;
+        const std::string_view s = v.bytes.view();
         std::size_t a = s.find_first_not_of(' '), b = s.find_last_not_of(' ');
         if (a == std::string::npos || b - a + 1 > 9) return false;
         std::size_t n = 0;
@@ -2482,7 +2482,7 @@ struct NativeArrayClass final : NativeRefBase {
             std::size_t n = 0;
             if (args.empty()) return Value::fromObject(std::make_shared<NativeArray>(0, false));
             if (args.size() == 1 && !args[0].isObject()) {
-                const std::string &s = args[0].bytes;
+                const std::string_view s = args[0].bytes.view();
                 const std::size_t a = s.find_first_not_of(' ');
                 if (a != std::string::npos && s.substr(a, s.find_last_not_of(' ') - a + 1) == "0")
                     return Value::fromObject(std::make_shared<NativeArray>(0));
@@ -2638,17 +2638,17 @@ struct NativeDirectory final : NativeRefBase, std::enable_shared_from_this<Nativ
         const std::size_t n = args.size();
         const bool key0 = n >= 1 && !args[n == 2 ? 1 : 0].isObject();
         if ((rx::eqLit(selector, "[]") || rx::eqLit(selector, "AT")) && n == 1 && key0) {
-            auto it = entries.find(args[0].bytes);
+            auto it = entries.find(args[0].bytes.str());
             return it == entries.end() ? nil() : it->second;
         }
         if ((rx::eqLit(selector, "[]=") || rx::eqLit(selector, "PUT")) && n == 2 && key0 && !NativeArray::omitted(args[0])) {
-            const std::string &k = args[1].bytes;
+            const std::string k = args[1].bytes.str();
             auto it = entries.find(k);
             if (it == entries.end()) { order.push_back(k); entries.emplace(k, args[0]); }
             else it->second = args[0];
             return std::nullopt;
         }
-        if (rx::eqLit(selector, "HASINDEX") && n == 1 && key0) return Value::string(entries.count(args[0].bytes) ? "1" : "0");
+        if (rx::eqLit(selector, "HASINDEX") && n == 1 && key0) return Value::string(entries.count(args[0].bytes.str()) ? "1" : "0");
         // DirectoryClass::unknown: a message that is no Directory method names an entry: NAME= sets it, NAME answers
         // it (.nil when absent). (d~w1 = x; d~w1)
         if (!selector.empty() && ((n == 0 && selector.back() != '=') || (n == 1 && selector.size() > 1 && selector.back() == '=' &&
@@ -3320,7 +3320,7 @@ inline const bool collectInstalled = (collectHook() = &interpreterCollect, true)
 inline std::atomic<unsigned long> &interpretCounter() { static std::atomic<unsigned long> n{0}; return n; }
 // INTERPRET data must not contain labels (47.1, a translation error: nothing of the string runs). A label is a symbol
 // followed by ':' where a clause starts (after ';', a line end that is not a continuation, or another label).
-inline void interpretLabelCheck(const std::string &src) {
+inline void interpretLabelCheck(std::string_view src) {
     auto symbolChar = [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '.' || c == '_' || c == '!' || c == '?'; };
     bool clauseStart = true, continued = false;
     std::size_t i = 0, n = src.size();
@@ -3353,7 +3353,7 @@ inline void interpretLabelCheck(const std::string &src) {
                 std::size_t k = i;
                 while (k < n && (src[k] == ' ' || src[k] == '\t')) ++k;
                 if (k < n && src[k] == ':' && !(k + 1 < n && src[k + 1] == ':')) {
-                    std::string label = src.substr(first, i - first);
+                    std::string label(src.substr(first, i - first));
                     for (char &ch : label) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
                     SyntaxCondition e("47.1", "INTERPRET data must not contain labels; found \"" + label + "\"", false);
                     e.substitutions.push_back(Value::string(label));

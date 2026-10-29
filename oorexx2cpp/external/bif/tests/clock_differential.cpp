@@ -55,7 +55,7 @@ int main(int argc,char**argv){
  rxbif::Context c;
  for(size_t i=0;i<cases.size();i++){
    std::vector<rx::Value> a;for(const auto&s:cases[i].args)a.push_back(rx::Value::string(s));
-   try{std::cout<<i<<":"<<hex(rxbif::invoke(cases[i].name,a,c).bytes)<<"\n";}
+   try{std::cout<<i<<":"<<hex(rxbif::invoke(cases[i].name,a,c).bytes.str())<<"\n";}
    catch(const std::exception&e){std::cerr<<"clock case "<<i<<" "<<cases[i].name<<": "<<e.what()<<"\n";return 1;}
  }
 }

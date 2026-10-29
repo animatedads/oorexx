@@ -93,7 +93,7 @@ private:
     static std::string scalar(const rx::Value& value) {
         if (value.isObject())
             throw std::runtime_error("rxext: object variable requires qualified object ABI");
-        return value.bytes;
+        return value.bytes.str();
     }
     rxext::Host& host_;
     PoolSupplier owner_;
