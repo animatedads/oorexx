@@ -64,14 +64,6 @@ inline std::string symbolUpper(const std::string& in) {
     for (char& c : out) c=static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
     return out;
 }
-inline bool basicSymbolPart(const std::string& s) {
-    if(s.empty()) return false;
-    const auto initial=[](unsigned char c) {return (c>='A'&&c<='Z') || (c>='a'&&c<='z') || c=='_';};
-    const auto rest=[&](unsigned char c) {return initial(c)||(c>='0'&&c<='9');};
-    if(!initial(static_cast<unsigned char>(s.front()))) return false;
-    for(char c:s) if(!rest(static_cast<unsigned char>(c))) return false;
-    return true;
-}
 inline bool decimalLiteral(const std::string& s) {
     if(s.empty()) return false;
     // Rexx constant strings: only unambiguous decimal literals in this subset.

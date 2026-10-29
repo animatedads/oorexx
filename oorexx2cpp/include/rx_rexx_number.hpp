@@ -340,41 +340,6 @@ inline bool smallDecimal(const Value &v, std::int64_t &coef, int &exp) {
     return true;
 }
 inline int smallDigits(unsigned __int128 v) { return digitCount(v); }   // (by comparison: no 128-bit division per digit)
-// Exact fixed-notation result (exponent in [-2*DIGITS, 0], significant digits within DIGITS), else nullopt.
-inline std::optional<Value> smallDecimalResult(__int128 c, int e, const ActivationNumeric &ctx) {
-    if (c == 0) return pendingNumber(0, 0);
-    const bool neg = c < 0;
-    unsigned __int128 u = neg ? static_cast<unsigned __int128>(-c) : static_cast<unsigned __int128>(c);
-    if (e > 0 || e < -2 * static_cast<int>(ctx.digits) || digitCount(u) > static_cast<int>(ctx.digits)) return std::nullopt;
-    return pendingNumber(static_cast<std::int64_t>(c), e);   // (digits <= 18: fits)
-}
-inline std::optional<Value> smallDecimalAdd(const Value &a, const Value &b, bool subtract, const ActivationNumeric &ctx) {
-    if (ctx.digits > 18 || ctx.digits < 1) return std::nullopt;
-    std::int64_t x, y; int ex, ey;
-    if (!smallDecimal(a, x, ex) || !smallDecimal(b, y, ey) || x == 0 || y == 0) return std::nullopt;
-    if (smallDigits(static_cast<unsigned __int128>(x < 0 ? -x : x)) > static_cast<int>(ctx.digits) ||
-        smallDigits(static_cast<unsigned __int128>(y < 0 ? -y : y)) > static_cast<int>(ctx.digits)) return std::nullopt;
-    const int e = std::min(ex, ey);
-    if (ex - e > 18 || ey - e > 18) return std::nullopt;
-    // ooRexx keeps DIGITS places counted from the larger operand's leading digit: exact only if no place is lost.
-    const int xd = ex + smallDigits(static_cast<unsigned __int128>(x < 0 ? -x : x)) - 1;
-    const int yd = ey + smallDigits(static_cast<unsigned __int128>(y < 0 ? -y : y)) - 1;
-    if (e < std::max(xd, yd) - static_cast<int>(ctx.digits) + 1) return std::nullopt;
-    static const std::int64_t p10[19] = {1LL,10LL,100LL,1000LL,10000LL,100000LL,1000000LL,10000000LL,100000000LL,1000000000LL,
-        10000000000LL,100000000000LL,1000000000000LL,10000000000000LL,100000000000000LL,1000000000000000LL,
-        10000000000000000LL,100000000000000000LL,1000000000000000000LL};
-    const __int128 sx = static_cast<__int128>(x) * p10[ex - e], sy = static_cast<__int128>(y) * p10[ey - e];
-    return smallDecimalResult(subtract ? sx - sy : sx + sy, e, ctx);
-}
-inline std::optional<Value> smallDecimalMul(const Value &a, const Value &b, const ActivationNumeric &ctx) {
-    if (ctx.digits > 18 || ctx.digits < 1) return std::nullopt;
-    std::int64_t x, y; int ex, ey;
-    if (!smallDecimal(a, x, ex) || !smallDecimal(b, y, ey)) return std::nullopt;
-    if (smallDigits(static_cast<unsigned __int128>(x < 0 ? -x : x)) > static_cast<int>(ctx.digits) ||
-        smallDigits(static_cast<unsigned __int128>(y < 0 ? -y : y)) > static_cast<int>(ctx.digits)) return std::nullopt;
-    if (x == 0 || y == 0) return std::nullopt;
-    return smallDecimalResult(static_cast<__int128>(x) * y, ex + ey, ctx);
-}
 // Exact relation of two short decimals when their difference is exact under DIGITS (no FUZZ); false = use the full path.
 inline bool smallDecimalRelation(const Value &a, const Value &b, const ActivationNumeric &ctx, int &rel) {
     std::int64_t cx, cy; int ex, ey;
@@ -546,7 +511,6 @@ inline int digitsOf(unsigned __int128 u, char *out) {   // most significant firs
     for (int i = 0; i < n; ++i) out[i] = tmp[n - 1 - i];
     return n;
 }
-inline unsigned __int128 pow10u(int n) { unsigned __int128 p = 1; while (n-- > 0) p *= 10; return p; }
 // formatRexxDecimal (not division) for a fixed-notation result; false when it would be exponential.
 inline bool format(bool negative, unsigned __int128 u, long exp, const ActivationNumeric &ctx, std::string &out) {
     if (u == 0) { out = "0"; return true; }
@@ -588,13 +552,6 @@ inline Fixed fixedResult(bool negative, unsigned __int128 u, long exp, const Act
     if (adjusted >= static_cast<long>(ctx.digits) || std::labs(exp) > 2 * static_cast<long>(ctx.digits)) return Fixed{};
     const std::int64_t c = static_cast<std::int64_t>(u);   // u < 10**DIGITS <= 10**18
     return Fixed{true, negative ? -c : c, static_cast<int>(exp)};
-}
-// digits of a 64-bit magnitude, most significant first
-inline int digitsOf64(std::uint64_t u, char *out) {
-    char tmp[24]; int n = 0;
-    do { tmp[n++] = static_cast<char>(u % 10); u /= 10; } while (u);
-    for (int i = 0; i < n; ++i) out[i] = tmp[n - 1 - i];
-    return n;
 }
 inline bool operand(const Value &v, const ActivationNumeric &ctx, std::int64_t &c, int &e, int &len) {
     if (!smallDecimal(v, c, e)) return false;
@@ -803,15 +760,6 @@ inline int numericRelationDecimal(RexxDecimal x, RexxDecimal y, const Activation
     const RexxDecimal diff = oorexx_addsub::addSub(x, y, true, digits);
     return (diff.coefficient > 0) - (diff.coefficient < 0);
 }
-inline int numericRelation(const Value &a, const Value &b, const ActivationNumeric &ctx) {
-    const RexxDecimal x = parseRexxDecimal(a);
-    const RexxDecimal y = parseRexxDecimal(b);
-    return numericRelationDecimal(x, y, ctx);
-}
-inline bool numericString(const Value &v) {
-    RexxDecimal d; const char *err = nullptr;
-    return tryParseRexxDecimal(v, d, err);
-}
 // Comparison operators, decoded once from the selector text.
 enum class CmpOp { Eq, Ne, StrictEq, StrictNe, Lt, Le, Gt, Ge, SLt, SLe, SGt, SGe, None };
 inline CmpOp cmpOpOf(const char *op, std::size_t n) {
@@ -1014,20 +962,6 @@ inline Value numericPower(const Value &a, const Value &b, const ActivationNumeri
     checkExponentOverflow(acc);
     while (acc.coefficient != 0 && acc.coefficient % 10 == 0) { acc.coefficient /= 10; ++acc.exponent; }
     return Value::number(formatRexxDecimal(acc, ctx, false, true));
-}
-inline bool withinNumeric(const Value &current, const Value &limit, const Value &step,
-                          const ActivationNumeric &ctx) {
-    std::int64_t c, l, st;
-    if (smallInteger(step, ctx, st) && smallInteger(current, ctx, c) && smallInteger(limit, ctx, l)) {
-        if (st == 0) throw std::runtime_error("DO BY 0");
-        return st > 0 ? c <= l : c >= l;
-    }
-    static const Value zero = Value::number("0");
-    int direction, comparison;
-    if (!smallDecimalRelation(step, zero, ctx, direction)) direction = numericRelation(step, zero, ctx);
-    if (!direction) throw std::runtime_error("DO BY 0");
-    if (!smallDecimalRelation(current, limit, ctx, comparison)) comparison = numericRelation(current, limit, ctx);
-    return direction > 0 ? comparison <= 0 : comparison >= 0;
 }
 // requestUnsignedNumber under the current DIGITS: a number that rounds (at DIGITS) to a non-negative whole number.
 // requestUnsignedNumber under the current DIGITS.
