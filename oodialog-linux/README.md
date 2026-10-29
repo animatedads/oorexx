@@ -37,3 +37,17 @@ Run on the native Qt6 host after building `native/`:
 ```sh
 QT_QPA_PLATFORM=offscreen PYTHONPATH="$PWD/build-native" python3 tests/native_listener_reentrant.py
 ```
+
+## Dev14 — 29 October 2026
+- The native `open_dialog` checks dimensions before creating `QApplication`; invalid requests have no Qt initialization side effect.
+- Added `tests/native_dialog_reopen.py` to check validation, callback return and listener isolation on close/reopen.
+- Sphere: `sphere/oodialog_linux_dev13.md`, with dev14 addendum.
+- Rasen Falcon lane: `oodialog_linux`; status request `REQ-00001969`.
+- No autobuilder used. Native dev14 compilation and in-process `oorexxpython` invocation remain outstanding.
+
+Run on an openSUSE host with Qt6 Widgets/Python development headers:
+```sh
+cmake -S native -B build-native
+cmake --build build-native -j
+QT_QPA_PLATFORM=offscreen PYTHONPATH="$PWD/build-native" python3 tests/native_dialog_reopen.py
+```
