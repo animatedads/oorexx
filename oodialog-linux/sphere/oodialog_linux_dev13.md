@@ -48,3 +48,13 @@ These source changes are published. The new native test is not executed in this 
 
 ## Sphere governance
 This is a source-controlled documentation sphere for project continuity. It has not been registered, validated or published as a formal LLM Gopher sphere; no such authority is claimed.
+
+
+## Dev14 progress — 2026-10-29
+Rasen Falcon lane: `oodialog_linux` created with authenticated CHATGPT principal. Linked artifact aliases: `oodialog_linux` and `oodialog-linux`. This is distinct from formal Gopher sphere publication.
+
+Native source change: `open_dialog` validates dimensions before initializing `QApplication`, avoiding GUI initialization as a side effect of invalid inputs. Regression: `tests/native_dialog_reopen.py` tests validation, synchronous CLICKED return, close/reopen, and listener isolation between two dialogs.
+
+Git commits: `a3e9d88181a00a680b176dca83802fc8e1a1d470` (native correction), `b96adcbfbb2c4a5b7385639f960cb18411c237cd` (regression). CI is not available; native dev14 execution and direct `oorexxpython` integration remain unverified. No autobuilder execution was attempted.
+
+Project dependencies: RC conversion/executable resource tree is separately owned. The ooDialog lane does not own HTTPS, LDAP, SMTP/IMAP or MU-MI transport deployment; no deployment claim is made for those priorities.
