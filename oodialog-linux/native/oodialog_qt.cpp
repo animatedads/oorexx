@@ -67,6 +67,10 @@ PyObject* openDialog(PyObject*, PyObject* args) {
   const char* title = "ooDialog Linux";
   int width = 480, height = 320;
   if (!PyArg_ParseTuple(args, "|sii", &title, &width, &height)) return nullptr;
+  if (width <= 0 || height <= 0) {
+    PyErr_SetString(PyExc_ValueError, "dialog dimensions must be positive");
+    return nullptr;
+  }
   if (!app) {
     if (QCoreApplication::instance()) {
       PyErr_SetString(PyExc_RuntimeError, "existing Qt application is not owned by this adapter");
@@ -76,7 +80,6 @@ PyObject* openDialog(PyObject*, PyObject* args) {
     app->setQuitOnLastWindowClosed(false);
     ownerThread = PyThread_get_thread_ident();
   }
-  if (width <= 0 || height <= 0) {PyErr_SetString(PyExc_ValueError, "dialog dimensions must be positive"); return nullptr;}
   if (!owner()) return nullptr;
   if (dialog) { PyErr_SetString(PyExc_RuntimeError, "dialog already open"); return nullptr; }
   dialog = new QDialog();
