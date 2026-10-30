@@ -44,4 +44,4 @@ for g in "$ROOT"/tests/slam/groups/*.testGroup; do
 done
 (( groups > 0 )) || { echo "FAIL no SLAM groups found"; exit 1; }
 (( bad == 0 && drift == 0 )) || { echo "FAIL slam compiled: $bad groups differ compiled, $drift drifted interpreted"; exit 1; }
-echo "PASS slam compiled: $groups SLAM groups, $cases tests, compiled routines identical to the interpreter"
+echo "PASS slam compiled: $groups groups (SLAM and random), $cases tests, compiled routines identical to the interpreter"
