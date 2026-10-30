@@ -1011,13 +1011,6 @@ inline std::int64_t integer(const Value &v) {
     if (!tryInteger(v, out)) throw std::runtime_error("non-integer or out-of-range value");
     return out;
 }
-// Repetition DO count is evaluated once.  Decimal contexts are not yet
-// generally implemented, so require a nonnegative exact integral value.
-inline std::int64_t repeatCount(const Value &v) {
-    const std::int64_t count = integer(v);
-    if (count < 0) throw std::runtime_error("DO repetition count must be nonnegative");
-    return count;
-}
 inline Value pendingNumber(std::int64_t coef, int exp);   // (rx_rexx_number.hpp)
 inline Value fromInteger(std::int64_t x) { return pendingNumber(x, 0); }   // (its characters: std::to_string(x))
 // The current pool can redirect named variables and whole stems through
@@ -1327,7 +1320,6 @@ template <std::size_t K> inline SlotsKept<K> keepSlots(LocalSlots<K> &t) { retur
 #define RX_VREFK(K, N) ([&]() -> const ::rx::Value & { if (const ::rx::Value *_rxP = _rxL.find(K, vars, N)) return *_rxP; static thread_local ::rx::Value _rxUnset = ::rx::Value::string(std::string()); _rxUnset = _rxL.get(K, vars, N); return _rxUnset; }())
 #define RX_VTAILK(K, N) ([&]() -> const ::rx::Value & { if (const ::rx::Value *_rxP = _rxL.find(K, vars, N)) return *_rxP; static thread_local ::rx::Value _rxName = ::rx::Value::string(N); return _rxName; }())
 #define RX_VSETK(K, N, ...) (_rxL.set(K, vars, N, __VA_ARGS__))
-
 
 // USE ARG drops an omitted target instead of assigning the empty string;
 // PARSE ARG deliberately has different missing-argument semantics.
@@ -1786,14 +1778,6 @@ inline Value builtinValue(const std::string &name, const std::vector<Value> &arg
 inline bool condition(const Value &v);
 /* Rexx numeric context default is DIGITS 9. No general decimal context has
    been implemented here; do not mistake wide C++ integer division for Rexx %. */
-inline Value wholeDivide9(const Value &lhs, const Value &rhs) {
-    const std::int64_t a = integer(lhs), b = integer(rhs);
-    constexpr std::int64_t maxDefault = 999999999;
-    if (a < -maxDefault || a > maxDefault || b < -maxDefault || b > maxDefault)
-        throw std::runtime_error("% outside qualified default NUMERIC DIGITS 9 subset");
-    if (b == 0) throw SyntaxCondition("42.3", "Arithmetic overflow; divisor must not be zero", false);
-    return fromInteger(a / b);
-}
 inline Value logicalOr(const Value &lhs, const Value &rhs) {
     // Evaluate and validate BOTH operands, even if the left operand is true.
     const bool left = condition(lhs);
