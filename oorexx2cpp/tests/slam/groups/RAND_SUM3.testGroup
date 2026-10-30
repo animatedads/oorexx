@@ -1,0 +1,284 @@
+#!/usr/bin/env rexx
+/* Random cases (the comparison) for SUM3
+   Written by SLAM (SlamTestWriter): Architecture: Tom Dyer.  Code: Claude (Opus 5.5).
+   Unit under test: routine SUM3 in native/fixtures/routine_localcalls.cls
+   Run: rexx RAND_SUM3.testGroup (with ooTest.frm and framework/ on REXX_PATH) */
+parse source . . sourceFile
+group = .TestGroup~new(sourceFile)
+group~add(.RAND_SUM3.testGroup)
+if group~isAutomatedTest then return group
+testRun = group~suite~execute
+testRun~print
+return testRun
+
+::requires 'ooTest.frm'
+::class 'RAND_SUM3.testGroup' public subclass ooTestCase
+
+::method underTest
+  file = value('SLAM_UNDER_TEST', , 'ENVIRONMENT')
+  if file == '' then file = 'native/fixtures/routine_localcalls.cls'
+  return slamLift(file, 'SUM3')
+
+/* The error a call raises, read from its condition: code and message (expectSyntax reads the
+   code only). */
+::method errorOf
+  signal on syntax name failed
+  v = self~underTest~callWith(arg(1, 'A'))
+  return 'NO ERROR'
+failed:
+  c = condition('O')
+  return c['CODE'] c['MESSAGE']
+
+/* Another condition a call raises (USER, NOTREADY ...): its name, description and additional. */
+::method conditionOf
+  signal on any name other
+  v = self~underTest~callWith(arg(1, 'A'))
+  return 'NO CONDITION'
+other:
+  c = condition('O')
+  t = ''
+  add = c['ADDITIONAL']
+  if add \== .nil then do x over add; t = t || ',' || x~string; end
+  return c['CONDITION'] c['DESCRIPTION'] '[' || t~substr(2) || ']'
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_001_random
+  self~assertSame('746', self~underTest~call('-223', '217', '752'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_002_random
+  self~assertSame('84', self~underTest~call('863', '-433', '-346'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_003_random
+  self~assertSame('-882', self~underTest~call('-582', '473', '-773'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_004_random
+  self~assertSame('-1463', self~underTest~call('-920', '281', '-824'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_005_random
+  self~assertSame('-208', self~underTest~call('405', '-915', '302'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_006_random
+  self~assertSame('1229', self~underTest~call('525', '-170', '874'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_007_random
+  self~assertSame('60', self~underTest~call('102', '263', '-305'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_008_random
+  self~assertSame('-269', self~underTest~call('-208', '710', '-771'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_009_random
+  self~assertSame('2075', self~underTest~call('810', '456', '809'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_010_random
+  self~assertSame('765', self~underTest~call('-606', '415', '956'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_011_random
+  self~assertSame('864', self~underTest~call('-236', '331', '769'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_012_random
+  self~assertSame('903', self~underTest~call('399', '-176', '680'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_013_random
+  self~assertSame('-197', self~underTest~call('291', '-364', '-124'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_014_random
+  self~assertSame('-2739', self~underTest~call('-894', '-866', '-979'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_015_random
+  self~assertSame('2305', self~underTest~call('886', '858', '561'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_016_random
+  self~assertSame('266', self~underTest~call('984', '-915', '197'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_017_random
+  self~assertSame('-867', self~underTest~call('546', '-865', '-548'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_018_random
+  self~assertSame('-320', self~underTest~call('909', '-475', '-754'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_019_random
+  self~assertSame('1529', self~underTest~call('873', '-317', '973'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_020_random
+  self~assertSame('-1873', self~underTest~call('-954', '-698', '-221'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_021_random
+  self~assertSame('-1249', self~underTest~call('317', '-839', '-727'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_022_random
+  self~assertSame('1873', self~underTest~call('956', '662', '255'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_023_random
+  self~assertSame('1350', self~underTest~call('419', '16', '915'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_024_random
+  self~assertSame('62', self~underTest~call('414', '-812', '460'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_025_random
+  self~assertSame('833', self~underTest~call('734', '194', '-95'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_026_random
+  self~assertSame('-1012', self~underTest~call('-865', '-298', '151'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_027_random
+  self~assertSame('409', self~underTest~call('-663', '463', '609'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_028_random
+  self~assertSame('-1053', self~underTest~call('-600', '311', '-764'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_029_random
+  self~assertSame('217', self~underTest~call('548', '-42', '-289'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_030_random
+  self~assertSame('938', self~underTest~call('807', '908', '-777'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_031_random
+  self~assertSame('-1788', self~underTest~call('-964', '77', '-901'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_032_random
+  self~assertSame('-1041', self~underTest~call('-811', '-204', '-26'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_033_random
+  self~assertSame('1654', self~underTest~call('757', '662', '235'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_034_random
+  self~assertSame('1849', self~underTest~call('730', '221', '898'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_035_random
+  self~assertSame('1745', self~underTest~call('669', '691', '385'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_036_random
+  self~assertSame('425', self~underTest~call('-237', '963', '-301'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_037_random
+  self~assertSame('-9', self~underTest~call('362', '-26', '-345'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_038_random
+  self~assertSame('-838', self~underTest~call('-887', '-6', '55'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_039_random
+  self~assertSame('-250', self~underTest~call('-749', '308', '191'))
+
+/* RANDOM: random input
+   observed: SLAM could not predict it */
+::method test_040_random
+  self~assertSame('-1203', self~underTest~call('-524', '-380', '-299'))
+
+/* The unit, lifted from its file as SLAM lifts a standalone unit: the lines after its
+   ::routine directive (or its class's ::method directive), up to the next directive, then the
+   file's ::OPTIONS directives. */
+::routine slamLift
+  use strict arg file, name, owner = ''
+  lines = .array~new
+  call stream file, 'C', 'OPEN READ'
+  do while lines(file) > 0; lines~append(linein(file)); end
+  call stream file, 'C', 'CLOSE'
+  body = .array~new
+  inside = .false
+  done = .false
+  cls = ''
+  opts = .array~new
+  do ln over lines
+    s = ln~strip
+    if s~left(9)~upper == '::OPTIONS' then opts~append(s)
+    if done then iterate
+    if s~left(2) == '::' then do
+      if inside then do
+        done = .true
+        iterate
+      end
+      parse upper value s with d nm rest
+      nm = nm~strip('B', ';')~strip('B', "'")~strip('B', '"')
+      if d == '::CLASS' then cls = nm
+      if owner == '' then do
+        if d == '::ROUTINE' then if nm == name~upper then inside = .true
+      end
+      else if d == '::METHOD' then if nm == name~upper then if cls == owner~upper then inside = .true
+      if inside then do
+        semi = s~pos(';')
+        if semi > 0 then body~append(s~substr(semi + 1))
+      end
+      iterate
+    end
+    if inside then body~append(ln)
+  end
+  do o over opts; body~append(o); end   /* the file's ::OPTIONS (digits, form, fuzz): its settings */
+  body~insert("address 'SLAMNOCMD'", .nil)   /* a command goes nowhere, not to the shell */
+  return .Routine~new(name, body)

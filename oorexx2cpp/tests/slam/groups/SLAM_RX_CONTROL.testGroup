@@ -1,0 +1,224 @@
+#!/usr/bin/env rexx
+/* SLAM-chosen cases for RX_CONTROL
+   Written by SLAM (SlamTestWriter): Architecture: Tom Dyer.  Code: Claude (Opus 5.5).
+   Unit under test: routine RX_CONTROL in native/fixtures/routine_control.cls
+   Run: rexx SLAM_RX_CONTROL.testGroup (with ooTest.frm and framework/ on REXX_PATH) */
+parse source . . sourceFile
+group = .TestGroup~new(sourceFile)
+group~add(.SLAM_RX_CONTROL.testGroup)
+if group~isAutomatedTest then return group
+testRun = group~suite~execute
+testRun~print
+return testRun
+
+::requires 'ooTest.frm'
+::class 'SLAM_RX_CONTROL.testGroup' public subclass ooTestCase
+
+::method underTest
+  file = value('SLAM_UNDER_TEST', , 'ENVIRONMENT')
+  if file == '' then file = 'native/fixtures/routine_control.cls'
+  return slamLift(file, 'RX_CONTROL')
+
+/* The error a call raises, read from its condition: code and message (expectSyntax reads the
+   code only). */
+::method errorOf
+  signal on syntax name failed
+  v = self~underTest~callWith(arg(1, 'A'))
+  return 'NO ERROR'
+failed:
+  c = condition('O')
+  return c['CODE'] c['MESSAGE']
+
+/* Another condition a call raises (USER, NOTREADY ...): its name, description and additional. */
+::method conditionOf
+  signal on any name other
+  v = self~underTest~callWith(arg(1, 'A'))
+  return 'NO CONDITION'
+other:
+  c = condition('O')
+  t = ''
+  add = c['ADDITIONAL']
+  if add \== .nil then do x over add; t = t || ',' || x~string; end
+  return c['CONDITION'] c['DESCRIPTION'] '[' || t~substr(2) || ']'
+
+/* HAPPY: every rule holds
+   observed: SLAM could not predict it */
+::method test_001_happy
+  self~assertSame('2', self~underTest~call('2', '7'))
+
+/* BOUNDARY: NE V N:1   [A] at 0                   
+   observed: SLAM could not predict it */
+::method test_002_boundary
+  self~assertSame('7', self~underTest~call('0', '7'))
+
+/* BOUNDARY: NE V N:1   [A] at 1                   
+   predicted by SLAM before running: VALUE 99 */
+::method test_003_boundary
+  self~assertSame('99', self~underTest~call('1', '7'))
+
+/* NUMBER: a number the unit uses, as a
+   observed: SLAM could not predict it */
+::method test_004_number
+  self~assertSame('7', self~underTest~call('20', '7'))
+
+/* NUMBER: a number the unit uses, as a
+   observed: SLAM could not predict it */
+::method test_005_number
+  self~assertSame('7', self~underTest~call('99', '7'))
+
+/* EDGE: a machine-width edge, as a
+   observed: SLAM could not predict it */
+::method test_006_edge
+  self~assertSame('6', self~underTest~call('-1', '7'))
+
+/* EDGE: a machine-width edge, as a
+   observed: SLAM could not predict it */
+::method test_007_edge
+  self~assertSame('7', self~underTest~call('255', '7'))
+
+/* EDGE: a machine-width edge, as a
+   observed: SLAM could not predict it */
+::method test_008_edge
+  self~assertSame('7', self~underTest~call('256', '7'))
+
+/* EDGE: a machine-width edge, as a
+   observed: SLAM could not predict it */
+::method test_009_edge
+  self~assertSame('7', self~underTest~call('65535', '7'))
+
+/* EDGE: a machine-width edge, as a
+   observed: SLAM could not predict it */
+::method test_010_edge
+  self~assertSame('7', self~underTest~call('65536', '7'))
+
+/* NUMBER: a number the unit uses, as b
+   observed: SLAM could not predict it */
+::method test_011_number
+  self~assertSame('2', self~underTest~call('2', '20'))
+
+/* NUMBER: a number the unit uses, as b
+   observed: SLAM could not predict it */
+::method test_012_number
+  self~assertSame('2', self~underTest~call('2', '99'))
+
+/* NUMBER: a number the unit uses, as b
+   observed: SLAM could not predict it */
+::method test_013_number
+  self~assertSame('2', self~underTest~call('2', '2'))
+
+/* EDGE: a machine-width edge, as b
+   observed: SLAM could not predict it */
+::method test_014_edge
+  self~assertSame('1', self~underTest~call('2', '1'))
+
+/* EDGE: a machine-width edge, as b
+   observed: SLAM could not predict it */
+::method test_015_edge
+  self~assertSame('2', self~underTest~call('2', '255'))
+
+/* EDGE: a machine-width edge, as b
+   observed: SLAM could not predict it */
+::method test_016_edge
+  self~assertSame('2', self~underTest~call('2', '256'))
+
+/* EDGE: a machine-width edge, as b
+   observed: SLAM could not predict it */
+::method test_017_edge
+  self~assertSame('2', self~underTest~call('2', '65535'))
+
+/* EDGE: a machine-width edge, as b
+   observed: SLAM could not predict it */
+::method test_018_edge
+  self~assertSame('2', self~underTest~call('2', '65536'))
+
+/* EDGE: a machine-width edge, as b
+   observed: SLAM could not predict it */
+::method test_019_edge
+  self~assertSame('2', self~underTest~call('2', '4294967295'))
+
+/* EDGE: a machine-width edge, as b
+   observed: SLAM could not predict it */
+::method test_020_edge
+  self~assertSame('2', self~underTest~call('2', '4294967296'))
+
+/* KIND: argument a is used as a number: given a word
+   observed: SLAM could not predict it */
+::method test_021_kind
+  self~assertSame('41.1 Nonnumeric value ("abc") used in arithmetic operation.', self~errorOf('abc', '7'))
+
+/* KIND: argument b is used as a number: given a word
+   observed: SLAM could not predict it */
+::method test_022_kind
+  self~assertSame('2', self~underTest~call('2', 'abc'))
+
+/* FRACTION: a number that is not whole, as a
+   observed: SLAM could not predict it */
+::method test_023_fraction
+  self~assertSame('0.5', self~underTest~call('0.5', '7'))
+
+/* FRACTION: a number that is not whole, as a
+   observed: SLAM could not predict it */
+::method test_024_fraction
+  self~assertSame('4.5', self~underTest~call('-2.5', '7'))
+
+/* FRACTION: a number that is not whole, as a
+   observed: SLAM could not predict it */
+::method test_025_fraction
+  self~assertSame('1.5', self~underTest~call('1.5', '7'))
+
+/* FRACTION: a number that is not whole, as b
+   observed: SLAM could not predict it */
+::method test_026_fraction
+  self~assertSame('0', self~underTest~call('2', '0.5'))
+
+/* OMIT: argument a left out
+   observed: SLAM could not predict it */
+::method test_027_omit
+  self~assertSame('41.1 Nonnumeric value ("A") used in arithmetic operation.', self~errorOf(, '7'))
+
+/* OMIT: argument b left out
+   observed: SLAM could not predict it */
+::method test_028_omit
+  self~assertSame('2', self~underTest~call('2',))
+
+/* The unit, lifted from its file as SLAM lifts a standalone unit: the lines after its
+   ::routine directive (or its class's ::method directive), up to the next directive, then the
+   file's ::OPTIONS directives. */
+::routine slamLift
+  use strict arg file, name, owner = ''
+  lines = .array~new
+  call stream file, 'C', 'OPEN READ'
+  do while lines(file) > 0; lines~append(linein(file)); end
+  call stream file, 'C', 'CLOSE'
+  body = .array~new
+  inside = .false
+  done = .false
+  cls = ''
+  opts = .array~new
+  do ln over lines
+    s = ln~strip
+    if s~left(9)~upper == '::OPTIONS' then opts~append(s)
+    if done then iterate
+    if s~left(2) == '::' then do
+      if inside then do
+        done = .true
+        iterate
+      end
+      parse upper value s with d nm rest
+      nm = nm~strip('B', ';')~strip('B', "'")~strip('B', '"')
+      if d == '::CLASS' then cls = nm
+      if owner == '' then do
+        if d == '::ROUTINE' then if nm == name~upper then inside = .true
+      end
+      else if d == '::METHOD' then if nm == name~upper then if cls == owner~upper then inside = .true
+      if inside then do
+        semi = s~pos(';')
+        if semi > 0 then body~append(s~substr(semi + 1))
+      end
+      iterate
+    end
+    if inside then body~append(ln)
+  end
+  do o over opts; body~append(o); end   /* the file's ::OPTIONS (digits, form, fuzz): its settings */
+  body~insert("address 'SLAMNOCMD'", .nil)   /* a command goes nowhere, not to the shell */
+  return .Routine~new(name, body)

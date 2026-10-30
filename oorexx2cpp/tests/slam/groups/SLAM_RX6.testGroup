@@ -1,0 +1,479 @@
+#!/usr/bin/env rexx
+/* SLAM-chosen cases for RX6
+   Written by SLAM (SlamTestWriter): Architecture: Tom Dyer.  Code: Claude (Opus 5.5).
+   Unit under test: routine RX6 in native/fixtures/routine_many.cls
+   Run: rexx SLAM_RX6.testGroup (with ooTest.frm and framework/ on REXX_PATH) */
+parse source . . sourceFile
+group = .TestGroup~new(sourceFile)
+group~add(.SLAM_RX6.testGroup)
+if group~isAutomatedTest then return group
+testRun = group~suite~execute
+testRun~print
+return testRun
+
+::requires 'ooTest.frm'
+::class 'SLAM_RX6.testGroup' public subclass ooTestCase
+
+::method underTest
+  file = value('SLAM_UNDER_TEST', , 'ENVIRONMENT')
+  if file == '' then file = 'native/fixtures/routine_many.cls'
+  return slamLift(file, 'RX6')
+
+/* The error a call raises, read from its condition: code and message (expectSyntax reads the
+   code only). */
+::method errorOf
+  signal on syntax name failed
+  v = self~underTest~callWith(arg(1, 'A'))
+  return 'NO ERROR'
+failed:
+  c = condition('O')
+  return c['CODE'] c['MESSAGE']
+
+/* Another condition a call raises (USER, NOTREADY ...): its name, description and additional. */
+::method conditionOf
+  signal on any name other
+  v = self~underTest~callWith(arg(1, 'A'))
+  return 'NO CONDITION'
+other:
+  c = condition('O')
+  t = ''
+  add = c['ADDITIONAL']
+  if add \== .nil then do x over add; t = t || ',' || x~string; end
+  return c['CONDITION'] c['DESCRIPTION'] '[' || t~substr(2) || ']'
+
+/* HAPPY: every rule holds
+   observed: SLAM could not predict it */
+::method test_001_happy
+  self~assertSame('42', self~underTest~call('7', '7', '7', '7', '7', '7'))
+
+/* EDGE: a machine-width edge, as a
+   observed: SLAM could not predict it */
+::method test_002_edge
+  self~assertSame('35', self~underTest~call('0', '7', '7', '7', '7', '7'))
+
+/* EDGE: a machine-width edge, as a
+   observed: SLAM could not predict it */
+::method test_003_edge
+  self~assertSame('36', self~underTest~call('1', '7', '7', '7', '7', '7'))
+
+/* EDGE: a machine-width edge, as a
+   observed: SLAM could not predict it */
+::method test_004_edge
+  self~assertSame('34', self~underTest~call('-1', '7', '7', '7', '7', '7'))
+
+/* EDGE: a machine-width edge, as a
+   observed: SLAM could not predict it */
+::method test_005_edge
+  self~assertSame('290', self~underTest~call('255', '7', '7', '7', '7', '7'))
+
+/* EDGE: a machine-width edge, as a
+   observed: SLAM could not predict it */
+::method test_006_edge
+  self~assertSame('291', self~underTest~call('256', '7', '7', '7', '7', '7'))
+
+/* EDGE: a machine-width edge, as a
+   observed: SLAM could not predict it */
+::method test_007_edge
+  self~assertSame('65570', self~underTest~call('65535', '7', '7', '7', '7', '7'))
+
+/* EDGE: a machine-width edge, as a
+   observed: SLAM could not predict it */
+::method test_008_edge
+  self~assertSame('65571', self~underTest~call('65536', '7', '7', '7', '7', '7'))
+
+/* EDGE: a machine-width edge, as a
+   observed: SLAM could not predict it */
+::method test_009_edge
+  self~assertSame('4.29496734E+9', self~underTest~call('4294967295', '7', '7', '7', '7', '7'))
+
+/* EDGE: a machine-width edge, as a
+   observed: SLAM could not predict it */
+::method test_010_edge
+  self~assertSame('4.29496734E+9', self~underTest~call('4294967296', '7', '7', '7', '7', '7'))
+
+/* EDGE: a machine-width edge, as b
+   observed: SLAM could not predict it */
+::method test_011_edge
+  self~assertSame('35', self~underTest~call('7', '0', '7', '7', '7', '7'))
+
+/* EDGE: a machine-width edge, as b
+   observed: SLAM could not predict it */
+::method test_012_edge
+  self~assertSame('36', self~underTest~call('7', '1', '7', '7', '7', '7'))
+
+/* EDGE: a machine-width edge, as b
+   observed: SLAM could not predict it */
+::method test_013_edge
+  self~assertSame('34', self~underTest~call('7', '-1', '7', '7', '7', '7'))
+
+/* EDGE: a machine-width edge, as b
+   observed: SLAM could not predict it */
+::method test_014_edge
+  self~assertSame('290', self~underTest~call('7', '255', '7', '7', '7', '7'))
+
+/* EDGE: a machine-width edge, as b
+   observed: SLAM could not predict it */
+::method test_015_edge
+  self~assertSame('291', self~underTest~call('7', '256', '7', '7', '7', '7'))
+
+/* EDGE: a machine-width edge, as b
+   observed: SLAM could not predict it */
+::method test_016_edge
+  self~assertSame('65570', self~underTest~call('7', '65535', '7', '7', '7', '7'))
+
+/* EDGE: a machine-width edge, as b
+   observed: SLAM could not predict it */
+::method test_017_edge
+  self~assertSame('65571', self~underTest~call('7', '65536', '7', '7', '7', '7'))
+
+/* EDGE: a machine-width edge, as b
+   observed: SLAM could not predict it */
+::method test_018_edge
+  self~assertSame('4.29496734E+9', self~underTest~call('7', '4294967295', '7', '7', '7', '7'))
+
+/* EDGE: a machine-width edge, as b
+   observed: SLAM could not predict it */
+::method test_019_edge
+  self~assertSame('4.29496734E+9', self~underTest~call('7', '4294967296', '7', '7', '7', '7'))
+
+/* EDGE: a machine-width edge, as c
+   observed: SLAM could not predict it */
+::method test_020_edge
+  self~assertSame('35', self~underTest~call('7', '7', '0', '7', '7', '7'))
+
+/* EDGE: a machine-width edge, as c
+   observed: SLAM could not predict it */
+::method test_021_edge
+  self~assertSame('36', self~underTest~call('7', '7', '1', '7', '7', '7'))
+
+/* EDGE: a machine-width edge, as c
+   observed: SLAM could not predict it */
+::method test_022_edge
+  self~assertSame('34', self~underTest~call('7', '7', '-1', '7', '7', '7'))
+
+/* EDGE: a machine-width edge, as c
+   observed: SLAM could not predict it */
+::method test_023_edge
+  self~assertSame('290', self~underTest~call('7', '7', '255', '7', '7', '7'))
+
+/* EDGE: a machine-width edge, as c
+   observed: SLAM could not predict it */
+::method test_024_edge
+  self~assertSame('291', self~underTest~call('7', '7', '256', '7', '7', '7'))
+
+/* EDGE: a machine-width edge, as c
+   observed: SLAM could not predict it */
+::method test_025_edge
+  self~assertSame('65570', self~underTest~call('7', '7', '65535', '7', '7', '7'))
+
+/* EDGE: a machine-width edge, as c
+   observed: SLAM could not predict it */
+::method test_026_edge
+  self~assertSame('65571', self~underTest~call('7', '7', '65536', '7', '7', '7'))
+
+/* EDGE: a machine-width edge, as c
+   observed: SLAM could not predict it */
+::method test_027_edge
+  self~assertSame('4.29496734E+9', self~underTest~call('7', '7', '4294967295', '7', '7', '7'))
+
+/* EDGE: a machine-width edge, as c
+   observed: SLAM could not predict it */
+::method test_028_edge
+  self~assertSame('4.29496734E+9', self~underTest~call('7', '7', '4294967296', '7', '7', '7'))
+
+/* EDGE: a machine-width edge, as d
+   observed: SLAM could not predict it */
+::method test_029_edge
+  self~assertSame('35', self~underTest~call('7', '7', '7', '0', '7', '7'))
+
+/* EDGE: a machine-width edge, as d
+   observed: SLAM could not predict it */
+::method test_030_edge
+  self~assertSame('36', self~underTest~call('7', '7', '7', '1', '7', '7'))
+
+/* EDGE: a machine-width edge, as d
+   observed: SLAM could not predict it */
+::method test_031_edge
+  self~assertSame('34', self~underTest~call('7', '7', '7', '-1', '7', '7'))
+
+/* EDGE: a machine-width edge, as d
+   observed: SLAM could not predict it */
+::method test_032_edge
+  self~assertSame('290', self~underTest~call('7', '7', '7', '255', '7', '7'))
+
+/* EDGE: a machine-width edge, as d
+   observed: SLAM could not predict it */
+::method test_033_edge
+  self~assertSame('291', self~underTest~call('7', '7', '7', '256', '7', '7'))
+
+/* EDGE: a machine-width edge, as d
+   observed: SLAM could not predict it */
+::method test_034_edge
+  self~assertSame('65570', self~underTest~call('7', '7', '7', '65535', '7', '7'))
+
+/* EDGE: a machine-width edge, as d
+   observed: SLAM could not predict it */
+::method test_035_edge
+  self~assertSame('65571', self~underTest~call('7', '7', '7', '65536', '7', '7'))
+
+/* EDGE: a machine-width edge, as d
+   observed: SLAM could not predict it */
+::method test_036_edge
+  self~assertSame('4.29496734E+9', self~underTest~call('7', '7', '7', '4294967295', '7', '7'))
+
+/* EDGE: a machine-width edge, as d
+   observed: SLAM could not predict it */
+::method test_037_edge
+  self~assertSame('4.29496734E+9', self~underTest~call('7', '7', '7', '4294967296', '7', '7'))
+
+/* EDGE: a machine-width edge, as e
+   observed: SLAM could not predict it */
+::method test_038_edge
+  self~assertSame('35', self~underTest~call('7', '7', '7', '7', '0', '7'))
+
+/* EDGE: a machine-width edge, as e
+   observed: SLAM could not predict it */
+::method test_039_edge
+  self~assertSame('36', self~underTest~call('7', '7', '7', '7', '1', '7'))
+
+/* EDGE: a machine-width edge, as e
+   observed: SLAM could not predict it */
+::method test_040_edge
+  self~assertSame('34', self~underTest~call('7', '7', '7', '7', '-1', '7'))
+
+/* EDGE: a machine-width edge, as e
+   observed: SLAM could not predict it */
+::method test_041_edge
+  self~assertSame('290', self~underTest~call('7', '7', '7', '7', '255', '7'))
+
+/* EDGE: a machine-width edge, as e
+   observed: SLAM could not predict it */
+::method test_042_edge
+  self~assertSame('291', self~underTest~call('7', '7', '7', '7', '256', '7'))
+
+/* EDGE: a machine-width edge, as e
+   observed: SLAM could not predict it */
+::method test_043_edge
+  self~assertSame('65570', self~underTest~call('7', '7', '7', '7', '65535', '7'))
+
+/* EDGE: a machine-width edge, as e
+   observed: SLAM could not predict it */
+::method test_044_edge
+  self~assertSame('65571', self~underTest~call('7', '7', '7', '7', '65536', '7'))
+
+/* EDGE: a machine-width edge, as e
+   observed: SLAM could not predict it */
+::method test_045_edge
+  self~assertSame('4.29496733E+9', self~underTest~call('7', '7', '7', '7', '4294967295', '7'))
+
+/* EDGE: a machine-width edge, as e
+   observed: SLAM could not predict it */
+::method test_046_edge
+  self~assertSame('4.29496733E+9', self~underTest~call('7', '7', '7', '7', '4294967296', '7'))
+
+/* EDGE: a machine-width edge, as f
+   observed: SLAM could not predict it */
+::method test_047_edge
+  self~assertSame('35', self~underTest~call('7', '7', '7', '7', '7', '0'))
+
+/* EDGE: a machine-width edge, as f
+   observed: SLAM could not predict it */
+::method test_048_edge
+  self~assertSame('36', self~underTest~call('7', '7', '7', '7', '7', '1'))
+
+/* EDGE: a machine-width edge, as f
+   observed: SLAM could not predict it */
+::method test_049_edge
+  self~assertSame('34', self~underTest~call('7', '7', '7', '7', '7', '-1'))
+
+/* EDGE: a machine-width edge, as f
+   observed: SLAM could not predict it */
+::method test_050_edge
+  self~assertSame('290', self~underTest~call('7', '7', '7', '7', '7', '255'))
+
+/* EDGE: a machine-width edge, as f
+   observed: SLAM could not predict it */
+::method test_051_edge
+  self~assertSame('291', self~underTest~call('7', '7', '7', '7', '7', '256'))
+
+/* EDGE: a machine-width edge, as f
+   observed: SLAM could not predict it */
+::method test_052_edge
+  self~assertSame('65570', self~underTest~call('7', '7', '7', '7', '7', '65535'))
+
+/* EDGE: a machine-width edge, as f
+   observed: SLAM could not predict it */
+::method test_053_edge
+  self~assertSame('65571', self~underTest~call('7', '7', '7', '7', '7', '65536'))
+
+/* EDGE: a machine-width edge, as f
+   observed: SLAM could not predict it */
+::method test_054_edge
+  self~assertSame('4.29496733E+9', self~underTest~call('7', '7', '7', '7', '7', '4294967295'))
+
+/* EDGE: a machine-width edge, as f
+   observed: SLAM could not predict it */
+::method test_055_edge
+  self~assertSame('4.29496733E+9', self~underTest~call('7', '7', '7', '7', '7', '4294967296'))
+
+/* KIND: argument a is used as a number: given a word
+   observed: SLAM could not predict it */
+::method test_056_kind
+  self~assertSame('41.1 Nonnumeric value ("abc") used in arithmetic operation.', self~errorOf('abc', '7', '7', '7', '7', '7'))
+
+/* KIND: argument b is used as a number: given a word
+   observed: SLAM could not predict it */
+::method test_057_kind
+  self~assertSame('41.1 Nonnumeric value ("abc") used in arithmetic operation.', self~errorOf('7', 'abc', '7', '7', '7', '7'))
+
+/* KIND: argument c is used as a number: given a word
+   observed: SLAM could not predict it */
+::method test_058_kind
+  self~assertSame('41.1 Nonnumeric value ("abc") used in arithmetic operation.', self~errorOf('7', '7', 'abc', '7', '7', '7'))
+
+/* KIND: argument d is used as a number: given a word
+   observed: SLAM could not predict it */
+::method test_059_kind
+  self~assertSame('41.1 Nonnumeric value ("abc") used in arithmetic operation.', self~errorOf('7', '7', '7', 'abc', '7', '7'))
+
+/* KIND: argument e is used as a number: given a word
+   observed: SLAM could not predict it */
+::method test_060_kind
+  self~assertSame('41.1 Nonnumeric value ("abc") used in arithmetic operation.', self~errorOf('7', '7', '7', '7', 'abc', '7'))
+
+/* KIND: argument f is used as a number: given a word
+   observed: SLAM could not predict it */
+::method test_061_kind
+  self~assertSame('41.1 Nonnumeric value ("abc") used in arithmetic operation.', self~errorOf('7', '7', '7', '7', '7', 'abc'))
+
+/* FRACTION: a number that is not whole, as a
+   observed: SLAM could not predict it */
+::method test_062_fraction
+  self~assertSame('35.5', self~underTest~call('0.5', '7', '7', '7', '7', '7'))
+
+/* FRACTION: a number that is not whole, as a
+   observed: SLAM could not predict it */
+::method test_063_fraction
+  self~assertSame('32.5', self~underTest~call('-2.5', '7', '7', '7', '7', '7'))
+
+/* FRACTION: a number that is not whole, as b
+   observed: SLAM could not predict it */
+::method test_064_fraction
+  self~assertSame('35.5', self~underTest~call('7', '0.5', '7', '7', '7', '7'))
+
+/* FRACTION: a number that is not whole, as b
+   observed: SLAM could not predict it */
+::method test_065_fraction
+  self~assertSame('32.5', self~underTest~call('7', '-2.5', '7', '7', '7', '7'))
+
+/* FRACTION: a number that is not whole, as c
+   observed: SLAM could not predict it */
+::method test_066_fraction
+  self~assertSame('35.5', self~underTest~call('7', '7', '0.5', '7', '7', '7'))
+
+/* FRACTION: a number that is not whole, as c
+   observed: SLAM could not predict it */
+::method test_067_fraction
+  self~assertSame('32.5', self~underTest~call('7', '7', '-2.5', '7', '7', '7'))
+
+/* FRACTION: a number that is not whole, as d
+   observed: SLAM could not predict it */
+::method test_068_fraction
+  self~assertSame('35.5', self~underTest~call('7', '7', '7', '0.5', '7', '7'))
+
+/* FRACTION: a number that is not whole, as d
+   observed: SLAM could not predict it */
+::method test_069_fraction
+  self~assertSame('32.5', self~underTest~call('7', '7', '7', '-2.5', '7', '7'))
+
+/* FRACTION: a number that is not whole, as e
+   observed: SLAM could not predict it */
+::method test_070_fraction
+  self~assertSame('35.5', self~underTest~call('7', '7', '7', '7', '0.5', '7'))
+
+/* FRACTION: a number that is not whole, as e
+   observed: SLAM could not predict it */
+::method test_071_fraction
+  self~assertSame('32.5', self~underTest~call('7', '7', '7', '7', '-2.5', '7'))
+
+/* FRACTION: a number that is not whole, as f
+   observed: SLAM could not predict it */
+::method test_072_fraction
+  self~assertSame('35.5', self~underTest~call('7', '7', '7', '7', '7', '0.5'))
+
+/* FRACTION: a number that is not whole, as f
+   observed: SLAM could not predict it */
+::method test_073_fraction
+  self~assertSame('32.5', self~underTest~call('7', '7', '7', '7', '7', '-2.5'))
+
+/* OMIT: argument a left out
+   observed: SLAM could not predict it */
+::method test_074_omit
+  self~assertSame('41.1 Nonnumeric value ("A") used in arithmetic operation.', self~errorOf(, '7', '7', '7', '7', '7'))
+
+/* OMIT: argument b left out
+   observed: SLAM could not predict it */
+::method test_075_omit
+  self~assertSame('41.1 Nonnumeric value ("B") used in arithmetic operation.', self~errorOf('7', , '7', '7', '7', '7'))
+
+/* OMIT: argument c left out
+   observed: SLAM could not predict it */
+::method test_076_omit
+  self~assertSame('41.1 Nonnumeric value ("C") used in arithmetic operation.', self~errorOf('7', '7', , '7', '7', '7'))
+
+/* OMIT: argument d left out
+   observed: SLAM could not predict it */
+::method test_077_omit
+  self~assertSame('41.1 Nonnumeric value ("D") used in arithmetic operation.', self~errorOf('7', '7', '7', , '7', '7'))
+
+/* OMIT: argument e left out
+   observed: SLAM could not predict it */
+::method test_078_omit
+  self~assertSame('41.1 Nonnumeric value ("E") used in arithmetic operation.', self~errorOf('7', '7', '7', '7', , '7'))
+
+/* OMIT: argument f left out
+   observed: SLAM could not predict it */
+::method test_079_omit
+  self~assertSame('41.1 Nonnumeric value ("F") used in arithmetic operation.', self~errorOf('7', '7', '7', '7', '7',))
+
+/* The unit, lifted from its file as SLAM lifts a standalone unit: the lines after its
+   ::routine directive (or its class's ::method directive), up to the next directive, then the
+   file's ::OPTIONS directives. */
+::routine slamLift
+  use strict arg file, name, owner = ''
+  lines = .array~new
+  call stream file, 'C', 'OPEN READ'
+  do while lines(file) > 0; lines~append(linein(file)); end
+  call stream file, 'C', 'CLOSE'
+  body = .array~new
+  inside = .false
+  done = .false
+  cls = ''
+  opts = .array~new
+  do ln over lines
+    s = ln~strip
+    if s~left(9)~upper == '::OPTIONS' then opts~append(s)
+    if done then iterate
+    if s~left(2) == '::' then do
+      if inside then do
+        done = .true
+        iterate
+      end
+      parse upper value s with d nm rest
+      nm = nm~strip('B', ';')~strip('B', "'")~strip('B', '"')
+      if d == '::CLASS' then cls = nm
+      if owner == '' then do
+        if d == '::ROUTINE' then if nm == name~upper then inside = .true
+      end
+      else if d == '::METHOD' then if nm == name~upper then if cls == owner~upper then inside = .true
+      if inside then do
+        semi = s~pos(';')
+        if semi > 0 then body~append(s~substr(semi + 1))
+      end
+      iterate
+    end
+    if inside then body~append(ln)
+  end
+  do o over opts; body~append(o); end   /* the file's ::OPTIONS (digits, form, fuzz): its settings */
+  body~insert("address 'SLAMNOCMD'", .nil)   /* a command goes nowhere, not to the shell */
+  return .Routine~new(name, body)
