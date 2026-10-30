@@ -1,0 +1,74 @@
+#!/usr/bin/env rexx
+/* select_tests.rex: which test scripts a change can affect, from what each test was measured to read.
+   Architecture: Tom Dyer (the blast-radius check to cut test time).  Code: Claude (Opus 5.5), 2026-10-30.
+
+   Usage:  rexx tools/select_tests.rex [READS-FILE] < changed-files
+     changed-files: one path per line, relative to this directory (oorexx2cpp/), e.g. from
+       git diff --name-only --relative BASE
+     READS-FILE: default ootest/test_reads.tsv: "test<TAB>file" lines, the tracked files each test script read
+       during a full regression (access times reset before each test, read after; tools/record_reads.sh).
+   Output, one line each:
+     RUN test-script     why (the first changed file it read)
+     ALL reason          a changed file the measurement cannot speak for: run the full regression
+     NONE                no test read any changed file
+   A changed file is safe to skip only when it was tracked at the measured commit and no test read it.
+   A file that was not tracked then (new) gives ALL, as does a change to the test harness itself.
+   The full regression stays the merge gate: this is for checks while working. */
+parse arg readsFile
+if readsFile = '' then readsFile = 'ootest/test_reads.tsv'
+if stream(readsFile, 'C', 'QUERY EXISTS') = '' then do
+  say 'ALL no measurement:' readsFile 'is missing'
+  return 0
+end
+readers = .directory~new          /* file -> array of tests that read it */
+known = .set~new                  /* files tracked at the measured commit */
+tests = .set~new
+do while lines(readsFile) > 0
+  line = linein(readsFile)
+  if line = '' then iterate
+  if line~left(1) = '#' then do
+    parse var line '#' key value
+    if key = 'tracked' then known~put(value~strip)
+    iterate
+  end
+  parse var line test '09'x file
+  tests~put(test)
+  if \readers~hasIndex(file) then readers[file] = .array~new
+  readers[file]~append(test)
+end
+call stream readsFile, 'C', 'CLOSE'
+selected = .directory~new         /* test -> why */
+all = ''
+do while lines() > 0
+  changed = linein()~strip
+  if changed = '' then iterate
+  if changed~left(11) = 'oorexx2cpp/' then changed = changed~substr(12)
+  isScript = (changed~left(12) = 'native/test_' | changed~left(11) = 'tests/test_') & changed~right(3) = '.sh'
+  if tests~hasIndex(changed) | isScript then do         /* a test script itself, new or measured */
+    if \selected~hasIndex(changed) then selected[changed] = 'changed'
+    iterate
+  end
+  if changed = 'tools/select_tests.rex' | changed = 'tools/record_reads.sh' then do
+    all = changed 'is the selector'; iterate
+  end
+  if readers~hasIndex(changed) then do
+    do t over readers[changed]
+      if \selected~hasIndex(t) then selected[t] = 'reads' changed
+    end
+    iterate
+  end
+  if \known~hasIndex(changed) then all = changed 'was not tracked when the reads were measured'
+end
+if all \= '' then do
+  say 'ALL' all
+  return 0
+end
+if selected~items = 0 then do
+  say 'NONE'
+  return 0
+end
+names = selected~allIndexes~sortWith(.CaselessComparator~new)
+do t over names
+  say 'RUN' t '   ' selected[t]
+end
+return 0
