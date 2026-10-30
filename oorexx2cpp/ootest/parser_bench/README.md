@@ -32,5 +32,6 @@ The two dumps must be identical (class, category, from, to and value of every el
 | 2026-10-28, 35f3315 (main, merge of 17dc90f) | Claude (rx2cpp CI machine after a container restart: a slower host, compare the ratio) | dump pass 63.0 s; 3 passes 193.5 s | dump pass 18.5 s; 3 passes 54.2 s (3.57x) | merge gate; dumps identical; 71,087 trips a pass |
 | 2026-10-28, 9850473 (main, merge of 642b413) | Claude (the slower host; compare the ratio) | dump pass 72.5 s; 3 passes 236.7 s | dump pass 21.2 s; 3 passes 67.2 s (3.52x) | merge gate; dumps identical; 71,087 trips a pass |
 | 2026-10-29, 1fd2193 (main, merge of 8c5cb30: compact strings) | Claude | dump pass 38.6 s; 3 passes 117.3 s | dump pass 10.8 s; 3 passes 32.5 s (3.61x) | merge gate; dumps identical; 71,087 trips a pass |
+| 2026-10-30, aa736e4 (main, merge of a833519: dead code removed) | Claude | dump pass 39.1 s; 3 passes 120.5 s | dump pass 10.9 s; 3 passes 33.1 s (3.65x) | merge gate; dumps identical; 71,087 trips a pass |
 
 Crossings are calls between compiled code and the interpreter (RX2CPP_BIF_STATS=1 reports them).
