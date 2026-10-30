@@ -29,6 +29,7 @@ do while lines(readsFile) > 0
   if line~left(1) = '#' then do
     parse var line '#' key value
     if key = 'tracked' then known~put(value~strip)
+    if key = 'test' then tests~put(value~strip)          /* measured, even if it read nothing tracked */
     iterate
   end
   parse var line test '09'x file
@@ -62,6 +63,15 @@ end
 if all \= '' then do
   say 'ALL' all
   return 0
+end
+/* A test script on disk that the measurement does not cover reads unknown files: always run it.
+   Paths are relative to the current directory, which must be oorexx2cpp/ (tools/run_selected.sh cds there). */
+do pattern over .array~of('native/test_*.sh', 'tests/test_*.sh')
+  call SysFileTree pattern, 'found.', 'FO'
+  do i = 1 to found.0
+    t = pattern~left(pattern~pos('/')) || filespec('name', found.i)
+    if \tests~hasIndex(t), \selected~hasIndex(t) then selected[t] = 'not measured'
+  end
 end
 if selected~items = 0 then do
   say 'NONE'

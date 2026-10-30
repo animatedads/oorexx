@@ -14,6 +14,7 @@ ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
   for f in "$D"/*.deps; do
     s=$(basename "$f" .deps)
     if [[ -f "$ROOT/native/$s" ]]; then t=native/$s; elif [[ -f "$ROOT/tests/$s" ]]; then t=tests/$s; else continue; fi
+    echo "#test $t"
     sed "s#^#$t\t#" "$f"
   done
 } > "$OUT"
