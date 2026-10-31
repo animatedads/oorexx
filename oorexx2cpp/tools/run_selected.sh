@@ -33,8 +33,12 @@ order=$(for t in $scripts; do
 done | sort -rn | awk '{print $2}')
 s0=$SECONDS
 run_one() {   # one script: its log, and one result line in $LOGS/results
-  local t=$1 s=$SECONDS r log="$LOGS/$(basename "$1").log"
-  if timeout 3600 bash "$t" > "$log" 2>&1; then r=PASS; else r=FAIL; fi
+  local t=$1 s=$SECONDS r rc pid log="$LOGS/$(basename "$1").log"
+  # timeout runs the script in a process group of its own, which a kill of ours does not reach: keep its pid in
+  # $LOGS/pids so a stopped run can stop it (timeout passes the signal to the whole group)
+  timeout 3600 bash "$t" > "$log" 2>&1 & pid=$!
+  echo "$pid" > "$LOGS/pids/$pid"; wait "$pid"; rc=$?; rm -f "$LOGS/pids/$pid"
+  if (( rc == 0 )); then r=PASS; else r=FAIL; fi
   echo "$r $t ($((SECONDS-s)) s)$([[ $r == FAIL ]] && echo "  log: $log")" | tee -a "$LOGS/results"
 }
 export -f run_one; export LOGS
@@ -42,7 +46,13 @@ export -f run_one; export LOGS
 if [[ ${RESUME:-0} == 1 && -f "$LOGS/results" ]]; then
   order=$(for t in $order; do grep -q "^[A-Z]* $t " "$LOGS/results" || echo "$t"; done)
 else : > "$LOGS/results"; fi
-trap 'kill 0' TERM INT    # stopped (e.g. by timeout): stop the running scripts too; they are not recorded
+rm -rf "$LOGS/pids"; mkdir -p "$LOGS/pids"
+stop() {   # stopped (e.g. by timeout): stop the running scripts too; they are not recorded
+  trap - TERM INT
+  for p in "$LOGS"/pids/*; do [[ -f $p ]] && kill -TERM "$(basename "$p")" 2>/dev/null; done
+  kill 0
+}
+trap stop TERM INT
 [[ -n "$order" ]] && printf '%s\n' $order | xargs -P "$JOBS" -I{} bash -c 'run_one "$1"' _ {}
 pass=$(grep -c '^PASS' "$LOGS/results"); fail=$(grep -c '^FAIL' "$LOGS/results")
 echo "selected tests: $pass passed, $fail failed, $((SECONDS-s0)) s this sitting, $JOBS at a time"
