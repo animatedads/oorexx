@@ -38,8 +38,12 @@ run_one() {   # one script: its log, and one result line in $LOGS/results
   echo "$r $t ($((SECONDS-s)) s)$([[ $r == FAIL ]] && echo "  log: $log")" | tee -a "$LOGS/results"
 }
 export -f run_one; export LOGS
-: > "$LOGS/results"
-printf '%s\n' $order | xargs -P "$JOBS" -I{} bash -c 'run_one "$1"' _ {}
+# RESUME=1 keeps $LOGS/results and skips the scripts it already has (for runs longer than one sitting)
+if [[ ${RESUME:-0} == 1 && -f "$LOGS/results" ]]; then
+  order=$(for t in $order; do grep -q "^[A-Z]* $t " "$LOGS/results" || echo "$t"; done)
+else : > "$LOGS/results"; fi
+trap 'kill 0' TERM INT    # stopped (e.g. by timeout): stop the running scripts too; they are not recorded
+[[ -n "$order" ]] && printf '%s\n' $order | xargs -P "$JOBS" -I{} bash -c 'run_one "$1"' _ {}
 pass=$(grep -c '^PASS' "$LOGS/results"); fail=$(grep -c '^FAIL' "$LOGS/results")
-echo "selected tests: $pass passed, $fail failed, $((SECONDS-s0)) s, $JOBS at a time"
+echo "selected tests: $pass passed, $fail failed, $((SECONDS-s0)) s this sitting, $JOBS at a time"
 (( fail == 0 ))
