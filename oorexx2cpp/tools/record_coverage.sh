@@ -12,6 +12,8 @@ mkdir -p "$OUT"; OUT=$(cd -- "$OUT" && pwd)
 export COVROOT=$OUT/profiles COVOUT=$OUT PATH=$ROOT/tools/coverage:$PATH
 export CXX=g++ AFTER_EACH=$ROOT/tools/coverage/extract.sh
 cd "$ROOT"
+# profiles left by scripts a stopped run cut short would add to their rerun: a script's profiles count only whole
+rm -rf -- "$COVROOT"
 which="ALL"
 if (( $# > 0 )); then printf '%s\n' "$@" > "$OUT/scripts"; which="@$OUT/scripts"; fi
 RESUME=${RESUME:-0} JOBS=$JOBS LOGS=$OUT/logs bash tools/run_selected.sh "$which"
