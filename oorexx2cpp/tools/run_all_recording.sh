@@ -8,6 +8,7 @@
 # whose access time moved were read (the filesystem must update access times: relatime does, for times this old).
 # Results: OUT/results ("PASS script (s)" or "FAIL ..."), logs in OUT/logs. Run again with the same OUT to continue
 # after a stop: finished scripts are kept. Set REXX_LIB, OO_ROOT etc. as for the tests; REXX_PATH is set per copy.
+# SHARD=k/N runs only the k-th of N shares of the scripts (balanced by the measured seconds), for N machines.
 # Architecture: Tom Dyer (the blast-radius check). Code: Claude (Opus 5.5), 2026-11-02.
 set -uo pipefail
 shopt -s nullglob
@@ -21,13 +22,19 @@ fi
 for ((k = 1; k <= JOBS; k++)); do
   [[ -d $OUT/w$k ]] || cp -a "$SNAP" "$OUT/w$k"
 done
-# the queue: scripts not yet finished, longest first by the measured seconds (unmeasured first)
+# the queue: scripts not yet finished, longest first by the measured seconds (unmeasured: 600 s)
+# SHARD=k/N keeps the k-th of N shares: scripts go, longest first, to the share with the least seconds so far, so
+# every machine that runs one share computes the same split
 READS=$SNAP/ootest/test_reads.tsv
+SHARD=${SHARD:-1/1}; sk=${SHARD%/*}; sn=${SHARD#*/}
 (cd "$SNAP" && for t in native/test_*.sh tests/test_*.sh; do
-   grep -q "^[A-Z]* $t " "$OUT/results" && continue
    s=$(awk -v t="$t" '$1 == "#seconds" && $2 == t {print $3}' "$READS" 2>/dev/null)
-   echo "${s:-99999} $t"
- done | sort -rn | awk '{print $2}') > "$OUT/queue"
+   echo "${s:-600} $t"
+ done | sort -k1,1rn -k2,2 | awk -v k="$sk" -v n="$sn" '
+   { best = 1; for (i = 2; i <= n; i++) if (load[i] < load[best]) best = i
+     load[best] += $1; if (best == k) print $2 }') |
+ while read -r t; do grep -q "^[A-Z]* $t " "$OUT/results" || echo "$t"; done > "$OUT/queue"
+echo "$(wc -l < "$OUT/queue") scripts to run (share $SHARD)"
 rm -f "$OUT"/pids/*
 worker() {   # worker k: take scripts from the queue until it is empty
   local k=$1 W=$OUT/w$1 t s rc pid r
@@ -57,7 +64,7 @@ trap stop TERM INT
 s0=$SECONDS
 for ((k = 1; k <= JOBS; k++)); do worker "$k" & wpids+=($!); done
 wait "${wpids[@]}"
-all=( "$SNAP"/native/test_*.sh "$SNAP"/tests/test_*.sh ); total=${#all[@]}
+total=$(( $(grep -c . "$OUT/results") + $(grep -c . "$OUT/queue" 2>/dev/null || echo 0) ))   # this share
 pass=$(grep -c '^PASS' "$OUT/results"); fail=$(grep -c '^FAIL' "$OUT/results")
 echo "full regression: $pass passed, $fail failed of $total, $((SECONDS - s0)) s this sitting, $JOBS at a time"
 (( pass == total ))
