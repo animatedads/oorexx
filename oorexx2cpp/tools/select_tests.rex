@@ -13,7 +13,7 @@
        each test ran. With it and LINES, a changed function selects only the tests that ran it. Every reader of the
        file still runs when a changed line is outside every function, in a constexpr function, or in a function no
        test ran; and a test that reads the file without running any of it (compiles it only, or reads it some other
-       way) runs on any change to it.
+       way) runs on any change to it, as do the scripts that check the C++ with other compilers (byFunction).
    Output, one line each:
      RUN test-script     why (the first changed file it read)
      ALL reason          a changed file the measurement cannot speak for: run the full regression
@@ -143,9 +143,13 @@ return 0
 /* byFunction file spans: select by the functions the changed lines are in (the coverage), not by the whole file */
 byFunction:
   use arg file, spans
-  /* readers that ran none of the file (compiled it only, or read it another way) run on any change to it */
+  /* readers that ran none of the file (compiled it only, or read it another way) run on any change to it; so do the
+     scripts that check the C++ itself with other compilers or stricter warnings (clang++, -pedantic), which coverage
+     cannot see */
+  compileChecks = .set~of('native/test_generated_warnings.sh', 'native/test_native_nine_standalone.sh')
   do t over readers[file]
     if \ran[file]~hasIndex(t) then call pick t, 'reads' file '(no coverage of it)'
+    else if compileChecks~hasIndex(t) then call pick t, 'checks the C++ of' file '(other compilers, warnings)'
   end
   do t over ran[file]~allIndexes
     if ran[file][t] = '' then call pick t, 'compiles' file '(runs none of it)'
