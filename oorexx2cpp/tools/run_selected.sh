@@ -23,7 +23,20 @@ elif [[ $BASE == @* ]]; then selection=$(sed 's/^/RUN /' "${BASE#@}")      # @FI
 else
   changed=$( { git diff --name-only --relative "$BASE"; git diff --name-only --relative; git ls-files --others --exclude-standard; } | sort -u)
   if [[ -z "$changed" ]]; then echo "no changes since $BASE"; exit 0; fi
-  selection=$(printf '%s\n' "$changed" | "$REXX_BIN" tools/select_tests.rex)
+  # the changed lines of C/C++ files, numbered as at the commit the coverage was measured at (old side of the diff)
+  covAt=$(sed -n '1s/^# measured at \([0-9a-f]*\).*/\1/p' ootest/test_coverage.tsv 2>/dev/null)
+  lines=
+  if [[ -n $covAt ]] && git cat-file -e "$covAt^{commit}" 2>/dev/null; then
+    lines=$(for f in $changed; do
+      case $f in *.hpp|*.cpp|*.h|*.cc) ;; *) continue ;; esac
+      git cat-file -e "$covAt:./$f" 2>/dev/null || continue
+      git diff -U0 "$covAt" -- "$f" | awk -v f="$f" '
+        /^@@ / { split($2, o, ","); a = substr(o[1], 2); n = (2 in o) ? o[2] : 1
+                 s = s (s == "" ? "" : ",") (n == 0 ? a "+" : (n == 1 ? a : a "-" (a + n - 1))) }
+        END { if (s != "") print "LINES", f, s }'
+    done)
+  fi
+  selection=$( { printf '%s\n' "$changed"; [[ -n $lines ]] && printf '%s\n' "$lines"; } | "$REXX_BIN" tools/select_tests.rex)
 fi
 printf '%s\n' "$selection"
 if grep -q '^ALL' <<<"$selection"; then scripts=$(ls native/test_*.sh tests/test_*.sh)
