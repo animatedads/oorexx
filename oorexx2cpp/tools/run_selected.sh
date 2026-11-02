@@ -23,6 +23,15 @@ elif [[ $BASE == @* ]]; then selection=$(sed 's/^/RUN /' "${BASE#@}")      # @FI
 else
   changed=$( { git diff --name-only --relative "$BASE"; git diff --name-only --relative; git ls-files --others --exclude-standard; } | sort -u)
   if [[ -z "$changed" ]]; then echo "no changes since $BASE"; exit 0; fi
+  # The reads speak for BASE only if nothing but documents and the records differs between them: a change since can
+  # make a script read more (an #include, a fixture). Otherwise run everything.
+  readsAt=$(sed -n '1s/^# measured at \([0-9a-f]*\).*/\1/p' "$READS" 2>/dev/null)
+  if [[ -z $readsAt ]] || ! git cat-file -e "$readsAt^{commit}" 2>/dev/null ||
+     [[ -n $(git diff --name-only --relative "$readsAt" "$BASE" -- . ':(exclude)*.md' \
+             ':(exclude)ootest/test_reads.tsv' ':(exclude)ootest/test_coverage.tsv') ]]; then
+    changed="tools/select_tests.rex"     # the selector's own rule for "the measurement cannot speak": ALL
+    echo "reads measured at ${readsAt:-?} are older than $BASE: running everything (refresh: tools/run_all_recording.sh)"
+  fi
   # the changed lines of C/C++ files, numbered as at the commit the coverage was measured at (old side of the diff)
   covAt=$(sed -n '1s/^# measured at \([0-9a-f]*\).*/\1/p' ootest/test_coverage.tsv 2>/dev/null)
   lines=
