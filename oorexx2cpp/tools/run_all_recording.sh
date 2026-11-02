@@ -7,7 +7,7 @@
 # before each script every tracked file of the worker's copy gets access time 2000-01-01, and after it the files
 # whose access time moved were read (the filesystem must update access times: relatime does, for times this old).
 # Results: OUT/results ("PASS script (s)" or "FAIL ..."), logs in OUT/logs. Run again with the same OUT to continue
-# after a stop: finished scripts are kept. Set REXX_LIB, OO_ROOT etc. as for the tests; REXX_PATH is set per copy.
+# after a stop: passed scripts are kept, failed ones run again. Set REXX_LIB, OO_ROOT etc. as for the tests; REXX_PATH is set per copy.
 # SHARD=k/N runs only the k-th of N shares of the scripts (balanced by the measured seconds), for N machines.
 # Architecture: Tom Dyer (the blast-radius check). Code: Claude (Opus 5.5), 2026-11-02.
 set -uo pipefail
@@ -33,7 +33,9 @@ SHARD=${SHARD:-1/1}; sk=${SHARD%/*}; sn=${SHARD#*/}
  done | sort -k1,1rn -k2,2 | awk -v k="$sk" -v n="$sn" '
    { best = 1; for (i = 2; i <= n; i++) if (load[i] < load[best]) best = i
      load[best] += $1; if (best == k) print $2 }') |
- while read -r t; do grep -q "^[A-Z]* $t " "$OUT/results" || echo "$t"; done > "$OUT/queue"
+ while read -r t; do grep -q "^PASS $t " "$OUT/results" || echo "$t"; done > "$OUT/queue"
+# a run again retries what failed: only passes are kept
+grep '^PASS ' "$OUT/results" > "$OUT/results.kept" || true; mv "$OUT/results.kept" "$OUT/results"
 echo "$(wc -l < "$OUT/queue") scripts to run (share $SHARD)"
 rm -f "$OUT"/pids/*
 worker() {   # worker k: take scripts from the queue until it is empty

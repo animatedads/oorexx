@@ -6,7 +6,8 @@
 # Clones animatedads/oorexx (public) into ~/rx2cpp_estate/repo, at the branch head for the tools; builds ooRexx 5.3.0
 # r13196 (GitHub 4b66b3558f7c, the reference interpreter) once into ~/rx2cpp_estate/oorexx; runs the share with
 # tools/run_all_recording.sh; prints a summary between "===== rx2cpp node_suite summary" and "===== end".
-# Run it again with the same arguments to continue after a stop. Needs git, g++, cmake, make. Writes only under
+# Run it again with the same arguments to continue after a stop (failed scripts run again). Needs git, g++,
+# cmake, make and the Boost headers. Writes only under
 # ~/rx2cpp_estate; no sudo. Architecture: Tom Dyer (the ED209 estate). Code: Claude (Opus 5.5), 2026-11-02.
 set -euo pipefail
 COMMIT=${1:?usage: node_suite.sh COMMIT SHARD [JOBS]}; SHARD=${2:?usage: node_suite.sh COMMIT SHARD [JOBS]}
@@ -15,6 +16,9 @@ TOOLS_BRANCH=${TOOLS_BRANCH:-wip-2026-10-29}
 E=$HOME/rx2cpp_estate
 mkdir -p "$E"
 for tool in git g++ cmake make; do command -v "$tool" >/dev/null || { echo "MISSING TOOL: $tool"; exit 2; }; done
+# the runtime includes Boost.Multiprecision (headers only)
+echo '#include <boost/multiprecision/cpp_int.hpp>' | g++ -std=c++17 -x c++ -fsyntax-only - 2>/dev/null ||
+  { echo "MISSING TOOL: boost headers (boost/multiprecision/cpp_int.hpp)"; exit 2; }
 # small machines: build with one job when there is under 2 GB of memory
 mem_mb=$(awk '/MemTotal/ {print int($2 / 1024)}' /proc/meminfo)
 if (( mem_mb < 2048 )); then MAKEJ=1; else MAKEJ=$(nproc); fi
