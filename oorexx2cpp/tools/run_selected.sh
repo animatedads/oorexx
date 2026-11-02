@@ -26,6 +26,13 @@ else
   # the changed lines of C/C++ files, numbered as at the commit the coverage was measured at (old side of the diff)
   covAt=$(sed -n '1s/^# measured at \([0-9a-f]*\).*/\1/p' ootest/test_coverage.tsv 2>/dev/null)
   lines=
+  # The coverage speaks for BASE only if no C/C++ file differs between them: code changed since can make more tests
+  # run a function than the record shows. Otherwise select by file.
+  if [[ -n $covAt ]] && git cat-file -e "$covAt^{commit}" 2>/dev/null &&
+     ! git diff --quiet "$covAt" "$BASE" -- '*.hpp' '*.cpp' '*.h' '*.cc'; then
+    echo "coverage measured at $covAt is older than the C/C++ of $BASE: selecting by file (refresh it: tools/record_coverage.sh)"
+    covAt=
+  fi
   if [[ -n $covAt ]] && git cat-file -e "$covAt^{commit}" 2>/dev/null; then
     lines=$(for f in $changed; do
       case $f in *.hpp|*.cpp|*.h|*.cc) ;; *) continue ;; esac
@@ -64,13 +71,25 @@ if [[ ${RESUME:-0} == 1 && -f "$LOGS/results" ]]; then
   order=$(for t in $order; do grep -q "^[A-Z]* $t " "$LOGS/results" || echo "$t"; done)
 else : > "$LOGS/results"; fi
 rm -rf "$LOGS/pids"; mkdir -p "$LOGS/pids"
-stop() {   # stopped (e.g. by timeout): stop the running scripts too; they are not recorded
-  trap - TERM INT
+xpid=
+scripts_left() {   # stop the scripts still running (each under timeout, in a process group of its own)
   for p in "$LOGS"/pids/*; do [[ -f $p ]] && kill -TERM "$(basename "$p")" 2>/dev/null; done
-  kill 0
 }
-trap stop TERM INT
-[[ -n "$order" ]] && printf '%s\n' $order | xargs -P "$JOBS" -I{} bash -c 'run_one "$1"' _ {}
+# stopped (TERM from timeout or kill; INT from ^C at a terminal): stop everything started; the cut-short scripts are
+# not recorded. Checked with TERM: no script left running, no result line. A closed output pipe is noticed only when
+# the runner next writes, so "| head" does not stop a run.
+stop() {
+  trap - TERM INT HUP PIPE
+  if [[ -n $xpid ]]; then kill -TERM $(pgrep -P "$xpid") "$xpid" 2>/dev/null; fi   # first the runners: no FAIL lines
+  scripts_left
+  exit 143
+}
+trap stop TERM INT HUP PIPE
+trap scripts_left EXIT
+if [[ -n "$order" ]]; then
+  printf '%s\n' $order | xargs -P "$JOBS" -I{} bash -c 'run_one "$1"' _ {} &
+  xpid=$!; wait "$xpid"; xpid=
+fi
 pass=$(grep -c '^PASS' "$LOGS/results"); fail=$(grep -c '^FAIL' "$LOGS/results")
 echo "selected tests: $pass passed, $fail failed, $((SECONDS-s0)) s this sitting, $JOBS at a time"
 (( fail == 0 ))
