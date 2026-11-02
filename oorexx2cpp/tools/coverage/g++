@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# tools/coverage/g++: g++ with coverage, for tools/record_coverage.sh (first in PATH while tests run).
+# Each compile gets a profile directory of its own under $COVROOT/<test>/, so two builds to one object path cannot
+# overwrite each other's counts; the .gcno is copied there under the name gcov pairs with the .gcda.
+# -fno-inline keeps every runtime function out of line, so gcov reports its line range and which lines ran.
+# Without COVROOT it is plain g++. Architecture: Tom Dyer. Code: Claude (Opus 5.5), 2026-11-02.
+REAL=${COV_REAL_CXX:-/usr/bin/g++}
+[[ -z ${COVROOT:-} ]] && exec "$REAL" "$@"
+out= ; compile=0
+args=("$@")
+for ((i = 0; i < ${#args[@]}; i++)); do
+  case ${args[i]} in
+    -E|-M|-MM|-fsyntax-only|--version|-dumpversion|-dumpmachine|-print-*) exec "$REAL" "$@" ;;
+    -o) out=${args[i+1]} ;;
+    -c) compile=1 ;;
+    *.cpp|*.cc|*.cxx|*.C) compile=1 ;;
+  esac
+done
+if (( ! compile )); then exec "$REAL" "$@" --coverage; fi            # a link: only libgcov
+test=${RUN_SELECTED_TEST:-unknown}; test=${test##*/}
+dir=$COVROOT/$test/$(date +%s%N)-$$
+mkdir -p "$dir"
+mark=$dir/.mark; touch "$mark"
+"$REAL" "$@" -fno-inline --coverage -fprofile-update=atomic -fprofile-dir="$dir"; rc=$?
+odir=$(dirname -- "${out:-./a.out}")
+find "$odir" -maxdepth 1 -name '*.gcno' -newer "$mark" 2>/dev/null | while read -r g; do
+  abs=$(cd -- "$(dirname -- "$g")" && pwd)/$(basename -- "$g")
+  cp -- "$g" "$dir/${abs//\//#}"
+done
+exit $rc
