@@ -2,9 +2,11 @@
 # tools/run_selected.sh [BASE]: run the test scripts the changes since BASE (default origin/main) can affect.
 # The changed files are the commits since BASE plus uncommitted and untracked work. The selection is
 # tools/select_tests.rex over ootest/test_reads.tsv (what each test was measured to read). On ALL it runs every test.
-# BASE=ALL runs every test without selecting (the full regression).
+# BASE=ALL runs every test without selecting (the full regression); BASE=@FILE runs the scripts listed in FILE.
 # JOBS=N runs N scripts at a time (default 1), longest first by the measured seconds. Each script builds in its own
 # build/<name> directory, so scripts do not share files.
+# AFTER_EACH=command runs "command script" after each script (tools/record_coverage.sh uses it); each script runs
+# with RUN_SELECTED_TEST set to its path.
 # For checks while working: the merge gate stays the full regression.
 # Architecture: Tom Dyer (the blast-radius check). Code: Claude (Opus 5.5), 2026-10-30, 2026-10-31.
 set -uo pipefail
@@ -17,6 +19,7 @@ READS=$ROOT/ootest/test_reads.tsv
 cd "$ROOT"
 mkdir -p "$LOGS"
 if [[ $BASE == ALL ]]; then selection='ALL requested'
+elif [[ $BASE == @* ]]; then selection=$(sed 's/^/RUN /' "${BASE#@}")      # @FILE: the scripts listed in FILE
 else
   changed=$( { git diff --name-only --relative "$BASE"; git diff --name-only --relative; git ls-files --others --exclude-standard; } | sort -u)
   if [[ -z "$changed" ]]; then echo "no changes since $BASE"; exit 0; fi
@@ -36,12 +39,13 @@ run_one() {   # one script: its log, and one result line in $LOGS/results
   local t=$1 s=$SECONDS r rc pid log="$LOGS/$(basename "$1").log"
   # timeout runs the script in a process group of its own, which a kill of ours does not reach: keep its pid in
   # $LOGS/pids so a stopped run can stop it (timeout passes the signal to the whole group)
-  timeout 3600 bash "$t" > "$log" 2>&1 & pid=$!
+  RUN_SELECTED_TEST=$t timeout 3600 bash "$t" > "$log" 2>&1 & pid=$!
   echo "$pid" > "$LOGS/pids/$pid"; wait "$pid"; rc=$?; rm -f "$LOGS/pids/$pid"
   if (( rc == 0 )); then r=PASS; else r=FAIL; fi
+  if [[ -n ${AFTER_EACH:-} ]]; then $AFTER_EACH "$t" >> "$LOGS/after_each.log" 2>&1; fi
   echo "$r $t ($((SECONDS-s)) s)$([[ $r == FAIL ]] && echo "  log: $log")" | tee -a "$LOGS/results"
 }
-export -f run_one; export LOGS
+export -f run_one; export LOGS AFTER_EACH
 # RESUME=1 keeps $LOGS/results and skips the scripts it already has (for runs longer than one sitting)
 if [[ ${RESUME:-0} == 1 && -f "$LOGS/results" ]]; then
   order=$(for t in $order; do grep -q "^[A-Z]* $t " "$LOGS/results" || echo "$t"; done)
