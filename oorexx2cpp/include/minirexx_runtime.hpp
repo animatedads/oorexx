@@ -834,6 +834,18 @@ struct FrameNames {
     std::vector<std::uint32_t> lens, keys;
     std::vector<int> table;   // slot numbers by key, -1 empty
     std::size_t mask = 0;
+    // Kept by Frame: which slots one ExposeTable exposes (bit k: slot k), for the first table a frame of this body saw
+    // with no names added to it. Written once: exposedBits before exposedFor (release); read after exposedFor (acquire).
+    mutable std::atomic<const void *> exposedFor{nullptr};
+    mutable std::uint64_t exposedBits = 0;
+    void keepExposed(const void *exposeTable, std::uint64_t bits) const {
+        static const char busy = 0;
+        const void *none = nullptr;
+        if (exposedFor.compare_exchange_strong(none, &busy, std::memory_order_acq_rel)) {
+            exposedBits = bits;
+            exposedFor.store(exposeTable, std::memory_order_release);
+        }
+    }
     static std::uint32_t keyOf(const char *t, std::size_t len) {
         return static_cast<std::uint32_t>(len & 0xffff) | static_cast<std::uint32_t>(len ? static_cast<unsigned char>(t[0]) : 0) << 16 |
                static_cast<std::uint32_t>(len ? static_cast<unsigned char>(t[len >= 4 ? 3 : len - 1]) : 0) << 24;
@@ -1266,11 +1278,19 @@ template <std::size_t K> struct Frame {
         if (K > inlineMax) { big.reset(new std::optional<Value>[K]); own = big.get(); }
         const std::size_t count = std::min(K, names.names.size());
         for (std::size_t k = 0; k < K; ++k) at[k] = nullptr;
+        // Which slots are EXPOSEd names depends only on the body's static ExposeTable when no name was added
+        // (PROCEDURE EXPOSE (list) adds them): worked out on the first entry and kept in the FrameNames.
+        const ExposedNames &ex = v.exposed;
+        const bool keepable = v.outer && ex.n == 0 && ex.extra.empty() && count <= 64;
+        bool known = keepable && !ex.table;   // (no table, nothing added: nothing exposed)
+        std::uint64_t bits = 0, seen = 0;
+        if (keepable && ex.table && names.exposedFor.load(std::memory_order_acquire) == ex.table) { bits = names.exposedBits; known = true; }
         for (std::size_t k = 0; k < count; ++k) {
             const char *name = names.names[k];
             const std::size_t len = names.lens[k];
             if (len == 0) continue;
-            if (v.outer && v.isExposed(name, len)) {
+            if (known ? ((bits >> k) & 1u) != 0 : (v.outer && v.isExposed(name, len))) {
+                if (keepable) seen |= std::uint64_t{1} << k;
                 // the owner's (an EXPOSEd object variable is by name; a PROCEDURE EXPOSE name the caller's frame entry)
                 const Variables *owner = v.outer;
                 while (owner->outer && owner->isExposed(name, len)) owner = owner->outer;
@@ -1279,6 +1299,7 @@ template <std::size_t K> struct Frame {
             }
             at[k] = own + k;
         }
+        if (keepable && !known) names.keepExposed(ex.table, seen);
         // (variables set by name before the frame (the method's arguments): moved into it; no slot has cached them)
         for (auto it = v.begin(); it != v.end();) {
             const int k = names.find(it->first.data(), it->first.size());

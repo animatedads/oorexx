@@ -1035,8 +1035,25 @@ inline StringMessageFallback &hostStringBifPrevious() { static StringMessageFall
 // The hot byte-string methods, done in place: no name lookup, no argument slots. Each follows ooRexx exactly for the shapes accepted
 // (plain digit arguments, no pad character); every other shape returns nullopt and takes the general engine.
 inline bool plainCount(const Value &v, std::size_t &out) {
-    if (v.isObject() || v.bytes.empty() || v.bytes.size() > 9 || v.bytes.find_first_not_of("0123456789") != std::string::npos) return false;
-    out = static_cast<std::size_t>(std::stoul(v.bytes.str()));
+    if (v.isObject()) return false;
+    // a whole number whose characters are exactly its coefficient's digits (an arithmetic result, kept as its numeric
+    // form): the same test on the number, without writing the characters
+    const NumCache &nc = v.bytes.numCache();
+    constexpr std::uint32_t wholeCanonical = NumCache::known | NumCache::integer | NumCache::canonical;
+    if ((nc.meta.load(std::memory_order_acquire) & wholeCanonical) == wholeCanonical) {
+        const std::int64_t c = nc.coef.load(std::memory_order_relaxed);
+        if (c < 0 || c > 999999999) return false;   // (a '-', or more than 9 digits)
+        out = static_cast<std::size_t>(c);
+        return true;
+    }
+    const std::string_view t = v.bytes.view();
+    if (t.empty() || t.size() > 9) return false;
+    std::size_t n = 0;
+    for (const char ch : t) {
+        if (ch < '0' || ch > '9') return false;
+        n = n * 10 + static_cast<std::size_t>(ch - '0');
+    }
+    out = n;
     return true;
 }
 inline std::optional<std::string> quickStringBif(const std::string &name, const Value &receiver, const std::vector<Value> &args) {
@@ -1073,7 +1090,11 @@ inline std::optional<std::string> quickStringBif(const std::string &name, const 
         if (args.size() == 1) return std::string(s.substr(start < s.size() ? start : s.size()));
         if (!plainCount(args[1], len)) return std::nullopt;
         const std::size_t take = len < avail ? len : avail;
-        return (avail ? std::string(s.substr(start, take)) : std::string()) + std::string(len - take, ' ');
+        std::string r;
+        r.reserve(len);
+        if (take) r.append(s.data() + start, take);
+        r.append(len - take, ' ');
+        return r;
     }
     if ((rx::eqLit(name, "LEFT") || rx::eqLit(name, "RIGHT")) && args.size() == 1) {
         std::size_t len;
@@ -1314,7 +1335,9 @@ inline MessageResult hostStringBif(const Value &receiver, const std::string &sel
         const ActivationNumeric &n0 = currentNumeric ? *currentNumeric : def0;
         if (auto fast = fastRadix(name, receiver, args, n0.digits)) return MessageResult(Value::string(*fast));
     }
-    if (auto quick = quickStringBif(name, receiver, args)) return MessageResult(Value::string(*quick));
+    // (LENGTH: a whole number, made as its numeric form as an arithmetic result is (its characters when first read))
+    if (args.empty() && rx::eqLit(name, "LENGTH")) return MessageResult(intResult(static_cast<std::int64_t>(receiver.bytes.view().size())));
+    if (auto quick = quickStringBif(name, receiver, args)) return MessageResult(Value::string(std::move(*quick)));
     if (auto quick = quickStringMethod(name, receiver, args)) return std::move(*quick);
     if (rx::eqLit(name, "ISA") && args.size() == 1 && args[0].isObject())
         if (void *h = stringIsAKey(args[0])) {

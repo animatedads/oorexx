@@ -48,6 +48,25 @@ call err "s~substr()"
 call err "s~substr(1, 2, 'ab')"
 call err "s~substr(1, 2, '*', 4)"
 call err "s~substr(.object~new)"
+/* positions and lengths that are arithmetic results (kept as numbers), and ~LENGTH (made as a number) */
+call show s~substr(1 + 1, 1 + 2)
+call show s~substr(10 - 9, 0 + 0)
+call show s~substr(999999999 + 1)
+call show s~substr(s~length)
+call show s~substr(s~length - 1, s~length)
+call err "s~substr(1 - 2)"
+call err "s~substr(1, 0 - 1)"
+call show s~length
+call show ''~length
+call show s~length * 2
+call show s~length || s~length
+call show copies('x', 1234)~length
+numeric digits 3
+call show copies('x', 1234)~length
+call show copies('x', 1234)~length + 0
+call show copies('x', 1234)~length = 1234
+call show s~substr(1, copies('x', 1234)~length)~length
+numeric digits
 /* the BIF form, for comparison */
 call show substr(s, 5, 4)
 call show substr(s, 7)
