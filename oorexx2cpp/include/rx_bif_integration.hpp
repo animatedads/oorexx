@@ -1293,12 +1293,18 @@ inline MessageResult hostStringBif(const Value &receiver, const std::string &sel
         "C2D","C2X","X2C","X2D","D2C","D2X","B2X","X2B","LENGTH","SUBSTR","LEFT","RIGHT","CENTER","CENTRE","REVERSE","TRANSLATE",
         "BITAND","BITOR","BITXOR","STRIP","WORD","WORDS","SUBWORD","WORDINDEX","WORDLENGTH","SPACE","COPIES","COMPARE","DELSTR",
         "DELWORD","DATATYPE","VERIFY","ABBREV","ABS","SIGN","TRUNC","UPPER","LOWER"};
-    std::string name = selector;
-    if (mayNeedUpper(name)) for (char &c : name) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    std::string upperName;   // (a copy only when the selector has a lower-case or non-ASCII byte)
+    if (mayNeedUpper(selector)) {
+        upperName = selector;
+        for (char &c : upperName) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    }
+    const std::string &name = upperName.empty() ? selector : upperName;
     auto fallback = [&]() -> MessageResult { return hostStringBifPrevious()(receiver, selector, args); };
     if (radixBifName(name) && !receiver.isObject() && !plainRadixDigits(name, receiver.bytes.str())) return fallback();
     if (numericEdgeName(name)) {   // (the arguments are looked at only for the numeric methods)
-        std::vector<BifSlot> asSlots{BifSlot(receiver)};
+        std::vector<BifSlot> asSlots;
+        asSlots.reserve(args.size() + 1);
+        asSlots.emplace_back(receiver);
         for (const Value &v : args) asSlots.emplace_back(v);
         const ActivationNumeric def0;
         if (numericEdgeArgs(name, asSlots, currentNumeric ? *currentNumeric : def0)) return fallback();
@@ -1322,7 +1328,7 @@ inline MessageResult hostStringBif(const Value &receiver, const std::string &sel
         if (n >= 1) return MessageResult(Value::string(n <= receiver.bytes.size() ? std::string(1, receiver.bytes[n - 1]) : std::string()));
     }
     if (rx::eqLit(name, "DATATYPE") || rx::eqLit(name, "ABS") || rx::eqLit(name, "MAX") || rx::eqLit(name, "MIN") || rx::eqLit(name, "C2D") || rx::eqLit(name, "D2C") || rx::eqLit(name, "X2D") || rx::eqLit(name, "D2X")) {
-        std::vector<BifSlot> ns; ns.emplace_back(receiver);
+        std::vector<BifSlot> ns; ns.reserve(args.size() + 1); ns.emplace_back(receiver);
         bool plain = true;
         for (const Value &a : args) { if (a.isObject()) { plain = false; break; } ns.emplace_back(a); }
         if (plain) {
@@ -1331,7 +1337,8 @@ inline MessageResult hostStringBif(const Value &receiver, const std::string &sel
         }
     }
     if (!mirrored.count(name)) return fallback();
-    std::vector<rxbif_breadth::Slot> slots;
+    std::vector<rxbif_breadth::Slot> slots;   // the receiver, then the arguments: one allocation
+    slots.reserve(args.size() + 1);
     slots.emplace_back(receiver);
     for (const Value &a : args) {
         if (a.isObject()) {
@@ -1345,8 +1352,8 @@ inline MessageResult hostStringBif(const Value &receiver, const std::string &sel
     auto numeric = [&n]() -> rxbif_breadth::NumericContext {
         return {n.digits, n.fuzz, n.engineering ? rxbif_breadth::NumericForm::Engineering : rxbif_breadth::NumericForm::Scientific};
     };
-    rxbif_breadth::Handler refuse = [](const std::string &, const std::vector<rxbif_breadth::Slot> &,
-                                       const rxbif_breadth::NumericContext &) -> Value { throw NotNativeBif(); };
+    static const rxbif_breadth::Handler refuse = [](const std::string &, const std::vector<rxbif_breadth::Slot> &,
+                                                    const rxbif_breadth::NumericContext &) -> Value { throw NotNativeBif(); };
     rxbif_breadth::Context ctx(native, refuse, std::nullopt, numeric);
     try { return MessageResult(rxbif_breadth::invoke(name, slots, ctx)); }
     catch (const NotNativeBif &) { return fallback(); }
