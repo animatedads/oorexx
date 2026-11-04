@@ -15,6 +15,17 @@ JOBS=${3:-1}
 TOOLS_BRANCH=${TOOLS_BRANCH:-wip-2026-10-29}
 E=$HOME/rx2cpp_estate
 mkdir -p "$E"
+# a step that fails says so, with the end of its log, and the run ends with the marker the reader waits for
+step="checking the tools"; steplog=
+failed() {
+  local rc=$?
+  echo "===== rx2cpp node_suite FAILED while $step (exit $rc)"
+  if [[ -n $steplog && -f $steplog ]]; then echo "----- last lines of $steplog"; tail -25 "$steplog"; fi
+  echo "memory: $(awk '/MemTotal|MemAvailable|SwapTotal|SwapFree/ {printf "%s %d MB  ", $1, $2 / 1024}' /proc/meminfo)"
+  dmesg 2>/dev/null | grep -iE 'out of memory|killed process' | tail -3 || true
+  echo "===== end"
+}
+trap failed ERR
 for tool in git g++ cmake make; do command -v "$tool" >/dev/null || { echo "MISSING TOOL: $tool"; exit 2; }; done
 # the runtime includes Boost.Multiprecision (headers only)
 echo '#include <boost/multiprecision/cpp_int.hpp>' | g++ -std=c++17 -x c++ -fsyntax-only - 2>/dev/null ||
@@ -24,6 +35,7 @@ mem_mb=$(awk '/MemTotal/ {print int($2 / 1024)}' /proc/meminfo)
 if (( mem_mb < 2048 )); then MAKEJ=1; else MAKEJ=$(nproc); fi
 
 # 1. the repository: the tools from the branch head, the commit to test
+step="fetching animatedads/oorexx"
 R=$E/repo
 if [[ ! -d $R/.git ]]; then git clone -q https://github.com/animatedads/oorexx.git "$R"; fi
 git -C "$R" fetch -q origin "$TOOLS_BRANCH" main
@@ -36,23 +48,29 @@ OR=$E/oorexx/usr/local
 if [[ ! -x $OR/bin/rexx ]]; then
   echo "building ooRexx r13196 (once; make -j$MAKEJ, can take an hour on a small node)"
   rm -rf "$E/oorexx_src" "$E/oorexx_build" "$E/oorexx"
+  step="fetching ooRexx"; steplog=
   git clone -q https://github.com/ooRexx/ooRexx.git "$E/oorexx_src"
   git -C "$E/oorexx_src" checkout -q 4b66b3558f7c6c7688005a2d7e05ab2404f5e42e
-  cmake -S "$E/oorexx_src" -B "$E/oorexx_build" -DCMAKE_BUILD_TYPE=Release > "$E/oorexx_cmake.log" 2>&1
-  make -C "$E/oorexx_build" -j"$MAKEJ" > "$E/oorexx_make.log" 2>&1
-  make -C "$E/oorexx_build" install DESTDIR="$E/oorexx" > "$E/oorexx_install.log" 2>&1
+  step="configuring ooRexx (cmake)"; steplog=$E/oorexx_cmake.log
+  cmake -S "$E/oorexx_src" -B "$E/oorexx_build" -DCMAKE_BUILD_TYPE=Release > "$steplog" 2>&1
+  step="building ooRexx (make)"; steplog=$E/oorexx_make.log
+  make -C "$E/oorexx_build" -j"$MAKEJ" > "$steplog" 2>&1
+  step="installing ooRexx"; steplog=$E/oorexx_install.log
+  make -C "$E/oorexx_build" install DESTDIR="$E/oorexx" > "$steplog" 2>&1
+  steplog=
 fi
 export OO_ROOT=$OR REXX_BIN=$OR/bin/rexx PATH=$OR/bin:$PATH LD_LIBRARY_PATH=$OR/lib REXX_LIB=$OR/lib
 unset OOTEST_ROOT    # test_slam_compiled needs an ooTest snapshot: it skips here and runs on the main machine
 
 # 3. a snapshot of COMMIT, and this node's share
 SNAP=$E/snap_$short; OUT=$E/run_${short}_${SHARD/\//of}
+step="making the snapshot of $short"
 if [[ ! -d $SNAP ]]; then
-  mkdir -p "$SNAP.tmp"
+  rm -rf "$SNAP.tmp"; mkdir -p "$SNAP.tmp"
   git -C "$R" archive "$COMMIT" oorexx2cpp | tar -x -C "$SNAP.tmp" --strip-components=1
   mv "$SNAP.tmp" "$SNAP"
 fi
-set +e
+set +e; trap - ERR
 SHARD=$SHARD bash "$R/oorexx2cpp/tools/run_all_recording.sh" "$SNAP" "$OUT" "$JOBS"
 rc=$?
 set -e
