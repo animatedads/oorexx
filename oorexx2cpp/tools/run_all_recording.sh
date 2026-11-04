@@ -66,7 +66,8 @@ trap stop TERM INT
 s0=$SECONDS
 for ((k = 1; k <= JOBS; k++)); do worker "$k" & wpids+=($!); done
 wait "${wpids[@]}"
-total=$(( $(grep -c . "$OUT/results") + $(grep -c . "$OUT/queue" 2>/dev/null || echo 0) ))   # this share
-pass=$(grep -c '^PASS' "$OUT/results"); fail=$(grep -c '^FAIL' "$OUT/results")
+count() { local n; n=$(grep -c "$1" "$2" 2>/dev/null) || true; echo "${n:-0}"; }   # grep -c prints 0 and fails on none
+total=$(( $(count . "$OUT/results") + $(count . "$OUT/queue") ))   # this share
+pass=$(count '^PASS' "$OUT/results"); fail=$(count '^FAIL' "$OUT/results")
 echo "full regression: $pass passed, $fail failed of $total, $((SECONDS - s0)) s this sitting, $JOBS at a time"
 (( pass == total ))
