@@ -1294,7 +1294,7 @@ inline MessageResult hostStringBif(const Value &receiver, const std::string &sel
         "BITAND","BITOR","BITXOR","STRIP","WORD","WORDS","SUBWORD","WORDINDEX","WORDLENGTH","SPACE","COPIES","COMPARE","DELSTR",
         "DELWORD","DATATYPE","VERIFY","ABBREV","ABS","SIGN","TRUNC","UPPER","LOWER"};
     std::string name = selector;
-    for (char &c : name) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    if (mayNeedUpper(name)) for (char &c : name) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
     auto fallback = [&]() -> MessageResult { return hostStringBifPrevious()(receiver, selector, args); };
     if (radixBifName(name) && !receiver.isObject() && !plainRadixDigits(name, receiver.bytes.str())) return fallback();
     if (numericEdgeName(name)) {   // (the arguments are looked at only for the numeric methods)

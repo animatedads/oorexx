@@ -7,6 +7,8 @@
 #include "rxbif.hpp"
 #include "rxbif_sign.hpp"
 #include <array>
+#include <string_view>
+#include <unordered_map>
 #include <cstdint>
 #include <ctime>
 #include <iomanip>
@@ -362,8 +364,14 @@ std::string timeFormat(const Date &d,char style,std::int64_t tz){
 } // namespace
 const std::vector<Signature>& signatures(){return kSpecs;}
 rx::Value invoke(const std::string &name,const std::vector<rx::Value> &a,Context &c){
-    const Signature *spec=nullptr;
-    for(const auto &s:kSpecs)if(name==s.name){spec=&s;break;}
+    // the registry by hash, built once (the first entry of a name, as the linear search found it)
+    static const std::unordered_map<std::string_view,const Signature*> specIndex=[]{
+        std::unordered_map<std::string_view,const Signature*> m;
+        for(const auto &s:kSpecs)m.emplace(s.name,&s);
+        return m;
+    }();
+    const auto at=specIndex.find(name);
+    const Signature *spec=at==specIndex.end()?nullptr:at->second;
     if(!spec)bad(name,"not in add-on registry");
     if(a.size()<spec->minArgs||a.size()>spec->maxArgs)bad(name,"incorrect argument count");
     // (one scratch string per argument: get(i) may be called again while an earlier reference is held)
@@ -371,14 +379,14 @@ rx::Value invoke(const std::string &name,const std::vector<rx::Value> &a,Context
     if(a.size()>8)bad(name,"incorrect argument count");
     const auto get=[&](size_t i)->const std::string&{return str(a,i,name,scratch[i]);};
     const auto ct=[&](size_t i,std::int64_t mi=0)->size_t{return count(a,i,name,mi);};
-    if(name=="SIGN") {
+    if(rx::eqLit(name,"SIGN")) {
         const auto result=rxbif_sign::parse(get(0));
         if(result.status==rxbif_sign::Status::UnqualifiedRange)
             throw NativeSubsetUnsupported("BIF SIGN: exponent boundary requires ooRexx numeric normalization");
         if(result.status!=rxbif_sign::Status::Valid)bad(name,"invalid numeric argument");
         return sv(result.sign==0 ? "0" : result.sign>0 ? "1" : "-1");
     }
-    if(name=="DATE"){
+    if(rx::eqLit(name,"DATE")){
         const char style=a.empty()?'N':caseMode(get(0),name);
         Date now=nowDate(c),d=now;
         const auto tz=localOffsetMicroseconds(c);
@@ -393,7 +401,7 @@ rx::Value invoke(const std::string &name,const std::vector<rx::Value> &a,Context
         }
         return sv(dateFormat(d,style,outputSep,sep,tz));
     }
-    if(name=="TIME"){
+    if(rx::eqLit(name,"TIME")){
         const char style=a.empty()?'N':caseMode(get(0),name);
         const auto tz=localOffsetMicroseconds(c);
         if((style=='E'||style=='R') && a.size()>1)bad(name,"elapsed format not valid with input time");
@@ -412,21 +420,21 @@ rx::Value invoke(const std::string &name,const std::vector<rx::Value> &a,Context
         }
         return sv(timeFormat(d,style,tz));
     }
-    if(name=="REVERSE")return sv(std::string(get(0).rbegin(),get(0).rend()));
-    if(name=="COPIES")return sv(repeat(get(0),ct(1),name));
-    if(name=="UPPER"||name=="LOWER"){
+    if(rx::eqLit(name,"REVERSE"))return sv(std::string(get(0).rbegin(),get(0).rend()));
+    if(rx::eqLit(name,"COPIES"))return sv(repeat(get(0),ct(1),name));
+    if(rx::eqLit(name,"UPPER")||rx::eqLit(name,"LOWER")){
         std::string s=get(0); size_t start=a.size()>=2?ct(1,1)-1:0;
         size_t n=a.size()>=3?ct(2):s.size();
         if(start<s.size()){
             n=std::min(n,s.size()-start);
             for(size_t i=start;i<start+n;i++){
-                if(name=="UPPER"&&s[i]>='a'&&s[i]<='z')s[i]-=32;
-                if(name=="LOWER"&&s[i]>='A'&&s[i]<='Z')s[i]+=32;
+                if(rx::eqLit(name,"UPPER")&&s[i]>='a'&&s[i]<='z')s[i]-=32;
+                if(rx::eqLit(name,"LOWER")&&s[i]>='A'&&s[i]<='Z')s[i]+=32;
             }
         }
         return sv(s);
     }
-    if(name=="SUBSTR"){
+    if(rx::eqLit(name,"SUBSTR")){
         const auto &s=get(0);auto b=ct(1,1)-1;
         size_t n=a.size()>=3?ct(2):b<s.size()?s.size()-b:0;
         const char p=pad(a,3,name)[0];
@@ -434,17 +442,17 @@ rx::Value invoke(const std::string &name,const std::vector<rx::Value> &a,Context
         if(a.size()>=3)out+=repeat(std::string(1,p),n-out.size(),name);
         return sv(out);
     }
-    if(name=="LEFT"||name=="RIGHT"||name=="CENTER"||name=="CENTRE"){
+    if(rx::eqLit(name,"LEFT")||rx::eqLit(name,"RIGHT")||rx::eqLit(name,"CENTER")||rx::eqLit(name,"CENTRE")){
         const auto &s=get(0); const size_t n=ct(1);
         if(n>100000000)bad(name,"excessive width");
         const char p=pad(a,2,name)[0];
-        if(name=="LEFT")return sv(s.substr(0,n)+repeat(std::string(1,p),n>len(s)?n-len(s):0,name));
-        if(name=="RIGHT")return sv((n>=len(s)?repeat(std::string(1,p),n-len(s),name):"")+s.substr(len(s)>n?len(s)-n:0));
+        if(rx::eqLit(name,"LEFT"))return sv(s.substr(0,n)+repeat(std::string(1,p),n>len(s)?n-len(s):0,name));
+        if(rx::eqLit(name,"RIGHT"))return sv((n>=len(s)?repeat(std::string(1,p),n-len(s),name):"")+s.substr(len(s)>n?len(s)-n:0));
         if(n<len(s)){size_t b=(len(s)-n)/2;return sv(s.substr(b,n));}
         size_t delta=n-len(s),left=delta/2,right=delta-left;
         return sv(repeat(std::string(1,p),left,name)+s+repeat(std::string(1,p),right,name));
     }
-    if(name=="STRIP"){
+    if(rx::eqLit(name,"STRIP")){
         auto s=get(0); char opt=a.size()>=2?caseMode(get(1),name):'B';
         if(opt!='B'&&opt!='L'&&opt!='T')bad(name,"option must be B, L, T");
         // RexxString::strip: the third argument is a set of characters (any length); by default blanks and tabs
@@ -454,25 +462,25 @@ rx::Value invoke(const std::string &name,const std::vector<rx::Value> &a,Context
         if(opt!='L')while(e>b&&in(s[e-1]))e--;
         return sv(s.substr(b,e-b));
     }
-    if(name=="SPACE"){
+    if(rx::eqLit(name,"SPACE")){
         auto s=get(0);auto w=words(s);size_t n=a.size()>=2?ct(1):1;
         char p=pad(a,2,name)[0]; std::string sep=repeat(std::string(1,p),n,name),out;
         for(size_t i=0;i<w.size();i++){if(i)out+=sep;out+=s.substr(w[i].pos,w[i].size);}
         return sv(out);
     }
-    if(name=="WORDS")return iv(words(get(0)).size());
-    if(name=="WORD"||name=="WORDINDEX"||name=="WORDLENGTH"){
+    if(rx::eqLit(name,"WORDS"))return iv(words(get(0)).size());
+    if(rx::eqLit(name,"WORD")||rx::eqLit(name,"WORDINDEX")||rx::eqLit(name,"WORDLENGTH")){
         const auto &s=get(0);auto w=words(s);size_t n=ct(1,1);
-        if(name=="WORD")return sv(wordAt(s,w,n));
+        if(rx::eqLit(name,"WORD"))return sv(wordAt(s,w,n));
         if(n>w.size())return iv(0);
-        return iv(name=="WORDINDEX"?w[n-1].pos+1:w[n-1].size);
+        return iv(rx::eqLit(name,"WORDINDEX")?w[n-1].pos+1:w[n-1].size);
     }
-    if(name=="SUBWORD"||name=="DELWORD"){
+    if(rx::eqLit(name,"SUBWORD")||rx::eqLit(name,"DELWORD")){
         const auto &s=get(0);auto w=words(s);auto first=ct(1,1);
         const auto n=a.size()>=3?ct(2):std::numeric_limits<size_t>::max();
-        if(first>w.size())return sv(name=="SUBWORD"?"":s);
+        if(first>w.size())return sv(rx::eqLit(name,"SUBWORD")?"":s);
         size_t last=std::min(w.size(),first-1+std::min(n,w.size()-first+1));
-        if(name=="SUBWORD"){
+        if(rx::eqLit(name,"SUBWORD")){
             if(!n)return sv("");
             return sv(s.substr(w[first-1].pos,w[last-1].pos+w[last-1].size-w[first-1].pos));
         }
@@ -482,7 +490,7 @@ rx::Value invoke(const std::string &name,const std::vector<rx::Value> &a,Context
         size_t to=last==w.size()?s.size():w[last].pos;
         return sv(s.substr(0,from)+s.substr(to));
     }
-    if(name=="WORDPOS"){
+    if(rx::eqLit(name,"WORDPOS")){
         const auto phrase=get(0);const auto &s=get(1);auto w=words(s),p=words(phrase);
         const auto start=a.size()>=3?ct(2,1):1;
         if(p.empty())return iv(0);
@@ -492,14 +500,14 @@ rx::Value invoke(const std::string &name,const std::vector<rx::Value> &a,Context
             if(match)return iv(k+1);
         }return iv(0);
     }
-    if(name=="POS"||name=="LASTPOS"){
+    if(rx::eqLit(name,"POS")||rx::eqLit(name,"LASTPOS")){
         const auto &needle=get(0),&hay=get(1);
         // Every argument is validated before any result is decided (BUILTIN(POS) / BUILTIN(LASTPOS)).
         const size_t start=a.size()>=3?ct(2,1):
-            (name=="POS"?1:hay.size());
+            (rx::eqLit(name,"POS")?1:hay.size());
         const size_t range=a.size()==4?ct(3):0;
         if(needle.empty())return iv(0);
-        if(name=="POS"){
+        if(rx::eqLit(name,"POS")){
             const size_t from=start-1;
             if(from>=hay.size())return iv(0);
             if(a.size()==4){
@@ -522,39 +530,39 @@ rx::Value invoke(const std::string &name,const std::vector<rx::Value> &a,Context
         const size_t found=hay.rfind(needle,end-needle.size());
         return iv(found==std::string::npos||found<begin?0:found+1);
     }
-    if(name=="ABBREV"){
+    if(rx::eqLit(name,"ABBREV")){
         const auto &s=get(0),&abb=get(1);const auto min=a.size()==3?ct(2):0;
         return iv(abb.size()>=min&&abb.size()<=s.size()&&s.compare(0,abb.size(),abb)==0);
     }
-    if(name=="COMPARE"){
+    if(rx::eqLit(name,"COMPARE")){
         const auto &x=get(0),&y=get(1);char p=pad(a,2,name)[0];
         for(size_t i=0;i<std::max(x.size(),y.size());i++){
             char a1=i<x.size()?x[i]:p,b1=i<y.size()?y[i]:p;
             if(a1!=b1)return iv(i+1);
         }return iv(0);
     }
-    if(name=="COUNTSTR"||name=="CHANGESTR"){
+    if(rx::eqLit(name,"COUNTSTR")||rx::eqLit(name,"CHANGESTR")){
         const auto &needle=get(0),&src=get(1);
-        if(needle.empty())return name=="COUNTSTR"?iv(0):sv(src);
-        const size_t limit=name=="CHANGESTR"&&a.size()==4?ct(3):std::numeric_limits<size_t>::max();
-        const std::string repl=name=="CHANGESTR"?get(2):"";
+        if(needle.empty())return rx::eqLit(name,"COUNTSTR")?iv(0):sv(src);
+        const size_t limit=rx::eqLit(name,"CHANGESTR")&&a.size()==4?ct(3):std::numeric_limits<size_t>::max();
+        const std::string repl=rx::eqLit(name,"CHANGESTR")?get(2):"";
         size_t hits=0,p=0;std::string out;
         while(p<src.size()){
             auto at=src.find(needle,p);
             if(at==std::string::npos||hits>=limit)break;
-            if(name=="CHANGESTR"){out+=src.substr(p,at-p);out+=repl;}
+            if(rx::eqLit(name,"CHANGESTR")){out+=src.substr(p,at-p);out+=repl;}
             ++hits;p=at+needle.size();
         }
-        if(name=="COUNTSTR")return iv(hits);
+        if(rx::eqLit(name,"COUNTSTR"))return iv(hits);
         return sv(out+src.substr(p));
     }
-    if(name=="DELSTR"){
+    if(rx::eqLit(name,"DELSTR")){
         const auto &s=get(0);size_t start=a.size()>=2?ct(1,1)-1:0;
         size_t n=a.size()>=3?ct(2):std::numeric_limits<size_t>::max();
         if(start>=s.size())return sv(s);
         return sv(s.substr(0,start)+s.substr(start+std::min(n,s.size()-start)));
     }
-    if(name=="INSERT"){
+    if(rx::eqLit(name,"INSERT")){
         const auto &part=get(0),&s=get(1);size_t at=a.size()>=3?ct(2):0;
         size_t n=a.size()>=4?ct(3):part.size();char p=pad(a,4,name)[0];
         if(at>100000000||n>100000000)bad(name,"size limit");
@@ -562,7 +570,7 @@ rx::Value invoke(const std::string &name,const std::vector<rx::Value> &a,Context
         const std::string insert=part.substr(0,n)+repeat(std::string(1,p),n>part.size()?n-part.size():0,name);
         return sv(s.substr(0,at)+fill+insert+s.substr(std::min(at,s.size())));
     }
-    if(name=="OVERLAY"){
+    if(rx::eqLit(name,"OVERLAY")){
         const auto &part=get(0),&s=get(1);size_t at=a.size()>=3?ct(2,1)-1:0;
         size_t n=a.size()>=4?ct(3):part.size();char p=pad(a,4,name)[0];
         if(at>100000000||n>100000000)bad(name,"size limit");
@@ -574,24 +582,24 @@ rx::Value invoke(const std::string &name,const std::vector<rx::Value> &a,Context
     // Byte-oriented logical operations following the RexxString bit* delegate.
     // Missing second operand is an identity operation; absent pad is the
     // operator's identity byte, so surplus bytes remain unchanged.
-    if(name=="BITAND"||name=="BITOR"||name=="BITXOR"){
+    if(rx::eqLit(name,"BITAND")||rx::eqLit(name,"BITOR")||rx::eqLit(name,"BITXOR")){
         const std::string &first=get(0);
         if(a.size()==1) return sv(first);
         const std::string &second=get(1);
-        unsigned char identity=name=="BITAND"?0xff:0x00;
+        unsigned char identity=rx::eqLit(name,"BITAND")?0xff:0x00;
         unsigned char fill=a.size()==3?static_cast<unsigned char>(pad(a,2,name)[0]):identity;
         if(first.size()>100000000 || second.size()>100000000)bad(name,"qualified size limit");
         std::string out;out.reserve(std::max(first.size(),second.size()));
         for(size_t i=0;i<std::max(first.size(),second.size());++i){
             unsigned char x=i<first.size()?static_cast<unsigned char>(first[i]):fill;
             unsigned char y=i<second.size()?static_cast<unsigned char>(second[i]):fill;
-            unsigned char z=name=="BITAND"?static_cast<unsigned char>(x & y):
-                (name=="BITOR"?static_cast<unsigned char>(x | y):static_cast<unsigned char>(x ^ y));
+            unsigned char z=rx::eqLit(name,"BITAND")?static_cast<unsigned char>(x & y):
+                (rx::eqLit(name,"BITOR")?static_cast<unsigned char>(x | y):static_cast<unsigned char>(x ^ y));
             out.push_back(static_cast<char>(z));
         }
         return sv(out);
     }
-    if(name=="B2X"){
+    if(rx::eqLit(name,"B2X")){
         const auto &input=get(0);
         if(input.size()>100000000)bad(name,"qualified input size limit");
         if(input.empty())return sv("");
@@ -605,7 +613,7 @@ rx::Value invoke(const std::string &name,const std::vector<rx::Value> &a,Context
         for(char ch:input){value=(value<<1)+static_cast<unsigned>(ch-'0');if(++bitcount==4){out+=hex[value];value=0;bitcount=0;}}
         return sv(out);
     }
-    if(name=="X2B"){
+    if(rx::eqLit(name,"X2B")){
         const auto &input=get(0);
         if(input.size()>25000000)bad(name,"qualified output size limit");
         static constexpr char b[]="00000000000100100011010001010110011110001001101010111100110111101111";
@@ -621,11 +629,11 @@ rx::Value invoke(const std::string &name,const std::vector<rx::Value> &a,Context
         }
         return sv(out);
     }
-    if(name=="C2X"){
+    if(rx::eqLit(name,"C2X")){
         static const char*h="0123456789ABCDEF";const auto &s=get(0);std::string out;out.reserve(s.size()*2);
         for(unsigned char ch:s){out+=h[ch>>4];out+=h[ch&15];}return sv(out);
     }
-    if(name=="X2C"){
+    if(rx::eqLit(name,"X2C")){
         const auto &s=get(0);std::string cleaned;
         for(char ch:s){if(ws(ch))continue;
             if(!((ch>='0'&&ch<='9')||(ch>='A'&&ch<='F')||(ch>='a'&&ch<='f')))bad(name,"invalid hex character");
