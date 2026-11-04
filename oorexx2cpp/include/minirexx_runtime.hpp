@@ -38,6 +38,12 @@ namespace rx {
 template <std::size_t N> inline bool eqLit(const std::string &s, const char (&lit)[N]) {
     return s.size() == N - 1 && std::memcmp(s.data(), lit, N - 1) == 0;
 }
+// Does upper-casing s (std::toupper, byte by byte) need to look at it at all? Not when it has no lower-case ASCII
+// letter and no byte >= 128 (the only bytes a locale might map): the names the generated code passes are upper case.
+inline bool mayNeedUpper(const std::string &s) {
+    for (const unsigned char c : s) if ((c >= 'a' && c <= 'z') || c >= 128) return true;
+    return false;
+}
 // The interpreter implements operators as messages to the LEFT operand.
 // All ooRexx instances inherit .Object's comparison methods. The native
 // prototype mirrors its identity-based defaults here, while keeping each
@@ -1731,7 +1737,7 @@ inline void messageInstruction(Variables &vars, const Value &receiver,
 // signed-64-bit subset.  Decimal/NUMERIC contexts require a separate backend.
 inline MessageResult callBuiltin(const std::string &name, const std::vector<Value> &args) {
     if (args.size() != 1) throw std::runtime_error("built-in argument count invalid: " + name);
-    if (name == "ABS") {
+    if (eqLit(name, "ABS")) {
         const auto n = integer(args[0]);
         if (n == std::numeric_limits<std::int64_t>::min())
             throw std::runtime_error("ABS integer overflow: decimal arithmetic not implemented");
@@ -1743,7 +1749,7 @@ inline MessageResult callBuiltin(const std::string &name, const std::vector<Valu
             throw std::runtime_error("ABS exceeds supported NUMERIC DIGITS 9 integer subset");
         return fromInteger(magnitude);
     }
-    if (name == "LENGTH") {
+    if (eqLit(name, "LENGTH")) {
         if (args[0].isObject())
             throw std::runtime_error("LENGTH object argument requires interpreter dispatch");
         if (args[0].bytes.size() > static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max()))

@@ -1,3 +1,5 @@
+#include <string_view>
+#include <unordered_map>
 #include "rxbif_breadth.hpp"
 #include "rxbif_symbol.hpp"
 #include "rxbif_trunc.hpp"
@@ -112,16 +114,22 @@ const std::vector<Spec>& catalog() {
 }
 rx::Value invoke(const std::string& requested, const std::vector<Slot>& a, Context& ctx) {
     std::string name = requested;
-    for(char& c : name) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-    auto& all = catalog();
-    const auto found = std::find_if(all.begin(),all.end(), [&](const Spec& x){return name == x.name;});
-    if(found == all.end()) throw std::runtime_error("unknown ooRexx BUILTIN: " + name);
+    if(rx::mayNeedUpper(name)) for(char& c : name) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    // the catalog by hash, built once (the first entry of a name, as the linear search found it)
+    static const std::unordered_map<std::string_view,const Spec*> specIndex = [] {
+        std::unordered_map<std::string_view,const Spec*> m;
+        for(const Spec& x : catalog()) m.emplace(x.name, &x);
+        return m;
+    }();
+    const auto at = specIndex.find(name);
+    if(at == specIndex.end()) throw std::runtime_error("unknown ooRexx BUILTIN: " + name);
+    const Spec* const found = at->second;
     if(a.size() < found->minArgs || a.size() > found->maxArgs)
         throw std::runtime_error("BIF " + name + ": incorrect argument count");
-    if (name=="SIGN" && a.size()==1 && !a[0])
+    if (rx::eqLit(name,"SIGN") && a.size()==1 && !a[0])
         throw std::runtime_error("BIF SIGN: required argument omitted");
     if (ctx.preferChainback) return delegate(name,a,ctx);
-    if(name=="X2D") {
+    if(rx::eqLit(name,"X2D")) {
         if(!a[0])throw std::runtime_error("BIF X2D: required argument omitted");
         if(a[0]->isObject() || (a.size()==2 && a[1] && a[1]->isObject()))
             return delegate(name,a,ctx);
@@ -148,7 +156,7 @@ rx::Value invoke(const std::string& requested, const std::vector<Slot>& a, Conte
         return delegate(name,a,ctx); // typed resource/precision ceiling only
     }
 
-    if (name == "TRUNC" && !ctx.preferChainback) {
+    if (rx::eqLit(name,"TRUNC") && !ctx.preferChainback) {
         if (!a[0]) throw std::runtime_error("BIF TRUNC: required argument omitted");
         if (!a[0]->isObject() && (a.size()==1 || !a[1] || !a[1]->isObject())) {
             std::size_t decimals=0;
@@ -181,7 +189,7 @@ rx::Value invoke(const std::string& requested, const std::vector<Slot>& a, Conte
     }
     // Exact, precision-independent subset. All other DATATYPE options retain
     // their original route; never accidentally treat them as supported native.
-    if (!ctx.preferChainback && name == "DATATYPE" && a.size() == 2 &&
+    if (!ctx.preferChainback && rx::eqLit(name,"DATATYPE") && a.size() == 2 &&
         a[0] && a[1] && !a[0]->isObject() && !a[1]->isObject() &&
         !a[1]->bytes.empty()) {
         const unsigned char ch = static_cast<unsigned char>(a[1]->bytes[0]);
