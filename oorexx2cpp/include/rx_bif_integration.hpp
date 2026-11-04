@@ -1054,7 +1054,7 @@ inline std::optional<std::string> quickStringBif(const std::string &name, const 
             else for (std::size_t i = 0; i < m; i++) r[i] = static_cast<char>(s[i] & t[i]);
             return r;
         }
-        return std::nullopt;
+        break;   // (SUBSTR, below, has six letters too: returning here kept it from ever running natively)
     default: break;
     }
     if (rx::eqLit(name, "BITOR") && args.size() == 1 && !args[0].isObject()) {
