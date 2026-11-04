@@ -23,4 +23,5 @@ check stem_object_values "$OUT/src/stem_object_values.rex"   # s.[tail] = object
 check collection_union "$OUT/src/collection_union.rex"   # StringTable / Directory UNION natively (CoreClasses.orx single_union), interpreter order
 check internal_exit "$OUT/src/internal_exit.rex"   # EXIT in internal routines reached by CALL (no C++ exception) and by function calls, CALL ON, PROCEDURE, loops, SIGNAL ON
 check scope_lock_threads "$OUT/src/scope_lock_threads.rex"   # guarded methods from four threads, GUARD WHEN hand-off (ScopeLock fast path)
+check string_substr "$OUT/src/string_substr.rex"   # ~SUBSTR natively (quickStringBif) and every form that goes the full route: ends, pad, non-plain numbers, objects, errors, NUMERIC DIGITS 3
 echo "PASS program constructs (4): $(ls "$OUT"/*.expected | wc -l) programs, $(cat "$OUT"/*.expected | wc -l) lines identical to the interpreter"
