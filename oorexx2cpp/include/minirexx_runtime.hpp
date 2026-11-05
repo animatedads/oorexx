@@ -1805,10 +1805,41 @@ inline Value sendLength(const Value &receiver) {
     static const std::string selector("LENGTH");
     return messageValue(receiver, selector, std::vector<Value>(), false);
 }
+// x~CONTAINS(needle) and x~ISA(class) with the literal selector (rules/ExprMessage.cls), and string[i] (indexValue): with a
+// host interpreter (library mode) a string receiver is answered here exactly as the library hook's own paths answer it
+// (rx_bif_integration.hpp quickStringMethod: CONTAINS of a plain needle from the start, [] of a plain position, ISA of a
+// class already asked about), without the hook's selector tests; any other receiver or shape, or standalone, is the message.
+inline Value sendContains(const Value &receiver, const Value &needle) {
+    if (!receiver.isObject() && !needle.isObject() && stringMessageFallback()) {
+        const std::string_view s = receiver.bytes.view(), n = needle.bytes.view();
+        if (s.empty() || n.empty() || n.size() > s.size()) return Value::string("0");
+        return Value::string(std::search(s.begin(), s.end(), n.begin(), n.end()) != s.end() ? "1" : "0");
+    }
+    static const std::string selector("CONTAINS");
+    std::vector<Value> args;
+    args.push_back(needle);
+    return messageValue(receiver, selector, args, false);
+}
+// (set by the library hook: a string's ISA of a class object it has answered before; nullopt: not known yet)
+inline std::optional<bool> (*&stringIsAKnown())(const Value &) { static std::optional<bool> (*f)(const Value &) = nullptr; return f; }
+inline Value sendIsA(const Value &receiver, const Value &cls) {
+    if (!receiver.isObject() && cls.isObject() && stringMessageFallback() && stringIsAKnown())
+        if (const std::optional<bool> known = stringIsAKnown()(cls)) return Value::string(*known ? "1" : "0");
+    static const std::string selector("ISA");
+    std::vector<Value> args;
+    args.push_back(cls);
+    return messageValue(receiver, selector, args, false);
+}
 // receiver[index] (one index): the object's own answer when it has one (ObjectDispatch::indexAt), else the message.
 inline Value indexValue(const Value &receiver, const Value &index) {
     const Value *slot = nullptr;
     if (receiver.isObject() && receiver.object->indexAt(index, slot)) return slot ? *slot : nil();
+    // a string's [] of a plain position (library mode): its character, the null string past the end (String [])
+    std::size_t n = 0;
+    if (!receiver.isObject() && stringMessageFallback() && plainCount(index, n) && n >= 1) {
+        const std::string_view s = receiver.bytes.view();
+        return Value::string(n > s.size() ? std::string_view() : s.substr(n - 1, 1));
+    }
     static const std::string selector("[]");
     std::vector<Value> args;
     args.push_back(index);
