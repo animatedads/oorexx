@@ -155,6 +155,14 @@
     if valueSend then valueSend = selectorToken~kind == 'IDENT'
     if valueSend then do
       if selector == 'LENGTH' & args~items == 0 then direct = 'rx::sendLength(' || recv || ')'
+      /* x~CONTAINS(needle), x~ISA(class): rx::sendContains / rx::sendIsA (a string receiver, library mode) */
+      if (selector == 'CONTAINS' | selector == 'ISA') & args~items == 1 then
+        if args[1] \== 'rx::omittedArgument()' then do
+          t = ctx~label
+          code = code || 'const rx::Value &_sp' || t || ' = ' || inPlace(args[1]) || '; '
+          if selector == 'CONTAINS' then direct = 'rx::sendContains(' || recv || ', _sp' || t || ')'
+          else direct = 'rx::sendIsA(' || recv || ', _sp' || t || ')'
+        end
       if selector == 'SUBSTR' & (args~items == 1 | args~items == 2) then
         if \args~hasItem('rx::omittedArgument()') then do
           t = ctx~label

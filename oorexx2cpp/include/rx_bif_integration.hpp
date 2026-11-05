@@ -1363,5 +1363,14 @@ inline MessageResult hostStringBif(const Value &receiver, const std::string &sel
     catch (const std::runtime_error &) { return fallback(); }   // the native subset cannot do this one: the interpreter decides
 }
 inline const bool hostStringBifInstalled = (hostStringBifPrevious() = stringMessageFallback(), stringMessageFallback() = &hostStringBif, true);
+// rx::sendIsA: a string's ISA of a class object answered before (quickStringMethod's cache), without the message
+inline std::optional<bool> stringIsAKnownHere(const Value &cls) {
+    void *h = stringIsAKey(cls);
+    if (!h) return std::nullopt;
+    auto it = stringIsACache().find(h);
+    if (it == stringIsACache().end()) return std::nullopt;
+    return it->second;
+}
+inline const bool stringIsAKnownInstalled = (stringIsAKnown() = &stringIsAKnownHere, true);
 }
 #endif
