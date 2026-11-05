@@ -1034,28 +1034,7 @@ struct NotNativeBif {};
 inline StringMessageFallback &hostStringBifPrevious() { static StringMessageFallback f = nullptr; return f; }
 // The hot byte-string methods, done in place: no name lookup, no argument slots. Each follows ooRexx exactly for the shapes accepted
 // (plain digit arguments, no pad character); every other shape returns nullopt and takes the general engine.
-inline bool plainCount(const Value &v, std::size_t &out) {
-    if (v.isObject()) return false;
-    // a whole number whose characters are exactly its coefficient's digits (an arithmetic result, kept as its numeric
-    // form): the same test on the number, without writing the characters
-    const NumCache &nc = v.bytes.numCache();
-    constexpr std::uint32_t wholeCanonical = NumCache::known | NumCache::integer | NumCache::canonical;
-    if ((nc.meta.load(std::memory_order_acquire) & wholeCanonical) == wholeCanonical) {
-        const std::int64_t c = nc.coef.load(std::memory_order_relaxed);
-        if (c < 0 || c > 999999999) return false;   // (a '-', or more than 9 digits)
-        out = static_cast<std::size_t>(c);
-        return true;
-    }
-    const std::string_view t = v.bytes.view();
-    if (t.empty() || t.size() > 9) return false;
-    std::size_t n = 0;
-    for (const char ch : t) {
-        if (ch < '0' || ch > '9') return false;
-        n = n * 10 + static_cast<std::size_t>(ch - '0');
-    }
-    out = n;
-    return true;
-}
+// (plainCount: minirexx_runtime.hpp, beside rx::sendSubstr)
 inline std::optional<std::string> quickStringBif(const std::string &name, const Value &receiver, const std::vector<Value> &args) {
     const std::string_view s = receiver.bytes.view();
     switch (name.size()) {

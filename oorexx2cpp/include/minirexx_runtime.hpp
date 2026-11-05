@@ -838,11 +838,17 @@ struct FrameNames {
     // with no names added to it. Written once: exposedBits before exposedFor (release); read after exposedFor (acquire).
     mutable std::atomic<const void *> exposedFor{nullptr};
     mutable std::uint64_t exposedBits = 0;
-    void keepExposed(const void *exposeTable, std::uint64_t bits) const {
+    // With them, when every exposed slot's owner was the pool just outside (one level, as a method's object variables):
+    // that pool's FrameNames and each exposed slot's number in it (-1: the owner keeps the name by name). Null: none.
+    mutable const FrameNames *exposedOwner = nullptr;
+    mutable std::vector<std::int32_t> exposedSlot;
+    void keepExposed(const void *exposeTable, std::uint64_t bits, const FrameNames *owner, std::vector<std::int32_t> &&slots) const {
         static const char busy = 0;
         const void *none = nullptr;
         if (exposedFor.compare_exchange_strong(none, &busy, std::memory_order_acq_rel)) {
             exposedBits = bits;
+            exposedOwner = owner;
+            exposedSlot = std::move(slots);
             exposedFor.store(exposeTable, std::memory_order_release);
         }
     }
@@ -1284,22 +1290,42 @@ template <std::size_t K> struct Frame {
         const bool keepable = v.outer && ex.n == 0 && ex.extra.empty() && count <= 64;
         bool known = keepable && !ex.table;   // (no table, nothing added: nothing exposed)
         std::uint64_t bits = 0, seen = 0;
-        if (keepable && ex.table && names.exposedFor.load(std::memory_order_acquire) == ex.table) { bits = names.exposedBits; known = true; }
+        // (kept with the bits: each exposed slot's number in the owner's frame, when the owner is the pool just outside)
+        const std::int32_t *ownerSlot = nullptr;
+        if (keepable && ex.table && names.exposedFor.load(std::memory_order_acquire) == ex.table) {
+            bits = names.exposedBits; known = true;
+            const Variables *o = v.outer;
+            if (names.exposedOwner && !o->outer && o->frame && o->frameNames == names.exposedOwner) ownerSlot = names.exposedSlot.data();
+        }
+        // (worked out on the first entry: one level while every exposed slot's owner is v.outer, with a frame)
+        bool oneLevel = keepable && !known;
+        const FrameNames *recordOwner = nullptr;
+        std::vector<std::int32_t> slots;
+        if (oneLevel) slots.assign(count, -1);
         for (std::size_t k = 0; k < count; ++k) {
             const char *name = names.names[k];
             const std::size_t len = names.lens[k];
             if (len == 0) continue;
             if (known ? ((bits >> k) & 1u) != 0 : (v.outer && v.isExposed(name, len))) {
                 if (keepable) seen |= std::uint64_t{1} << k;
+                if (ownerSlot) {
+                    const std::int32_t s = ownerSlot[k];
+                    at[k] = (s >= 0 && static_cast<std::size_t>(s) < v.outer->frameSize) ? v.outer->frame[s] : nullptr;
+                    continue;
+                }
                 // the owner's (an EXPOSEd object variable is by name; a PROCEDURE EXPOSE name the caller's frame entry)
                 const Variables *owner = v.outer;
                 while (owner->outer && owner->isExposed(name, len)) owner = owner->outer;
+                if (oneLevel) {
+                    if (owner != v.outer || !owner->frame || (recordOwner && recordOwner != owner->frameNames)) oneLevel = false;
+                    else { recordOwner = owner->frameNames; slots[k] = owner->frameNames->find(name, len); }
+                }
                 at[k] = frameEntry(*owner, name, len);
                 continue;
             }
             at[k] = own + k;
         }
-        if (keepable && !known) names.keepExposed(ex.table, seen);
+        if (keepable && !known) names.keepExposed(ex.table, seen, oneLevel ? recordOwner : nullptr, std::move(slots));
         // (variables set by name before the frame (the method's arguments): moved into it; no slot has cached them)
         for (auto it = v.begin(); it != v.end();) {
             const int k = names.find(it->first.data(), it->first.size());
@@ -1731,6 +1757,53 @@ inline Value messageValue(const Value &receiver, const std::string &selector,
         throw e;
     }
     return std::move(*outcome);
+}
+// A plain count: a whole number of at most 9 digits written as its digits alone, or kept in that numeric form.
+inline bool plainCount(const Value &v, std::size_t &out) {
+    if (v.isObject()) return false;
+    // a whole number whose characters are exactly its coefficient's digits (an arithmetic result, kept as its numeric
+    // form): the same test on the number, without writing the characters
+    const NumCache &nc = v.bytes.numCache();
+    constexpr std::uint32_t wholeCanonical = NumCache::known | NumCache::integer | NumCache::canonical;
+    if ((nc.meta.load(std::memory_order_acquire) & wholeCanonical) == wholeCanonical) {
+        const std::int64_t c = nc.coef.load(std::memory_order_relaxed);
+        if (c < 0 || c > 999999999) return false;   // (a '-', or more than 9 digits)
+        out = static_cast<std::size_t>(c);
+        return true;
+    }
+    const std::string_view t = v.bytes.view();
+    if (t.empty() || t.size() > 9) return false;
+    std::size_t n = 0;
+    for (const char ch : t) {
+        if (ch < '0' || ch > '9') return false;
+        n = n * 10 + static_cast<std::size_t>(ch - '0');
+    }
+    out = n;
+    return true;
+}
+// x~SUBSTR(n[, length]) and x~LENGTH with the literal selector (rules/ExprMessage.cls): a string receiver with plain counts inside
+// its length is answered here, as the standalone subset (sendStringBuiltin) and the library hook (hostStringBif, quickStringBif)
+// both answer it; any other receiver or shape (an object, padding, a non-plain count) is the message, unchanged.
+inline Value sendSubstr(const Value &receiver, const Value &position, const Value *length) {
+    if (!receiver.isObject()) {
+        const std::string_view s = receiver.bytes.view();
+        std::size_t n = 0, len = 0;
+        if (plainCount(position, n) && n >= 1 && n - 1 <= s.size()) {
+            if (!length) return Value::string(std::string(s.substr(n - 1)));
+            if (plainCount(*length, len) && len <= s.size() - (n - 1)) return Value::string(std::string(s.substr(n - 1, len)));
+        }
+    }
+    static const std::string selector("SUBSTR");
+    std::vector<Value> args;
+    args.reserve(length ? 2 : 1);
+    args.push_back(position);
+    if (length) args.push_back(*length);
+    return messageValue(receiver, selector, args, false);
+}
+inline Value sendLength(const Value &receiver) {
+    if (!receiver.isObject()) return fromInteger(static_cast<std::int64_t>(receiver.bytes.view().size()));
+    static const std::string selector("LENGTH");
+    return messageValue(receiver, selector, std::vector<Value>(), false);
 }
 // receiver[index] (one index): the object's own answer when it has one (ObjectDispatch::indexAt), else the message.
 inline Value indexValue(const Value &receiver, const Value &index) {
