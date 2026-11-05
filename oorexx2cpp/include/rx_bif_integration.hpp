@@ -1092,8 +1092,8 @@ inline std::optional<std::string> quickStringBif(const std::string &name, const 
 inline std::unordered_map<void *, bool> &stringIsACache() { static thread_local std::unordered_map<void *, bool> m; return m; }
 // The interpreter class object an ISA argument stands for: an interpreter class, or a compiled / native class wrapper.
 inline void *stringIsAKey(const Value &cls) {
-    if (auto *e = dynamic_cast<EnvObject *>(cls.object.get())) return e->handle;
-    if (auto *n = dynamic_cast<NativeRefBase *>(cls.object.get())) return n->materialize();
+    if (auto *e = rx::envOf(cls.object.get())) return e->handle;
+    if (auto *n = rx::nativeRefOf(cls.object.get())) return n->materialize();
     return nullptr;
 }
 // String methods that are hot in parsers (json.cls): [] (no padding), VERIFY with options, ISA of a class object.
@@ -1114,7 +1114,7 @@ inline std::optional<MessageResult> quickStringMethod(const std::string &name, c
         return MessageResult(Value::string(s.substr(n - 1, len)));
     }
     if (rx::eqLit(name, "VERIFY") && !args.empty() && args.size() <= 4) {
-        for (const Value &a : args) if (a.isObject() && !(dynamic_cast<EnvObject *>(a.object.get()) && static_cast<EnvObject *>(a.object.get())->handle == nullptr)) return std::nullopt;
+        for (const Value &a : args) if (a.isObject() && !(rx::envOf(a.object.get()) && static_cast<EnvObject *>(a.object.get())->handle == nullptr)) return std::nullopt;
         auto omitted = [&](std::size_t i) { return i >= args.size() || (args[i].isObject()); };
         static const std::string rxEmptyRef; const std::string &ref = args[0].isObject() ? rxEmptyRef : args[0].bytes.str();
         if (args[0].isObject()) return std::nullopt;
@@ -1344,7 +1344,7 @@ inline MessageResult hostStringBif(const Value &receiver, const std::string &sel
     slots.emplace_back(receiver);
     for (const Value &a : args) {
         if (a.isObject()) {
-            if (dynamic_cast<EnvObject *>(a.object.get()) && static_cast<EnvObject *>(a.object.get())->handle == nullptr) slots.emplace_back(std::nullopt);
+            if (rx::envOf(a.object.get()) && static_cast<EnvObject *>(a.object.get())->handle == nullptr) slots.emplace_back(std::nullopt);
             else return fallback();
         } else slots.emplace_back(a);
     }

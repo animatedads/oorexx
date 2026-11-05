@@ -51,6 +51,8 @@ inline bool mayNeedUpper(const std::string &s) {
 // does not yet compile ::class or method declarations.
 struct ObjectDispatch;
 struct StemObject;
+struct EnvObject;
+struct NativeRefBase;
 // ooRexx strings are immutable objects passed by reference. RxStr gives Value the same cost model: a string longer
 // than the inline limit lives in one shared buffer, so copying a Value (BIF argument, assignment, PARSE source,
 // message argument) copies a pointer, not the bytes. A writer that finds the buffer shared takes its own copy first.
@@ -382,6 +384,10 @@ struct ObjectDispatch {
     virtual bool isNilObject() const { return false; }
     // The compiled stem object behind this (rx_compound_symbols.hpp), without a dynamic_cast.
     virtual StemObject *asStem() { return nullptr; }
+    // The interpreter object (EnvObject) or the reference to a native object (NativeRefBase) behind this
+    // (rx_object_bridge.hpp), without a dynamic_cast: rx::envOf / rx::nativeRefOf.
+    virtual EnvObject *asEnv() { return nullptr; }
+    virtual NativeRefBase *asNativeRef() { return nullptr; }
     // receiver[index] and receiver[index] = value with one index, done without the message when the object answers them
     // itself exactly as its [] / []= methods would (a native Array): false = send the message. indexAt sets slot to
     // the item, or to nullptr for .nil; indexPut takes the value only when it returns true.
@@ -404,6 +410,8 @@ struct ObjectDispatch {
         throw std::runtime_error("object has no display conversion");
     }
 };
+inline EnvObject *envOf(ObjectDispatch *o) { return o ? o->asEnv() : nullptr; }
+inline NativeRefBase *nativeRefOf(ObjectDispatch *o) { return o ? o->asNativeRef() : nullptr; }
 // ooRexx .NIL is one live singleton object, not a C++ null result.
 // Unimplemented .Object messages must reject rather than approximate.
 // With a host interpreter (library mode) any other .NIL message goes to the interpreter's own .NIL (CLASS, ISNIL, ...).
@@ -489,6 +497,8 @@ struct ThreadState {
     void *currentSender = nullptr;
     void *currentState = nullptr;
     bool noResultPending = false;
+    // Argument vectors of native method calls (native_package_template.cpp.in PooledArgs), kept empty for reuse.
+    std::vector<std::vector<std::optional<Value>>> argPool;
 };
 // (reached through a plain pointer: a thread_local with a constructor is checked for its initialisation at every use, a
 // second thread-local lookup; the pointer needs none, and the state is made once per thread)
