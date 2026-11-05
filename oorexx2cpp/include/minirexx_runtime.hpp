@@ -529,10 +529,13 @@ inline std::string &alternateEnvironment();
 inline void (*&lostDigitsHook())(const Value &) { static void (*hook)(const Value &) = nullptr; return hook; }
 struct ActivationScope {
     enum Kind { Method, Routine };
-    std::string savedTrace;         // TRACE is a setting of the activation: a new one starts at N, the caller's comes back
-    const bool *savedNovalue;       // so is SIGNAL ON NOVALUE: a new activation starts without it
+    // TRACE is a setting of the activation: a new one starts at N, the caller's comes back; so is ADDRESS: a new
+    // activation starts in the default environment. Kept (allocated) only when the caller has others (most do not).
+    struct SavedSettings { std::string trace, address, alternate; };
+    std::unique_ptr<SavedSettings> savedSettings;
+    ThreadState &ts;                // (the thread's state, found once: the destructor gives it back without a lookup)
+    const bool *savedNovalue;       // SIGNAL ON NOVALUE: a new activation starts without it
     const bool *savedLostDigits;    // and SIGNAL ON LOSTDIGITS
-    std::string savedAddress, savedAlternate;   // and ADDRESS: a new activation starts in the default environment
     ClauseClock clockState;
     Kind kind;
     MethodTraps *traps = nullptr;   // the SIGNAL ON state of the running activation (method body or internal routine)
@@ -549,22 +552,20 @@ struct ActivationScope {
     static ActivationScope *&current() { return threadState().scope; }
     explicit ActivationScope(Kind k = Method) : ActivationScope(k, threadState()) {}
     // TRACE N and ADDRESS sh / sh, the settings a new activation starts with. Most callers run with them, so they are
-    // saved (and given back) only when the caller has others: `settings`.
+    // saved (and given back) only when the caller has others: `savedSettings`.
     static bool defaultSettings(const ThreadState &t) {
         return t.trace.size() == 1 && t.trace[0] == 'N' && t.address.size() == 2 && t.address[0] == 's' &&
                t.address[1] == 'h' && t.alternate.size() == 2 && t.alternate[0] == 's' && t.alternate[1] == 'h';
     }
     static void startSettings(ThreadState &t) { t.trace.assign(1, 'N'); t.address.assign("sh", 2); t.alternate.assign("sh", 2); }
-    bool settings = false;
-    ActivationScope(Kind k, ThreadState &t) : kind(k), saved(t.scope) {
+    ActivationScope(Kind k, ThreadState &t) : ts(t), kind(k), saved(t.scope) {
         if (securityHook()) security = securityHook()();
         if (!t.pendingCallType.empty()) callType = std::exchange(t.pendingCallType, std::string());
         t.scope = this;
         savedNovalue = std::exchange(t.novalueArmed, nullptr);
         savedLostDigits = std::exchange(t.lostDigitsArmed, nullptr);
         if (!defaultSettings(t)) {
-            settings = true;
-            savedTrace = std::move(t.trace); savedAddress = std::move(t.address); savedAlternate = std::move(t.alternate);
+            savedSettings.reset(new SavedSettings{std::move(t.trace), std::move(t.address), std::move(t.alternate)});
             startSettings(t);
         }
     }
@@ -580,9 +581,9 @@ struct ActivationScope {
         return s->callType;
     }
     ~ActivationScope() {
-        ThreadState &t = threadState();
+        ThreadState &t = ts;
         t.scope = saved; t.novalueArmed = savedNovalue; t.lostDigitsArmed = savedLostDigits;
-        if (settings) { t.trace = std::move(savedTrace); t.address = std::move(savedAddress); t.alternate = std::move(savedAlternate); }
+        if (savedSettings) { t.trace = std::move(savedSettings->trace); t.address = std::move(savedSettings->address); t.alternate = std::move(savedSettings->alternate); }
         else if (!defaultSettings(t)) startSettings(t);
     }
     ActivationScope(const ActivationScope &) = delete;

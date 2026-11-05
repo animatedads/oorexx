@@ -283,7 +283,21 @@ inline void *activationSecurity(RexxThreadContext *t) {
 }
 // (set while compiled code asks a security manager itself: that message is sent as is)
 inline bool &securityCallInProgress() { static thread_local bool on = false; return on; }
-inline void *securityAtActivationStart() { return current ? librarySecurity(current) : nullptr; }
+// (librarySecurity with the field's address kept: the package object does not move, its fields are found once; at
+// every compiled method or routine call)
+inline void *securityAtActivationStart() {
+    if (!current) return nullptr;
+    static std::atomic<RexxObjectPtr> package{NULLOBJECT};   // (the package the field belongs to: set after it)
+    static std::atomic<void *const *> field{nullptr};
+    if (libraryPackage() != package.load(std::memory_order_acquire)) {
+        if (libraryPackage() == NULLOBJECT) return nullptr;
+        const PackageFields &f = packageFields(current);
+        if (f.securityManager < 0) return nullptr;
+        field.store(reinterpret_cast<void *const *>(libraryPackage()) + f.securityManager, std::memory_order_relaxed);
+        package.store(libraryPackage(), std::memory_order_release);
+    }
+    return *field.load(std::memory_order_relaxed);
+}
 inline const bool securityHookInstalled = (rx::ActivationScope::securityHook() = &securityAtActivationStart, true);
 // The manager object of a SecurityManager wrapper (NULLOBJECT: none).
 inline RexxObjectPtr securityManagerObject(RexxThreadContext *t, void *wrapper) {
