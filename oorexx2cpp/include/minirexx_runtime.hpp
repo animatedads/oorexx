@@ -1312,6 +1312,12 @@ template <std::size_t K> struct Frame {
     Frame(const Frame &) = delete;
     Frame &operator=(const Frame &) = delete;
 };
+// A USE ARG name of a method body, set after its frame (RxHybridCppEmitter): slot k is the frame entry rx::set would
+// find (its own, or the owner's for an EXPOSEd name); an EXPOSEd name its owner keeps by name goes through rx::set.
+template <std::size_t K> inline void setArgument(Frame<K> &frame, std::size_t k, Variables &vars, const char *name, const Value &value) {
+    if (std::optional<Value> *e = frame.at[k]) { if (*e) **e = value; else e->emplace(value); return; }
+    set(vars, name, value);
+}
 // The object variables of a compiled class scope (its EXPOSEd simple names) kept in place, as a frame that lives as long as
 // the object: a method's frame finds an EXPOSEd name there (Frame: the owner's frame entry), so it reads and writes the
 // object variable directly (a stem: its stem variable; its compound entries stay by name). Names no method of the class

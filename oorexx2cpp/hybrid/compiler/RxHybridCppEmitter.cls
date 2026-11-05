@@ -155,7 +155,20 @@
     if \framed then call setArguments
     do statement over method~instructions
       lines~append('      ' || statement)
-      if framed then do; call setArguments; framed = .false; end
+      if framed then do
+        /* the frame's names in slot order: _rxFN{"A", "B", ...} (symbols: no quote or comma inside a name) */
+        parse var statement '_rxFN{' frameList '}'
+        frameSlot = .directory~new
+        k = 0
+        do while frameList \== ''
+          parse var frameList '"' slotName '"' frameList
+          if slotName \== '' then frameSlot[slotName] = k
+          k = k + 1
+          parse var frameList ',' frameList
+        end
+        call setArguments
+        framed = .false
+      end
     end
     if method~selector == 'INIT' then lines~append('      return rx::Value::string(std::string());')
     lines~append('    }')
@@ -176,15 +189,22 @@
     lines~append('    }')
   end
   return
-/* the USE ARG names of the method body: each argument given is set (an omitted one stays unset) */
+/* the USE ARG names of the method body: each argument given is set; an omitted one drops its name (a local one is unset
+   already; an EXPOSEd one is the object's variable, which the interpreter drops too) */
 setArguments:
   do position = 1 to method~parameters~items
     name = method~parameters[position]
     lines~append('      if (arguments.size() > ' || (position - 1) || ' && arguments[' || (position - 1) || ']) {')
-    lines~append('        rx::set(vars, ' || .RxQuote~cpp(name) || ', *arguments[' || (position - 1) || ']);')
+    /* (after the frame: its slot when the name has one; & does not short-circuit, so two tests) */
+    slotted = .false
+    if framed then slotted = frameSlot~hasIndex(name)
+    if slotted then
+      lines~append('        rx::setArgument(_rxF, ' || frameSlot[name] || ', vars, ' || .RxQuote~cpp(name) || ', *arguments[' || (position - 1) || ']);')
+    else lines~append('        rx::set(vars, ' || .RxQuote~cpp(name) || ', *arguments[' || (position - 1) || ']);')
     if method~exposed~hasItem(name) then
       lines~append('        rx::set(fields_, ' || .RxQuote~cpp(name) || ', rx::get(vars, ' || .RxQuote~cpp(name) || '));')
-    lines~append('      }')
+    if method~exposed~hasItem(name) then lines~append('      } else rx::drop(vars, ' || .RxQuote~cpp(name) || ');')
+    else lines~append('      }')
   end
   return
 /* the line that dispatches one selector, under its key (as rx::selectorKey computes it) */
