@@ -190,24 +190,62 @@ struct InstanceState : std::enable_shared_from_this<InstanceState> {
     // instance needs its interpreter object (materializeState copies the items into it, and this goes).
     std::shared_ptr<rx::NativeArray> builtin;
 #endif
-    std::vector<std::pair<std::string, std::shared_ptr<CompiledObject>>> scopes;   // instances have a handful of scopes: a scan beats hashing
+    // The compiled per-class scopes (instances have a handful: a scan beats hashing). A list that only grows, its nodes
+    // freed with the state: a method call finds its scope without the state's lock, by the method table's class name
+    // (key: the same pointer for every method of the class), else by the name's characters under the lock.
+    struct ScopeNode {
+        std::string first;
+        std::shared_ptr<CompiledObject> second;
+        std::atomic<const char *> key{nullptr};
+        std::atomic<ScopeNode *> next{nullptr};
+    };
+    struct ScopeList {
+        std::atomic<ScopeNode *> head{nullptr};
+        ScopeNode *tail = nullptr;   // (gate held)
+        struct iterator {
+            ScopeNode *n;
+            ScopeNode &operator*() const { return *n; }
+            iterator &operator++() { n = n->next.load(std::memory_order_acquire); return *this; }
+            bool operator!=(const iterator &o) const { return n != o.n; }
+        };
+        iterator begin() const { return {head.load(std::memory_order_acquire)}; }
+        iterator end() const { return {nullptr}; }
+        void append(ScopeNode *n) {   // (gate held; n complete: published by the release store)
+            if (tail) tail->next.store(n, std::memory_order_release); else head.store(n, std::memory_order_release);
+            tail = n;
+        }
+        ScopeList() = default;
+        ScopeList(const ScopeList &) = delete;
+        ScopeList &operator=(const ScopeList &) = delete;
+        ~ScopeList() {
+            for (ScopeNode *n = head.load(std::memory_order_relaxed); n;) { ScopeNode *next = n->next.load(std::memory_order_relaxed); delete n; n = next; }
+        }
+    } scopes;
+    std::shared_ptr<CompiledObject> newScope(std::string name, const char *key) {   // (gate held)
+        auto *node = new ScopeNode();
+        node->second = create(name);
+        node->first = std::move(name);
+        node->key.store(key, std::memory_order_relaxed);
+        scopes.append(node);
+        return node->second;
+    }
     std::shared_ptr<CompiledObject> at(const std::string &cls) {
         std::lock_guard<std::mutex> lock(gate);
         for (const auto &entry : scopes) if (entry.first == cls) return entry.second;
-        auto created = create(cls);
-        scopes.emplace_back(cls, created);
-        return created;
+        return newScope(cls, nullptr);
     }
-    // (a class name from the method tables: compared in place, a string made only for a new scope)
+    // (a class name from the method tables: its pointer first; compared in place, a string made only for a new scope)
     std::shared_ptr<CompiledObject> at(const char *cls) {
+        for (const auto &entry : scopes) if (entry.key.load(std::memory_order_relaxed) == cls) return entry.second;
         const std::size_t n = std::strlen(cls);
         std::lock_guard<std::mutex> lock(gate);
-        for (const auto &entry : scopes)
-            if (entry.first.size() == n && std::memcmp(entry.first.data(), cls, n) == 0) return entry.second;
-        std::string name(cls, n);
-        auto created = create(name);
-        scopes.emplace_back(std::move(name), created);
-        return created;
+        for (auto &entry : scopes)
+            if (entry.first.size() == n && std::memcmp(entry.first.data(), cls, n) == 0) {
+                const char *none = nullptr;
+                entry.key.compare_exchange_strong(none, cls, std::memory_order_relaxed);
+                return entry.second;
+            }
+        return newScope(std::string(cls, n), cls);
     }
 };
 class InstanceTable {
@@ -471,16 +509,19 @@ bool builtinSend(InstanceState &st, const std::string &selector, const std::vect
     return true;
 }
 /* SELF~selector(args) from compiled code in an exact instance: dispatch inside the library when the method is compiled. */
-bool nativeSelfSend(const std::shared_ptr<InstanceState> &st, const std::string &definingClass, const std::string &selector,
+bool nativeSelfSend(const std::shared_ptr<InstanceState> &st, const char *definingClass, const std::string &selector,
                     const std::vector<rx::Value> &args, std::optional<rx::Value> &out) {
     static const CiEq same;
     // The super helpers are named after the defining class: RX2CPP_SUPERA_<class>, RX2CPP_SUPER_<class>.
-    auto startsWith = [&](const char *prefix) {
-        const std::size_t n = std::strlen(prefix);
-        return selector.size() > n && same(selector.substr(0, n), prefix);
+    // (prefix: upper case; compared caselessly in place)
+    auto startsWith = [&](const char *prefix, std::size_t n) {
+        if (selector.size() <= n) return false;
+        for (std::size_t i = 0; i < n; ++i)
+            if (ciUpper(static_cast<unsigned char>(selector[i])) != static_cast<unsigned char>(prefix[i])) return false;
+        return true;
     };
-    if (startsWith("RX2CPP_SUPERA_")) return false;
-    if (startsWith("RX2CPP_SUPER_")) {
+    if (startsWith("RX2CPP_SUPERA_", 14)) return false;
+    if (startsWith("RX2CPP_SUPER_", 13)) {
         if (args.empty() || args[0].isObject()) return false;
         const auto &parents = parentTable();
         auto pit = parents.find(definingClass);
@@ -655,11 +696,12 @@ rx::MessageResult inheritedSend(const std::shared_ptr<InstanceState> &st, const 
     return interpreterSend(st, selector, args);
 }
 class NativeFrame final : public SelfSender {
-    std::shared_ptr<InstanceState> st_; std::string definingClass_;
+    // (definingClass_: the method table's class name, static: no string made per call)
+    std::shared_ptr<InstanceState> st_; const char *definingClass_;
     const std::vector<std::optional<rx::Value>> &args_; SelfSender *previous_;
 public:
-    NativeFrame(std::shared_ptr<InstanceState> st, std::string cls, const std::vector<std::optional<rx::Value>> &args)
-        : st_(std::move(st)), definingClass_(std::move(cls)), args_(args), previous_(detail::currentSender) { detail::currentSender = this; }
+    NativeFrame(std::shared_ptr<InstanceState> st, const char *cls, const std::vector<std::optional<rx::Value>> &args)
+        : st_(std::move(st)), definingClass_(cls), args_(args), previous_(detail::currentSender) { detail::currentSender = this; }
     ~NativeFrame() override { detail::currentSender = previous_; }
     std::optional<rx::Value> sendValues(const std::string &selector, const std::vector<rx::Value> &args) override {
         std::optional<rx::Value> out;
@@ -1158,7 +1200,7 @@ public:
     std::optional<rx::Value> sendValues(const std::string &selector, const std::vector<rx::Value> &args) override {
         if (state_ && state_->exact) {
             std::optional<rx::Value> out;
-            if (nativeSelfSend(state_, className_, selector, args, out)) return out;
+            if (nativeSelfSend(state_, className_.c_str(), selector, args, out)) return out;
         }
         // SELF~NEW in a CLASS method: the receiving class object itself (a subclass for an inherited class method) makes
         // the instance; for a class compiled code may instantiate, that runs natively.
