@@ -148,16 +148,14 @@
         lines~append('      vars.numeric.engineering = true;')
     end
     lines~append('      rx::NumericScope _rxNumericScope(vars.numeric);')
-    do position = 1 to method~parameters~items
-      name = method~parameters[position]
-      lines~append('      if (arguments.size() > ' || (position - 1) || ' && arguments[' || (position - 1) || ']) {')
-      lines~append('        rx::set(vars, ' || .RxQuote~cpp(name) || ', *arguments[' || (position - 1) || ']);')
-      if method~exposed~hasItem(name) then
-        lines~append('        rx::set(fields_, ' || .RxQuote~cpp(name) || ', rx::get(vars, ' || .RxQuote~cpp(name) || '));')
-      lines~append('      }')
-    end
+    /* The arguments are set after the body's frame (rx::Frame, its first instruction when it has one): then each lands in
+       its frame entry, with no map node made, moved into the frame and erased. Without a frame, before the body. */
+    framed = .false
+    if method~instructions~items > 0 then framed = method~instructions[1]~pos('_rxF(vars, _rxFN);') > 0
+    if \framed then call setArguments
     do statement over method~instructions
       lines~append('      ' || statement)
+      if framed then do; call setArguments; framed = .false; end
     end
     if method~selector == 'INIT' then lines~append('      return rx::Value::string(std::string());')
     lines~append('    }')
@@ -176,6 +174,17 @@
     end
     lines~append('    default: break;')
     lines~append('    }')
+  end
+  return
+/* the USE ARG names of the method body: each argument given is set (an omitted one stays unset) */
+setArguments:
+  do position = 1 to method~parameters~items
+    name = method~parameters[position]
+    lines~append('      if (arguments.size() > ' || (position - 1) || ' && arguments[' || (position - 1) || ']) {')
+    lines~append('        rx::set(vars, ' || .RxQuote~cpp(name) || ', *arguments[' || (position - 1) || ']);')
+    if method~exposed~hasItem(name) then
+      lines~append('        rx::set(fields_, ' || .RxQuote~cpp(name) || ', rx::get(vars, ' || .RxQuote~cpp(name) || '));')
+    lines~append('      }')
   end
   return
 /* the line that dispatches one selector, under its key (as rx::selectorKey computes it) */
