@@ -30,4 +30,5 @@ check arg_exists_omitted "$OUT/src/arg_exists_omitted.rex"   # ARG(n, 'E'/'O') w
 check string_send_quick "$OUT/src/string_send_quick.rex"   # x~CONTAINS / x~ISA as rx::sendContains / rx::sendIsA, string[i] in indexValue: in place for a string (library mode), objects, quoted selectors
 check instance_isa_args "$OUT/src/instance_isa_args.rex"   # ISA of compiled instances cached by method table (or name), identity compares, pooled native call arguments: nested, recursive, omitted
 check string_send_direct "$OUT/src/string_send_direct.rex"   # x~SUBSTR / x~LENGTH as rx::sendSubstr / rx::sendLength: argument order, in-place reads, object receivers
+check external_library_calls "$OUT/src/external_library_calls.rex"   # ::ROUTINE ... EXTERNAL "LIBRARY rxmath ...": function and CALL forms from program, method, routine, internal routine, NUMERIC DIGITS (no import merge afterwards)
 echo "PASS program constructs (4): $(ls "$OUT"/*.expected | wc -l) programs, $(cat "$OUT"/*.expected | wc -l) lines identical to the interpreter"

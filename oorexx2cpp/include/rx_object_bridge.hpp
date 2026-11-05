@@ -2921,8 +2921,11 @@ inline void mergeExternalCall(RexxThreadContext *t, RexxRoutineObject helper, st
 // small interpreter routine under the caller's NUMERIC settings. An argument that names a stem the callee filled
 // (SysFileTree spec, 'files.', ...) is copied back into the caller's compiled variables, as the interpreter would leave it.
 // dynamicName: CALL (expression), the routine name computed at run time (passed as one more argument).
+// mergeImports false: the routine is one the package declares ::ROUTINE ... EXTERNAL "LIBRARY ...". The interpreter resolves
+// it as a package routine and merges nothing after it (mergeRequired is CALL of an external program only), so the helper's
+// imports are not looked at.
 inline MessageResult interpreterCall(Variables &vars, const std::string &name, const std::vector<std::optional<Value>> &args,
-                                     const std::optional<Value> &dynamicName = std::nullopt) {
+                                     const std::optional<Value> &dynamicName = std::nullopt, bool mergeImports = true) {
     RexxThreadContext *t = rxobj::need();
     rxobj::LocalRefs temps(t);
     if (rxobj::bifStatsOn()) rxobj::bifStat("CALL " + name);
@@ -3046,7 +3049,7 @@ inline MessageResult interpreterCall(Variables &vars, const std::string &name, c
         raised.conditionObject = takeKeptCondition();
         throw raised;
     }
-    mergeExternalCall(t, routine, it->second.merged);
+    if (mergeImports) mergeExternalCall(t, routine, it->second.merged);
     if (r == NULLOBJECT) return std::nullopt;
     RexxArrayObject out = (RexxArrayObject)r;
     auto text = [&](RexxObjectPtr o) { RexxStringObject so = (RexxStringObject)temps((RexxObjectPtr)t->ObjectToString(o)); return std::string(t->StringData(so), t->StringLength(so)); };

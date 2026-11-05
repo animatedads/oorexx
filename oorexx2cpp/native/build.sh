@@ -86,7 +86,19 @@ if "$CXX" -fno-gnu-unique -x c++ -E /dev/null >/dev/null 2>&1; then uniqueflag=(
 cxxflags=( -std=c++17 -O2 -fPIC -Wall -Wextra -Werror "${uniqueflag[@]}"
     -I"$OO_INCLUDE" -I"$ROOT/include" -I"$ROOT/hybrid" -I"$TMP" -DRX2CPP_HOST_API "${bifflags[@]}" )
 objs=( )
-for src in "$TMP/generated.cpp" "${bifsrc[@]}"; do
+# generated.cpp is one self-contained chunk per class (each starts with the compiler-output comment and its own
+# includes; no chunk names another's class). A large program is compiled as several parts cut at chunk boundaries,
+# each up to RX2CPP_SPLIT_BYTES (default 1500000; 0 compiles generated.cpp whole): the C++ compiler's memory grows with
+# the translation unit, and one 11,100-line program (SLAM 450) needed more than 6 GB as a single unit.
+gensrc=( "$TMP/generated.cpp" )
+split=${RX2CPP_SPLIT_BYTES:-1500000}
+if [[ "$split" =~ ^[0-9]+$ ]] && (( split > 0 )) && (( $(wc -c < "$TMP/generated.cpp") > split )); then
+    awk -v dir="$TMP" -v limit="$split" '
+        /^\/\/ rx2cpp ooRexx class compiler output/ { if (part == 0 || size >= limit) { if (part) close(out); part++; size = 0; out = sprintf("%s/generated_part%03d.cpp", dir, part) } }
+        { if (part == 0) { part = 1; out = sprintf("%s/generated_part%03d.cpp", dir, part) } print > out; size += length($0) + 1 }' "$TMP/generated.cpp"
+    gensrc=( "$TMP"/generated_part*.cpp )
+fi
+for src in "${gensrc[@]}" "${bifsrc[@]}"; do
     obj="$TMP/obj_${#objs[@]}_$(basename -- "$src" .cpp).o"
     "$CXX" "${cxxflags[@]}" -c "$src" -o "$obj"
     objs+=( "$obj" )
