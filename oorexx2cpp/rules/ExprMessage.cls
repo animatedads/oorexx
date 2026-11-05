@@ -21,11 +21,15 @@
   /* A plain variable receiver is not copied for the first send (a large string read many times by a parser): the
      variable's own value is used by reference; an object receiver is still held by a copy for the duration of the send. */
   recv = current
+  /* (declared: the C++ variable current exists; a variable receiver declares it at its first value, not as an empty
+     string made first and thrown away) */
+  declared = .true
   if receiver~left(8) == 'RX_VGET(' then do
     code = code || 'const rx::Value& _ref' || tag || ' = RX_VREF(' || receiver~substr(9) || '; '
-    code = code || 'const rx::Value _keep' || tag || ' = _ref' || tag || '.isObject() ? _ref' || tag || ' : rx::Value::string(std::string()); '
-    code = code || 'rx::Value ' || current || ' = rx::Value::string(std::string()); '
-    recv = '(_ref' || tag || '.isObject() ? _keep' || tag || ' : _ref' || tag || ')'
+    /* (the copy that holds an object receiver: none for a string) */
+    code = code || 'std::optional<rx::Value> _keep' || tag || '; if (_ref' || tag || '.isObject()) _keep' || tag || '.emplace(_ref' || tag || '); '
+    declared = .false
+    recv = '(_keep' || tag || ' ? *_keep' || tag || ' : _ref' || tag || ')'
   end
   else code = code || 'rx::Value ' || current || ' = ' || receiver || '; '
   attrAssign = .false
@@ -129,6 +133,7 @@
         ix = args[2]
         if ix~left(9) == 'RX_VGET("' & ix~right(2) == '")' & pos('(', ix, 9) == 0 then ix = 'RX_VREF(' || ix~substr(9)
         code = code || 'rx::indexAssign(' || recv || ', std::move(_val' || t || '), ' || ix || '); '
+        call declare
         recv = current
         iterate
       end
@@ -136,7 +141,7 @@
         /* a plain variable index is read in place (nothing runs between reading it and the access) */
         ix = args[1]
         if ix~left(9) == 'RX_VGET("' & ix~right(2) == '")' & pos('(', ix, 9) == 0 then ix = 'RX_VREF(' || ix~substr(9)
-        code = code || current || ' = rx::indexValue(' || recv || ', ' || ix || '); '
+        code = code || assignTo() || ' = rx::indexValue(' || recv || ', ' || ix || '); '
         recv = current
         iterate
       end
@@ -158,13 +163,29 @@
     else if asInstruction & \s~is('~') & \s~is('~~') & \s~is('[') then
       code = code || 'rx::messageInstruction(vars, ' || callExpr || '); '
     else
-      code = code || current || ' = rx::messageValue(' || callExpr || '); '
+      code = code || assignTo() || ' = rx::messageValue(' || callExpr || '); '
+    call declare
     recv = current
   end
-  if \asInstruction then code = code || 'return ' || current || '; '
+  if \asInstruction then do
+    call declare
+    code = code || 'return ' || current || '; '
+  end
   /* a message may run any code: the native registers (RxNative) are cleared after it */
   if \asInstruction then return .RxNative~afterCall(code || '}())')
   return code || '}())'
+/* the target of current's next value: its declaration the first time */
+assignTo:
+  if declared then return current
+  declared = .true
+  return 'rx::Value ' || current
+/* current read before any value (after an assignment send): declared as the empty string, as before */
+declare:
+  if \declared then do
+    code = code || 'rx::Value ' || current || ' = rx::Value::string(std::string()); '
+    declared = .true
+  end
+  return
 ::requires 'core/RxQuote.cls'
 ::requires 'rules/CompoundAssignmentOps.cls'
 ::requires 'rules/RxNative.cls'
