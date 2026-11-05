@@ -51,5 +51,6 @@ The two dumps must be identical (class, category, from, to and value of every el
 | 2026-11-05, 2ae1c73 (main, merge of 2fdc0af) | Claude | dump pass 31.5 s; 3 passes 99.6 s | dump pass 7.4 s; 3 passes 22.8 s (4.37x) | merge gate; dumps identical; 71,087 trips a pass |
 | 2026-11-05, f3f1934 (wip: Frame owner slot cache; rx::sendSubstr / sendLength) | Claude | dump pass 33.1 s; 3 passes 100.9 s | dump pass 7.1 s; 3 passes 22.8 s (4.43x) | dumps identical; 71,087 trips a pass; rexxcps compile 2,968 M instructions (-13.2% from 2fdc0af) |
 | 2026-11-05, 0caa741 (main, merge of f3f1934) | Claude | dump pass 33.1 s; 3 passes 98.5 s | dump pass 7.6 s; 3 passes 22.0 s (4.47x) | merge gate; dumps identical; 71,087 trips a pass |
+| 2026-11-05, 0caa741, **Release interpreter** de1db87 | Claude | dump pass 17.6 s; 3 passes 59.5 s | dump pass 7.2 s; 3 passes 21.8 s (2.73x) | Release interpreter for both columns; dumps identical (and identical to the oracle's). The rows above use the unoptimized oracle (r13196, -g, no -O) |
 
 Crossings are calls between compiled code and the interpreter (RX2CPP_BIF_STATS=1 reports them).
