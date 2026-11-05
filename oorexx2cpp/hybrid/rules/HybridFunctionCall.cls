@@ -184,6 +184,23 @@
     if trapped then return '_rxTrap.condition(' || option || ')'
     return 'rx::noCondition(' || option || ')'
   end
+  /* ARG(n, 'E') / ARG(n, 'O') with a literal position and option: whether slot n was given, read in place (as
+     rx::argBifSlots answers it: n <= the slot count and the slot not omitted), the result "1" or "0". */
+  if name == 'ARG' & args~items == 2 & \delegate then do
+    /* (a literal's characters, number or string; .nil for anything else) */
+    position = .RxNative~literalText(args[1])
+    option = .RxNative~literalText(args[2])
+    if position \== .nil & option \== .nil then
+      if position~verify('0123456789') == 0 & length(position) <= 9 & option \== '' then do
+        position = position + 0
+        letter = option~left(1)~upper
+        if position > 0 & (letter == 'E' | letter == 'O') then do
+          given = '(arguments.size() >= ' || position || ' && arguments[' || (position - 1) || '])'
+          if letter == 'O' then given = '!' || given
+          return '([&]() -> const rx::Value & { static const rx::Value _rxYes = rx::Value::string("1"), _rxNo = rx::Value::string("0"); return ' || given || ' ? _rxYes : _rxNo; }())'
+        end
+      end
+  end
   code = '([&]() -> rx::Value { std::vector<rxbif_breadth::Slot> _rxSlots; _rxSlots.reserve(' || args~items || '); '
   do argExpr over args
     if argExpr == 'RX2CPP_OMITTED' then code = code || '_rxSlots.push_back(std::nullopt); '
