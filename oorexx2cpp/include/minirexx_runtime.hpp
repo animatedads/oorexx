@@ -1758,6 +1758,53 @@ inline Value messageValue(const Value &receiver, const std::string &selector,
     }
     return std::move(*outcome);
 }
+// A plain count: a whole number of at most 9 digits written as its digits alone, or kept in that numeric form.
+inline bool plainCount(const Value &v, std::size_t &out) {
+    if (v.isObject()) return false;
+    // a whole number whose characters are exactly its coefficient's digits (an arithmetic result, kept as its numeric
+    // form): the same test on the number, without writing the characters
+    const NumCache &nc = v.bytes.numCache();
+    constexpr std::uint32_t wholeCanonical = NumCache::known | NumCache::integer | NumCache::canonical;
+    if ((nc.meta.load(std::memory_order_acquire) & wholeCanonical) == wholeCanonical) {
+        const std::int64_t c = nc.coef.load(std::memory_order_relaxed);
+        if (c < 0 || c > 999999999) return false;   // (a '-', or more than 9 digits)
+        out = static_cast<std::size_t>(c);
+        return true;
+    }
+    const std::string_view t = v.bytes.view();
+    if (t.empty() || t.size() > 9) return false;
+    std::size_t n = 0;
+    for (const char ch : t) {
+        if (ch < '0' || ch > '9') return false;
+        n = n * 10 + static_cast<std::size_t>(ch - '0');
+    }
+    out = n;
+    return true;
+}
+// x~SUBSTR(n[, length]) and x~LENGTH with the literal selector (rules/ExprMessage.cls): a string receiver with plain counts inside
+// its length is answered here, as the standalone subset (sendStringBuiltin) and the library hook (hostStringBif, quickStringBif)
+// both answer it; any other receiver or shape (an object, padding, a non-plain count) is the message, unchanged.
+inline Value sendSubstr(const Value &receiver, const Value &position, const Value *length) {
+    if (!receiver.isObject()) {
+        const std::string_view s = receiver.bytes.view();
+        std::size_t n = 0, len = 0;
+        if (plainCount(position, n) && n >= 1 && n - 1 <= s.size()) {
+            if (!length) return Value::string(std::string(s.substr(n - 1)));
+            if (plainCount(*length, len) && len <= s.size() - (n - 1)) return Value::string(std::string(s.substr(n - 1, len)));
+        }
+    }
+    static const std::string selector("SUBSTR");
+    std::vector<Value> args;
+    args.reserve(length ? 2 : 1);
+    args.push_back(position);
+    if (length) args.push_back(*length);
+    return messageValue(receiver, selector, args, false);
+}
+inline Value sendLength(const Value &receiver) {
+    if (!receiver.isObject()) return fromInteger(static_cast<std::int64_t>(receiver.bytes.view().size()));
+    static const std::string selector("LENGTH");
+    return messageValue(receiver, selector, std::vector<Value>(), false);
+}
 // receiver[index] (one index): the object's own answer when it has one (ObjectDispatch::indexAt), else the message.
 inline Value indexValue(const Value &receiver, const Value &index) {
     const Value *slot = nullptr;

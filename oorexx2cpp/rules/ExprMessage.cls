@@ -146,6 +146,38 @@
         iterate
       end
     end
+    /* x~SUBSTR(n[, length]) and x~LENGTH for a value: rx::sendSubstr / rx::sendLength answer a string receiver in place
+       (no argument vector, no string-message dispatch) and send the message for anything else. The arguments are still
+       evaluated in order, before the send; one is read in place only when nothing is evaluated after it. */
+    direct = ''
+    valueSend = \indexed & \attrAssign & \cascade
+    if valueSend & asInstruction then valueSend = s~is('~') | s~is('~~') | s~is('[')
+    if valueSend then valueSend = selectorToken~kind == 'IDENT'
+    if valueSend then do
+      if selector == 'LENGTH' & args~items == 0 then direct = 'rx::sendLength(' || recv || ')'
+      if selector == 'SUBSTR' & (args~items == 1 | args~items == 2) then
+        if \args~hasItem('rx::omittedArgument()') then do
+          t = ctx~label
+          lengthArg = 'nullptr'
+          if args~items == 1 then code = code || 'const rx::Value &_sp' || t || ' = ' || inPlace(args[1]) || '; '
+          else do
+            /* (the position is read in place only when the length is a literal: any other length could change it) */
+            position = args[1]
+            if args[2]~left(58) == '([]() -> const rx::Value & { static const rx::Value _rxLit' then position = inPlace(position)
+            if position~left(7) == 'RX_VREF' then code = code || 'const rx::Value &_sp' || t || ' = ' || position || '; '
+            else code = code || 'const rx::Value _sp' || t || ' = ' || position || '; '
+            code = code || 'const rx::Value &_sn' || t || ' = ' || inPlace(args[2]) || '; '
+            lengthArg = '&_sn' || t
+          end
+          direct = 'rx::sendSubstr(' || recv || ', _sp' || t || ', ' || lengthArg || ')'
+        end
+    end
+    if direct \== '' then do
+      code = code || assignTo() || ' = ' || direct || '; '
+      call declare
+      recv = current
+      iterate
+    end
     argVar = '_args' || ctx~label
     code = code || 'std::vector<rx::Value> ' || argVar || '; '
     if args~items > 1 then code = code || argVar || '.reserve(' || args~items || '); '
@@ -179,6 +211,12 @@ assignTo:
   if declared then return current
   declared = .true
   return 'rx::Value ' || current
+/* a plain variable read (RX_VGET / RX_VGETK) as the variable's value in place (RX_VREF / RX_VREFK); anything else as it is */
+inPlace: procedure
+  use arg e
+  if e~left(9) == 'RX_VGET("' & e~right(2) == '")' & pos('(', e, 9) == 0 then return 'RX_VREF(' || e~substr(9)
+  if e~left(9) == 'RX_VGETK(' & e~right(2) == '")' & pos('(', e, 10) == 0 then return 'RX_VREFK(' || e~substr(10)
+  return e
 /* current read before any value (after an assignment send): declared as the empty string, as before */
 declare:
   if \declared then do
