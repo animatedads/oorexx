@@ -1809,11 +1809,15 @@ inline Value sendLength(const Value &receiver) {
 // host interpreter (library mode) a string receiver is answered here exactly as the library hook's own paths answer it
 // (rx_bif_integration.hpp quickStringMethod: CONTAINS of a plain needle from the start, [] of a plain position, ISA of a
 // class already asked about), without the hook's selector tests; any other receiver or shape, or standalone, is the message.
+// "1" or "0" made as a number, its characters written when read (rx_rexx_number.hpp truthValue, as a comparison makes it)
+inline Value truthOf(bool b) {
+    return Value(Value::PendingTag{}, b ? 1 : 0, NumCache::known | NumCache::decimal | NumCache::integer | (128u << 8));
+}
 inline Value sendContains(const Value &receiver, const Value &needle) {
     if (!receiver.isObject() && !needle.isObject() && stringMessageFallback()) {
         const std::string_view s = receiver.bytes.view(), n = needle.bytes.view();
-        if (s.empty() || n.empty() || n.size() > s.size()) return Value::string("0");
-        return Value::string(std::search(s.begin(), s.end(), n.begin(), n.end()) != s.end() ? "1" : "0");
+        if (s.empty() || n.empty() || n.size() > s.size()) return truthOf(false);
+        return truthOf(std::search(s.begin(), s.end(), n.begin(), n.end()) != s.end());
     }
     static const std::string selector("CONTAINS");
     std::vector<Value> args;
@@ -1824,7 +1828,7 @@ inline Value sendContains(const Value &receiver, const Value &needle) {
 inline std::optional<bool> (*&stringIsAKnown())(const Value &) { static std::optional<bool> (*f)(const Value &) = nullptr; return f; }
 inline Value sendIsA(const Value &receiver, const Value &cls) {
     if (!receiver.isObject() && cls.isObject() && stringMessageFallback() && stringIsAKnown())
-        if (const std::optional<bool> known = stringIsAKnown()(cls)) return Value::string(*known ? "1" : "0");
+        if (const std::optional<bool> known = stringIsAKnown()(cls)) return truthOf(*known);
     static const std::string selector("ISA");
     std::vector<Value> args;
     args.push_back(cls);

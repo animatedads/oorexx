@@ -336,9 +336,11 @@ struct CurrentStateRef {
 CurrentStateRef currentState;
 thread_local std::shared_ptr<InstanceState> pendingAdopt;      // set while an interpreter object is made for a native state
 struct StateScope {
+    rx::ThreadState &ts;   // (the thread's state found once: each currentState access is a thread-local lookup)
     InstanceState *previous;
-    explicit StateScope(InstanceState *s) : previous(currentState) { currentState = s; }
-    ~StateScope() { currentState = previous; }
+    explicit StateScope(InstanceState *s) : StateScope(s, rx::threadState()) {}
+    StateScope(InstanceState *s, rx::ThreadState &t) : ts(t), previous(static_cast<InstanceState *>(t.currentState)) { t.currentState = s; }
+    ~StateScope() { ts.currentState = previous; }
 };
 std::optional<rx::Value> optionalOf(const rx::Value &v) {
     if (v.isObject()) {
@@ -698,11 +700,11 @@ rx::MessageResult inheritedSend(const std::shared_ptr<InstanceState> &st, const 
 class NativeFrame final : public SelfSender {
     // (definingClass_: the method table's class name, static: no string made per call)
     std::shared_ptr<InstanceState> st_; const char *definingClass_;
-    const std::vector<std::optional<rx::Value>> &args_; SelfSender *previous_;
+    const std::vector<std::optional<rx::Value>> &args_; rx::ThreadState &ts_; SelfSender *previous_;
 public:
-    NativeFrame(std::shared_ptr<InstanceState> st, const char *cls, const std::vector<std::optional<rx::Value>> &args)
-        : st_(std::move(st)), definingClass_(cls), args_(args), previous_(detail::currentSender) { detail::currentSender = this; }
-    ~NativeFrame() override { detail::currentSender = previous_; }
+    NativeFrame(std::shared_ptr<InstanceState> st, const char *cls, const std::vector<std::optional<rx::Value>> &args, rx::ThreadState &ts)
+        : st_(std::move(st)), definingClass_(cls), args_(args), ts_(ts), previous_(static_cast<SelfSender *>(ts.currentSender)) { ts.currentSender = static_cast<SelfSender *>(this); }
+    ~NativeFrame() override { ts_.currentSender = previous_; }
     std::optional<rx::Value> sendValues(const std::string &selector, const std::vector<rx::Value> &args) override {
         std::optional<rx::Value> out;
         if (nativeSelfSend(st_, definingClass_, selector, args, out)) return out;
@@ -764,19 +766,20 @@ std::optional<rx::Value> runNative(const std::shared_ptr<InstanceState> &st, Res
     }
     auto obj = st->at(info.definingClass);
     std::lock_guard<ScopeLock> hold(obj->scope_lock);
-    NativeFrame frame(st, info.definingClass, args);
-    StateScope current(st.get());
-    rx::noResultPending() = false;
+    rx::ThreadState &ts = rx::threadState();   // (one thread-local lookup for the frame, the state and the no-result flag)
+    NativeFrame frame(st, info.definingClass, args, ts);
+    StateScope current(st.get(), ts);
+    ts.noResultPending = false;
 #ifdef RX2CPP_HOST_API
     try {
 #endif
         rx::Value result = obj->invokeValues(method.first, args);
-        const bool noValue = std::exchange(rx::noResultPending(), false);
+        const bool noValue = std::exchange(ts.noResultPending, false);
         if (info.noResult || noValue) return std::nullopt;
         return result;
 #ifdef RX2CPP_HOST_API
     }
-    catch (const rx::RaiseToCaller &r) { rx::noResultPending() = false; return rx::raisedInCaller(r); }
+    catch (const rx::RaiseToCaller &r) { ts.noResultPending = false; return rx::raisedInCaller(r); }
 #endif
 }
 /* A class of this library changed at run time (DEFINE, DELETE, INHERIT, UNINHERIT sent by compiled code): instances
