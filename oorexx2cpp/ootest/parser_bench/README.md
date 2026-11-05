@@ -49,5 +49,7 @@ The two dumps must be identical (class, category, from, to and value of every el
 | 2026-11-05, bd70b08 (main, merge of 31ae690) | Claude | dump pass 34.5 s; 3 passes 99.4 s | dump pass 7.2 s; 3 passes 23.8 s (4.18x) | merge gate; dumps identical; 71,087 trips a pass |
 | 2026-11-05, 2fdc0af (wip: message sends without throwaway strings; ARG(n, 'E'/'O') in place) | Claude | dump pass 32.9 s; 3 passes 96.6 s | dump pass 7.3 s; 3 passes 22.7 s (4.25x) | dumps identical; 71,087 trips a pass; rexxcps compile 3,418 M instructions (-14.4% from 31ae690) |
 | 2026-11-05, 2ae1c73 (main, merge of 2fdc0af) | Claude | dump pass 31.5 s; 3 passes 99.6 s | dump pass 7.4 s; 3 passes 22.8 s (4.37x) | merge gate; dumps identical; 71,087 trips a pass |
+| 2026-11-05, f3f1934 (wip: Frame owner slot cache; rx::sendSubstr / sendLength) | Claude | dump pass 33.1 s; 3 passes 100.9 s | dump pass 7.1 s; 3 passes 22.8 s (4.43x) | dumps identical; 71,087 trips a pass; rexxcps compile 2,968 M instructions (-13.2% from 2fdc0af) |
+| 2026-11-05, 0caa741 (main, merge of f3f1934) | Claude | dump pass 33.1 s; 3 passes 98.5 s | dump pass 7.6 s; 3 passes 22.0 s (4.47x) | merge gate; dumps identical; 71,087 trips a pass |
 
 Crossings are calls between compiled code and the interpreter (RX2CPP_BIF_STATS=1 reports them).
