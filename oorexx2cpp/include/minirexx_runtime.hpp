@@ -838,11 +838,17 @@ struct FrameNames {
     // with no names added to it. Written once: exposedBits before exposedFor (release); read after exposedFor (acquire).
     mutable std::atomic<const void *> exposedFor{nullptr};
     mutable std::uint64_t exposedBits = 0;
-    void keepExposed(const void *exposeTable, std::uint64_t bits) const {
+    // With them, when every exposed slot's owner was the pool just outside (one level, as a method's object variables):
+    // that pool's FrameNames and each exposed slot's number in it (-1: the owner keeps the name by name). Null: none.
+    mutable const FrameNames *exposedOwner = nullptr;
+    mutable std::vector<std::int32_t> exposedSlot;
+    void keepExposed(const void *exposeTable, std::uint64_t bits, const FrameNames *owner, std::vector<std::int32_t> &&slots) const {
         static const char busy = 0;
         const void *none = nullptr;
         if (exposedFor.compare_exchange_strong(none, &busy, std::memory_order_acq_rel)) {
             exposedBits = bits;
+            exposedOwner = owner;
+            exposedSlot = std::move(slots);
             exposedFor.store(exposeTable, std::memory_order_release);
         }
     }
@@ -1284,22 +1290,42 @@ template <std::size_t K> struct Frame {
         const bool keepable = v.outer && ex.n == 0 && ex.extra.empty() && count <= 64;
         bool known = keepable && !ex.table;   // (no table, nothing added: nothing exposed)
         std::uint64_t bits = 0, seen = 0;
-        if (keepable && ex.table && names.exposedFor.load(std::memory_order_acquire) == ex.table) { bits = names.exposedBits; known = true; }
+        // (kept with the bits: each exposed slot's number in the owner's frame, when the owner is the pool just outside)
+        const std::int32_t *ownerSlot = nullptr;
+        if (keepable && ex.table && names.exposedFor.load(std::memory_order_acquire) == ex.table) {
+            bits = names.exposedBits; known = true;
+            const Variables *o = v.outer;
+            if (names.exposedOwner && !o->outer && o->frame && o->frameNames == names.exposedOwner) ownerSlot = names.exposedSlot.data();
+        }
+        // (worked out on the first entry: one level while every exposed slot's owner is v.outer, with a frame)
+        bool oneLevel = keepable && !known;
+        const FrameNames *recordOwner = nullptr;
+        std::vector<std::int32_t> slots;
+        if (oneLevel) slots.assign(count, -1);
         for (std::size_t k = 0; k < count; ++k) {
             const char *name = names.names[k];
             const std::size_t len = names.lens[k];
             if (len == 0) continue;
             if (known ? ((bits >> k) & 1u) != 0 : (v.outer && v.isExposed(name, len))) {
                 if (keepable) seen |= std::uint64_t{1} << k;
+                if (ownerSlot) {
+                    const std::int32_t s = ownerSlot[k];
+                    at[k] = (s >= 0 && static_cast<std::size_t>(s) < v.outer->frameSize) ? v.outer->frame[s] : nullptr;
+                    continue;
+                }
                 // the owner's (an EXPOSEd object variable is by name; a PROCEDURE EXPOSE name the caller's frame entry)
                 const Variables *owner = v.outer;
                 while (owner->outer && owner->isExposed(name, len)) owner = owner->outer;
+                if (oneLevel) {
+                    if (owner != v.outer || !owner->frame || (recordOwner && recordOwner != owner->frameNames)) oneLevel = false;
+                    else { recordOwner = owner->frameNames; slots[k] = owner->frameNames->find(name, len); }
+                }
                 at[k] = frameEntry(*owner, name, len);
                 continue;
             }
             at[k] = own + k;
         }
-        if (keepable && !known) names.keepExposed(ex.table, seen);
+        if (keepable && !known) names.keepExposed(ex.table, seen, oneLevel ? recordOwner : nullptr, std::move(slots));
         // (variables set by name before the frame (the method's arguments): moved into it; no slot has cached them)
         for (auto it = v.begin(); it != v.end();) {
             const int k = names.find(it->first.data(), it->first.size());
