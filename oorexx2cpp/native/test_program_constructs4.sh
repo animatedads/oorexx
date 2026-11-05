@@ -24,4 +24,5 @@ check collection_union "$OUT/src/collection_union.rex"   # StringTable / Directo
 check internal_exit "$OUT/src/internal_exit.rex"   # EXIT in internal routines reached by CALL (no C++ exception) and by function calls, CALL ON, PROCEDURE, loops, SIGNAL ON
 check scope_lock_threads "$OUT/src/scope_lock_threads.rex"   # guarded methods from four threads, GUARD WHEN hand-off (ScopeLock fast path)
 check string_substr "$OUT/src/string_substr.rex"   # ~SUBSTR natively (quickStringBif) and every form that goes the full route: ends, pad, non-plain numbers, objects, errors, NUMERIC DIGITS 3
+check method_use_arg "$OUT/src/method_use_arg.rex"   # USE ARG set after the frame (rx::setArgument), an omitted EXPOSEd name dropped
 echo "PASS program constructs (4): $(ls "$OUT"/*.expected | wc -l) programs, $(cat "$OUT"/*.expected | wc -l) lines identical to the interpreter"
