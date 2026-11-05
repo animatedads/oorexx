@@ -45,5 +45,7 @@ The two dumps must be identical (class, category, from, to and value of every el
 | 2026-11-04, 8f5133a (main, merge of 56dea1a) | Claude | dump pass 49.8 s; 3 passes 152.6 s | dump pass 11.2 s; 3 passes 32.9 s (4.64x) | merge gate; dumps identical; 71,087 trips a pass |
 | 2026-11-05, 5ac7c97 (wip: Frame exposed bits; string methods skip the number parse) | Claude | dump pass 35.4 s; 3 passes 96.2 s | dump pass 7.1 s; 3 passes 21.6 s (4.46x) | faster host after a container restart: compare by ratio; dumps identical; 71,087 trips a pass |
 | 2026-11-05, 3d57776 (main, merge of 5ac7c97) | Claude | dump pass 30.2 s; 3 passes 96.4 s | dump pass 6.9 s; 3 passes 22.3 s (4.32x) | merge gate; faster host; dumps identical; 71,087 trips a pass |
+| 2026-11-05, 31ae690 (wip: USE ARG into the frame slot; omitted EXPOSEd argument dropped) | Claude | dump pass 31.8 s; 3 passes 96.4 s | dump pass 7.6 s; 3 passes 23.1 s (4.17x) | dumps identical; 71,087 trips a pass; A/B against 5ac7c97 on this host: 22.79 s against 23.16 s |
+| 2026-11-05, bd70b08 (main, merge of 31ae690) | Claude | dump pass 34.5 s; 3 passes 99.4 s | dump pass 7.2 s; 3 passes 23.8 s (4.18x) | merge gate; dumps identical; 71,087 trips a pass |
 
 Crossings are calls between compiled code and the interpreter (RX2CPP_BIF_STATS=1 reports them).
