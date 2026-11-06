@@ -14,7 +14,7 @@ struct Text : std::string {
  const std::string &str()const{return *this;}
  Text&operator=(const std::string &v){std::string::operator=(v);return *this;}
 };
-struct ObjectDispatch;
+struct ObjectDispatch; struct EnvObject; struct NativeRefBase;
 struct Value {
  Text bytes; std::shared_ptr<ObjectDispatch> object;
  Value()=default;
@@ -30,10 +30,14 @@ struct ObjectDispatch {
  virtual Value sendBinary(const std::string &,const Value &){return Value::string("0");}
  virtual Value sendUnary(const std::string&){return Value::string("0");}
  virtual std::string display() const{return "X";}
+ virtual EnvObject *asEnv(){return nullptr;}
+ virtual NativeRefBase *asNativeRef(){return nullptr;}
  virtual ~ObjectDispatch()=default;
 };
-struct NativeRefBase:ObjectDispatch {virtual void *materialize()=0;};
-struct EnvObject:ObjectDispatch {void *handle=nullptr; explicit EnvObject(void*h=nullptr):handle(h){}};
+inline EnvObject *envOf(ObjectDispatch *o){return o?o->asEnv():nullptr;}
+inline NativeRefBase *nativeRefOf(ObjectDispatch *o){return o?o->asNativeRef():nullptr;}
+struct NativeRefBase:ObjectDispatch {virtual void *materialize()=0; NativeRefBase *asNativeRef() override{return this;}};
+struct EnvObject:ObjectDispatch {void *handle=nullptr; explicit EnvObject(void*h=nullptr):handle(h){} EnvObject *asEnv() override{return this;}};
 struct NativeArray:ObjectDispatch {
  static bool omitted(const Value&){return false;}
  std::vector<std::optional<Value>> slots;

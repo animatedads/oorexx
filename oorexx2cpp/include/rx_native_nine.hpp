@@ -34,7 +34,7 @@ struct NativeNineBase : NativeRefBase {
         return *real;
     }
     void *materialize() override {
-        auto *e = dynamic_cast<EnvObject *>(promote().object.get());
+        auto *e = rx::envOf(promote().object.get());
         if (!e) throw std::runtime_error("native " + kind + " materialization did not return interpreter object");
         return e->handle;
     }
@@ -214,7 +214,7 @@ struct NativeNineClass final : NativeRefBase {
     explicit NativeNineClass(std::string k):kind(std::move(k)){}
     void *materialize() override {
         if (!interpreterClass_) interpreterClass_ = envClass(kind);
-        auto *env=dynamic_cast<EnvObject *>(interpreterClass_->object.get());
+        auto *env=rx::envOf(interpreterClass_->object.get());
         if(!env) throw std::runtime_error("cannot resolve class "+kind);
         return env->handle;
     }

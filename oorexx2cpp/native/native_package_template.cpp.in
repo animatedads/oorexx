@@ -11,6 +11,7 @@
 #include <fstream>
 #include <chrono>
 #include <map>
+#include <typeinfo>
 #include <sstream>
 #include <memory>
 #include <mutex>
@@ -71,7 +72,7 @@ static void raiseSyntaxIn(RexxThreadContext *t, const rx::SyntaxCondition &e) {
 #ifdef RX2CPP_HOST_API
     // An interpreter error passing through compiled code: raised again with its own ADDITIONAL objects, unconverted.
     if (e.conditionObject) {
-        if (auto *env = dynamic_cast<rx::EnvObject *>(e.conditionObject.get())) {
+        if (auto *env = rx::envOf(e.conditionObject.get())) {
             if (env->handle && t->IsDirectory((RexxObjectPtr)env->handle)) {
                 RexxObjectPtr add = t->DirectoryAt((RexxDirectoryObject)env->handle, "ADDITIONAL");
                 if (add != NULLOBJECT && t->IsArray(add)) {
@@ -89,7 +90,7 @@ static void raiseSyntaxIn(RexxThreadContext *t, const rx::SyntaxCondition &e) {
         const rx::Value &v = e.substitutions[i];
 #ifdef RX2CPP_HOST_API
         if (v.isObject()) {
-            if (auto *env = dynamic_cast<rx::EnvObject *>(v.object.get())) { t->ArrayPut(subs, (RexxObjectPtr)env->handle, i + 1); continue; }
+            if (auto *env = rx::envOf(v.object.get())) { t->ArrayPut(subs, (RexxObjectPtr)env->handle, i + 1); continue; }
         }
 #endif
         const std::string text = v.isObject() ? v.object->display() : v.bytes.str();
@@ -336,13 +337,15 @@ struct CurrentStateRef {
 CurrentStateRef currentState;
 thread_local std::shared_ptr<InstanceState> pendingAdopt;      // set while an interpreter object is made for a native state
 struct StateScope {
+    rx::ThreadState &ts;   // (the thread's state found once: each currentState access is a thread-local lookup)
     InstanceState *previous;
-    explicit StateScope(InstanceState *s) : previous(currentState) { currentState = s; }
-    ~StateScope() { currentState = previous; }
+    explicit StateScope(InstanceState *s) : StateScope(s, rx::threadState()) {}
+    StateScope(InstanceState *s, rx::ThreadState &t) : ts(t), previous(static_cast<InstanceState *>(t.currentState)) { t.currentState = s; }
+    ~StateScope() { ts.currentState = previous; }
 };
 std::optional<rx::Value> optionalOf(const rx::Value &v) {
     if (v.isObject()) {
-        auto *e = dynamic_cast<rx::EnvObject *>(v.object.get());
+        auto *e = rx::envOf(v.object.get());
         if (e && !e->handle) return std::nullopt;       // an omitted argument slot
     }
     return v;
@@ -353,6 +356,27 @@ std::vector<std::optional<rx::Value>> optionalsOf(const std::vector<rx::Value> &
     for (const auto &a : args) out.push_back(optionalOf(a));
     return out;
 }
+/* A native method call's arguments as optionals, in a vector from the thread's pool (no allocation once the pool has
+   one big enough; a call made during the call takes another). No arguments: nothing taken. */
+class PooledArgs {
+    rx::ThreadState &ts_;
+    std::vector<std::optional<rx::Value>> v_;
+public:
+    PooledArgs(const std::vector<rx::Value> &args, rx::ThreadState &ts) : ts_(ts) {
+        if (args.empty()) return;
+        if (!ts_.argPool.empty()) { v_ = std::move(ts_.argPool.back()); ts_.argPool.pop_back(); }
+        v_.reserve(args.size());
+        for (const auto &a : args) v_.push_back(optionalOf(a));
+    }
+    ~PooledArgs() {
+        if (v_.capacity() == 0) return;
+        v_.clear();
+        if (ts_.argPool.size() < 64) ts_.argPool.push_back(std::move(v_));
+    }
+    PooledArgs(const PooledArgs &) = delete;
+    PooledArgs &operator=(const PooledArgs &) = delete;
+    const std::vector<std::optional<rx::Value>> &values() const { return v_; }
+};
 /* The table entry for (class, selector): first = the canonical upper-case selector, second = how to dispatch it. */
 typedef const MethodTable::value_type Resolved;
 /* A class's methods by a key of the selector (its length, first and fourth (or last) characters, case folded: three
@@ -407,7 +431,7 @@ Resolved *lookupMethod(const std::string &cls, const std::string &selector) {
     return f ? f->find(selector) : nullptr;
 }
 /* (a state's class table, found once) */
-Resolved *lookupMethod(InstanceState &st, const std::string &selector) {
+const FastMethods *stateTable(InstanceState &st) {
     static const char none = 0;   // (marks a class with no table)
     const void *known = st.methods.load(std::memory_order_acquire);
     if (!known) {
@@ -415,8 +439,11 @@ Resolved *lookupMethod(InstanceState &st, const std::string &selector) {
         known = f ? static_cast<const void *>(f) : static_cast<const void *>(&none);
         st.methods.store(known, std::memory_order_release);
     }
-    if (known == &none) return nullptr;
-    return static_cast<const FastMethods *>(known)->find(selector);
+    return known == &none ? nullptr : static_cast<const FastMethods *>(known);
+}
+Resolved *lookupMethod(InstanceState &st, const std::string &selector) {
+    const FastMethods *f = stateTable(st);
+    return f ? f->find(selector) : nullptr;
 }
 /* The interpreter object of a native state stays alive while compiled code sends it a message: nothing in the
    interpreter may reference it (a native instance's proxy), so a collection during the send (an argument string, the
@@ -494,7 +521,11 @@ std::optional<rx::Value> interpreterSend(const std::shared_ptr<InstanceState> &s
     return rx::EnvObject::wrap(r);
 }
 std::optional<rx::Value> runNative(const std::shared_ptr<InstanceState> &st, Resolved &method,
-                                   const std::vector<std::optional<rx::Value>> &args);
+                                   const std::vector<std::optional<rx::Value>> &args, rx::ThreadState &ts);
+inline std::optional<rx::Value> runNative(const std::shared_ptr<InstanceState> &st, Resolved &method,
+                                          const std::vector<std::optional<rx::Value>> &args) {
+    return runNative(st, method, args, rx::threadState());
+}
 /* A message to an instance of a compiled .Array subclass that its class does not define, answered by its native array
    part (InstanceState::builtin) when that answers it as the interpreter's Array would for this object. Not the
    messages whose answer is the array itself or its class (FILL, CLASS, ISA): those are the instance's own. */
@@ -543,7 +574,9 @@ bool nativeSelfSend(const std::shared_ptr<InstanceState> &st, const char *defini
     }
     Resolved *method = lookupMethod(*st, selector);
     if (!method) return false;
-    out = runNative(st, *method, optionalsOf(args));
+    rx::ThreadState &ts = rx::threadState();
+    PooledArgs pooled(args, ts);
+    out = runNative(st, *method, pooled.values(), ts);
     return true;
 }
 /* ooRexx RexxObject::checkPrivate: a private method runs when the sender is the receiver itself, or an instance of the
@@ -631,11 +664,17 @@ public:
     }
     rx::MessageResult sendMessage(const std::string &selector, const std::vector<rx::Value> &args) override {
         if (Resolved *method = lookupMethod(*st_, selector)) {
-            if (method->second.isPublic || privateAllowedFor(st_.get(), method->second)) return runNative(st_, *method, optionalsOf(args));
+            if (method->second.isPublic || privateAllowedFor(st_.get(), method->second)) {
+                rx::ThreadState &ts = rx::threadState();
+                PooledArgs pooled(args, ts);
+                return runNative(st_, *method, pooled.values(), ts);
+            }
             return interpreterSend(st_, selector, args);   // (the interpreter's error, or its own check)
         }
         return inheritedSend(st_, selector, args);
     }
+    // (this class is final and local to this library: its type identity is one pointer compare, not a dynamic_cast)
+    static NativeInstanceRef *of(rx::ObjectDispatch *o) { return o && typeid(*o) == typeid(NativeInstanceRef) ? static_cast<NativeInstanceRef *>(o) : nullptr; }
     const InstanceState *state() const { return st_.get(); }
     const std::shared_ptr<InstanceState> &stateRef() const { return st_; }   // (the cycle collector's edge)
     bool gcFollowed() const override { return true; }
@@ -646,8 +685,8 @@ public:
         if ((positive || rx::eqLit(selector, "\\==") || rx::eqLit(selector, "\\=") || rx::eqLit(selector, "<>") || rx::eqLit(selector, "><")) &&
             objectIdentityOp(st_, selector)) {
             bool same = false;
-            if (auto *other = dynamic_cast<NativeInstanceRef *>(rhs.object.get())) same = other->state() == st_.get();
-            else if (auto *env = dynamic_cast<rx::EnvObject *>(rhs.object.get())) same = st_->alive && st_->handle && env->handle == st_->handle;
+            if (auto *other = NativeInstanceRef::of(rhs.object.get())) same = other->state() == st_.get();
+            else if (auto *env = rx::envOf(rhs.object.get())) same = st_->alive && st_->handle && env->handle == st_->handle;
             return rx::Value::string(same == positive ? "1" : "0");
         }
         auto r = sendMessage(selector, {rhs});
@@ -675,13 +714,23 @@ rx::MessageResult inheritedSend(const std::shared_ptr<InstanceState> &st, const 
     // class asked about, so the interpreter answers once per pair.
     if (args.size() == 1 && args[0].isObject() && !st->classSide && same(selector, "ISA")) {
         void *key = nullptr;
-        if (auto *e = dynamic_cast<rx::EnvObject *>(args[0].object.get())) key = e->handle;
-        else if (auto *n = dynamic_cast<rx::NativeRefBase *>(args[0].object.get()); n && !dynamic_cast<NativeInstanceRef *>(n)) key = n->materialize();
+        if (auto *e = rx::envOf(args[0].object.get())) key = e->handle;
+        else if (auto *n = rx::nativeRefOf(args[0].object.get()); n && !NativeInstanceRef::of(n)) key = n->materialize();
         if (key) {
+            // (keyed by the class's method table, one per class name, when it has one: no string compared or copied)
+            if (const FastMethods *table = stateTable(*st)) {
+                static thread_local std::map<std::pair<const void *, void *>, bool> knownByTable;
+                const auto k = std::make_pair(static_cast<const void *>(table), key);
+                auto it = knownByTable.find(k);
+                if (it != knownByTable.end()) return rx::truthOf(it->second);
+                auto r = interpreterSend(st, selector, args);
+                if (r && !r->isObject()) knownByTable.emplace(k, r->bytes == "1");
+                return r;
+            }
             static thread_local std::map<std::pair<std::string, void *>, bool> known;
             const auto k = std::make_pair(st->dynamicClass, key);
             auto it = known.find(k);
-            if (it != known.end()) return rx::Value::string(it->second ? "1" : "0");
+            if (it != known.end()) return rx::truthOf(it->second);
             auto r = interpreterSend(st, selector, args);
             if (r && !r->isObject()) known.emplace(k, r->bytes == "1");
             return r;
@@ -698,11 +747,11 @@ rx::MessageResult inheritedSend(const std::shared_ptr<InstanceState> &st, const 
 class NativeFrame final : public SelfSender {
     // (definingClass_: the method table's class name, static: no string made per call)
     std::shared_ptr<InstanceState> st_; const char *definingClass_;
-    const std::vector<std::optional<rx::Value>> &args_; SelfSender *previous_;
+    const std::vector<std::optional<rx::Value>> &args_; rx::ThreadState &ts_; SelfSender *previous_;
 public:
-    NativeFrame(std::shared_ptr<InstanceState> st, const char *cls, const std::vector<std::optional<rx::Value>> &args)
-        : st_(std::move(st)), definingClass_(cls), args_(args), previous_(detail::currentSender) { detail::currentSender = this; }
-    ~NativeFrame() override { detail::currentSender = previous_; }
+    NativeFrame(std::shared_ptr<InstanceState> st, const char *cls, const std::vector<std::optional<rx::Value>> &args, rx::ThreadState &ts)
+        : st_(std::move(st)), definingClass_(cls), args_(args), ts_(ts), previous_(static_cast<SelfSender *>(ts.currentSender)) { ts.currentSender = static_cast<SelfSender *>(this); }
+    ~NativeFrame() override { ts_.currentSender = previous_; }
     std::optional<rx::Value> sendValues(const std::string &selector, const std::vector<rx::Value> &args) override {
         std::optional<rx::Value> out;
         if (nativeSelfSend(st_, definingClass_, selector, args, out)) return out;
@@ -752,7 +801,7 @@ rx::Value constantValue(const char *definingClass, const std::string &selector) 
     return known.emplace(key, v).first->second;
 }
 std::optional<rx::Value> runNative(const std::shared_ptr<InstanceState> &st, Resolved &method,
-                                   const std::vector<std::optional<rx::Value>> &args) {
+                                   const std::vector<std::optional<rx::Value>> &args, rx::ThreadState &ts) {
     const MethodInfo &info = method.second;
     if (info.constant) {
         if (!args.empty()) {   // (the interpreter's error)
@@ -764,19 +813,20 @@ std::optional<rx::Value> runNative(const std::shared_ptr<InstanceState> &st, Res
     }
     auto obj = st->at(info.definingClass);
     std::lock_guard<ScopeLock> hold(obj->scope_lock);
-    NativeFrame frame(st, info.definingClass, args);
-    StateScope current(st.get());
-    rx::noResultPending() = false;
+    // (ts: one thread-local lookup for the arguments, the frame, the state and the no-result flag)
+    NativeFrame frame(st, info.definingClass, args, ts);
+    StateScope current(st.get(), ts);
+    ts.noResultPending = false;
 #ifdef RX2CPP_HOST_API
     try {
 #endif
         rx::Value result = obj->invokeValues(method.first, args);
-        const bool noValue = std::exchange(rx::noResultPending(), false);
+        const bool noValue = std::exchange(ts.noResultPending, false);
         if (info.noResult || noValue) return std::nullopt;
         return result;
 #ifdef RX2CPP_HOST_API
     }
-    catch (const rx::RaiseToCaller &r) { rx::noResultPending() = false; return rx::raisedInCaller(r); }
+    catch (const rx::RaiseToCaller &r) { ts.noResultPending = false; return rx::raisedInCaller(r); }
 #endif
 }
 /* A class of this library changed at run time (DEFINE, DELETE, INHERIT, UNINHERIT sent by compiled code): instances
@@ -850,7 +900,7 @@ public:
         if (positive || rx::eqLit(selector, "\\==") || rx::eqLit(selector, "\\=") || rx::eqLit(selector, "<>") || rx::eqLit(selector, "><")) {
             bool known = false, same = false;
             if (auto *other = dynamic_cast<NativeClassObj *>(rhs.object.get())) { known = true; same = other->name_ == name_; }
-            else if (auto *env = dynamic_cast<rx::EnvObject *>(rhs.object.get())) { if (env->handle) { known = true; same = env->handle == iclass().handle; } }
+            else if (auto *env = rx::envOf(rhs.object.get())) { if (env->handle) { known = true; same = env->handle == iclass().handle; } }
             if (known) return rx::Value::string(same == positive ? "1" : "0");
         }
         return iclass().sendBinary(selector, rhs);
@@ -1454,9 +1504,9 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
         if (noValue) return NULLOBJECT;   // ended without a result (see rx::noResult)
         if (outcome.isObject()) {
 #ifdef RX2CPP_HOST_API
-            if (auto *env = dynamic_cast<rx::EnvObject *>(outcome.object.get())) return (RexxObjectPtr)env->handle;
+            if (auto *env = rx::envOf(outcome.object.get())) return (RexxObjectPtr)env->handle;
             if (dynamic_cast<rx::NilObject *>(outcome.object.get())) return ctx->Nil();
-            if (auto *ref = dynamic_cast<rx::NativeRefBase *>(outcome.object.get())) return (RexxObjectPtr)rxobj::returnPin(ref->materialize());
+            if (auto *ref = rx::nativeRefOf(outcome.object.get())) return (RexxObjectPtr)rxobj::returnPin(ref->materialize());
             // a stem (RETURN s. / an exposed stem): the interpreter's stem object shared with it
             if (auto *st = dynamic_cast<rx::StemObject *>(outcome.object.get())) return (RexxObjectPtr)rx::EnvObject::stemHandle(*st);
 #endif
@@ -1557,7 +1607,7 @@ static rx::MessageResult routineCallImpl(void *routine, const std::string &selec
     std::vector<std::optional<rx::Value>> positional;
     if (rx::eqLit(selector, "CALL")) {
         for (const rx::Value &a : args) {
-            auto *e = a.isObject() ? dynamic_cast<rx::EnvObject *>(a.object.get()) : nullptr;
+            auto *e = a.isObject() ? rx::envOf(a.object.get()) : nullptr;
             if (e && !e->handle) positional.emplace_back(std::nullopt); else positional.emplace_back(a);
         }
     } else {
@@ -1597,9 +1647,9 @@ static RexxObjectPtr rx2cpp_routine_entry(RexxCallContext *context, RexxArrayObj
         rx::Value outcome = obj->invokeValues(name, positional);
         if (std::exchange(rx::noResultPending(), false)) return NULLOBJECT;
         if (outcome.isObject()) {
-            if (auto *env = dynamic_cast<rx::EnvObject *>(outcome.object.get())) return (RexxObjectPtr)env->handle;
+            if (auto *env = rx::envOf(outcome.object.get())) return (RexxObjectPtr)env->handle;
             if (dynamic_cast<rx::NilObject *>(outcome.object.get())) return context->Nil();
-            if (auto *ref = dynamic_cast<rx::NativeRefBase *>(outcome.object.get())) return (RexxObjectPtr)rxobj::returnPin(ref->materialize());
+            if (auto *ref = rx::nativeRefOf(outcome.object.get())) return (RexxObjectPtr)rxobj::returnPin(ref->materialize());
             if (auto *st = dynamic_cast<rx::StemObject *>(outcome.object.get())) return (RexxObjectPtr)rx::EnvObject::stemHandle(*st);
             throw std::runtime_error(std::string("native routine returned an object that the interpreter cannot receive (") +
                                      typeid(*outcome.object).name() + ")");

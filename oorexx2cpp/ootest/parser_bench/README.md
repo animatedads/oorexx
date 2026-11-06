@@ -52,5 +52,9 @@ The two dumps must be identical (class, category, from, to and value of every el
 | 2026-11-05, f3f1934 (wip: Frame owner slot cache; rx::sendSubstr / sendLength) | Claude | dump pass 33.1 s; 3 passes 100.9 s | dump pass 7.1 s; 3 passes 22.8 s (4.43x) | dumps identical; 71,087 trips a pass; rexxcps compile 2,968 M instructions (-13.2% from 2fdc0af) |
 | 2026-11-05, 0caa741 (main, merge of f3f1934) | Claude | dump pass 33.1 s; 3 passes 98.5 s | dump pass 7.6 s; 3 passes 22.0 s (4.47x) | merge gate; dumps identical; 71,087 trips a pass |
 | 2026-11-05, 0caa741, **Release interpreter** de1db87 | Claude | dump pass 17.6 s; 3 passes 59.5 s | dump pass 7.2 s; 3 passes 21.8 s (2.73x) | Release interpreter for both columns; dumps identical (and identical to the oracle's). The rows above use the unoptimized oracle (r13196, -g, no -O) |
+| 2026-11-05, 288be4b (wip: class scope without the lock; rx::sendContains / sendIsA / string[i]) | Claude | dump pass 32.9 s; 3 passes 96.7 s | dump pass 6.9 s; 3 passes 20.0 s (4.83x) | dumps identical; 71,087 trips a pass; one pass under callgrind 44.35 G instructions (-12.9% from 0caa741's 50.94 G) |
+| 2026-11-05, 288be4b, **Release interpreter** de1db87 | Claude | dump pass 17.9 s; 3 passes 48.7 s | dump pass 6.4 s; 3 passes 17.7 s (2.76x) | Release interpreter for both columns; dumps identical |
+| 2026-11-05, 204b570 (main, merge of 288be4b) | Claude | dump pass 34.1 s; 3 passes 98.2 s | dump pass 6.6 s; 3 passes 20.7 s (4.73x) | merge gate; dumps identical; 71,087 trips a pass |
+| 2026-11-05, 204b570, **Release interpreter** de1db87 | Claude | dump pass 17.9 s; 3 passes 49.6 s | dump pass 6.1 s; 3 passes 19.5 s (2.55x) | merge gate; Release interpreter for both columns; dumps identical |
 
 Crossings are calls between compiled code and the interpreter (RX2CPP_BIF_STATS=1 reports them).

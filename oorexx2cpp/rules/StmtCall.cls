@@ -137,7 +137,10 @@
       if argExpr == 'RX2CPP_OMITTED' then code = code || '_rxCallArgs.emplace_back(std::nullopt); '
       else code = code || '_rxCallArgs.emplace_back(' || argExpr || '); '
     end
-    code = code || 'auto _rxR = rx::interpreterCall(vars, ' || .RxQuote~cpp(name) || ', _rxCallArgs); '
+    /* (a routine the package declares EXTERNAL: no imports to merge after it, see rx::interpreterCall) */
+    merge = ''
+    if .local~rx2cpp.externals~isA(.directory) then if .local~rx2cpp.externals~hasIndex(name~upper) then merge = ', std::nullopt, false'
+    code = code || 'auto _rxR = rx::interpreterCall(vars, ' || .RxQuote~cpp(name) || ', _rxCallArgs' || merge || '); '
     code = code || 'if (_rxR) rx::set(vars, "RESULT", *_rxR); else rx::drop(vars, "RESULT"); }'
     ctx~line(depth, code)
     s~separator

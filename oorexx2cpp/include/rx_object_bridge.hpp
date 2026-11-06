@@ -283,7 +283,22 @@ inline void *activationSecurity(RexxThreadContext *t) {
 }
 // (set while compiled code asks a security manager itself: that message is sent as is)
 inline bool &securityCallInProgress() { static thread_local bool on = false; return on; }
-inline void *securityAtActivationStart() { return current ? librarySecurity(current) : nullptr; }
+// (librarySecurity with the field's address kept: the package object does not move, its fields are found once; at
+// every compiled method or routine call)
+inline void *securityAtActivationStart() {
+    // (no library package yet, as while its classes are being installed: none, before the cache is consulted, which
+    // starts out holding no package and so would match)
+    if (!current || libraryPackage() == NULLOBJECT) return nullptr;
+    static std::atomic<RexxObjectPtr> package{NULLOBJECT};   // (the package the field belongs to: set after it)
+    static std::atomic<void *const *> field{nullptr};
+    if (libraryPackage() != package.load(std::memory_order_acquire)) {
+        const PackageFields &f = packageFields(current);
+        if (f.securityManager < 0) return nullptr;
+        field.store(reinterpret_cast<void *const *>(libraryPackage()) + f.securityManager, std::memory_order_relaxed);
+        package.store(libraryPackage(), std::memory_order_release);
+    }
+    return *field.load(std::memory_order_relaxed);
+}
 inline const bool securityHookInstalled = (rx::ActivationScope::securityHook() = &securityAtActivationStart, true);
 // The manager object of a SecurityManager wrapper (NULLOBJECT: none).
 inline RexxObjectPtr securityManagerObject(RexxThreadContext *t, void *wrapper) {
@@ -975,6 +990,7 @@ namespace rx {
 // A compiled instance that has no interpreter object yet (dual representation). Handing it to the interpreter creates one.
 struct NativeRefBase : ObjectDispatch {
     virtual void *materialize() = 0;   // the interpreter object (valid for the current native call)
+    NativeRefBase *asNativeRef() override { return this; }
 };
 // Hooks installed by a generated library: package classes created natively, and SELF of a natively dispatched method.
 inline std::optional<Value> (*packageClassHook)(const std::string &) = nullptr;
@@ -992,6 +1008,7 @@ inline MessageResult (*&routineCallHook())(void *routine, const std::string &sel
 struct EnvObject final : ObjectDispatch {
     void *handle;
     explicit EnvObject(void *h) : handle(h) {}
+    EnvObject *asEnv() override { return this; }
     ~EnvObject() override { rxobj::release(handle); }
     // A global reference from the interpreter as a Value: a compiled instance of this library, or an interpreter object.
     static Value adopt(void *globalRef) {
@@ -1007,7 +1024,7 @@ struct EnvObject final : ObjectDispatch {
     static void *stemHandle(StemObject &st) {
         std::lock_guard<rx::SpinLock> g(st.lock);
         if (st.remote) {
-            if (auto *e = dynamic_cast<EnvObject *>(st.remote.get())) return e->handle;
+            if (auto *e = rx::envOf(st.remote.get())) return e->handle;
             throw std::runtime_error("stem object is bound to a non-interpreter object");
         }
         RexxThreadContext *t = rxobj::need();
@@ -1031,7 +1048,7 @@ struct EnvObject final : ObjectDispatch {
         for (const Value &v : args) {
             rxobj::Arg a;
             if (v.isObject()) {
-                auto *k = dynamic_cast<EnvObject *>(v.object.get());
+                auto *k = rx::envOf(v.object.get());
                 if (!k && dynamic_cast<NilObject *>(v.object.get())) {
                     a.obj = rxobj::nilObject();
                     if (!a.obj) throw std::runtime_error(".NIL cannot be passed to interpreter messages here");
@@ -1044,7 +1061,7 @@ struct EnvObject final : ObjectDispatch {
                         out.push_back(std::move(a));
                         continue;
                     }
-                    if (auto *n = dynamic_cast<NativeRefBase *>(v.object.get())) {
+                    if (auto *n = rx::nativeRefOf(v.object.get())) {
                         a.obj = n->materialize();
                         if (a.obj && rxobj::current)
                             a.hold = std::shared_ptr<void>((void *)rxobj::pinRef(rxobj::current, (RexxObjectPtr)a.obj),
@@ -1154,7 +1171,7 @@ struct EnvObject final : ObjectDispatch {
             if (!plainIndex(args[1], index) || !isPlainArray()) return std::nullopt;
             const Value &v = args[0];
             if (v.isObject()) {
-                auto *e = dynamic_cast<EnvObject *>(v.object.get());
+                auto *e = rx::envOf(v.object.get());
                 if (!e || !e->handle) return std::nullopt;   // native objects, omitted: the message path converts them
                 rxobj::need()->ArrayPut((RexxArrayObject)handle, (RexxObjectPtr)e->handle, index);
                 return MessageResult(std::nullopt);
@@ -1210,7 +1227,7 @@ struct EnvObject final : ObjectDispatch {
             void *other = nullptr; bool known = false;
             if (!rhs.isObject()) known = true;   // a string is never this object
             else if (rhs.object->isNilObject()) { other = rxobj::nilObject(); known = other != nullptr; }
-            else if (auto *e = dynamic_cast<EnvObject *>(rhs.object.get())) { other = e->handle; known = other != nullptr; }
+            else if (auto *e = rx::envOf(rhs.object.get())) { other = e->handle; known = other != nullptr; }
             if (known && (identityEquality >= 0 || ++comparisons >= 2)) {
                 if (identityEquality < 0) identityEquality = rxobj::objectIdentityEquality(handle) ? 1 : 0;
                 if (identityEquality == 1) return Value::string((other == handle) == strict ? "1" : "0");
@@ -2255,7 +2272,7 @@ struct NativeMutableBuffer final : NativeRefBase, std::enable_shared_from_this<N
         return *real;
     }
     void *materialize() override {
-        auto *env = dynamic_cast<EnvObject *>(promote().object.get());
+        auto *env = rx::envOf(promote().object.get());
         if (!env) throw std::runtime_error("MutableBuffer is not an interpreter object");
         return env->handle;
     }
@@ -2289,7 +2306,7 @@ struct NativeMutableBuffer final : NativeRefBase, std::enable_shared_from_this<N
 struct NativeMutableBufferClass final : NativeRefBase {
     static Value interpreterClass() { return envClass("MUTABLEBUFFER"); }
     void *materialize() override {
-        auto *env = dynamic_cast<EnvObject *>(interpreterClass().object.get());
+        auto *env = rx::envOf(interpreterClass().object.get());
         if (!env) throw std::runtime_error(".MutableBuffer is not an interpreter class");
         return env->handle;
     }
@@ -2366,7 +2383,7 @@ struct NativeArray final : NativeRefBase, ItemSnapshot, std::enable_shared_from_
         return true;
     }
     static bool omitted(const Value &v) {
-        auto *e = dynamic_cast<EnvObject *>(v.object.get());
+        auto *e = rx::envOf(v.object.get());
         return e && e->handle == nullptr;
     }
     std::size_t lastIndex() const {
@@ -2564,7 +2581,7 @@ struct NativeDirectory final : NativeRefBase, std::enable_shared_from_this<Nativ
     const std::vector<std::size_t> &interpreterOrder() {
         if (hashOrder.size() == order.size()) return hashOrder;
         MessageResult made = envClass(kind).object->sendMessage("NEW", {});
-        auto *env = made && made->isObject() ? dynamic_cast<EnvObject *>(made->object.get()) : nullptr;
+        auto *env = made && made->isObject() ? rx::envOf(made->object.get()) : nullptr;
         if (!env) throw std::runtime_error(".Directory~new is not an interpreter object");
         std::vector<rxobj::Arg> in(order.size());
         rxobj::directoryPutAll(env->handle, order, in, kind[0] == 'D');   // (empty strings: only the keys matter)
@@ -2598,7 +2615,7 @@ struct NativeDirectory final : NativeRefBase, std::enable_shared_from_this<Nativ
         if (!real) {
             MessageResult made = envClass(kind).object->sendMessage("NEW", {});
             if (!made || !made->isObject()) throw std::runtime_error(".Directory~new returned no object");
-            auto *env = dynamic_cast<EnvObject *>(made->object.get());
+            auto *env = rx::envOf(made->object.get());
             if (!env) throw std::runtime_error(".Directory~new is not an interpreter object");
             std::vector<Value> values;
             values.reserve(order.size());
@@ -2676,7 +2693,7 @@ struct NativeDirectory final : NativeRefBase, std::enable_shared_from_this<Nativ
         if (rx::eqLit(selector, "ISA") && n == 1 && args[0].isObject()) {
             if (args[0].object.get() == classValue().object.get()) return Value::string("1");
             Value cls = envClass(kind);
-            if (auto *e = dynamic_cast<EnvObject *>(args[0].object.get()))
+            if (auto *e = rx::envOf(args[0].object.get()))
                 if (e->handle == static_cast<EnvObject *>(cls.object.get())->handle) return Value::string("1");
             return cls.object->sendMessage("ISSUBCLASSOF", args);
         }
@@ -2829,7 +2846,7 @@ inline bool NativeArray::answer(const std::string &selector, const std::vector<V
             if (dynamic_cast<NativeArrayClass *>(args[0].object.get())) { result = Value::string("1"); return true; }
             // An Array instance: isA(c) is c == .Array or .Array~isSubclassOf(c) (no promotion needed).
             Value cls = NativeArrayClass::interpreterClass();
-            if (auto *e = dynamic_cast<EnvObject *>(args[0].object.get()))
+            if (auto *e = rx::envOf(args[0].object.get()))
                 if (e->handle == static_cast<EnvObject *>(cls.object.get())->handle) { result = Value::string("1"); return true; }
             result = cls.object->sendMessage("ISSUBCLASSOF", args);
             return true;
@@ -2867,15 +2884,15 @@ inline bool NativeArray::answer(const std::string &selector, const std::vector<V
 // A CALL of an external program merges the program's public routines and classes into the calling activation's package
 // (RexxActivation::callExternalRexx: mergeRequired). The helper that made the call got them (its package): they go on
 // to the library package, as a package of them added to it (PackageClass::addPackage merges the same way: new names
-// only). merged: how many the helper had already passed on.
-inline void mergeExternalCall(RexxThreadContext *t, RexxRoutineObject helper, std::size_t &merged) {
-    if (rxobj::libraryPackage() == NULLOBJECT) return;
+// only). merged: how many the helper had already passed on. Answers whether there was anything new to pass on.
+inline bool mergeExternalCall(RexxThreadContext *t, RexxRoutineObject helper, std::size_t &merged) {
+    if (rxobj::libraryPackage() == NULLOBJECT) return false;
     rxobj::LocalRefs temps(t);
     RexxObjectPtr package = temps(t->SendMessage0((RexxObjectPtr)helper, "PACKAGE"));
-    if (t->CheckCondition() || package == NULLOBJECT) { t->ClearCondition(); return; }
+    if (t->CheckCondition() || package == NULLOBJECT) { t->ClearCondition(); return true; }
     RexxObjectPtr routines = temps(t->SendMessage0(package, "IMPORTEDROUTINES"));
     RexxObjectPtr classes = temps(t->SendMessage0(package, "IMPORTEDCLASSES"));
-    if (t->CheckCondition() || routines == NULLOBJECT || classes == NULLOBJECT) { t->ClearCondition(); return; }
+    if (t->CheckCondition() || routines == NULLOBJECT || classes == NULLOBJECT) { t->ClearCondition(); return true; }
     auto items = [&](RexxObjectPtr o) {
         RexxObjectPtr n = temps(t->SendMessage0(o, "ITEMS"));
         wholenumber_t v = 0;
@@ -2883,7 +2900,7 @@ inline void mergeExternalCall(RexxThreadContext *t, RexxRoutineObject helper, st
         return static_cast<std::size_t>(v);
     };
     const std::size_t now = items(routines) + items(classes);
-    if (now == merged) return;
+    if (now == merged) return false;
     merged = now;
     static thread_local RexxRoutineObject merge = NULLOBJECT;
     if (merge == NULLOBJECT) {
@@ -2894,19 +2911,23 @@ inline void mergeExternalCall(RexxThreadContext *t, RexxRoutineObject helper, st
             "do rx2cppName over rx2cppClasses~allIndexes; rx2cppMerged~addPublicClass(rx2cppName, rx2cppClasses[rx2cppName]); end\n"
             "rx2cppLibrary~addPackage(rx2cppMerged)\n";
         merge = rxobj::internalRoutine(t, t->NewRoutine("rx2cpp_merge", source, std::strlen(source)));
-        if (merge == NULLOBJECT) return;
+        if (merge == NULLOBJECT) return true;
         rxobj::pinRef(t, (RexxObjectPtr)merge);
     }
     RexxArrayObject args = (RexxArrayObject)temps((RexxObjectPtr)t->ArrayOfThree(rxobj::libraryPackage(), routines, classes));
     temps(t->CallRoutine(merge, args));
     if (t->CheckCondition()) t->ClearCondition();
+    return true;
 }
 // CALL / function call of a routine only the interpreter can resolve (rexxutil SysXxx, external .rex routines), run in a
 // small interpreter routine under the caller's NUMERIC settings. An argument that names a stem the callee filled
 // (SysFileTree spec, 'files.', ...) is copied back into the caller's compiled variables, as the interpreter would leave it.
 // dynamicName: CALL (expression), the routine name computed at run time (passed as one more argument).
+// mergeImports false: the routine is one the package declares ::ROUTINE ... EXTERNAL "LIBRARY ...". The interpreter resolves
+// it as a package routine and merges nothing after it (mergeRequired is CALL of an external program only), so the helper's
+// imports are not looked at.
 inline MessageResult interpreterCall(Variables &vars, const std::string &name, const std::vector<std::optional<Value>> &args,
-                                     const std::optional<Value> &dynamicName = std::nullopt) {
+                                     const std::optional<Value> &dynamicName = std::nullopt, bool mergeImports = true) {
     RexxThreadContext *t = rxobj::need();
     rxobj::LocalRefs temps(t);
     if (rxobj::bifStatsOn()) rxobj::bifStat("CALL " + name);
@@ -3030,7 +3051,18 @@ inline MessageResult interpreterCall(Variables &vars, const std::string &name, c
         raised.conditionObject = takeKeptCondition();
         throw raised;
     }
-    mergeExternalCall(t, routine, it->second.merged);
+    // The merge looks at the helper's imports after every call (five interpreter sends) until a call that ended normally
+    // found nothing new: from then on that routine name, resolved the same way each time (a routine of the package or one
+    // it imports, a library routine, or the same external program with the same public routines and classes), is not
+    // looked at again. Kept per helper and routine name (a dynamic CALL's name is its value).
+    if (mergeImports) {
+        static thread_local std::unordered_set<std::string> settled;
+        const std::string *settledKey = &key;
+        std::string withName;
+        if (dynamicName) { withName = key; withName += '\0'; withName += dynamicName->bytes.str(); settledKey = &withName; }
+        if (settled.find(*settledKey) == settled.end() && !mergeExternalCall(t, routine, it->second.merged))
+            settled.insert(*settledKey);
+    }
     if (r == NULLOBJECT) return std::nullopt;
     RexxArrayObject out = (RexxArrayObject)r;
     auto text = [&](RexxObjectPtr o) { RexxStringObject so = (RexxStringObject)temps((RexxObjectPtr)t->ObjectToString(o)); return std::string(t->StringData(so), t->StringLength(so)); };
@@ -3168,7 +3200,7 @@ inline const bool hostSayInstalled = (sayHook() = &hostSay, true);
 inline void promoteStem(StemObject &st) { (void)EnvObject::stemHandle(st); }
 inline const bool stemPromoteInstalled = (StemObject::promoteHook() = &promoteStem, true);
 inline bool foreignStem(const Value &v) {
-    auto *e = v.isObject() ? dynamic_cast<EnvObject *>(v.object.get()) : nullptr;
+    auto *e = v.isObject() ? rx::envOf(v.object.get()) : nullptr;
     return e && rxobj::need()->IsStem((RexxObjectPtr)e->handle);
 }
 inline const bool foreignStemInstalled = (StemObject::foreignStemHook() = &foreignStem, true);
@@ -3238,7 +3270,7 @@ inline std::optional<Value> trappedSend(const Value &target, const std::string &
     std::vector<rxobj::Arg> conv;
     for (std::size_t i = 0; i < args.size(); ++i) {
         const Value &v = args[i];
-        if (v.isObject()) if (auto *e = dynamic_cast<EnvObject *>(v.object.get())) if (e->handle == nullptr) continue;   // omitted
+        if (v.isObject()) if (auto *e = rx::envOf(v.object.get())) if (e->handle == nullptr) continue;   // omitted
         conv.clear(); EnvObject::convert({v}, conv);
         t->ArrayPut(list, conv[0].obj ? (RexxObjectPtr)conv[0].obj : temps((RexxObjectPtr)t->NewString(conv[0].bytes.data(), conv[0].bytes.size())), i + 1);
     }
@@ -3450,7 +3482,7 @@ inline std::optional<Value> interpretInActivation(Variables &vars, const Value &
     for (const auto &a : arguments) args.push_back(a ? *a : omittedArgument());
     RexxArrayObject argArray = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(args.size()));
     for (std::size_t i = 0; i < args.size(); ++i) {
-        if (args[i].isObject()) if (auto *e = dynamic_cast<EnvObject *>(args[i].object.get())) if (!e->handle) continue;
+        if (args[i].isObject()) if (auto *e = rx::envOf(args[i].object.get())) if (!e->handle) continue;
         conv.clear(); EnvObject::convert({args[i]}, conv);
         t->ArrayPut(argArray, conv[0].obj ? (RexxObjectPtr)conv[0].obj : temps((RexxObjectPtr)t->NewString(conv[0].bytes.data(), conv[0].bytes.size())), i + 1);
     }
@@ -3511,7 +3543,7 @@ inline std::optional<Value> interpretInActivation(Variables &vars, const Value &
         throw;
     }
     // normal completion: the epilogue's array, marked with this call's key
-    auto *arr = outcome->isObject() ? dynamic_cast<EnvObject *>(outcome->object.get()) : nullptr;
+    auto *arr = outcome->isObject() ? rx::envOf(outcome->object.get()) : nullptr;
     if (!arr || !t->IsArray((RexxObjectPtr)arr->handle)) { deliverQueued(); return outcome; }
     RexxArrayObject result = (RexxArrayObject)arr->handle;
     RexxObjectPtr mark = t->ArrayAt(result, 1);
@@ -3657,7 +3689,7 @@ inline Value streamBif(Variables &vars, const std::string &name, const std::vect
         return *made;
     };
     auto send = [&](const Value &stream, const std::string &selector, std::vector<Value> args) -> Value {
-        while (!args.empty() && args.back().isObject() && dynamic_cast<EnvObject *>(args.back().object.get()) &&
+        while (!args.empty() && args.back().isObject() && rx::envOf(args.back().object.get()) &&
                static_cast<EnvObject *>(args.back().object.get())->handle == nullptr) args.pop_back();
         return streamSend(stream, selector, args);
     };

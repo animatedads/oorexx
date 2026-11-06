@@ -51,6 +51,8 @@ inline bool mayNeedUpper(const std::string &s) {
 // does not yet compile ::class or method declarations.
 struct ObjectDispatch;
 struct StemObject;
+struct EnvObject;
+struct NativeRefBase;
 // ooRexx strings are immutable objects passed by reference. RxStr gives Value the same cost model: a string longer
 // than the inline limit lives in one shared buffer, so copying a Value (BIF argument, assignment, PARSE source,
 // message argument) copies a pointer, not the bytes. A writer that finds the buffer shared takes its own copy first.
@@ -382,6 +384,10 @@ struct ObjectDispatch {
     virtual bool isNilObject() const { return false; }
     // The compiled stem object behind this (rx_compound_symbols.hpp), without a dynamic_cast.
     virtual StemObject *asStem() { return nullptr; }
+    // The interpreter object (EnvObject) or the reference to a native object (NativeRefBase) behind this
+    // (rx_object_bridge.hpp), without a dynamic_cast: rx::envOf / rx::nativeRefOf.
+    virtual EnvObject *asEnv() { return nullptr; }
+    virtual NativeRefBase *asNativeRef() { return nullptr; }
     // receiver[index] and receiver[index] = value with one index, done without the message when the object answers them
     // itself exactly as its [] / []= methods would (a native Array): false = send the message. indexAt sets slot to
     // the item, or to nullptr for .nil; indexPut takes the value only when it returns true.
@@ -404,6 +410,8 @@ struct ObjectDispatch {
         throw std::runtime_error("object has no display conversion");
     }
 };
+inline EnvObject *envOf(ObjectDispatch *o) { return o ? o->asEnv() : nullptr; }
+inline NativeRefBase *nativeRefOf(ObjectDispatch *o) { return o ? o->asNativeRef() : nullptr; }
 // ooRexx .NIL is one live singleton object, not a C++ null result.
 // Unimplemented .Object messages must reject rather than approximate.
 // With a host interpreter (library mode) any other .NIL message goes to the interpreter's own .NIL (CLASS, ISNIL, ...).
@@ -489,6 +497,8 @@ struct ThreadState {
     void *currentSender = nullptr;
     void *currentState = nullptr;
     bool noResultPending = false;
+    // Argument vectors of native method calls (native_package_template.cpp.in PooledArgs), kept empty for reuse.
+    std::vector<std::vector<std::optional<Value>>> argPool;
 };
 // (reached through a plain pointer: a thread_local with a constructor is checked for its initialisation at every use, a
 // second thread-local lookup; the pointer needs none, and the state is made once per thread)
@@ -519,10 +529,13 @@ inline std::string &alternateEnvironment();
 inline void (*&lostDigitsHook())(const Value &) { static void (*hook)(const Value &) = nullptr; return hook; }
 struct ActivationScope {
     enum Kind { Method, Routine };
-    std::string savedTrace;         // TRACE is a setting of the activation: a new one starts at N, the caller's comes back
-    const bool *savedNovalue;       // so is SIGNAL ON NOVALUE: a new activation starts without it
+    // TRACE is a setting of the activation: a new one starts at N, the caller's comes back; so is ADDRESS: a new
+    // activation starts in the default environment. Kept (allocated) only when the caller has others (most do not).
+    struct SavedSettings { std::string trace, address, alternate; };
+    std::unique_ptr<SavedSettings> savedSettings;
+    ThreadState &ts;                // (the thread's state, found once: the destructor gives it back without a lookup)
+    const bool *savedNovalue;       // SIGNAL ON NOVALUE: a new activation starts without it
     const bool *savedLostDigits;    // and SIGNAL ON LOSTDIGITS
-    std::string savedAddress, savedAlternate;   // and ADDRESS: a new activation starts in the default environment
     ClauseClock clockState;
     Kind kind;
     MethodTraps *traps = nullptr;   // the SIGNAL ON state of the running activation (method body or internal routine)
@@ -539,22 +552,20 @@ struct ActivationScope {
     static ActivationScope *&current() { return threadState().scope; }
     explicit ActivationScope(Kind k = Method) : ActivationScope(k, threadState()) {}
     // TRACE N and ADDRESS sh / sh, the settings a new activation starts with. Most callers run with them, so they are
-    // saved (and given back) only when the caller has others: `settings`.
+    // saved (and given back) only when the caller has others: `savedSettings`.
     static bool defaultSettings(const ThreadState &t) {
         return t.trace.size() == 1 && t.trace[0] == 'N' && t.address.size() == 2 && t.address[0] == 's' &&
                t.address[1] == 'h' && t.alternate.size() == 2 && t.alternate[0] == 's' && t.alternate[1] == 'h';
     }
     static void startSettings(ThreadState &t) { t.trace.assign(1, 'N'); t.address.assign("sh", 2); t.alternate.assign("sh", 2); }
-    bool settings = false;
-    ActivationScope(Kind k, ThreadState &t) : kind(k), saved(t.scope) {
+    ActivationScope(Kind k, ThreadState &t) : ts(t), kind(k), saved(t.scope) {
         if (securityHook()) security = securityHook()();
         if (!t.pendingCallType.empty()) callType = std::exchange(t.pendingCallType, std::string());
         t.scope = this;
         savedNovalue = std::exchange(t.novalueArmed, nullptr);
         savedLostDigits = std::exchange(t.lostDigitsArmed, nullptr);
         if (!defaultSettings(t)) {
-            settings = true;
-            savedTrace = std::move(t.trace); savedAddress = std::move(t.address); savedAlternate = std::move(t.alternate);
+            savedSettings.reset(new SavedSettings{std::move(t.trace), std::move(t.address), std::move(t.alternate)});
             startSettings(t);
         }
     }
@@ -570,9 +581,9 @@ struct ActivationScope {
         return s->callType;
     }
     ~ActivationScope() {
-        ThreadState &t = threadState();
+        ThreadState &t = ts;
         t.scope = saved; t.novalueArmed = savedNovalue; t.lostDigitsArmed = savedLostDigits;
-        if (settings) { t.trace = std::move(savedTrace); t.address = std::move(savedAddress); t.alternate = std::move(savedAlternate); }
+        if (savedSettings) { t.trace = std::move(savedSettings->trace); t.address = std::move(savedSettings->address); t.alternate = std::move(savedSettings->alternate); }
         else if (!defaultSettings(t)) startSettings(t);
     }
     ActivationScope(const ActivationScope &) = delete;
@@ -1809,11 +1820,15 @@ inline Value sendLength(const Value &receiver) {
 // host interpreter (library mode) a string receiver is answered here exactly as the library hook's own paths answer it
 // (rx_bif_integration.hpp quickStringMethod: CONTAINS of a plain needle from the start, [] of a plain position, ISA of a
 // class already asked about), without the hook's selector tests; any other receiver or shape, or standalone, is the message.
+// "1" or "0" made as a number, its characters written when read (rx_rexx_number.hpp truthValue, as a comparison makes it)
+inline Value truthOf(bool b) {
+    return Value(Value::PendingTag{}, b ? 1 : 0, NumCache::known | NumCache::decimal | NumCache::integer | (128u << 8));
+}
 inline Value sendContains(const Value &receiver, const Value &needle) {
     if (!receiver.isObject() && !needle.isObject() && stringMessageFallback()) {
         const std::string_view s = receiver.bytes.view(), n = needle.bytes.view();
-        if (s.empty() || n.empty() || n.size() > s.size()) return Value::string("0");
-        return Value::string(std::search(s.begin(), s.end(), n.begin(), n.end()) != s.end() ? "1" : "0");
+        if (s.empty() || n.empty() || n.size() > s.size()) return truthOf(false);
+        return truthOf(std::search(s.begin(), s.end(), n.begin(), n.end()) != s.end());
     }
     static const std::string selector("CONTAINS");
     std::vector<Value> args;
@@ -1824,7 +1839,7 @@ inline Value sendContains(const Value &receiver, const Value &needle) {
 inline std::optional<bool> (*&stringIsAKnown())(const Value &) { static std::optional<bool> (*f)(const Value &) = nullptr; return f; }
 inline Value sendIsA(const Value &receiver, const Value &cls) {
     if (!receiver.isObject() && cls.isObject() && stringMessageFallback() && stringIsAKnown())
-        if (const std::optional<bool> known = stringIsAKnown()(cls)) return Value::string(*known ? "1" : "0");
+        if (const std::optional<bool> known = stringIsAKnown()(cls)) return truthOf(*known);
     static const std::string selector("ISA");
     std::vector<Value> args;
     args.push_back(cls);
