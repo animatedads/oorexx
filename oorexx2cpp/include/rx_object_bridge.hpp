@@ -33,6 +33,9 @@ inline bool send(void *t, const std::string &s, const std::vector<Arg> &a, Resul
 #include <sys/time.h>
 #include <ctime>
 #include <unistd.h>
+#include <dlfcn.h>
+#include <clocale>
+#include <cmath>
 #include <map>
 namespace rx { inline std::shared_ptr<ObjectDispatch> takeKeptCondition(); }
 namespace rxobj {
@@ -2919,6 +2922,229 @@ inline bool mergeExternalCall(RexxThreadContext *t, RexxRoutineObject helper, st
     if (t->CheckCondition()) t->ClearCondition();
     return true;
 }
+// rxmath natively. A call of RxCalcPi / Sqrt / Exp / Log / Log10 / SinH / CosH / TanH / Power / Sin / Cos / Tan / Cotan /
+// ArcSin / ArcCos / ArcTan that the interpreter would run in the rxmath library is computed here: rxmath.cpp's own code
+// (NumericFormatter, TrigFormatter: the same libm calls, its pi as a long double literal in the same expressions), its
+// argument conversions (NativeActivation: a number to double through strtod of its digits, as NumberString::doubleValue;
+// the precision a positive whole number) and DoubleToObjectWithPrecision (NumberString::newInstanceFromDouble: "nan",
+// "+infinity", "-infinity", else "%.*g" at min(16, precision) + 2 digits rounded to precision, shown with precision as
+// its digits, always in SCIENTIFIC form: the native routine's frame is pushed before it is given its caller
+// (newNativeActivation(activity), then accessCallerContext), so the global settings it creates numbers under are the
+// defaults, whatever the caller's NUMERIC FORM). Precision omitted: the caller's NUMERIC DIGITS (GetContextDigits, which
+// does ask the caller), at most 16.
+// Resolution, checked at every call as RexxActivation::externalCall makes it, the routine found must be rxmath's own
+// (rxmath loaded, its LibraryPackage::resolveRoutine): the library package's routine of that name (PackageClass::
+// findRoutine: its own and imported ones; ::REQUIRES 'rxmath' LIBRARY merges rxmath's in), or with none there and no
+// macro of that name first in the macrospace (RexxQueryMacro, RXMACRO_SEARCH_BEFORE), the native routine the
+// interpreter would call (PackageManager::getLoadedRoutine: the loaded libraries' table, then the registered functions).
+// Not followed: a function exit (RXOFNC / RXFNC) installed by the host that loaded the interpreter, which it asks only
+// when the package has no routine of that name. Anything else goes to the interpreter as before: an object, an omitted number, a
+// number given as "nan" / "+infinity" / "-infinity" or not a number, a precision that is not plain digits, a units
+// option that is not D / R / G, too many arguments (its errors), a locale whose radix is not '.', an interpreter without
+// those functions. Claude (Opus 5.5), 2026-11-06.
+namespace rxmath_port {
+enum Fn { Pi, Sqrt, Exp, Log, Log10, SinH, CosH, TanH, Power, Sin, Cos, Tan, Cotan, ArcSin, ArcCos, ArcTan, Count, None };
+inline Fn fnOf(std::string_view n) {
+    if (n.size() < 8 || n.compare(0, 6, "RXCALC") != 0) return None;
+    static const char *names[Count] = {"PI", "SQRT", "EXP", "LOG", "LOG10", "SINH", "COSH", "TANH", "POWER", "SIN", "COS",
+                                       "TAN", "COTAN", "ARCSIN", "ARCCOS", "ARCTAN"};
+    const std::string_view rest = n.substr(6);
+    for (int i = 0; i < Count; ++i) if (rest == names[i]) return static_cast<Fn>(i);
+    return None;
+}
+inline const char *upperName(Fn f) {
+    static const char *upper[Count] = {"RXCALCPI", "RXCALCSQRT", "RXCALCEXP", "RXCALCLOG", "RXCALCLOG10", "RXCALCSINH",
+        "RXCALCCOSH", "RXCALCTANH", "RXCALCPOWER", "RXCALCSIN", "RXCALCCOS", "RXCALCTAN", "RXCALCCOTAN", "RXCALCARCSIN",
+        "RXCALCARCCOS", "RXCALCARCTAN"};
+    return upper[f];
+}
+// the interpreter functions the resolution check calls (exported by librexx; absent: rxmath stays in the interpreter)
+struct Interp {
+    using FindRoutine = void *(*)(void *package, void *name);   // PackageClass::findRoutine
+    using LoadedRoutine = void *(*)(void *name);                // PackageManager::getLoadedRoutine (static)
+    using GetLibrary = void *(*)(void *name);                   // PackageManager::getLibrary (static)
+    using ResolveRoutine = void *(*)(void *library, void *name);   // LibraryPackage::resolveRoutine
+    using QueryMacro = RexxReturnCode (*)(const char *, unsigned short *);   // RexxQueryMacro
+    FindRoutine findRoutine = nullptr; LoadedRoutine loadedRoutine = nullptr; GetLibrary getLibrary = nullptr;
+    ResolveRoutine resolveRoutine = nullptr; QueryMacro queryMacro = nullptr;
+    bool usable = false;
+    RexxObjectPtr libraryName = NULLOBJECT;   // "rxmath"
+    RexxObjectPtr names[Count] = {};          // "RXCALCSIN", ... (upper case, as callNativeRoutine looks them up)
+    void *routines[Count] = {};               // rxmath's routine objects, once found
+};
+inline Interp &interp(RexxThreadContext *t) {
+    static Interp i;
+    static bool tried = false;
+    if (tried) return i;
+    tried = true;
+    i.findRoutine = reinterpret_cast<Interp::FindRoutine>(dlsym(RTLD_DEFAULT, "_ZN12PackageClass11findRoutineEP10RexxString"));
+    i.loadedRoutine = reinterpret_cast<Interp::LoadedRoutine>(dlsym(RTLD_DEFAULT, "_ZN14PackageManager16getLoadedRoutineEP10RexxString"));
+    i.getLibrary = reinterpret_cast<Interp::GetLibrary>(dlsym(RTLD_DEFAULT, "_ZN14PackageManager10getLibraryEP10RexxString"));
+    i.resolveRoutine = reinterpret_cast<Interp::ResolveRoutine>(dlsym(RTLD_DEFAULT, "_ZN14LibraryPackage14resolveRoutineEP10RexxString"));
+    i.queryMacro = reinterpret_cast<Interp::QueryMacro>(dlsym(RTLD_DEFAULT, "RexxQueryMacro"));
+    if (!i.findRoutine || !i.loadedRoutine || !i.getLibrary || !i.resolveRoutine || !i.queryMacro) return i;
+    i.libraryName = rxobj::pinRef(t, (RexxObjectPtr)t->String("rxmath"));
+    for (int k = 0; k < Count; ++k) i.names[k] = rxobj::pinRef(t, (RexxObjectPtr)t->String(upperName(static_cast<Fn>(k))));
+    i.usable = i.libraryName != NULLOBJECT;
+    return i;
+}
+// Would the interpreter run rxmath's routine for this call now?
+inline bool resolvesToRxmath(RexxThreadContext *t, Fn f) {
+    Interp &i = interp(t);
+    static const bool dbg = std::getenv("RX2CPP_RXMATH_DEBUG") != nullptr;
+    auto no = [&](const char *why) { if (dbg) std::fprintf(stderr, "rxmath %s: %s\n", upperName(f), why); return false; };
+    if (!i.usable) return no("unusable");
+    if (rxobj::libraryPackage() == NULLOBJECT) return no("no package");
+    void *name = reinterpret_cast<void *>(i.names[f]);
+    if (!i.routines[f]) {
+        void *library = i.getLibrary(reinterpret_cast<void *>(i.libraryName));
+        if (!library) return no("no library");
+        i.routines[f] = i.resolveRoutine(library, name);
+        if (!i.routines[f]) return no("not in library");
+    }
+    // step 2: a routine of the package, its own or imported (::REQUIRES 'rxmath' LIBRARY merges rxmath's routines in:
+    // PackageClass::mergeLibrary), runs whatever it is
+    if (void *found = i.findRoutine(reinterpret_cast<void *>(rxobj::libraryPackage()), name))
+        return found == i.routines[f] ? true : no("another package routine");
+    // step 3: the macrospace first, then the libraries' table
+    unsigned short position = 0;
+    if (i.queryMacro(upperName(f), &position) == 0 && position == RXMACRO_SEARCH_BEFORE) return no("macro");
+    if (i.loadedRoutine(name) != i.routines[f]) return no("another routine");
+    return true;
+}
+// NativeActivation's double argument: NumberString::doubleValue, strtod of the number's string value, which for a string
+// is the string itself as written (RexxString::numberString keeps it): ' 4 ' is 4, '- 2' (a Rexx number) is 0, strtod
+// stopping at the blank. nullopt: not a number here (the interpreter's: nan / infinity strings, its error).
+inline std::optional<double> doubleArg(const Value &v) {
+    RexxDecimal d; const char *err = nullptr;
+    if (!tryParseRexxDecimal(v, d, err)) return std::nullopt;
+    return std::strtod(v.bytes.str().c_str(), nullptr);
+}
+// OPTIONAL_positive_wholenumber_t, plain digits only (the value the interpreter converts them to); nullopt otherwise
+inline std::optional<std::int64_t> precisionArg(const Value &v) {
+    const std::string_view s = v.bytes.view();
+    if (s.empty() || s.size() > 18 || s.find_first_not_of("0123456789") != std::string_view::npos) return std::nullopt;
+    const std::int64_t n = std::stoll(std::string(s));
+    if (n < 1) return std::nullopt;
+    return n;
+}
+// DoubleToObjectWithPrecision
+inline Value format(double x, std::int64_t precision) {
+    if (std::isnan(x)) return Value::string("nan");
+    if (x == +HUGE_VAL) return Value::string("+infinity");
+    if (x == -HUGE_VAL) return Value::string("-infinity");
+    char text[32];
+    std::snprintf(text, sizeof(text), "%.*g", static_cast<int>(std::min<std::int64_t>(16, precision)) + 2, x);
+    RexxDecimal d; const char *err = nullptr;
+    if (!tryParseRexxDecimal(Value::string(text), d, err)) return Value::string(text);
+    ActivationNumeric shown;
+    shown.digits = static_cast<std::size_t>(precision);
+    shown.fuzz = 0;
+    shown.engineering = false;
+    roundRexx(d, shown);
+    return Value::string(formatRexxDecimal(d, shown));
+}
+constexpr long double pi = 3.14159265358979323846l;   // rxmath.cpp's pi
+enum Trig { SINE = 0, TANGENT = 1, COTANGENT = 2, COSINE = 3, MAXTRIG = 3 };
+enum Arc { ARCSINE = 0, ARCCOSINE = 1, ARCTANGENT = 2 };
+enum Units { DEGREES, RADIANS, GRADES };
+// TrigFormatter::evaluate
+inline double evaluate(double angle, int function, Units units) {
+    double nsi = 1., nco = 1., result = 0.;
+    switch (units) {
+    case DEGREES:
+        nsi = (angle < 0.) ? -1. : 1.;
+        angle = std::fmod(std::fabs(angle), 360.);
+        if (angle <= 45.) angle = angle * pi / 180.;
+        else if (angle < 135.) { angle = (90. - angle) * pi / 180.; function = MAXTRIG - function; nco = nsi; nsi = 1.; }
+        else if (angle <= 225.) { angle = (180. - angle) * pi / 180.; nco = -1.; }
+        else if (angle < 315.) { angle = (angle - 270.) * pi / 180.; function = MAXTRIG - function; nco = -nsi; nsi = 1.; }
+        else angle = (angle - 360.) * pi / 180.;
+        break;
+    case GRADES:
+        nsi = (angle < 0.) ? -1. : 1.;
+        angle = std::fmod(std::fabs(angle), 400.);
+        if (angle <= 50.) angle = angle * pi / 200.;
+        else if (angle < 150.) { angle = (100. - angle) * pi / 200.; function = MAXTRIG - function; nco = nsi; nsi = 1.; }
+        else if (angle <= 250.) { angle = (200. - angle) * pi / 200.; nco = -1.; }
+        else if (angle < 350.) { angle = (angle - 300.) * pi / 200.; function = MAXTRIG - function; nco = -nsi; nsi = 1.; }
+        else angle = (angle - 400.) * pi / 200.;
+        break;
+    case RADIANS: break;
+    }
+    switch (function) {
+    case SINE: result = nsi * std::sin(angle); break;
+    case COSINE: result = nco * std::cos(angle); break;
+    case TANGENT: result = nsi * nco * std::tan(angle); break;
+    case COTANGENT: result = nsi * nco / std::tan(angle); break;
+    }
+    return result;
+}
+// TrigFormatter::evaluateArc
+inline double evaluateArc(double x, int function, Units units) {
+    double angle = 0.;
+    switch (function) {
+    case ARCSINE: angle = std::asin(x); break;
+    case ARCCOSINE: angle = std::acos(x); break;
+    case ARCTANGENT: angle = std::atan(x); break;
+    }
+    if (units == DEGREES) angle = angle * 180. / pi;
+    else if (units == GRADES) angle = angle * 200. / pi;
+    return angle;
+}
+// The call, when every argument is one this code converts as the interpreter would; nullopt: the interpreter's.
+inline std::optional<Value> call(Fn f, const std::vector<std::optional<Value>> &args, const ActivationNumeric &caller) {
+    for (const auto &a : args) if (a && a->isObject()) return std::nullopt;
+    if (*localeconv()->decimal_point != '.') return std::nullopt;
+    const std::size_t maxArgs = f == Pi ? 1 : (f == Power || f >= Sin) ? 3 : 2;
+    if (args.size() > maxArgs) return std::nullopt;
+    const std::size_t numbers = f == Pi ? 0 : f == Power ? 2 : 1;
+    double x[2] = {0., 0.};
+    for (std::size_t k = 0; k < numbers; ++k) {
+        if (k >= args.size() || !args[k]) return std::nullopt;
+        auto v = doubleArg(*args[k]);
+        if (!v) return std::nullopt;
+        x[k] = *v;
+    }
+    std::int64_t precision = static_cast<std::int64_t>(caller.digits);   // GetContextDigits
+    if (numbers < args.size() && args[numbers]) {
+        auto p = precisionArg(*args[numbers]);
+        if (!p) return std::nullopt;
+        precision = *p;
+    }
+    if (precision > 16) precision = 16;   // MAX_PRECISION
+    Units units = DEGREES;
+    if (f >= Sin && args.size() > 2 && args[2]) {
+        const std::string_view u = args[2]->bytes.view();
+        const char c = u.empty() ? '\0' : u[0];
+        if (c == 'D' || c == 'd') units = DEGREES;
+        else if (c == 'R' || c == 'r') units = RADIANS;
+        else if (c == 'G' || c == 'g') units = GRADES;
+        else return std::nullopt;   // (the interpreter's error 88.916)
+    }
+    double r = 0.;
+    switch (f) {
+    case Pi: return format(static_cast<double>(pi), precision);
+    case Sqrt: r = std::sqrt(x[0]); break;
+    case Exp: r = std::exp(x[0]); break;
+    case Log: r = x[0] < 0.0 ? std::nan("") : std::log(x[0]); break;
+    case Log10: r = x[0] < 0.0 ? std::nan("") : std::log10(x[0]); break;
+    case SinH: r = std::sinh(x[0]); break;
+    case CosH: r = std::cosh(x[0]); break;
+    case TanH: r = std::tanh(x[0]); break;
+    case Power: r = std::pow(x[0], x[1]); break;
+    case Sin: r = evaluate(x[0], SINE, units); break;
+    case Cos: r = evaluate(x[0], COSINE, units); break;
+    case Tan: r = evaluate(x[0], TANGENT, units); break;
+    case Cotan: r = evaluate(x[0], COTANGENT, units); break;
+    case ArcSin: r = (x[0] < -1.0 || x[0] > 1.0) ? std::nan("") : evaluateArc(x[0], ARCSINE, units); break;
+    case ArcCos: r = (x[0] < -1.0 || x[0] > 1.0) ? std::nan("") : evaluateArc(x[0], ARCCOSINE, units); break;
+    case ArcTan: r = evaluateArc(x[0], ARCTANGENT, units); break;
+    default: return std::nullopt;
+    }
+    return format(r, precision);
+}
+}  // namespace rxmath_port
 // CALL / function call of a routine only the interpreter can resolve (rexxutil SysXxx, external .rex routines), run in a
 // small interpreter routine under the caller's NUMERIC settings. An argument that names a stem the callee filled
 // (SysFileTree spec, 'files.', ...) is copied back into the caller's compiled variables, as the interpreter would leave it.
@@ -2929,6 +3155,12 @@ inline bool mergeExternalCall(RexxThreadContext *t, RexxRoutineObject helper, st
 inline MessageResult interpreterCall(Variables &vars, const std::string &name, const std::vector<std::optional<Value>> &args,
                                      const std::optional<Value> &dynamicName = std::nullopt, bool mergeImports = true) {
     RexxThreadContext *t = rxobj::need();
+    // rxmath, when the call would run it (a function call, which the library lane makes in the dynamic form, or CALL)
+    if (!dynamicName || !dynamicName->isObject()) {
+        const rxmath_port::Fn f = rxmath_port::fnOf(dynamicName ? dynamicName->bytes.view() : std::string_view(name));
+        if (f != rxmath_port::None && rxmath_port::resolvesToRxmath(t, f))
+            if (auto r = rxmath_port::call(f, args, vars.numeric)) return MessageResult(std::move(*r));
+    }
     rxobj::LocalRefs temps(t);
     if (rxobj::bifStatsOn()) rxobj::bifStat("CALL " + name);
     // The stem copy-back below is needed only when an argument may name a stem (a string ending in '.', or an object,
