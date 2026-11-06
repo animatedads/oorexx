@@ -2883,15 +2883,15 @@ inline bool NativeArray::answer(const std::string &selector, const std::vector<V
 // A CALL of an external program merges the program's public routines and classes into the calling activation's package
 // (RexxActivation::callExternalRexx: mergeRequired). The helper that made the call got them (its package): they go on
 // to the library package, as a package of them added to it (PackageClass::addPackage merges the same way: new names
-// only). merged: how many the helper had already passed on.
-inline void mergeExternalCall(RexxThreadContext *t, RexxRoutineObject helper, std::size_t &merged) {
-    if (rxobj::libraryPackage() == NULLOBJECT) return;
+// only). merged: how many the helper had already passed on. Answers whether there was anything new to pass on.
+inline bool mergeExternalCall(RexxThreadContext *t, RexxRoutineObject helper, std::size_t &merged) {
+    if (rxobj::libraryPackage() == NULLOBJECT) return false;
     rxobj::LocalRefs temps(t);
     RexxObjectPtr package = temps(t->SendMessage0((RexxObjectPtr)helper, "PACKAGE"));
-    if (t->CheckCondition() || package == NULLOBJECT) { t->ClearCondition(); return; }
+    if (t->CheckCondition() || package == NULLOBJECT) { t->ClearCondition(); return true; }
     RexxObjectPtr routines = temps(t->SendMessage0(package, "IMPORTEDROUTINES"));
     RexxObjectPtr classes = temps(t->SendMessage0(package, "IMPORTEDCLASSES"));
-    if (t->CheckCondition() || routines == NULLOBJECT || classes == NULLOBJECT) { t->ClearCondition(); return; }
+    if (t->CheckCondition() || routines == NULLOBJECT || classes == NULLOBJECT) { t->ClearCondition(); return true; }
     auto items = [&](RexxObjectPtr o) {
         RexxObjectPtr n = temps(t->SendMessage0(o, "ITEMS"));
         wholenumber_t v = 0;
@@ -2899,7 +2899,7 @@ inline void mergeExternalCall(RexxThreadContext *t, RexxRoutineObject helper, st
         return static_cast<std::size_t>(v);
     };
     const std::size_t now = items(routines) + items(classes);
-    if (now == merged) return;
+    if (now == merged) return false;
     merged = now;
     static thread_local RexxRoutineObject merge = NULLOBJECT;
     if (merge == NULLOBJECT) {
@@ -2910,12 +2910,13 @@ inline void mergeExternalCall(RexxThreadContext *t, RexxRoutineObject helper, st
             "do rx2cppName over rx2cppClasses~allIndexes; rx2cppMerged~addPublicClass(rx2cppName, rx2cppClasses[rx2cppName]); end\n"
             "rx2cppLibrary~addPackage(rx2cppMerged)\n";
         merge = rxobj::internalRoutine(t, t->NewRoutine("rx2cpp_merge", source, std::strlen(source)));
-        if (merge == NULLOBJECT) return;
+        if (merge == NULLOBJECT) return true;
         rxobj::pinRef(t, (RexxObjectPtr)merge);
     }
     RexxArrayObject args = (RexxArrayObject)temps((RexxObjectPtr)t->ArrayOfThree(rxobj::libraryPackage(), routines, classes));
     temps(t->CallRoutine(merge, args));
     if (t->CheckCondition()) t->ClearCondition();
+    return true;
 }
 // CALL / function call of a routine only the interpreter can resolve (rexxutil SysXxx, external .rex routines), run in a
 // small interpreter routine under the caller's NUMERIC settings. An argument that names a stem the callee filled
@@ -3049,7 +3050,18 @@ inline MessageResult interpreterCall(Variables &vars, const std::string &name, c
         raised.conditionObject = takeKeptCondition();
         throw raised;
     }
-    if (mergeImports) mergeExternalCall(t, routine, it->second.merged);
+    // The merge looks at the helper's imports after every call (five interpreter sends) until a call that ended normally
+    // found nothing new: from then on that routine name, resolved the same way each time (a routine of the package or one
+    // it imports, a library routine, or the same external program with the same public routines and classes), is not
+    // looked at again. Kept per helper and routine name (a dynamic CALL's name is its value).
+    if (mergeImports) {
+        static thread_local std::unordered_set<std::string> settled;
+        const std::string *settledKey = &key;
+        std::string withName;
+        if (dynamicName) { withName = key; withName += '\0'; withName += dynamicName->bytes.str(); settledKey = &withName; }
+        if (settled.find(*settledKey) == settled.end() && !mergeExternalCall(t, routine, it->second.merged))
+            settled.insert(*settledKey);
+    }
     if (r == NULLOBJECT) return std::nullopt;
     RexxArrayObject out = (RexxArrayObject)r;
     auto text = [&](RexxObjectPtr o) { RexxStringObject so = (RexxStringObject)temps((RexxObjectPtr)t->ObjectToString(o)); return std::string(t->StringData(so), t->StringLength(so)); };

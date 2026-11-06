@@ -31,4 +31,6 @@ check string_send_quick "$OUT/src/string_send_quick.rex"   # x~CONTAINS / x~ISA 
 check instance_isa_args "$OUT/src/instance_isa_args.rex"   # ISA of compiled instances cached by method table (or name), identity compares, pooled native call arguments: nested, recursive, omitted
 check string_send_direct "$OUT/src/string_send_direct.rex"   # x~SUBSTR / x~LENGTH as rx::sendSubstr / rx::sendLength: argument order, in-place reads, object receivers
 check external_library_calls "$OUT/src/external_library_calls.rex"   # ::ROUTINE ... EXTERNAL "LIBRARY rxmath ...": function and CALL forms from program, method, routine, internal routine, NUMERIC DIGITS (no import merge afterwards)
+check external_program_merge "$OUT/src/external_program_merge.rex"   # external .rex programs: public routines / classes merged into the caller, merge check settled per routine name, error 43 then found, dynamic CALL
+check trunc_native "$OUT/src/trunc_native.rex"   # TRUNC natively (NumberString::trunc): numbers x places x DIGITS 5 / 9 / 16, signs, zeros, exponents, string method, errors from the interpreter
 echo "PASS program constructs (4): $(ls "$OUT"/*.expected | wc -l) programs, $(cat "$OUT"/*.expected | wc -l) lines identical to the interpreter"

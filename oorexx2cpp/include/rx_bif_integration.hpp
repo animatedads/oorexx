@@ -651,6 +651,40 @@ inline std::optional<Value> numericBif(const std::string &name, const std::vecto
         if (d.coefficient < 0) d.coefficient = -d.coefficient;
         return numberResult(d, num);
     }
+    // TRUNC(number [, places]) as NumberString::trunc: rounded to DIGITS first (prepareNumber ROUND), then cut to places
+    // decimals (zeros added), never exponential; the sign only when the result is not zero (-0.0001 -> 0.00). A places
+    // argument that is not plain digits, a non-number and results beyond 100000 digits are the interpreter's (its errors).
+    if (rx::eqLit(name, "TRUNC") && (a.size() == 1 || a.size() == 2)) {
+        long places = 0;
+        if (a.size() == 2) {
+            const std::string_view p = a[1]->bytes.view();
+            if (p.empty() || p.size() > 5 || p.find_first_not_of("0123456789") != std::string_view::npos) return std::nullopt;
+            places = std::stol(std::string(p));
+        }
+        RexxDecimal d; const char *err = nullptr;
+        if (!tryParseRexxDecimal(*a[0], d, err)) return std::nullopt;
+        roundRexx(d, num);
+        if (d.exponent > 100000 || d.exponent < -100000) return std::nullopt;
+        if (d.coefficient == 0) return Value::string(places == 0 ? std::string("0") : "0." + std::string(places, '0'));
+        const bool negative = d.coefficient < 0;
+        const std::string digits = (negative ? -d.coefficient : d.coefficient).convert_to<std::string>();
+        std::string whole, fraction;
+        if (d.exponent >= 0) whole = digits + std::string(static_cast<std::size_t>(d.exponent), '0');
+        else {
+            const long wholeDigits = static_cast<long>(digits.size()) + d.exponent;
+            if (wholeDigits > 0) { whole = digits.substr(0, wholeDigits); fraction = digits.substr(wholeDigits); }
+            else fraction = std::string(static_cast<std::size_t>(-wholeDigits), '0') + digits;
+        }
+        if (static_cast<long>(fraction.size()) > places) fraction.resize(static_cast<std::size_t>(places));
+        else fraction.append(static_cast<std::size_t>(places) - fraction.size(), '0');
+        const bool nonZero = !whole.empty() || fraction.find_first_not_of('0') != std::string::npos;
+        std::string out;
+        out.reserve(whole.size() + fraction.size() + 3);
+        if (negative && nonZero) out += '-';
+        out += whole.empty() ? std::string("0") : whole;
+        if (places) { out += '.'; out += fraction; }
+        return Value::string(std::move(out));
+    }
     return std::nullopt;
 }
 // X2C / X2B / X2D take hex digits, B2X binary digits. The native code handles only the plain form (digits only);
