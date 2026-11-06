@@ -469,9 +469,78 @@ inline boost::multiprecision::cpp_int byteRange(std::size_t n) {
     for (std::size_t i = 0; i < n; ++i) r *= 256;
     return r;
 }
+// TRUNC, the function and the String method, ported whole with its errors. The function: BUILTIN(TRUNC) (fix_args:
+// 40.3 / 40.4; required_string: 40.5; optional_integer: the places a whole number at ARGUMENT_DIGITS 18, else 40.12,
+// and from then on that integer), RexxString::trunc (not a number: 93.943), NumberString::trunc (optionalNonNegative:
+// 93.906 with the integer; rounded to DIGITS first (prepareNumber ROUND), then truncInternal: cut to places decimals,
+// zeros added, never exponential, the sign only when the result is not zero: -0.0001 -> 0.00). The method (method =
+// true, a[0] the receiver): not a number 93.943, more than one argument 93.902, places not a non-negative whole number
+// 93.906 with the argument as given. nullopt (the interpreter's) for objects, NUMERIC settings this code does not
+// hold, exponents beyond the native range and results of more than a million decimals.
+inline std::optional<Value> truncRexx(const std::vector<BifSlot> &a, const ActivationNumeric &num, bool method) {
+    for (const auto &x : a) if (x && x->isObject()) return std::nullopt;
+    if (num.digits < 1 || num.digits > 100000 || num.fuzz >= num.digits) return std::nullopt;
+    auto fail = [](const char *code, std::string text, std::vector<Value> subs) {
+        SyntaxCondition c(code, text, false); c.substitutions = std::move(subs); c.ported = true; throw c;
+    };
+    const Value name = Value::string("TRUNC");
+    const std::size_t given = a.size();   // (the receiver counts as the number for the method)
+    if (!method) {
+        if (given < 1) fail("40.3", "Not enough arguments in invocation of TRUNC; minimum expected is 1.", {name, Value::string("1")});
+        if (given > 2) fail("40.4", "Too many arguments in invocation of TRUNC; maximum expected is 2.", {name, Value::string("2")});
+        if (!a[0]) fail("40.5", "Missing argument in invocation of TRUNC; argument 1 is required.", {name, Value::string("1")});
+    } else if (given > 2) fail("93.902", "Too many arguments in invocation of method; 1 expected.", {Value::string("1")});
+    const bool hasPlaces = given == 2 && a[1];
+    std::int64_t places = 0;
+    std::optional<Value> placesShown;   // (what 93.906 reports: the function's converted integer, the method's argument)
+    RexxDecimal pd; const char *perr = nullptr;
+    if (hasPlaces) {
+        const bool parsed = tryParseRexxDecimal(*a[1], pd, perr);
+        if (!parsed && perr && std::strstr(perr, "supported")) return std::nullopt;
+        if (!method) {
+            if (!parsed || !oorexxWholeNumber(pd, 18, true, places))
+                fail("40.12", "TRUNC argument 2 must be a whole number; found \"" + a[1]->bytes.str() + "\".", {name, Value::string("2"), *a[1]});
+            placesShown = Value::string(std::to_string(places));
+        } else {
+            placesShown = *a[1];
+            if (!parsed || !oorexxWholeNumber(pd, 18, false, places)) places = -1;
+        }
+    }
+    RexxDecimal d; const char *err = nullptr;
+    if (!tryParseRexxDecimal(*a[0], d, err)) {
+        if (err && std::strstr(err, "supported")) return std::nullopt;
+        fail("93.943", "TRUNC method target must be a number; found \"" + a[0]->bytes.str() + "\".", {name, *a[0]});
+    }
+    if (places < 0)
+        fail("93.906", "Method argument 1 must be zero or a positive whole number; found \"" + placesShown->bytes.str() + "\".",
+             {Value::string("1"), *placesShown});
+    if (places > 1000000) return std::nullopt;
+    roundRexx(d, num);
+    if (d.exponent > 100000 || d.exponent < -100000) return std::nullopt;
+    if (d.coefficient == 0) return Value::string(places == 0 ? std::string("0") : "0." + std::string(static_cast<std::size_t>(places), '0'));
+    const bool negative = d.coefficient < 0;
+    const std::string digits = (negative ? -d.coefficient : d.coefficient).convert_to<std::string>();
+    std::string whole, fraction;
+    if (d.exponent >= 0) whole = digits + std::string(static_cast<std::size_t>(d.exponent), '0');
+    else {
+        const long wholeDigits = static_cast<long>(digits.size()) + d.exponent;
+        if (wholeDigits > 0) { whole = digits.substr(0, static_cast<std::size_t>(wholeDigits)); fraction = digits.substr(static_cast<std::size_t>(wholeDigits)); }
+        else fraction = std::string(static_cast<std::size_t>(-wholeDigits), '0') + digits;
+    }
+    if (static_cast<std::int64_t>(fraction.size()) > places) fraction.resize(static_cast<std::size_t>(places));
+    else fraction.append(static_cast<std::size_t>(places) - fraction.size(), '0');
+    const bool nonZero = !whole.empty() || fraction.find_first_not_of('0') != std::string::npos;
+    std::string out;
+    out.reserve(whole.size() + fraction.size() + 3);
+    if (negative && nonZero) out += '-';
+    out += whole.empty() ? std::string("0") : whole;
+    if (places) { out += '.'; out += fraction; }
+    return Value::string(std::move(out));
+}
 // DATATYPE (A L M N U W and the one-argument form), MAX, MIN, ABS under the caller's NUMERIC settings, exactly as the
 // interpreter computes them; anything else (B, X, 9, ..., objects, omitted arguments) returns nullopt for the full route.
 inline std::optional<Value> numericBif(const std::string &name, const std::vector<BifSlot> &a, const ActivationNumeric &num) {
+    if (rx::eqLit(name, "TRUNC")) return truncRexx(a, num, false);
     for (const auto &x : a) if (!x || x->isObject()) return std::nullopt;
     if (num.digits < 1 || num.digits > 100000 || num.fuzz >= num.digits) return std::nullopt;
     if (rx::eqLit(name, "DATATYPE") && (a.size() == 1 || a.size() == 2)) {
@@ -651,40 +720,6 @@ inline std::optional<Value> numericBif(const std::string &name, const std::vecto
         if (d.coefficient < 0) d.coefficient = -d.coefficient;
         return numberResult(d, num);
     }
-    // TRUNC(number [, places]) as NumberString::trunc: rounded to DIGITS first (prepareNumber ROUND), then cut to places
-    // decimals (zeros added), never exponential; the sign only when the result is not zero (-0.0001 -> 0.00). A places
-    // argument that is not plain digits, a non-number and results beyond 100000 digits are the interpreter's (its errors).
-    if (rx::eqLit(name, "TRUNC") && (a.size() == 1 || a.size() == 2)) {
-        long places = 0;
-        if (a.size() == 2) {
-            const std::string_view p = a[1]->bytes.view();
-            if (p.empty() || p.size() > 5 || p.find_first_not_of("0123456789") != std::string_view::npos) return std::nullopt;
-            places = std::stol(std::string(p));
-        }
-        RexxDecimal d; const char *err = nullptr;
-        if (!tryParseRexxDecimal(*a[0], d, err)) return std::nullopt;
-        roundRexx(d, num);
-        if (d.exponent > 100000 || d.exponent < -100000) return std::nullopt;
-        if (d.coefficient == 0) return Value::string(places == 0 ? std::string("0") : "0." + std::string(places, '0'));
-        const bool negative = d.coefficient < 0;
-        const std::string digits = (negative ? -d.coefficient : d.coefficient).convert_to<std::string>();
-        std::string whole, fraction;
-        if (d.exponent >= 0) whole = digits + std::string(static_cast<std::size_t>(d.exponent), '0');
-        else {
-            const long wholeDigits = static_cast<long>(digits.size()) + d.exponent;
-            if (wholeDigits > 0) { whole = digits.substr(0, wholeDigits); fraction = digits.substr(wholeDigits); }
-            else fraction = std::string(static_cast<std::size_t>(-wholeDigits), '0') + digits;
-        }
-        if (static_cast<long>(fraction.size()) > places) fraction.resize(static_cast<std::size_t>(places));
-        else fraction.append(static_cast<std::size_t>(places) - fraction.size(), '0');
-        const bool nonZero = !whole.empty() || fraction.find_first_not_of('0') != std::string::npos;
-        std::string out;
-        out.reserve(whole.size() + fraction.size() + 3);
-        if (negative && nonZero) out += '-';
-        out += whole.empty() ? std::string("0") : whole;
-        if (places) { out += '.'; out += fraction; }
-        return Value::string(std::move(out));
-    }
     return std::nullopt;
 }
 // X2C / X2B / X2D take hex digits, B2X binary digits. The native code handles only the plain form (digits only);
@@ -812,6 +847,12 @@ inline Value dispatchBif(BifRuntime& bif, Variables& vars, const BifName& n, con
     const std::string &name = n.name;
     if (n.pure) {
         try { return dispatchBifNative(bif, vars, n, slots); }
+        catch (const SyntaxCondition &c) {
+            if (c.ported) throw;   // (the interpreter's own error, raised here)
+            auto result = interpreterCall(vars, name, slots);
+            if (!result) throw std::runtime_error("BIF " + name + ": no result");
+            return std::move(*result);
+        }
         catch (const std::runtime_error &) {
             auto result = interpreterCall(vars, name, slots);
             if (!result) throw std::runtime_error("BIF " + name + ": no result");
@@ -1342,6 +1383,19 @@ inline MessageResult hostStringBif(const Value &receiver, const std::string &sel
         for (const Value &v : args) asSlots.emplace_back(v);
         const ActivationNumeric def0;
         if (numericEdgeArgs(name, asSlots, currentNumeric ? *currentNumeric : def0)) return fallback();
+    }
+    // TRUNC: the method form of truncRexx (its errors raised here)
+    if (rx::eqLit(name, "TRUNC")) {
+        std::vector<BifSlot> ts;
+        ts.reserve(args.size() + 1);
+        ts.emplace_back(receiver);
+        for (const Value &v : args) {
+            if (v.isObject() && rx::envOf(v.object.get()) && static_cast<EnvObject *>(v.object.get())->handle == nullptr) ts.emplace_back(std::nullopt);
+            else ts.emplace_back(v);
+        }
+        const ActivationNumeric def0;
+        if (auto r = truncRexx(ts, currentNumeric ? *currentNumeric : def0, true)) return MessageResult(std::move(*r));
+        return fallback();
     }
     if (rx::eqLit(name, "C2D") || rx::eqLit(name, "D2C") || rx::eqLit(name, "X2D") || rx::eqLit(name, "D2X")) {
         const ActivationNumeric def0;
