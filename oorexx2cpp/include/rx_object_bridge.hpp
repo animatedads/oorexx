@@ -286,11 +286,12 @@ inline bool &securityCallInProgress() { static thread_local bool on = false; ret
 // (librarySecurity with the field's address kept: the package object does not move, its fields are found once; at
 // every compiled method or routine call)
 inline void *securityAtActivationStart() {
-    if (!current) return nullptr;
+    // (no library package yet, as while its classes are being installed: none, before the cache is consulted, which
+    // starts out holding no package and so would match)
+    if (!current || libraryPackage() == NULLOBJECT) return nullptr;
     static std::atomic<RexxObjectPtr> package{NULLOBJECT};   // (the package the field belongs to: set after it)
     static std::atomic<void *const *> field{nullptr};
     if (libraryPackage() != package.load(std::memory_order_acquire)) {
-        if (libraryPackage() == NULLOBJECT) return nullptr;
         const PackageFields &f = packageFields(current);
         if (f.securityManager < 0) return nullptr;
         field.store(reinterpret_cast<void *const *>(libraryPackage()) + f.securityManager, std::memory_order_relaxed);
