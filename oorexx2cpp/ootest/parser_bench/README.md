@@ -56,5 +56,9 @@ The two dumps must be identical (class, category, from, to and value of every el
 | 2026-11-05, 288be4b, **Release interpreter** de1db87 | Claude | dump pass 17.9 s; 3 passes 48.7 s | dump pass 6.4 s; 3 passes 17.7 s (2.76x) | Release interpreter for both columns; dumps identical |
 | 2026-11-05, 204b570 (main, merge of 288be4b) | Claude | dump pass 34.1 s; 3 passes 98.2 s | dump pass 6.6 s; 3 passes 20.7 s (4.73x) | merge gate; dumps identical; 71,087 trips a pass |
 | 2026-11-05, 204b570, **Release interpreter** de1db87 | Claude | dump pass 17.9 s; 3 passes 49.6 s | dump pass 6.1 s; 3 passes 19.5 s (2.55x) | merge gate; Release interpreter for both columns; dumps identical |
+| 2026-11-06, 0573b73 (wip: native-reference tests by a virtual; leaner ActivationScope; build in parts; TRUNC natively) | Claude | dump pass 36.3 s; 3 passes 110.6 s | dump pass 6.5 s; 3 passes 22.0 s (5.02x) | dumps identical; 71,087 trips a pass; one pass under callgrind at fbdce14 40.88 G instructions (-7.8% from 288be4b) |
+| 2026-11-06, 0573b73, **Release interpreter** de1db87 | Claude | dump pass 19.1 s; 3 passes 57.2 s | dump pass 6.8 s; 3 passes 21.6 s (2.65x) | Release interpreter for both columns; dumps identical |
+| 2026-11-06, 7e9d696 (main, merge of 0573b73) | Claude | dump pass 35.3 s; 3 passes 107.5 s | dump pass 7.8 s; 3 passes 20.9 s (5.15x) | merge gate; dumps identical; 71,087 trips a pass |
+| 2026-11-06, 7e9d696, **Release interpreter** de1db87 | Claude | dump pass 18.7 s; 3 passes 57.1 s | dump pass 6.7 s; 3 passes 20.3 s (2.82x) | merge gate; Release interpreter for both columns; dumps identical |
 
 Crossings are calls between compiled code and the interpreter (RX2CPP_BIF_STATS=1 reports them).
