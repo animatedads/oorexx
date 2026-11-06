@@ -34,3 +34,14 @@
   end
   if pos('00'x, value) > 0 then return 'std::string(' || answer || '"' || ', ' || value~length || ')'
   return answer || '"'
+/* The string of a ::ROUTINE ... EXTERNAL directive line ('LIBRARY rxmath RxCalcSqrt'), '' when it has none. */
+::class RxExternalSpec public
+::method of class
+  use strict arg decl
+  at = decl~upper~pos(' EXTERNAL ')
+  if at = 0 then return ''
+  spec = decl~substr(at + 10)~strip
+  q = spec~left(1)
+  if q \== '"' & q \== "'" then return ''
+  spec = spec~substr(2)
+  return spec~left(max(0, spec~pos(q) - 1))

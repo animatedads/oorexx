@@ -139,7 +139,8 @@
     end
     /* (a routine the package declares EXTERNAL: no imports to merge after it, see rx::interpreterCall) */
     merge = ''
-    if .local~rx2cpp.externals~isA(.directory) then if .local~rx2cpp.externals~hasIndex(name~upper) then merge = ', std::nullopt, false'
+    if .local~rx2cpp.externals~isA(.directory) then if .local~rx2cpp.externals~hasIndex(name~upper) then
+      merge = ', std::nullopt, false, ' || .RxQuote~cpp(.RxExternalSpec~of(.local~rx2cpp.externals[name~upper]))
     code = code || 'auto _rxR = rx::interpreterCall(vars, ' || .RxQuote~cpp(name) || ', _rxCallArgs' || merge || '); '
     code = code || 'if (_rxR) rx::set(vars, "RESULT", *_rxR); else rx::drop(vars, "RESULT"); }'
     ctx~line(depth, code)

@@ -2971,6 +2971,9 @@ struct Interp {
     RexxObjectPtr libraryName = NULLOBJECT;   // "rxmath"
     RexxObjectPtr names[Count] = {};          // "RXCALCSIN", ... (upper case, as callNativeRoutine looks them up)
     void *routines[Count] = {};               // rxmath's routine objects, once found
+    bool resolved = false;
+    std::unordered_map<std::string, RexxObjectPtr> otherNames;   // other names called, as interpreter strings
+    std::unordered_map<std::string, void *> declaredRoutines;      // a declared name's routine as first found
 };
 inline Interp &interp(RexxThreadContext *t) {
     static Interp i;
@@ -2988,29 +2991,79 @@ inline Interp &interp(RexxThreadContext *t) {
     i.usable = i.libraryName != NULLOBJECT;
     return i;
 }
-// Would the interpreter run rxmath's routine for this call now?
-inline bool resolvesToRxmath(RexxThreadContext *t, Fn f) {
+// Which of rxmath's routines the interpreter would run for a call of this name now (None: not one of them). The name as
+// called (upper case): an RxCalc name, or any other a package routine stands for, such as an alias declared ::ROUTINE
+// rxf_atan EXTERNAL "LIBRARY rxmath RxCalcArcTan" (PackageManager::resolveRoutine gives the declaration rxmath's own
+// routine object). (Under the kernel lock, as all compiled code runs: the caches need no other.)
+inline Fn resolveRxmath(RexxThreadContext *t, std::string_view called) {
     Interp &i = interp(t);
     static const bool dbg = std::getenv("RX2CPP_RXMATH_DEBUG") != nullptr;
-    auto no = [&](const char *why) { if (dbg) std::fprintf(stderr, "rxmath %s: %s\n", upperName(f), why); return false; };
+    auto no = [&](const char *why) { if (dbg) std::fprintf(stderr, "rxmath %.*s: %s\n", static_cast<int>(called.size()), called.data(), why); return None; };
     if (!i.usable) return no("unusable");
     if (rxobj::libraryPackage() == NULLOBJECT) return no("no package");
-    void *name = reinterpret_cast<void *>(i.names[f]);
-    if (!i.routines[f]) {
+    if (!i.resolved) {
         void *library = i.getLibrary(reinterpret_cast<void *>(i.libraryName));
         if (!library) return no("no library");
-        i.routines[f] = i.resolveRoutine(library, name);
-        if (!i.routines[f]) return no("not in library");
+        for (int k = 0; k < Count; ++k) i.routines[k] = i.resolveRoutine(library, reinterpret_cast<void *>(i.names[k]));
+        i.resolved = true;
+    }
+    const Fn named = fnOf(called);
+    void *name = nullptr;
+    if (named != None) name = reinterpret_cast<void *>(i.names[named]);
+    else {
+        auto it = i.otherNames.find(std::string(called));
+        if (it == i.otherNames.end()) {
+            if (i.otherNames.size() > 4096) return no("too many names");
+            it = i.otherNames.emplace(std::string(called), rxobj::pinRef(t, (RexxObjectPtr)t->String(std::string(called).c_str()))).first;
+        }
+        name = reinterpret_cast<void *>(it->second);
     }
     // step 2: a routine of the package, its own or imported (::REQUIRES 'rxmath' LIBRARY merges rxmath's routines in:
     // PackageClass::mergeLibrary), runs whatever it is
-    if (void *found = i.findRoutine(reinterpret_cast<void *>(rxobj::libraryPackage()), name))
-        return found == i.routines[f] ? true : no("another package routine");
-    // step 3: the macrospace first, then the libraries' table
+    if (void *found = i.findRoutine(reinterpret_cast<void *>(rxobj::libraryPackage()), name)) {
+        for (int k = 0; k < Count; ++k) if (i.routines[k] && found == i.routines[k]) return static_cast<Fn>(k);
+        return no("another package routine");
+    }
+    if (named == None) return no("not a package routine");
+    // step 3: the macrospace first, then the libraries' table (rxmath's names only)
     unsigned short position = 0;
-    if (i.queryMacro(upperName(f), &position) == 0 && position == RXMACRO_SEARCH_BEFORE) return no("macro");
-    if (i.loadedRoutine(name) != i.routines[f]) return no("another routine");
-    return true;
+    if (i.queryMacro(upperName(named), &position) == 0 && position == RXMACRO_SEARCH_BEFORE) return no("macro");
+    if (!i.routines[named] || i.loadedRoutine(name) != i.routines[named]) return no("another routine");
+    return named;
+}
+// A routine the package declares ::ROUTINE name EXTERNAL "LIBRARY rxmath RxCalcX" (declared: that string, from the
+// compiler): rxmath's RxCalcX, which the interpreter finds first (a routine of the package's own; it keeps the object
+// its declaration made, restored from the library's image, so it is not rxmath's object itself: the string says which).
+// The library must be rxmath by that name (the one this code is) and loaded; the routine must still be the one found the
+// first time (none put in its place since).
+inline Fn declaredRxmath(RexxThreadContext *t, std::string_view called, const char *declared) {
+    Interp &i = interp(t);
+    if (!i.usable || rxobj::libraryPackage() == NULLOBJECT) return None;
+    std::vector<std::string> words;
+    {
+        std::string w;
+        for (const char *c = declared; ; ++c) {
+            if (*c == '\0' || *c == ' ' || *c == '\t') { if (!w.empty()) words.push_back(std::move(w)); w.clear(); if (*c == '\0') break; }
+            else w += *c;
+        }
+    }
+    if (words.size() < 2 || words.size() > 3 || words[1] != "rxmath") return None;
+    std::string library = words[0];
+    for (char &c : library) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    if (library != "LIBRARY") return None;
+    std::string entry = words.size() == 3 ? words[2] : std::string(called);
+    for (char &c : entry) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    const Fn f = fnOf(entry);
+    if (f == None || !i.getLibrary(reinterpret_cast<void *>(i.libraryName))) return None;
+    auto it = i.otherNames.find(std::string(called));
+    if (it == i.otherNames.end()) {
+        if (i.otherNames.size() > 4096) return None;
+        it = i.otherNames.emplace(std::string(called), rxobj::pinRef(t, (RexxObjectPtr)t->String(std::string(called).c_str()))).first;
+    }
+    void *found = i.findRoutine(reinterpret_cast<void *>(rxobj::libraryPackage()), reinterpret_cast<void *>(it->second));
+    if (!found) return None;
+    auto seen = i.declaredRoutines.emplace(std::string(called), found).first;
+    return seen->second == found ? f : None;
 }
 // NativeActivation's double argument: NumberString::doubleValue, strtod of the number's string value, which for a string
 // is the string itself as written (RexxString::numberString keeps it): ' 4 ' is 4, '- 2' (a Rexx number) is 0, strtod
@@ -3153,16 +3206,24 @@ inline std::optional<Value> call(Fn f, const std::vector<std::optional<Value>> &
 // it as a package routine and merges nothing after it (mergeRequired is CALL of an external program only), so the helper's
 // imports are not looked at.
 inline MessageResult interpreterCall(Variables &vars, const std::string &name, const std::vector<std::optional<Value>> &args,
-                                     const std::optional<Value> &dynamicName = std::nullopt, bool mergeImports = true) {
+                                     const std::optional<Value> &dynamicName = std::nullopt, bool mergeImports = true,
+                                     const char *declared = nullptr) {
     RexxThreadContext *t = rxobj::need();
-    // rxmath, when the call would run it (a function call, which the library lane makes in the dynamic form, or CALL)
+    // rxmath, when the call would run it (a function call, which the library lane makes in the dynamic form, or CALL;
+    // by an RxCalc name or a name declared for one). A name computed at run time is taken as written only when it is in
+    // upper case already (the interpreter looks a package routine up in upper case, the call by the name as given).
     if (!dynamicName || !dynamicName->isObject()) {
-        const rxmath_port::Fn f = rxmath_port::fnOf(dynamicName ? dynamicName->bytes.view() : std::string_view(name));
-        if (f != rxmath_port::None && rxmath_port::resolvesToRxmath(t, f))
-            if (auto r = rxmath_port::call(f, args, vars.numeric)) return MessageResult(std::move(*r));
+        const std::string_view called = dynamicName ? dynamicName->bytes.view() : std::string_view(name);
+        const bool plain = !called.empty() && called.size() <= 64 && called[0] != '(' &&
+                           std::none_of(called.begin(), called.end(), [](char c) { return std::islower(static_cast<unsigned char>(c)) != 0; });
+        if (plain) {
+            const rxmath_port::Fn f = declared ? rxmath_port::declaredRxmath(t, called, declared) : rxmath_port::resolveRxmath(t, called);
+            if (f != rxmath_port::None)
+                if (auto r = rxmath_port::call(f, args, vars.numeric)) return MessageResult(std::move(*r));
+        }
     }
     rxobj::LocalRefs temps(t);
-    if (rxobj::bifStatsOn()) rxobj::bifStat("CALL " + name);
+    if (rxobj::bifStatsOn()) rxobj::bifStat("CALL " + name + (dynamicName && !dynamicName->isObject() ? " " + dynamicName->bytes.str() : std::string()));
     // The stem copy-back below is needed only when an argument may name a stem (a string ending in '.', or an object,
     // whose string value the helper reads); without one the helper is the call alone.
     bool stemArgs = false;
