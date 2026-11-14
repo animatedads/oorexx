@@ -35,8 +35,10 @@
       for (const f of ['ooDialog.cls', 'oodWeb.cls', 'ooShapes.cls']) {
         const r = await fetch('ood/' + f); if (r.ok) files['/home/rexx/' + f] = await r.text();
       }
-      st.sess = await st.rexx.start({ js: { page: true }, files });
-      await st.sess.loadPackage('ObjectEditor.cls', await (await fetch('ObjectEditor.cls')).text());
+      for (const f of ['ObjectEditor.cls', 'OodDesigner.cls', 'LibraryProviders.cls']) files['/home/rexx/' + f] = await (await fetch(f)).text();
+      st.sess = await st.rexx.start({ js: { page: true, worker: true }, files });
+      await st.sess.loadPackage('LibraryProviders.cls');   // requires ObjectEditor.cls and OodDesigner.cls
+      await OxLibraries.setup(st.sess);
       const first = $('example').value;
       if (first) await openUrl(first); else await openText('MyObject.cls', '');
     } catch (e) { status('Could not start: ' + errText(e), true); console.error(e); }
@@ -280,6 +282,13 @@
     $('sourceName').textContent = st.fileName; $('sourceText').textContent = String(await rx(() => st.w.text())); $('sourceView').hidden = false;
   });
   $('btnSourceClose').addEventListener('click', () => { $('sourceView').hidden = true; });
+  // Libraries: connect to a provider, install, and use: a ::requires in this file
+  $('btnLibraries').addEventListener('click', () => OxLibraries.open({
+    sess: st.sess, status,
+    onUse: async (req) => {
+      if (await edit(() => st.w.addRequires(req), '::requires "' + req + '" added; its classes now complete.')) D.getElementById('libPanel').hidden = true;
+    },
+  }));
   $('btnCopy').addEventListener('click', () => navigator.clipboard && navigator.clipboard.writeText($('sourceText').textContent).then(() => status('Copied.')));
 
   boot();

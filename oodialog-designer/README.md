@@ -1,4 +1,4 @@
-# ooDialog Designer — v0.3.0
+# ooDialog Designer — v0.4.0
 
 Architecture: Tom Dyer. Code: Claude (Opus 5.5). README written by Claude (Opus 5.5).
 It runs on ooDialog/WASM v0.7.0 (code: Claude (Fable 5.2)) and on Josep Maria
@@ -47,6 +47,19 @@ ooDialog/WASM:
   event. The bar is attached in `initDialog`; upstream keeps it as
   `self~menuBar`, and an item's accessor is its id
   (`self~menuBar~check(self~mnuGrid)`);
+- **libraries**: the Libraries panel (shared with the Object Editor)
+  connects to the Alchemy estate, a GitHub repository or local files. It
+  installs a library with what its `::requires` reach and shows what it
+  offers, found by reflection. "Use it here" adds a `::requires` to the
+  program, and **▶ Run** carries the installed files with it;
+- **a shared scope**: entries (a name and a Rexx expression) made once in
+  `init` into `self~sharedScope`, a Directory. Any event method, on any
+  thread, reaches them:
+
+      expose sharedScope
+      L = sharedScope["logging"]
+      self~status~setText("Logging service:" L~serviceId)
+
 - the design itself, as `::RESOURCE oodDesign` at the end of the same file.
   DrDialog kept its design in a `.RES` file; here one `.rex` is both the
   program and the design you reopen. `Open…` reads it back, event code
@@ -97,7 +110,7 @@ Needs Node 22 and `npm i oorexxwasm`. The `oorexxwasm-web-0.2.4` release must
 be unpacked somewhere, and ooDialog/WASM's `dist/` must be available. The
 browser tests also need Python Playwright with Chromium.
 
-    rexx tools/build.rex RUNTIME_DIR OODIALOG_WASM_DIST
+    rexx tools/build.rex RUNTIME_DIR OODIALOG_WASM_DIST OBJECT_EDITOR_DIR
     node site/serve.mjs site --port 8080
 
 Then open `http://localhost:8080/designer.html`.
@@ -108,15 +121,15 @@ Then open `http://localhost:8080/designer.html`.
 Python drives the browser in the second command only; everything the
 designer decides is in ooRexx.
 
-## State (2026-11-14, v0.3.0)
+## State (2026-11-14, v0.4.0)
 
-- `tests/t01_model.rex`: 63 of 63 checks pass under ooRexx/WASM in Node. They
+- `tests/t01_model.rex`: 69 of 69 checks pass under ooRexx/WASM in Node. They
   cover generation, a byte-identical round trip through the `::RESOURCE`,
   background and timer threads, renames that rewrite `self~old` (and move a
   tab's pages), fifteen refusals, the tab page handler, list-view columns and
   rows, the menu bar, tree depth and expansion, track bar and date picker,
   actions, and `module_version`.
-- `tools/dztest.py`: 7 of 7 scenarios pass in headless Chromium:
+- `tools/dztest.py`: 8 of 8 scenarios pass in headless Chromium:
   1. **hand:** a dialog built with the mouse (drop, rename, styles,
      variable, drag-an-action, move and resize), then run. The event code sees
      the variable and the field, and INIT's text survives `execute`.
@@ -136,6 +149,10 @@ designer decides is in ooRexx.
   7. **gadgets:** tree view, track bar and date picker drawn while
      designing; in the run, the tree's SELCHANGED fires and the track bar
      reads 30.
+  8. **libraries:** in the Calculator, the Alchemy logging framework is
+     installed and used, and `logging = .LogService~new("calculator")` goes
+     into the shared scope. In the run, the INIT event shows
+     "Logging service: calculator" through `expose sharedScope`.
 - `tests/gen/Calculator.rex`, `Contacts.rex` and `Gadgets.rex` (generated)
   also pass the ooDialog/WASM harness, `oodtest.py`, with their `.steps`
   files.

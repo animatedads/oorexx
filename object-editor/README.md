@@ -1,4 +1,4 @@
-# ooRexx Object Editor — v0.1.0
+# ooRexx Object Editor — v0.2.0
 
 Architecture: Tom Dyer. Code: Claude (Opus 5.5). README written by Claude (Opus 5.5).
 Runs on Josep Maria Blasco's ooRexx/WASM 0.2.4, in the browser and in Node.
@@ -63,6 +63,34 @@ The completion list comes from the objects:
 Adding a `::requires` adds its library's classes and methods to all of the
 above. Operators (`||`, `==`) are not offered after `~`.
 
+## Library providers (`src/LibraryProviders.cls`)
+
+Where `::requires` libraries come from. A provider offers a catalogue and
+hands out files. Providers are registered on the app's shelf
+(`OxLibraryShelf`); the Libraries panel shows them in both this editor and
+the ooDialog Designer:
+
+| Provider | Catalogue |
+|---|---|
+| `OxAlchemyProvider` | animatedads/alchemy: the latest version of each `packages/` entry and its `.cls` files (tests and examples left out). It reads the index `catalogue/alchemy.idx` first (one file); "Refresh from GitHub" reads the repository tree through the GitHub API. |
+| `OxGitHubProvider` | any owner, repo and branch, through the GitHub API (60 requests an hour without a token); falls back to an index if one is given |
+| `OxLocalProvider` | a folder, or files uploaded from this computer |
+
+- **Install** fetches the chosen file from raw.githubusercontent.com, or
+  from the folder. It also fetches every file its `::requires` reach from
+  the same provider: the library first, then the provider's other libraries
+  by file name. Files go flat into `lib/<provider>/`, so the libraries' own
+  `::requires` resolve beside them, as they do in the estate. A `::requires`
+  the provider cannot supply is noted, not guessed.
+- **What it offers** is found by loading the installed file and examining it
+  with OxWorkspace: its public classes, and their public methods,
+  attributes and constants on both sides.
+- **Use it here** adds the `::requires`, after which completion knows the
+  library.
+- `tools/libindex.rex` writes an index from a local clone, e.g.
+  `rexx tools/libindex.rex ~/alchemy packages/ alchemy catalogue/alchemy.idx`.
+  The one here lists 242 libraries from alchemy at 183da160.
+
 ## Files
 
 | File | Role |
@@ -73,6 +101,10 @@ above. Operators (`||`, `==`) are not offered after `~`.
 | `tools/build.rex` | puts the site together (runtime, ooDialog/WASM, examples) |
 | `tests/t01_object.rex` | the model without a browser |
 | `tools/oxtest.py` | the page in headless Chromium. Python drives the browser only; everything the editor decides is ooRexx. |
+| `src/LibraryProviders.cls` | providers, the shelf, install with its `::requires` closure, goodies |
+| `site/libraries.js`, `.css` | the Libraries panel, shared with the designer |
+| `catalogue/alchemy.idx`, `tools/libindex.rex` | the Alchemy index and the tool that writes it |
+| `tests/t02_libraries.rex` | providers, install, goodies and use, without a browser (fetches from raw.githubusercontent.com) |
 
     rexx tools/build.rex RUNTIME_DIR OODIALOG_WASM_DIST DESIGNER_EXAMPLES_DIR
     node site/serve.mjs site --port 8080
@@ -90,7 +122,7 @@ Then open `http://localhost:8080/objed.html`.
   cover the reflection results, lookup order, both sides, the edits and
   their reloads, the refusals, completion in every context above, and the
   prolog not being run.
-- `oxtest.py`: 5 of 5 scenarios pass in headless Chromium:
+- `oxtest.py`: 6 of 6 scenarios pass in headless Chromium:
   1. **reflect:** classes, hierarchy with mixin, own and inherited members,
      the class side.
   2. **edit:** add an attribute, make a method private, a refused class, a
@@ -103,6 +135,14 @@ Then open `http://localhost:8080/objed.html`.
   5. **oodialog:** the designer's Calculator.rex opens without its dialog
      showing; its chain runs through PlainBaseDialog to UserDialog, and
      `self~createPush` completes from ooDialog.
+- `t02_libraries.rex`: 26 of 26 checks pass. They cover version order, the
+  catalogue (latest versions only), details, the install closure
+  (`LoggingCore.cls` brings `MethodInterposition.cls`), goodies by
+  reflection, a `::requires` with completion of `.LogService` and of
+  `log~` after `log = .LogService~new`, and a local provider with an upload.
+- `oxtest.py` scenario 6, **libraries:** Alchemy is connected and
+  `oorexx_logging` found, installed and examined, then used. The
+  `::requires` lands in the file, and `.LogSer` and `log~serv` complete.
 - Pitfall lint (Boston Crab `rexx_pitfalls.rex`): clean.
 
 ## Relation to `oorexx_source_editor` (estate, ChatGPT's lane)
@@ -123,3 +163,9 @@ order, a library's methods).
 - `::annotate`, `::routine` editing and `::options` are shown in the source
   only.
 - Renaming a member does not rewrite its callers.
+- The Alchemy index is made by hand with `libindex.rex`. Publishing it from
+  the estate itself (written by Autobuild on each merge) would keep it
+  current.
+- Logging v0.7 is rule-driven (`service~loggerFor(...)`, then
+  `log~log(.Log~WARN, text)`). It has no simple `.Log~new`/`~warn(text)`
+  facade. If one is wanted, it belongs in `oorexx_logging`, not here.

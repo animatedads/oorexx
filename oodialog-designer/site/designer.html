@@ -3,6 +3,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ooDialog Designer</title>
 <link rel="stylesheet" href="designer.css">
+<link rel="stylesheet" href="libraries.css">
 </head>
 <body>
 <header id="bar">
@@ -17,6 +18,7 @@
   <button id="btnOpen" title="Open a .rex made with the designer">Open…</button>
   <button id="btnSave" title="Download the program (it carries its design)">Save .rex</button>
   <button id="btnProgram" title="Show the ooRexx this design writes">Program</button>
+  <button id="btnLibraries" title="Connect to a source of ooRexx libraries and use one">Libraries…</button>
   <button id="btnRun" class="go" title="Run it with ooDialog on ooRexx/WASM">▶ Run</button>
   <button id="btnStop" disabled>Stop</button>
   <input id="file" type="file" accept=".rex,.txt" hidden>
@@ -32,6 +34,8 @@
   <aside id="side">
     <h2 id="propTitle">Properties</h2><div id="props"></div>
     <h2>Variables <span class="hint">(the dialog's attributes)</span></h2><div id="vars"></div>
+    <h2>Libraries <span class="hint">(::requires)</span></h2><div id="reqs"></div>
+    <h2>Shared scope <span class="hint">(expose sharedScope)</span></h2><div id="shared"></div>
   </aside>
 </main>
 <section id="events">
@@ -51,5 +55,6 @@
 <footer>Architecture: Tom Dyer.  Designer code: Claude (Opus 5.5).  ooDialog/WASM: Claude (Fable 5.2).
 ooRexx/WASM runtime: Josep Maria Blasco.  ooDialog: the ooRexx project (CPL 1.0).</footer>
 <script src="ooRexx.js"></script>
+<script src="libraries.js"></script>
 <script src="designer.js"></script>
 </body></html>

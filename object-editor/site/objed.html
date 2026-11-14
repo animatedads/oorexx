@@ -3,6 +3,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ooRexx Object Editor</title>
 <link rel="stylesheet" href="objed.css">
+<link rel="stylesheet" href="libraries.css">
 </head>
 <body>
 <header id="bar">
@@ -15,6 +16,7 @@
   <button id="btnOpen" title="Open a .cls or .rex">Open…</button>
   <button id="btnSave" title="Download the file">Save</button>
   <button id="btnSource" title="Show the whole file">Source</button>
+  <button id="btnLibraries" title="Connect to a source of ooRexx libraries and use one">Libraries…</button>
   <span id="status" role="status">Loading ooRexx…</span>
   <input id="file" type="file" accept=".cls,.rex,.txt" hidden>
 </header>
@@ -53,5 +55,6 @@
 <footer>Architecture: Tom Dyer.  Code: Claude (Opus 5.5).  ooRexx/WASM runtime: Josep Maria Blasco.
 Everything shown is found by examining the loaded classes (ooRexx reflection), not by reading the text.</footer>
 <script src="ooRexx.js"></script>
+<script src="libraries.js"></script>
 <script src="objed.js"></script>
 </body></html>

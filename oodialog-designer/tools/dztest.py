@@ -3,7 +3,7 @@
 Architecture: Tom Dyer.  Code: Claude (Opus 5.5).
 
 usage: python3 tools/dztest.py [scenario ...]     (after rexx tools/build.rex)
-Scenarios: hand, calculator, threads, refuse, saveopen, views, gadgets (default: all).
+Scenarios: hand, calculator, threads, refuse, saveopen, views, gadgets, libraries (default: all).
 Python is used here only because this tool drives a browser (Playwright);
 the designer's model, generator and reader are ooRexx (src/OodDesigner.cls)
 and are tested without a browser by tests/t01_model.rex.  Progress is logged
@@ -196,7 +196,30 @@ def sc_gadgets(pg):
     pg.screenshot(path=str(SHOTS / 'gadgets_run.png'))
     press(pg, 'Close'); expect('closed', wait_end(pg)['rc'], 2)
 
-SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views, 'gadgets': sc_gadgets}
+def sc_libraries(pg):
+    """Libraries: connect to Alchemy, install the logging framework, use it, put a
+    LogService in the shared scope, reach it from an event with expose sharedScope, run."""
+    ready(pg); open_example(pg, 'examples/Calculator.rex')
+    pg.click('#btnLibraries'); pg.wait_for_selector('#libPanel .lp-lib', timeout=60000)
+    pg.fill('#lpFilter', 'oorexx_logging'); pg.wait_for_timeout(1500)
+    pg.click('#lpList .lp-lib[data-lib="alchemy:oorexx_logging"]'); pg.wait_for_selector('#lpDetail h3', timeout=60000)
+    pg.click('#lpInstall'); pg.wait_for_selector('#lpGoodies details', timeout=90000)
+    pg.click('#lpUse'); pg.wait_for_function("document.getElementById('libPanel').hidden", timeout=30000); settle(pg, 700)
+    expect('::requires in the design', snap(pg)['requires'], ['lib/alchemy/LoggingCore.cls'])
+    pg.fill('#newSharedName', 'logging'); pg.fill('#newSharedValue', '.LogService~new("calculator")'); pg.click('#btnAddShared'); settle(pg, 700)
+    expect('shared scope entry', [(e['name'], e['value']) for e in snap(pg)['shared']], [('logging', '.LogService~new("calculator")')])
+    pick_event(pg, 'form', 'INIT')
+    type_code(pg, 'expose sharedScope\nL = sharedScope["logging"]\nself~status~setText("Logging service:" L~serviceId)')
+    src = program_text(pg)
+    expect_in('program requires the library', '::requires "lib/alchemy/LoggingCore.cls"', src)
+    expect_in('program makes the shared scope', 'self~sharedScope["logging"] = .LogService~new("calculator")', src)
+    pg.screenshot(path=str(SHOTS / 'libraries_design.png'))
+    run(pg)
+    expect_in('the event reached the library through the shared scope', 'Logging service: calculator', dlg_text(pg))
+    pg.screenshot(path=str(SHOTS / 'libraries_run.png'))
+    press(pg, 'Close'); expect('closed', wait_end(pg)['rc'], 2)
+
+SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views, 'gadgets': sc_gadgets, 'libraries': sc_libraries}
 def main():
     names = sys.argv[1:] or list(SCENARIOS)
     srv = subprocess.Popen(['node', str(SITE / 'serve.mjs'), str(SITE), '--port', str(PORT)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

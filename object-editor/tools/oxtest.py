@@ -3,7 +3,7 @@
 Architecture: Tom Dyer.  Code: Claude (Opus 5.5).
 
 usage: python3 tools/oxtest.py [scenario ...]     (after rexx tools/build.rex)
-Scenarios: reflect, edit, requires, complete, oodialog (default: all).
+Scenarios: reflect, edit, requires, complete, oodialog, libraries (default: all).
 Python only drives the browser (Playwright); what the editor finds and does
 is ooRexx (src/ObjectEditor.cls), tested without a browser by
 tests/t01_object.rex.  Each step is logged."""
@@ -116,7 +116,32 @@ def sc_oodialog(pg):
     pg.keyboard.type('\n  self~lcd~')
     pg.screenshot(path=str(SHOTS / 'oodialog.png'))
 
-SCENARIOS = {'reflect': sc_reflect, 'edit': sc_edit, 'requires': sc_requires, 'complete': sc_complete, 'oodialog': sc_oodialog}
+def sc_libraries(pg):
+    """Connect to the Alchemy provider, find the logging framework, install it (with
+    what it requires), see what it offers by reflection, use it: ::requires, completion."""
+    ready(pg); pick_class(pg, 'Person')
+    pg.click('#btnLibraries'); pg.wait_for_selector('#libPanel .lp-lib', timeout=60000)
+    expect_in('Alchemy provider listed', 'Alchemy', pg.inner_text('#lpProvider'))
+    pg.fill('#lpFilter', 'oorexx_logging'); pg.wait_for_timeout(1500)
+    pg.click('#lpList .lp-lib[data-lib="alchemy:oorexx_logging"]')
+    pg.wait_for_selector('#lpDetail h3', timeout=60000)
+    expect_in('details read', 'ooRexx Logging Framework', pg.inner_text('#lpDetail'))
+    pg.click('#lpInstall')
+    pg.wait_for_selector('#lpGoodies details', timeout=90000)
+    expect_in('installed with its ::requires', 'MethodInterposition.cls', pg.inner_text('#lpNotes'))
+    g = pg.inner_text('#lpGoodies')
+    expect_in('goodies found by reflection', '.LogService', g)
+    pg.screenshot(path=str(SHOTS / 'libraries.png'))
+    pg.click('#lpUse'); pg.wait_for_function("document.getElementById('libPanel').hidden", timeout=30000); settle(pg, 900)
+    expect_in('::requires added', 'lib/alchemy/LoggingCore.cls', pg.inner_text('#requires'))
+    expect_in('in the source', '::requires "lib/alchemy/LoggingCore.cls"', source(pg))
+    open_method(pg, 'Person', 'age')
+    pg.click('#code'); pg.keyboard.press('Control+End'); pg.keyboard.type('\n  log = .LogSer')
+    expect_in('.LogSer completes from the library', 'LogService', popup(pg))
+    pg.keyboard.press('Enter'); pg.keyboard.type('~new("person")\n  say log~serv')
+    expect('log~ after log = .LogService~new knows serviceId', popup(pg), ['serviceId'])
+
+SCENARIOS = {'reflect': sc_reflect, 'edit': sc_edit, 'requires': sc_requires, 'complete': sc_complete, 'oodialog': sc_oodialog, 'libraries': sc_libraries}
 def main():
     names = sys.argv[1:] or list(SCENARIOS)
     SHOTS.mkdir(exist_ok=True)

@@ -19,11 +19,11 @@
 
 ::class OodModule public mixinclass Object
 ::method module_version class
-  return "0.3.0"
+  return "0.4.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::method module_version
-  return "0.3.0"
+  return "0.4.0"
 ::method module_lastChanged
   return "2026-11-14"
 
@@ -186,9 +186,11 @@
 ::attribute vars            -- .Array of .Directory  NAME VALUE
 ::attribute events          -- .Directory  "CTL.EVENT" -> .Directory CONTROL EVENT THREAD CODE
 ::attribute methods         -- .Array of .Directory  NAME CODE: the form's own methods
+::attribute requires        -- .Array of file names: the form's ::requires besides ooDialog.cls
+::attribute shared          -- .Array of .Directory  NAME VALUE: the entries of self~sharedScope
 
 ::method init
-  expose form controls vars events methods
+  expose form controls vars events methods requires shared
   use strict arg name = "MyDialog"
   form = .directory~new
   form["NAME"] = name
@@ -200,6 +202,8 @@
   vars = .array~new
   events = .directory~new
   methods = .array~new
+  requires = .array~new
+  shared = .array~new
   self~checkName(name, .nil)
 
 /* ---- names --------------------------------------------------------------- */
@@ -232,6 +236,7 @@
   do m over methods
     if m["NAME"]~caselessEquals(name) then raise syntax 93.900 array("Name" name "is a method of the form")
   end
+  if name~caselessEquals("sharedScope") then raise syntax 93.900 array("sharedScope is the form's shared scope")
   if name~left(3)~caselessEquals("on_") then raise syntax 93.900 array("Names starting on_ are the event methods'")
   if name~left(6)~caselessEquals("timer_") then raise syntax 93.900 array("Names starting timer_ are the timers'")
   return 0
@@ -663,6 +668,73 @@
   end
   return out~makeString("L", "0a"x)
 
+/* ---- libraries and the shared scope -------------------------------------- */
+
+-- A ::requires of the program besides ooDialog.cls: a library installed from
+-- a provider (lib/alchemy/LoggingCore.cls) or any file the program can find.
+::method addRequire
+  expose requires
+  use strict arg file
+  file = file~strip~strip("B", '"')~strip("B", "'")
+  if file == "" then raise syntax 93.900 array("Which file?")
+  if file~caselessEquals("ooDialog.cls") then raise syntax 93.900 array("ooDialog.cls is always required")
+  do r over requires
+    if r~caselessEquals(file) then return 0
+  end
+  requires~append(file)
+  return 0
+::method removeRequire
+  expose requires
+  use strict arg file
+  do i = 1 to requires~items
+    if requires[i]~caselessEquals(file) then do
+      requires~delete(i)
+      return 0
+    end
+  end
+  return 0
+::method requireNames
+  expose requires
+  return requires~makeString("L", "0a"x)
+
+-- An entry of the form's shared scope: self~sharedScope[name], made once in
+-- init from a Rexx expression.  Every event method can reach it with
+-- "expose sharedScope", on whatever thread it runs.
+::method setShared
+  expose shared
+  use strict arg name, value
+  if name == "" then raise syntax 93.900 array("A name is needed")
+  if value~strip == "" then raise syntax 93.900 array("A value (a Rexx expression) is needed")
+  if value~pos("0a"x) > 0 then raise syntax 93.900 array("The value is one line")
+  do e over shared
+    if e["NAME"] == name then do
+      e["VALUE"] = value
+      return 0
+    end
+  end
+  e = .directory~new
+  e["NAME"] = name
+  e["VALUE"] = value
+  shared~append(e)
+  return 0
+::method removeShared
+  expose shared
+  use strict arg name
+  do i = 1 to shared~items
+    if shared[i]["NAME"] == name then do
+      shared~delete(i)
+      return 0
+    end
+  end
+  return 0
+::method sharedNames
+  expose shared
+  out = .array~new
+  do e over shared
+    out~append(e["NAME"] || "09"x || e["VALUE"])
+  end
+  return out~makeString("L", "0a"x)
+
 /* ---- events -------------------------------------------------------------- */
 
 -- An OK or Cancel button has no events of its own: ooDialog's ok and cancel
@@ -799,10 +871,16 @@
 /* ---- the design as text (::RESOURCE oodDesign) ---------------------------- */
 
 ::method resourceLines
-  expose form controls vars events methods
+  expose form controls vars events methods requires shared
   out = .array~new
   out~append("designer version="self~module_version)
   out~append("form name="oodQ(form["NAME"]) "title="oodQ(form["TITLE"]) "w="form["W"] "h="form["H"] "style="oodQ(form["STYLE"]))
+  do r over requires
+    out~append("requires file="oodQ(r))
+  end
+  do e over shared
+    out~append("shared name="oodQ(e["NAME"]) "value="oodQ(e["VALUE"]))
+  end
   do v over vars
     out~append("var name="v["NAME"] "value="oodQ(v["VALUE"]))
   end
@@ -874,6 +952,8 @@
         d~form["STYLE"] = oodAt(f, "STYLE")
       end
       when f["*"] == "var" then d~setVar(f["NAME"], oodAt(f, "VALUE"))
+      when f["*"] == "requires" then d~addRequire(f["FILE"])
+      when f["*"] == "shared" then d~setShared(f["NAME"], oodAt(f, "VALUE"))
       when f["*"] == "control" then d~readControl(f)
       when f["*"] == "event" then evs~append(f)
       when f["*"] == "method" then do
@@ -911,7 +991,7 @@
 /* ---- the program ----------------------------------------------------------- */
 
 ::method generate
-  expose form controls vars events methods
+  expose form controls vars events methods requires shared
   nm = form["NAME"]
   out = .array~new
   out~append("/*" nm".rex -- an ooDialog program made with the ooDialog Designer" self~module_version)
@@ -923,9 +1003,13 @@
   out~append("return dlg~execute(""SHOWTOP"")")
   out~append("")
   out~append("::requires ""ooDialog.cls""")
+  do r over requires
+    out~append("::requires" oodRx(r))
+  end
   out~append("")
   out~append("::class" nm "subclass UserDialog")
   out~append("")
+  if shared~items > 0 then out~append("::attribute sharedScope        -- reach it in any method with: expose sharedScope")
   do v over vars
     out~append("::attribute" v["NAME"])
   end
@@ -936,6 +1020,12 @@
   -- init: variables, the dialog template, data attributes' first values
   out~append("::method init")
   out~append("  forward class (super) continue")
+  if shared~items > 0 then do
+    out~append("  self~sharedScope = .directory~new")
+    do e over shared
+      out~append("  self~sharedScope["oodRx(e["NAME"])"] =" e["VALUE"])
+    end
+  end
   do v over vars
     if v["VALUE"] == "" then out~append("  self~"v["NAME"] "= """"")
     else out~append("  self~"v["NAME"] "=" v["VALUE"])

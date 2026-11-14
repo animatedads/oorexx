@@ -1,0 +1,27 @@
+/* Libraries panel.  Architecture: Tom Dyer.  Code: Claude (Opus 5.5). */
+#libPanel{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:8500;display:flex;align-items:center;justify-content:center;font:13px/1.35 system-ui,"Segoe UI",sans-serif}
+#libPanel[hidden]{display:none}
+#libPanel .lp-box{background:#fff;width:min(1100px,96vw);height:88vh;display:grid;grid-template-rows:auto 1fr 70px;border-radius:4px;overflow:hidden}
+#libPanel .lp-head{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;border-bottom:1px solid #ddd;background:#f7f9fb}
+#libPanel .lp-head strong{margin-right:6px}
+#libPanel .lp-sep{width:1px;height:20px;background:#ccd;margin:0 4px}
+#libPanel button,#libPanel .lp-up{padding:2px 9px;border:1px solid #9aa4b0;background:#fff;border-radius:3px;cursor:pointer;font:inherit}
+#libPanel input,#libPanel select{font:inherit;padding:2px 4px;border:1px solid #b7c0ca;border-radius:2px}
+#libPanel .lp-body{display:grid;grid-template-columns:360px 1fr;min-height:0}
+#libPanel .lp-left{display:flex;flex-direction:column;border-right:1px solid #e1e6eb;min-height:0}
+#libPanel #lpFilter{margin:8px}
+#libPanel #lpList{overflow:auto;flex:1}
+#libPanel .lp-lib{padding:5px 10px;border-bottom:1px solid #f0f2f5;cursor:pointer}
+#libPanel .lp-lib:hover{background:#f1f6fc}
+#libPanel .lp-lib.sel{background:#dbe8f6}
+#libPanel .lp-lib small{color:#6b7580}
+#libPanel .lp-desc{font-size:12px;color:#56606b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#libPanel .lp-right{overflow:auto;padding:8px 14px}
+#libPanel .lp-right h3{margin:4px 0}
+#libPanel .lp-files label{display:block;font:12px ui-monospace,Menlo,Consolas,monospace}
+#libPanel .lp-actions{display:flex;gap:8px;margin:10px 0}
+#libPanel .lp-goodies details{margin:2px 0}
+#libPanel .lp-goodies summary{cursor:pointer;font:12px ui-monospace,Menlo,Consolas,monospace;font-weight:600}
+#libPanel .lp-m{font:12px ui-monospace,Menlo,Consolas,monospace;padding-left:18px;color:#3b4550}
+#libPanel #lpNotes{margin:0;padding:6px 10px;background:#111;color:#ddd;font:11px ui-monospace,Menlo,Consolas,monospace;overflow:auto}
+#libPanel .lp-hint{color:#6b7580}

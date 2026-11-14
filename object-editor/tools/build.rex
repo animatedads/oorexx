@@ -5,7 +5,8 @@
    Run in the object editor's directory.  Writes site/: the runtime, the
    page's model (ObjectEditor.cls), ood/ (ooDialog/WASM, so a ::requires
    "ooDialog.cls" loads), and examples/ (Person.cls, and the ooDialog
-   Designer's Calculator.rex).                                              */
+   Designer's Calculator.rex), LibraryProviders.cls with OodDesigner.cls
+   (whose design-line reader it shares) and catalogue/alchemy.idx.                                              */
 parse arg runtime oodDist designerExamples
 if designerExamples == "" then do
   say "usage: rexx tools/build.rex RUNTIME_DIR OODIALOG_DIST_DIR DESIGNER_EXAMPLES_DIR"
@@ -20,6 +21,10 @@ do f over .array~of("ooDialog.cls", "oodWeb.cls", "ooShapes.cls")
   call copy oodDist"/"f, "site/ood/"f
 end
 call copy "src/ObjectEditor.cls", "site/ObjectEditor.cls"
+call copy "src/LibraryProviders.cls", "site/LibraryProviders.cls"
+call copy designerExamples"/../../src/OodDesigner.cls", "site/OodDesigner.cls"
+call SysMkDir "site/catalogue"
+call copy "catalogue/alchemy.idx", "site/catalogue/alchemy.idx"
 call SysMkDir "site/examples"
 call copy "examples/Person.cls", "site/examples/Person.cls"
 call copy designerExamples"/Calculator.rex", "site/examples/Calculator.rex"

@@ -82,7 +82,7 @@ call check "actions name the control", acts~pos("self~lcd~setText(") > 0
 call check "list actions for a list only", acts~pos("~add(") == 0
 
 -- 8. versions
-call check "module_version", .OodDesign~module_version == "0.3.0" & d~module_version == "0.3.0"
+call check "module_version", .OodDesign~module_version == "0.4.0" & d~module_version == "0.4.0"
 call check "module_lastChanged", .OodCatalog~module_lastChanged \== ""
 
 -- 9. v0.2: tab pages, list view, menu bar
@@ -120,6 +120,19 @@ call check "track bar range and position", gsrc~pos("self~trkLevel~initRange(0, 
 call check "date picker event connected", gsrc~pos('self~connectDateTimePickerEvent(103, "DATETIMECHANGE", "on_dtpWhen_datetimechange")') > 0
 call refuses "a tree whose first node is a child", "g~setProp('tvRexx', 'nodes', '.orphan|top')"
 call refuses "a tree node with no text", "g~setProp('tvRexx', 'nodes', 'top|..')"
+
+-- 11. v0.4: libraries and the shared scope
+s = .calcDesign~build
+s~addRequire("lib/alchemy/LoggingCore.cls")
+s~setShared("logging", '.LogService~new("calculator")')
+s~setEventCode("bEnter", "CLICKED", 'expose sharedScope' || "0a"x || 'L = sharedScope["logging"]' || "0a"x || 'self~status~setText("Logging service:" L~serviceId)')
+ssrc = s~generate
+call check "library required after ooDialog.cls", ssrc~pos('::requires "ooDialog.cls"' || "0a"x || '::requires "lib/alchemy/LoggingCore.cls"') > 0
+call check "sharedScope attribute", ssrc~pos("::attribute sharedScope") > 0
+call check "shared entry made in init", ssrc~pos('self~sharedScope["logging"] = .LogService~new("calculator")') > 0
+call check "shared scope round trip", .OodDesign~fromSource(ssrc)~generate == ssrc
+call refuses "sharedScope as a control name", "d~setProp('lcd', 'name', 'sharedScope')"
+call refuses "a shared entry with no value", "g~setShared('x', '')"
 
 say "t01_model:" checks - fails "of" checks "checks passed"
 if fails > 0 then return 1

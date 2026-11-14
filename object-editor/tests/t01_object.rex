@@ -93,7 +93,7 @@ call check "plain words: variables and keywords", wordpos("text", labels(w~compl
 pw = .OxWorkspace~new("Prog.rex", 'say "MAIN CODE RAN"; .local~oxRan = 1' || "0a"x || "::class Thing public" || "0a"x)
 call check "the prolog is not run when examining", .local~hasIndex("OXRAN") == .false & pw~classNames == "Thing"
 
-call check "module_version", .OxWorkspace~module_version == "0.1.0" & w~module_version == "0.1.0"
+call check "module_version", .OxWorkspace~module_version == "0.2.0" & w~module_version == "0.2.0"
 say "t01_object:" checks - fails "of" checks "checks passed"
 if fails > 0 then return 1
 return 0

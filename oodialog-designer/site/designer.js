@@ -65,7 +65,7 @@
     return f;
   }
   function parseSnapshot(text) {
-    const snap = { form: {}, vars: [], controls: [], events: [], methods: [] };
+    const snap = { form: {}, vars: [], controls: [], events: [], methods: [], requires: [], shared: [] };
     for (const line of text.split('\n')) {
       if (!line.trim()) continue;
       const f = fields(line);
@@ -74,6 +74,8 @@
       else if (f['*'] === 'control') snap.controls.push(f);
       else if (f['*'] === 'event') snap.events.push(f);
       else if (f['*'] === 'method') snap.methods.push(f.name);
+      else if (f['*'] === 'requires') snap.requires.push(f.file);
+      else if (f['*'] === 'shared') snap.shared.push(f);
     }
     return snap;
   }
@@ -85,9 +87,11 @@
     try {
       measure();
       st.rexx = await ooRexx.load();
-      st.sess = await st.rexx.start({ js: { page: true } });
-      const src = await (await fetch('OodDesigner.cls')).text();
-      await st.sess.loadPackage('OodDesigner.cls', src);
+      const files = {};
+      for (const f of ['OodDesigner.cls', 'ObjectEditor.cls', 'LibraryProviders.cls']) files['/home/rexx/' + f] = await (await fetch(f)).text();
+      st.sess = await st.rexx.start({ js: { page: true, worker: true }, files });
+      await st.sess.loadPackage('LibraryProviders.cls');   // with OodDesigner.cls and ObjectEditor.cls
+      await OxLibraries.setup(st.sess);
       await loadCatalog();
       await newDesign();
       status('Ready.  Drag a control onto the form.');
@@ -132,7 +136,7 @@
     const text = await rx(() => st.d.snapshot());
     st.snap = parseSnapshot(String(text));
     if (st.sel !== 'form' && !findCtl(st.sel)) st.sel = 'form';
-    drawForm(); drawProps(); drawVars(); drawTree();
+    drawForm(); drawProps(); drawVars(); drawLibs(); drawTree();
     autosave();
   }
   function drawForm() {
@@ -437,6 +441,48 @@
     row.append(n, val, add); box.appendChild(row);
   }
 
+  /* ---- libraries (::requires) and the shared scope -------------------------- */
+  function drawLibs() {
+    const rb = $('reqs'); rb.textContent = '';
+    for (const r of st.snap.requires) {
+      const row = D.createElement('div'); row.className = 'row';
+      const n = Object.assign(D.createElement('input'), { value: r, readOnly: true });
+      const x = Object.assign(D.createElement('button'), { textContent: '✕', title: 'Remove' });
+      x.addEventListener('click', async () => { await rx(() => st.d.removeRequire(r)); await refresh(); });
+      row.style.gridTemplateColumns = '1fr 24px'; row.append(n, x); rb.appendChild(row);
+    }
+    if (!st.snap.requires.length) rb.appendChild(Object.assign(D.createElement('div'), { className: 'hint', textContent: 'Libraries… to add one.' }));
+    const sb = $('shared'); sb.textContent = '';
+    for (const e of st.snap.shared) {
+      const row = D.createElement('div'); row.className = 'row';
+      const n = Object.assign(D.createElement('input'), { value: e.name, readOnly: true, title: 'sharedScope["' + e.name + '"]' });
+      const v = Object.assign(D.createElement('input'), { value: e.value, title: 'Made once, in init: a Rexx expression' });
+      v.addEventListener('change', async () => { await rx(() => st.d.setShared(e.name, v.value)).catch(() => {}); await refresh(); });
+      const x = Object.assign(D.createElement('button'), { textContent: '✕', title: 'Remove' });
+      x.addEventListener('click', async () => { await rx(() => st.d.removeShared(e.name)); await refresh(); });
+      row.append(n, v, x); sb.appendChild(row);
+    }
+    const row = D.createElement('div'); row.className = 'row';
+    const n = Object.assign(D.createElement('input'), { placeholder: 'name', id: 'newSharedName' });
+    const v = Object.assign(D.createElement('input'), { placeholder: '.Class~new(...)', id: 'newSharedValue' });
+    const add = Object.assign(D.createElement('button'), { textContent: '+', id: 'btnAddShared', title: 'Add to the shared scope' });
+    add.addEventListener('click', async () => {
+      if (!n.value.trim()) return;
+      if (await rx(() => st.d.setShared(n.value.trim(), v.value)).then(() => true, () => false)) {
+        await refresh(); status('In any event: expose sharedScope, then sharedScope["' + n.value.trim() + '"].');
+      }
+    });
+    row.append(n, v, add); sb.appendChild(row);
+  }
+  $('btnLibraries').addEventListener('click', () => OxLibraries.open({
+    sess: st.sess, status,
+    onUse: async (req) => {
+      await rx(() => st.d.addRequire(req)); await refresh();
+      D.getElementById('libPanel').hidden = true;
+      status('::requires "' + req + '" added.  Put what you make of it in the shared scope; events reach it with expose sharedScope.');
+    },
+  }));
+
   /* ---- the event tree (VisPro's events view) -------------------------------- */
   function drawTree() {
     const box = $('tree'); box.textContent = '';
@@ -641,7 +687,7 @@
         st.oodFiles = {};
         for (const f of ['ooDialog.cls', 'oodWeb.cls', 'ooShapes.cls']) st.oodFiles['/home/rexx/' + f] = await (await fetch('ood/' + f)).text();
       }
-      const files = Object.assign({}, st.oodFiles, { ['/home/rexx/' + name]: src });
+      const files = Object.assign({}, st.oodFiles, await OxLibraries.installedFiles(st.sess), { ['/home/rexx/' + name]: src });
       const add = (t) => { $('out').textContent += t; $('out').scrollTop = $('out').scrollHeight; };
       status('Running ' + name + '…');
       st.run = st.rexx.run({ args: [name], files, js: { page: true, worker: true }, onOut: add, onErr: add });
