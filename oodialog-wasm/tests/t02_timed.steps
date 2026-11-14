@@ -1,0 +1,5 @@
+wait .ood-msgbox >> text=Proceed?
+shot t02_ask
+click .ood-msgbox >> text=Yes
+wait .ood-msgbox >> text=Done.
+click .ood-msgbox >> text=OK

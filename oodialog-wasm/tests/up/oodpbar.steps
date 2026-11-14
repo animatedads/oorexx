@@ -1,0 +1,8 @@
+wait .ood-dlg >> text=Step
+click .ood-dlg >> text=Step
+click .ood-dlg >> text=Step
+click .ood-dlg >> text=Step
+sleep 300
+expect [...document.querySelectorAll('.ood-progress div')].every(b => parseFloat(b.style.height) > 0) ==> True
+shot up_oodpbar
+click .ood-dlg >> text=Cancel

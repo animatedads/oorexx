@@ -1,0 +1,88 @@
+-- patches.txt: upstream members that oodgen.rex replaces or drops.
+-- Architecture: Tom Dyer.  Code: Claude (Fable 5.2).
+-- Only what must live in the class's own scope (object variables, SUPER)
+-- is here; everything else native goes to .oodn in oodWeb.cls.
+
+--@drop PlainBaseDialog new
+--@drop DialogControl new
+
+--@replace PlainBaseDialog init
+-- pbdlg_init of ooDialog.cpp, in Rexx: the object variables it sets belong to this scope.
+::method init
+  expose dlgData. useStem finished processingLoad
+  use arg library = "", resource = 0, , hFile, ownerData
+  .oodn~dialogInit(self, library, resource)
+  if arg(3, "E") then do
+    dlgData. = arg(3)
+    useStem = .true
+  end
+  else useStem = .false
+  finished = .false
+  processingLoad = .false
+  self~childDialogs = .list~new
+  self~dataConnection = .array~new(50)
+  self~automaticMethods = .queue~new
+  self~menuBar = .nil
+  self~isLinked = .false
+  self~initAutoDetection
+  if .constDirUsage == "use only" then self~constDir = .constDir
+  else do
+    symbols = .directory~new
+    self~constDir = symbols
+    .oodn~putDefaultSymbols(symbols)
+  end
+  if arg(4, "E") then self~parseIncludeFile(hFile)
+  self~dlgID = .oodn~resolveId(self, resource)
+  self~initCode = 0
+  return 0
+
+--@replace PlainBaseDialog finished
+-- A plain attribute: the event pump tests it (the DLL kept it as an object variable too).
+::attribute finished unguarded
+
+--@replace PlainBaseDialog waitForDialog
+-- The DLL's dialog ran on a Windows message loop thread while this method
+-- waited (GUARD ON WHEN finished).  Here the waiting thread takes the page's
+-- events itself, so event handlers run on it.
+::method waitForDialog unguarded
+  .oodn~pumpUntilFinished(self)
+
+--@replace UserDialog init
+-- userdlg_init of oodUser.cpp, in Rexx (it forwards to the superclass).
+::method init
+  use arg , includeFile, libOrOwnerData, resourceID, ownerData
+  newArgs = .array~new(5)
+  if arg(1, "E") then newArgs[3] = arg(1)
+  if arg(2, "E") then newArgs[4] = includeFile
+  if self~isA(.RcDialog) then do
+    if arg(3, "E") then newArgs[1] = libOrOwnerData
+    if arg(4, "E") then newArgs[2] = resourceID
+    else newArgs[2] = ""
+    if arg(5, "E") then newArgs[5] = ownerData
+  end
+  else do
+    newArgs[1] = ""
+    newArgs[2] = 0
+    if arg(3, "E") then newArgs[5] = libOrOwnerData
+  end
+  forward class (super) arguments (newArgs) continue
+  initResult = result
+  if initResult == 0 then initResult = self~dynamicInit(0)
+  return initResult
+
+--@replace DialogControl init
+-- dlgctrl_init of oodControl.cpp: the control object knows its dialog and ID.
+::method init
+  expose id hDlg oDlg
+  use arg oDlg, id, peer
+  hDlg = oDlg~dlgHandle
+  self~oodPeer = peer
+  return 0
+
+--@replace TimedMessage init
+-- timedmsg_init of oodUtilities.cpp, in Rexx: it sets this scope's variables.
+::method init public
+  expose message title sleeping earlyReply pos
+  use strict arg message, title, sleeping, earlyReply = .false, pos = .nil
+  forward class (super) arguments (.array~new) continue
+  return 0

@@ -1,0 +1,7 @@
+wait .ood-dlg >> text=Greet
+shot t01_a_open
+fill .ood-dlg input => Josep Maria
+click .ood-dlg >> text=Greet
+sleep 400
+shot t01_b_greeted
+click .ood-dlg >> text=OK

@@ -1,0 +1,12 @@
+wait .ood-dlg >> text=Sqrt
+click .ood-dlg button:text-is("7")
+click .ood-dlg button:text-is("*")
+click .ood-dlg button:text-is("6")
+click .ood-dlg button:text-is("=")
+sleep 300
+expect document.querySelector('.ood-dlg input').value ==> 42
+click .ood-dlg button:text-is("Sqrt")
+sleep 300
+expect document.querySelector('.ood-dlg input').value ==> 6.48074070
+shot up_calculator
+click .ood-dlg button:text-is("Exit")
