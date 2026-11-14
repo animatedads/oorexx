@@ -1,0 +1,63 @@
+/* ooRexx Object Editor page.  Architecture: Tom Dyer.  Code: Claude (Opus 5.5). */
+[hidden]{display:none!important}
+*{box-sizing:border-box}
+body{margin:0;font:13px/1.35 system-ui,"Segoe UI",sans-serif;background:#eef1f5;color:#1b1f24;display:flex;flex-direction:column;min-height:100vh}
+button,select,input,textarea{font:inherit}
+button{padding:2px 9px;border:1px solid #9aa4b0;background:#fff;border-radius:3px;cursor:pointer}
+button:hover{border-color:#2f6fb3}
+input,select{padding:2px 4px;border:1px solid #b7c0ca;border-radius:2px;background:#fff}
+h2{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#56606b;margin:12px 0 5px}
+.hint{font-size:11px;color:#6b7580;text-transform:none;letter-spacing:0}
+#bar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:6px 10px;background:#24364d;color:#fff}
+#bar strong{margin-right:8px}
+#status{margin-left:auto;font-size:12px;max-width:60ch;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#status.err{color:#ffd0d0}
+#work{display:grid;grid-template-columns:280px 1fr;flex:1;min-height:320px}
+#left{background:#f7f9fb;border-right:1px solid #d3d9e0;padding:4px 10px;overflow:auto}
+#classes .cls{padding:2px 6px;border-radius:3px;cursor:pointer;white-space:nowrap}
+#classes .cls:hover{background:#e4edf7}
+#classes .cls.sel{background:#2f6fb3;color:#fff}
+#classes .cls small{opacity:.7}
+#hierarchy div{white-space:nowrap;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+#hierarchy .lib{color:#7a838d}
+#hierarchy .me{font-weight:700;color:#1f3f66}
+#requires .req{margin:3px 0}
+#requires .req b{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:600}
+#requires .req .classes{font-size:11px;color:#56606b;margin-left:10px}
+#requires .req button{padding:0 5px;margin-left:4px}
+.add{display:flex;gap:4px;margin:6px 0}
+.add input{min-width:0;flex:1}
+#centre{padding:8px 14px;overflow:auto}
+#classCard{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding:8px 10px;background:#fff;border:1px solid #d3d9e0;border-radius:4px}
+#classCard .title{font-size:16px;font-weight:700;margin-right:8px}
+#classCard label{display:flex;gap:4px;align-items:center}
+#sideTabs{display:flex;gap:4px;margin:10px 0 4px;align-items:center}
+#sideTabs button.cur{background:#2f6fb3;color:#fff;border-color:#2f6fb3}
+#sideTabs label{margin-left:10px}
+#members{width:100%;border-collapse:collapse;background:#fff;border:1px solid #d3d9e0}
+#members th{font-weight:600;text-align:left;font-size:11px;color:#56606b;padding:4px 6px;border-bottom:1px solid #d3d9e0;background:#f7f9fb}
+#members td{padding:2px 6px;border-bottom:1px solid #eef1f5;white-space:nowrap}
+#members tr.inh td{color:#8a939c}
+#members tr.own td.nm{font-weight:600;cursor:pointer;color:#1f3f66}
+#members tr.cur td{background:#e4edf7}
+#members td.nm{font-family:ui-monospace,Menlo,Consolas,monospace}
+#members select{padding:0 2px}
+#members button{padding:0 6px}
+#editor{display:grid;grid-template-rows:auto 1fr;height:280px;background:#fff;border-top:1px solid #c3cbd4}
+#edHead{display:flex;gap:12px;padding:5px 10px;border-bottom:1px solid #e1e6eb;align-items:center}
+#edTitle{font-weight:600;font-family:ui-monospace,Menlo,Consolas,monospace}
+#edState{font-size:12px}
+#edState.ok{color:#2e7d32}
+#edState.err{color:#b3261e}
+#code{border:0;resize:none;padding:8px 12px;font:13px/1.5 ui-monospace,Menlo,Consolas,monospace;outline:none;tab-size:2}
+#pop{position:fixed;z-index:9000;background:#fff;border:1px solid #9aa4b0;box-shadow:0 6px 18px rgba(0,0,0,.2);min-width:260px;max-height:240px;overflow:auto;font:12px ui-monospace,Menlo,Consolas,monospace}
+#pop div{padding:2px 8px;display:flex;justify-content:space-between;gap:16px;cursor:pointer}
+#pop div.cur{background:#2f6fb3;color:#fff}
+#pop div small{opacity:.65}
+#sourceView{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:8000;display:flex;align-items:center;justify-content:center}
+#sourceView .panel{background:#fff;width:min(900px,94vw);height:86vh;display:flex;flex-direction:column;border-radius:4px;overflow:hidden}
+.panelHead{display:flex;gap:8px;align-items:center;padding:6px 10px;border-bottom:1px solid #ddd}
+.panelHead strong{margin-right:auto}
+#sourceText{margin:0;padding:10px;overflow:auto;flex:1;font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;background:#fbfbfb}
+footer{font-size:11px;color:#56606b;padding:4px 10px;background:#f7f9fb;border-top:1px solid #d3d9e0}
+@media (max-width:860px){#work{grid-template-columns:1fr}}
