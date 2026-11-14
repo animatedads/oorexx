@@ -1,4 +1,4 @@
-# ooDialog for ooRexx/WASM — v0.1.0 (day 1)
+# ooDialog for ooRexx/WASM — v0.2.0
 
 Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: Josep Maria Blasco's
 ooRexx/WASM (`oorexxwasm` 0.2.4, ooRexx 5.3.0) and its `js.cls`.
@@ -31,26 +31,37 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
 `site/`, Python Playwright with Chromium, and upstream at `upstream/`.
 
     rexx tools/oodbuild.rex
-    python3 tools/oodtest.py --tree upstream/examples tests/t01_simple.rex tests/t02_timed.rex tests/up/calculator.rex tests/up/oodpbar.rex tests/up/oodStandardRoutines.rex
+    python3 tools/oodtest.py --sweep upstream/examples
+    python3 tools/oodtest.py --tree upstream/examples tests/t01_simple.rex tests/t02_timed.rex tests/t03_views.rex tests/up/calculator.rex tests/up/oodpbar.rex tests/up/oodStandardRoutines.rex
 
-## State on 2026-11-14
+## State on 2026-11-14 (v0.2.0, end of day 1)
 
-- Natives ported: 184 of 1,197 (15.4%).
-- Tests: 5 of 5 pass in headless Chromium. Three are upstream samples run
+- Natives ported: 250 of 1,197 (20.9%).
+- Tests: 6 of 6 pass in headless Chromium. Three are upstream samples run
   unmodified: `calculator.rex` (RcDialog, 7*6=42 asserted), `oodpbar.rex`
   (RcDialog, progress bars), `oodStandardRoutines.rex` (all 14 public routines
-  displayed and dismissed).
+  displayed and dismissed). `t03_views.rex` asserts list-view, tree-view and
+  tab contents and events.
+- Sweep of all 140 upstream example programs (`oodtest.py --sweep`, results in
+  `sweep.tsv`): 40 show their dialog, 7 run to the end, 58 stop at a native not
+  ported yet (named in the file), 35 stop on another error. Most of the 35 are
+  not ooDialog: `winSystm.cls` (Windows-only), `::requires` with `\` in the
+  path, or component files that are not programs.
 - Working: UserDialog, RcDialog (upstream's own .rc parser), push button,
   check box, radio button, group box, static text and frames, edit, list box,
-  combo box, progress bar; data attributes and dlgData. stems; connectXxxEvent
-  for buttons, edits, list boxes, combo boxes, statics; MessageDialog and the
-  routines built on it; InputBox, IntegerBox, PasswordBox, MultiInputBox,
-  ListChoice, MultiListChoice, CheckList, SingleSelection, TimedMessage.
-- Not yet: list-view, tree-view, tab, track bar, up-down, date-time picker,
-  month calendar, scroll bar (shown as labelled placeholders); menus (except
-  the system menu's close item); images, icons and bitmaps; fonts on controls;
-  resizing; ResDialog; property sheets; tool tips; mouse and key events;
-  file and folder dialogs (FileNameDialog says so and answers as cancelled);
-  popup/popupAsChild are untested.
-- Known: `.DlgUtil~version` reports 4.2.5; windows file names in samples
-  (`rc\CALC.RC`) are resolved with `/` and without regard to case.
+  combo box, progress bar, list-view (report view, check boxes, selection),
+  tree-view, tab, up-down; data attributes and dlgData. stems; connectXxxEvent
+  for buttons, edits, list boxes, combo boxes, statics, list-views, tree-views,
+  tabs, up-downs; MessageDialog and the routines built on it; InputBox,
+  IntegerBox, PasswordBox, MultiInputBox, ListChoice, MultiListChoice,
+  CheckList, SingleSelection, TimedMessage.
+- Not yet (the sweep's order of need): ResDialog (needs binary DLL resources:
+  cannot be ported as it is), bitmap buttons and images, menus, property
+  sheets and ControlDialog, tool tips, fonts on controls, date-time picker,
+  month calendar, track bar, scroll bar, key/mouse/draw/WM events, resizing,
+  LvFullRow/LvItem objects, file and folder dialogs.
+- Asserted by test: everything in the "Working" list except up-down, which is
+  only seen to display in the sweep.
+- Known: `.DlgUtil~version` reports 4.2.5; Windows file names in samples
+  (`rc\CALC.RC`) are resolved with `/` and without regard to case; `.OS`
+  answers as a Windows newer than any it is asked about.

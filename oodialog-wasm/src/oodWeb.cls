@@ -24,7 +24,7 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.1.0"
+  return "0.2.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute key unguarded
@@ -50,12 +50,14 @@
 ::attribute cmdTable unguarded        -- WM_COMMAND connections: (id code method)
 ::attribute controls unguarded        -- control objects handed out, by "id class"
 ::attribute kinds unguarded           -- kind of control, by id
+::attribute notifyTable unguarded     -- WM_NOTIFY connections: (id event method keyword)
+::attribute store unguarded           -- user data of items, by "id item"
 ::attribute parentDlg unguarded
 ::attribute ownerDialog unguarded
 ::method init
   expose key rexxSelf library resourceID dlgID autoDetect fontName fontSize sizeX sizeY factorX factorY -
          pixelCX pixelCY initCode live templateActive spec template dataTable cmdTable controls kinds -
-         parentDlg ownerDialog
+         parentDlg ownerDialog notifyTable store
   use arg key, rexxSelf, library, resourceID
   dlgID = -1
   autoDetect = .true
@@ -71,6 +73,8 @@
   cmdTable = .array~new
   controls = .directory~new
   kinds = .directory~new
+  notifyTable = .array~new
+  store = .directory~new
   parentDlg = .nil
   ownerDialog = .nil
 ::method hwnd unguarded
@@ -80,7 +84,7 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.1.0"
+  return "0.2.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute dlg unguarded             -- its dialog's OodDlg
@@ -98,7 +102,7 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.1.0"
+  return "0.2.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::method module_version unguarded
@@ -131,6 +135,8 @@
   use arg name, args
   if name~right(9) == "_INIT_CLS" then return 0        -- class set-up the DLL needed, nothing here
   if name~left(3) == "SM_" then return self~systemMetric(name)
+  if name == "OS_ISVERSION" then return args[2]~pos("ATLEAST") > 0   -- newer than every Windows it asks about
+  if name~left(5) == "OS_IS" then return .false                      -- not a 64-bit Windows
   what = name
   if args~items >= 2 then what = name "(method" args[2]")"
   raise syntax 98.900 array("ooDialog/WASM: native function" what "is not implemented yet")
@@ -225,6 +231,7 @@
   select
     when kind == "MSGBOX" then msgResults[id] = code
     when kind == "CMD" then self~command(key, id, code)
+    when kind == "NOTIFY" then self~notify(key, id, code, extra)
     otherwise nop
   end
 
@@ -237,6 +244,7 @@
   method = ""
   do entry over d~cmdTable
     if entry[1] \== id then iterate
+    if entry[3] == "" then iterate
     if entry[2] \== "*" then if entry[2] \== code then iterate
     method = entry[3]
     leave
@@ -448,6 +456,8 @@ syntax:
 ::method dlgutil_version_cls unguarded
   use arg self_, msg, a
   return "ooDialog 4.2.5 for ooRexx/WASM" self~module_version "(upstream r13513; native layer oodWeb.cls)"
+::method dlgutil_comctl32Version_cls unguarded
+  return "6.10"
 ::method dlgutil_screenSize_cls unguarded
   use arg self_, msg, a
   parse value self~web~screen with w h
@@ -1100,6 +1110,478 @@ syntax:
   id = self~resolveId(self_, a[1])
   if id == -1 then return -1
   self~addCommand(self_, id, "*", a[2])
+  return 0
+
+/*---- WM_NOTIFY events: list-view, tree-view, tab ---------------------------------*/
+::method sep unguarded             -- the separator of the values in one answer of the page
+  return x2c("1F")
+
+::method addNotify unguarded       -- a connection of a notification: (id, page event, method, keyword)
+  use arg dlg, id, event, method, keyword
+  d = dlg~oodPeer
+  d~notifyTable~append(.array~of(id, event, method~upper, keyword))
+  d~cmdTable~append(.array~of(id, event, ""))      -- so the page is told when the dialog starts
+  if d~live then self~web~sub(d~key, id, event)
+  return 0
+
+::method connectNotify unguarded
+  use arg self_, a, map
+  id = self~resolveId(self_, a[1])
+  if id == -1 then return -1
+  keyword = a[2]~strip~upper
+  p = map~wordPos(keyword)
+  if p == 0 then
+    raise syntax 98.900 array("ooDialog/WASM: the event" keyword "is not available yet")
+  method = self~opt(a, 3)
+  if method == "" then method = "on" || keyword
+  do event over map~word(p + 1)~makeArray("+")
+    self~addNotify(self_, id, event, method, keyword)
+  end
+  return 0
+
+::method en_connectListViewEvent unguarded
+  use arg self_, msg, a
+  map = "CLICK CLICK DBLCLK DBLCLK COLUMNCLICK COLUMNCLICK ACTIVATE ACTIVATE KEYDOWN KEYDOWN" -
+        "SELECTCHANGED SEL CHANGED SEL FOCUSCHANGED FOC SELECTFOCUSCHANGED SEL+FOC CHECKBOXCHANGED CHECK"
+  return self~connectNotify(self_, a, map)
+::method en_connectTreeViewEvent unguarded
+  use arg self_, msg, a
+  return self~connectNotify(self_, a, "SELCHANGED SELCHANGED EXPANDED EXPANDED EXPANDING EXPANDING")
+::method en_connectTabEvent unguarded
+  use arg self_, msg, a
+  return self~connectNotify(self_, a, "SELCHANGE SELCHANGE SELCHANGING SELCHANGING")
+
+::method notify unguarded          -- the arguments are those the DLL builds for each event
+  use arg key, id, event, extra
+  d = self~dialogOf(key)
+  if d == .nil then return
+  dlg = d~rexxSelf
+  parts = extra~makeArray(self~sep)
+  kind = d~kinds[id]
+  hwnd = "0x"d2x(key * 65536 + id)~right(16, "0")
+  do entry over d~notifyTable
+    if entry[1] \== id then iterate
+    if entry[2] \== event then iterate
+    select
+      when kind == "LISTVIEW" then do
+        ctl = dlg~newListView(id)
+        select
+          when event == "CLICK" | event == "DBLCLK" then args = .array~of(id, parts[1], parts[2], parts[3], (event == "CLICK"), ctl)
+          when event == "COLUMNCLICK" | event == "ACTIVATE" | event == "KEYDOWN" then args = .array~of(id, extra, ctl)
+          otherwise args = .array~of(id, parts[1], parts[2], ctl)
+        end
+      end
+      when kind == "TREEVIEW" then do
+        ctl = dlg~newTreeView(id)
+        if event == "SELCHANGED" then do
+          old = self~tvHandle(parts[1])
+          new = self~tvHandle(parts[2])
+          args = .array~of(id, old, self~itemData(d, id, parts[1]), new, self~itemData(d, id, parts[2]), parts[3], ctl, event)
+        end
+        else args = .array~of(id, self~tvHandle(parts[1]), parts[2], "", ctl, event)
+      end
+      when kind == "TAB" then args = .array~of(id, hwnd, dlg~newTab(id))
+      when kind == "UPDOWN" then args = .array~of(parts[1], parts[2], id, hwnd, dlg~newUpDown(id))
+      otherwise args = .array~of(id, extra)
+    end
+    self~invoke(dlg, entry[3], args)
+  end
+
+/*---- UpDown --------------------------------------------------------------------------*/
+::method en_connectUpDownEvent unguarded
+  use arg self_, msg, a
+  return self~connectNotify(self_, a, "DELTAPOS DELTAPOS")
+::method ud_setRange unguarded
+  use arg self_, msg, a
+  low = 0
+  high = 100
+  if a~hasIndex(1) then do
+    first = a[1]
+    if first~isA(.String) then low = first
+    else do
+      low = first~min
+      high = first~max
+    end
+  end
+  if a~hasIndex(2) then high = a[2]
+  self~wb_sendWinIntMsg(self_, "", .array~of(1135, low, high))
+  return 0
+::method ud_getRange unguarded
+  use arg self_
+  parse value self~op(self_, "ud.range") with low high
+  d = .directory~new
+  d~min = low
+  d~max = high
+  return d
+::method ud_getPosition unguarded
+  use arg self_
+  return self~wb_sendWinIntMsg(self_, "", .array~of(1138, 0, 0))
+::method ud_getBuddy unguarded
+  use arg self_
+  p = self_~oodPeer
+  id = self~op(self_, "ud.buddy")
+  if id == "" | id == 0 then return .nil
+  return p~dlg~rexxSelf~newEdit(id)
+::method ud_setBuddy unguarded
+  use arg self_, msg, a
+  old = self~ud_getBuddy(self_)
+  self~op(self_, "ud.buddy", a[1]~id)
+  return old
+::method ud_setAcceleration unguarded
+  return .true
+
+/*---- user data of list-view and tree-view items ------------------------------------*/
+::method itemData unguarded
+  use arg d, id, uid
+  value = d~store[id uid]
+  if value == .nil then return .nil
+  return value
+::method setItemDataOf unguarded
+  use arg d, id, uid, value
+  if uid == 0 | uid == "" then return .false
+  if value == .nil then d~store~remove(id uid)
+  else d~store[id uid] = value
+  return .true
+
+/*---- ListView -------------------------------------------------------------------------*/
+::method lvIndex unguarded         -- an optional item index: the last item if omitted
+  use arg self_, a, i
+  if a~hasIndex(i) then return a[i]
+  return self~wb_sendWinIntMsg(self_, "", .array~of(4100, 0, 0)) - 1
+
+::method lv_insertColumnPx unguarded
+  use arg self_, msg, a
+  at = -1
+  if a~hasIndex(1) then at = a[1]
+  fmt = self~opt(a, 4)~strip~upper
+  align = "left"
+  if fmt~pos("CENTER") > 0 then align = "center"
+  if fmt~pos("RIGHT") > 0 then align = "right"
+  return self~op(self_, "lv.insCol", at, a[2] || self~sep || a[3] || self~sep || align)
+::method lv_deleteColumn unguarded
+  use arg self_, msg, a
+  return self~op(self_, "lv.delCol", a[1]) == 1
+::method lv_getColumnCount unguarded
+  use arg self_
+  return self~op(self_, "lv.colCount")
+::method lv_getColumnText unguarded
+  use arg self_, msg, a
+  sep = self~sep
+  parse value self~op(self_, "lv.colInfo", a[1]) with text (sep) .
+  return text
+::method lv_getColumnInfo unguarded
+  use arg self_, msg, a
+  info = self~op(self_, "lv.colInfo", a[1])
+  if info == "" then return .false
+  sep = self~sep
+  parse var info text (sep) width (sep) align
+  d = a[2]
+  d~text = text
+  d~width = width
+  d~column = a[1]
+  d~fmt = align~upper
+  d~alignment = align~upper
+  return .true
+::method lv_setColumnWidthPx unguarded
+  use arg self_, msg, a
+  width = -1
+  if a~hasIndex(2) then if a[2]~datatype("W") then width = a[2]
+  return self~op(self_, "lv.setColWidth", a[1], width) == 1
+
+::method lv_addRow unguarded       -- addRow(index, imageIndex, text, subitem texts ...)
+  use arg self_, msg, a
+  at = -1
+  if a~hasIndex(1) then at = a[1]
+  texts = self~opt(a, 3)
+  do i = 4 to a~last
+    texts = texts || self~sep || self~opt(a, i)
+  end
+  return self~op(self_, "lv.insRow", at, texts)
+::method lv_add unguarded          -- add(text, imageIndex): a new item; add(,, text): the next subitem of the last item
+  use arg self_, msg, a
+  first = a~first
+  if first == .nil then return -1
+  if first == 1 then return self~op(self_, "lv.insRow", -1, a[1])
+  last = self~wb_sendWinIntMsg(self_, "", .array~of(4100, 0, 0)) - 1
+  if last < 0 then return -1
+  self~op(self_, "lv.setCell", last, first - 1, a[first])
+  return last
+::method lv_insert unguarded       -- insert(itemIndex, subitemIndex, text, imageIndex)
+  use arg self_, msg, a
+  sub = 0
+  if a~hasIndex(2) then sub = a[2]
+  if sub == 0 then do
+    at = -1
+    if a~hasIndex(1) then at = a[1]
+    return self~op(self_, "lv.insRow", at, a[3])
+  end
+  item = self~lvIndex(self_, a, 1)
+  if self~op(self_, "lv.setCell", item, sub, a[3]) == 1 then return item
+  return -1
+::method lv_modify unguarded
+  use arg self_, msg, a
+  if a~hasIndex(1) then item = a[1]
+  else item = self~op(self_, "lv.next", -1, "SELECTED")
+  sub = 0
+  if a~hasIndex(2) then sub = a[2]
+  if self~op(self_, "lv.setCell", item, sub, a[3]) == 1 then return 0
+  return -1
+::method lv_setItemText unguarded
+  use arg self_, msg, a
+  sub = 0
+  if a~hasIndex(2) then sub = a[2]
+  if self~op(self_, "lv.setCell", a[1], sub, a[3]) == 1 then return 0
+  return -1
+::method lv_itemText unguarded
+  use arg self_, msg, a
+  sub = 0
+  if a~hasIndex(2) then sub = a[2]
+  return self~op(self_, "lv.cell", a[1], sub)
+::method lv_delete unguarded
+  use arg self_, msg, a
+  p = self_~oodPeer
+  self~setItemDataOf(p~dlg, p~id, self~op(self_, "lv.uid", a[1]), .nil)
+  if self~op(self_, "lv.del", a[1]) == 1 then return 0
+  return 1
+::method lv_deleteAll unguarded
+  use arg self_
+  self~op(self_, "lv.clear")
+  return 0
+::method lv_getNextItem unguarded  -- next, previous, nextSelected, previousSelected ...
+  use arg self_, msg, a
+  start = -1
+  if a~hasIndex(1) then start = a[1]
+  flags = "ANY"
+  if msg~pos("SELECTED") > 0 then flags = "SELECTED"
+  if msg~left(8) == "PREVIOUS" then do
+    flags = flags "PREV"
+    if \a~hasIndex(1) then start = self~wb_sendWinIntMsg(self_, "", .array~of(4100, 0, 0))
+  end
+  return self~op(self_, "lv.next", start, flags)
+::method lv_getNextItemWithState unguarded   -- selected, focused, dropHighlighted
+  use arg self_, msg
+  if msg == "DROPHIGHLIGHTED" then return -1
+  return self~op(self_, "lv.next", -1, msg)
+::method lv_setSpecificState unguarded       -- select, deselect, focus
+  use arg self_, msg, a
+  if self~op(self_, "lv.state", a[1], msg) == 1 then return 0
+  return -1
+::method lv_deselectAll unguarded
+  use arg self_
+  self~op(self_, "lv.deselAll")
+  return 0
+::method lv_itemState unguarded
+  use arg self_, msg, a
+  return self~op(self_, "lv.itemState", a[1])
+::method lv_checkUncheck unguarded
+  use arg self_, msg, a
+  self~op(self_, "lv.check", a[1], (msg == "CHECK"))
+  return 0
+::method lv_isChecked unguarded
+  use arg self_, msg, a
+  return self~op(self_, "lv.isChecked", a[1]) == 1
+::method lv_getCheck unguarded
+  use arg self_, msg, a
+  if self~op(self_, "lv.ex", "GET")~wordPos("CHECKBOXES") == 0 then return -1
+  return self~op(self_, "lv.isChecked", a[1])
+::method lv_hasCheckBoxes unguarded
+  use arg self_
+  return self~op(self_, "lv.ex", "GET")~wordPos("CHECKBOXES") > 0
+::method lv_addClearExtendStyle unguarded    -- addExtendedStyle, removeExtendedStyle
+  use arg self_, msg, a
+  how = "ADD"
+  if msg~left(6) == "REMOVE" then how = "REMOVE"
+  self~op(self_, "lv.ex", how, a[1]~upper)
+  return 0
+::method lv_replaceExtendStyle unguarded
+  use arg self_, msg, a
+  self~op(self_, "lv.ex", "REMOVE", a[1]~upper)
+  self~op(self_, "lv.ex", "ADD", a[2]~upper)
+  return 0
+::method lv_getExtendedStyle unguarded
+  use arg self_
+  return self~op(self_, "lv.ex", "GET")
+::method lv_find unguarded         -- find, findPartial
+  use arg self_, msg, a
+  start = -1
+  if a~hasIndex(2) then start = a[2]
+  flags = ""
+  if a~hasIndex(3) then if a[3] == .true then flags = "W"
+  if msg == "FINDPARTIAL" then flags = flags"P"
+  return self~op(self_, "lv.find", a[1], start, flags)
+::method lv_setView unguarded
+  use arg self_, msg, a
+  self~op(self_, "lv.view", a[1]~strip~upper)
+  return 0
+::method lv_getView unguarded
+  use arg self_
+  return self~op(self_, "lv.view", "")
+::method lv_getItemData unguarded
+  use arg self_, msg, a
+  p = self_~oodPeer
+  return self~itemData(p~dlg, p~id, self~op(self_, "lv.uid", a[1]))
+::method lv_setItemData unguarded
+  use arg self_, msg, a
+  p = self_~oodPeer
+  return self~setItemDataOf(p~dlg, p~id, self~op(self_, "lv.uid", a[1]), a[2])
+::method lv_removeItemData unguarded
+  use arg self_, msg, a
+  p = self_~oodPeer
+  uid = self~op(self_, "lv.uid", a[1])
+  old = self~itemData(p~dlg, p~id, uid)
+  self~setItemDataOf(p~dlg, p~id, uid, .nil)
+  return old
+
+/*---- TreeView -------------------------------------------------------------------------*/
+::method tvHandle unguarded        -- an item of the page as the handle Rexx sees; 0 is no item
+  use arg h
+  if h == 0 | h == "" then return 0
+  return "0x"d2x(h)~right(16, "0")
+::method tvItem unguarded          -- a handle argument as the page's item; ROOT and omitted are 0
+  use arg a, i
+  if \a~hasIndex(i) then return 0
+  v = a[i]~strip~upper
+  if v == "ROOT" | v == "TVI_ROOT" then return 0
+  return self~number(v)
+
+::method tv_insert unguarded       -- insert(parent, after, label, image, selectedImage, opts, children, userData)
+  use arg self_, msg, a
+  parent = self~tvItem(a, 1)
+  after = "LAST"
+  if a~hasIndex(2) then do
+    after = a[2]~strip~upper
+    if after~left(4) == "TVI_" then after = after~substr(5)
+    if after~wordPos("FIRST LAST SORT ROOT") == 0 then after = self~number(after)
+    if after == "ROOT" then after = "LAST"
+  end
+  h = self~op(self_, "tv.ins", parent, after, self~opt(a, 3) || self~sep || self~opt(a, 6)~upper)
+  if h == "" | h == 0 then return 0
+  if a~hasIndex(8) then do
+    p = self_~oodPeer
+    self~setItemDataOf(p~dlg, p~id, h, a[8])
+  end
+  return self~tvHandle(h)
+::method tv_delete unguarded
+  use arg self_, msg, a
+  if self~op(self_, "tv.del", self~tvItem(a, 1)) == 1 then return 0
+  return 1
+::method tv_deleteAll unguarded
+  use arg self_
+  self~op(self_, "tv.clear")
+  return 0
+::method tv_expand unguarded       -- expand, collapse, collapseAndReset, toggle
+  use arg self_, msg, a
+  how = "EXPAND"
+  if msg~left(8) == "COLLAPSE" then how = "COLLAPSE"
+  if msg == "TOGGLE" then how = "TOGGLE"
+  if self~op(self_, "tv.expand", self~tvItem(a, 1), how) == 1 then return 0
+  return 1
+::method tv_find unguarded
+  use arg self_, msg, a
+  abbrev = 0
+  if a~hasIndex(3) then if a[3] == .true then abbrev = 1
+  return self~tvHandle(self~op(self_, "tv.find", a[1], self~tvItem(a, 2), abbrev))
+::method tv_getNextItem unguarded  -- child, next, nextVisible, parent, previous, previousVisible
+  use arg self_, msg, a
+  return self~tvHandle(self~op(self_, "tv.rel", self~tvItem(a, 1), msg))
+::method tv_getSpecificItem unguarded        -- root, selected, firstVisible, dropHighlighted
+  use arg self_, msg
+  return self~tvHandle(self~op(self_, "tv.special", msg))
+::method tv_itemText unguarded
+  use arg self_, msg, a
+  return self~op(self_, "tv.text", self~tvItem(a, 1))
+::method tv_itemInfo unguarded
+  use arg self_, msg, a
+  info = self~op(self_, "tv.info", self~tvItem(a, 1))
+  if info == "" then return -1
+  sep = self~sep
+  parse var info text (sep) children (sep) state
+  d = .directory~new
+  d~text = text
+  d~children = children
+  d~image = -1
+  d~selectedImage = -1
+  d~state = state
+  return d
+::method tv_modify unguarded       -- modify(item, label, image, selectedImage, opts, children, userData)
+  use arg self_, msg, a
+  if a~hasIndex(1) then h = self~tvItem(a, 1)
+  else h = self~op(self_, "tv.special", "SELECTED")
+  flag = ""
+  if a~hasIndex(2) then flag = flag"T"
+  if a~hasIndex(5) then flag = flag"O"
+  change = flag || self~sep || self~opt(a, 2) || self~sep || self~opt(a, 5)~upper
+  if self~op(self_, "tv.modify", h, change) == 1 then return 0
+  return -1
+::method tv_selectItem unguarded   -- select, makeFirstVisible, dropHighlight
+  use arg self_, msg, a
+  if msg \== "SELECT" then return 0
+  if self~op(self_, "tv.select", self~tvItem(a, 1)) == 1 then return 0
+  return 1
+::method tv_getItemData unguarded
+  use arg self_, msg, a
+  p = self_~oodPeer
+  return self~itemData(p~dlg, p~id, self~tvItem(a, 1))
+::method tv_setItemData unguarded
+  use arg self_, msg, a
+  p = self_~oodPeer
+  value = .nil
+  if a~hasIndex(2) then value = a[2]
+  old = self~itemData(p~dlg, p~id, self~tvItem(a, 1))
+  self~setItemDataOf(p~dlg, p~id, self~tvItem(a, 1), value)
+  return old
+
+/*---- Tab ---------------------------------------------------------------------------------*/
+::method tab_insert unguarded      -- insert(index, label, imageIndex, userData)
+  use arg self_, msg, a
+  at = -1
+  if a~hasIndex(1) then at = a[1]
+  return self~op(self_, "tab.ins", at, self~opt(a, 2))
+::method tab_addSequence unguarded
+  use arg self_, msg, a
+  last = -1
+  do tabText over a
+    last = self~op(self_, "tab.ins", -1, tabText)
+  end
+  return last
+::method tab_addFullSeq unguarded  -- label, imageIndex, userData triples
+  use arg self_, msg, a
+  last = -1
+  do i = 1 to a~last by 3
+    last = self~op(self_, "tab.ins", -1, self~opt(a, i))
+  end
+  return last
+::method tab_itemInfo unguarded
+  use arg self_, msg, a
+  count = self~wb_sendWinIntMsg(self_, "", .array~of(4868, 0, 0))
+  if a[1] < 0 | a[1] >= count then return -1
+  d = .directory~new
+  d~text = self~op(self_, "tab.text", a[1])
+  d~image = -1
+  d~userData = .nil
+  return d
+::method tab_modify unguarded
+  use arg self_, msg, a
+  if a~hasIndex(2) then if self~op(self_, "tab.setText", a[1], a[2]) \== 1 then return 1
+  return 0
+::method tab_select unguarded
+  use arg self_, msg, a
+  return self~op(self_, "tab.selectText", a[1])
+::method tab_selected unguarded
+  use arg self_
+  current = self~wb_sendWinIntMsg(self_, "", .array~of(4875, 0, 0))
+  if current < 0 then return ""
+  return self~op(self_, "tab.text", current)
+::method tab_calcRect unguarded    -- calcDisplayRect(rect): the area for the pages, in the dialog's client pixels
+  use arg self_, msg, a
+  parse value self~op(self_, "tab.rect") with left top right bottom
+  if left == "" then return .false
+  r = a[1]
+  r~left = left; r~top = top; r~right = right; r~bottom = bottom
+  return .true
+::method tab_setItemSize unguarded
+  return .Size~new
+::method tab_setPadding unguarded
   return 0
 
 /*---- WindowBase: dialogs and controls -----------------------------------------*/

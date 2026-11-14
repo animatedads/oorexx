@@ -1,0 +1,10 @@
+wait .ood-lv >> text=Mark Miesfeld
+click .ood-lv >> text=Mark Miesfeld
+click .ood-lv th >> text=Role
+click .ood-lv tr:nth-child(4) .ood-lvchk
+click .ood-tv >> text=RxSock
+click .ood-tabbtn >> text=Second
+sleep 400
+expect document.querySelector('.ood-static:not(:empty)').textContent ==> Selected: Mark Miesfeld (ooDialog)
+shot t03_views
+click .ood-dlg >> text=Close

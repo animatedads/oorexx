@@ -24,7 +24,7 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.1.0"
+  return "0.2.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute key unguarded
@@ -50,12 +50,14 @@
 ::attribute cmdTable unguarded        -- WM_COMMAND connections: (id code method)
 ::attribute controls unguarded        -- control objects handed out, by "id class"
 ::attribute kinds unguarded           -- kind of control, by id
+::attribute notifyTable unguarded     -- WM_NOTIFY connections: (id event method keyword)
+::attribute store unguarded           -- user data of items, by "id item"
 ::attribute parentDlg unguarded
 ::attribute ownerDialog unguarded
 ::method init
   expose key rexxSelf library resourceID dlgID autoDetect fontName fontSize sizeX sizeY factorX factorY -
          pixelCX pixelCY initCode live templateActive spec template dataTable cmdTable controls kinds -
-         parentDlg ownerDialog
+         parentDlg ownerDialog notifyTable store
   use arg key, rexxSelf, library, resourceID
   dlgID = -1
   autoDetect = .true
@@ -71,6 +73,8 @@
   cmdTable = .array~new
   controls = .directory~new
   kinds = .directory~new
+  notifyTable = .array~new
+  store = .directory~new
   parentDlg = .nil
   ownerDialog = .nil
 ::method hwnd unguarded
@@ -80,7 +84,7 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.1.0"
+  return "0.2.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute dlg unguarded             -- its dialog's OodDlg
@@ -98,7 +102,7 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.1.0"
+  return "0.2.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::method module_version unguarded
@@ -131,6 +135,8 @@
   use arg name, args
   if name~right(9) == "_INIT_CLS" then return 0        -- class set-up the DLL needed, nothing here
   if name~left(3) == "SM_" then return self~systemMetric(name)
+  if name == "OS_ISVERSION" then return args[2]~pos("ATLEAST") > 0   -- newer than every Windows it asks about
+  if name~left(5) == "OS_IS" then return .false                      -- not a 64-bit Windows
   what = name
   if args~items >= 2 then what = name "(method" args[2]")"
   raise syntax 98.900 array("ooDialog/WASM: native function" what "is not implemented yet")
@@ -225,6 +231,7 @@
   select
     when kind == "MSGBOX" then msgResults[id] = code
     when kind == "CMD" then self~command(key, id, code)
+    when kind == "NOTIFY" then self~notify(key, id, code, extra)
     otherwise nop
   end
 
@@ -237,6 +244,7 @@
   method = ""
   do entry over d~cmdTable
     if entry[1] \== id then iterate
+    if entry[3] == "" then iterate
     if entry[2] \== "*" then if entry[2] \== code then iterate
     method = entry[3]
     leave
@@ -448,6 +456,8 @@ syntax:
 ::method dlgutil_version_cls unguarded
   use arg self_, msg, a
   return "ooDialog 4.2.5 for ooRexx/WASM" self~module_version "(upstream r13513; native layer oodWeb.cls)"
+::method dlgutil_comctl32Version_cls unguarded
+  return "6.10"
 ::method dlgutil_screenSize_cls unguarded
   use arg self_, msg, a
   parse value self~web~screen with w h
@@ -1102,6 +1112,478 @@ syntax:
   self~addCommand(self_, id, "*", a[2])
   return 0
 
+/*---- WM_NOTIFY events: list-view, tree-view, tab ---------------------------------*/
+::method sep unguarded             -- the separator of the values in one answer of the page
+  return x2c("1F")
+
+::method addNotify unguarded       -- a connection of a notification: (id, page event, method, keyword)
+  use arg dlg, id, event, method, keyword
+  d = dlg~oodPeer
+  d~notifyTable~append(.array~of(id, event, method~upper, keyword))
+  d~cmdTable~append(.array~of(id, event, ""))      -- so the page is told when the dialog starts
+  if d~live then self~web~sub(d~key, id, event)
+  return 0
+
+::method connectNotify unguarded
+  use arg self_, a, map
+  id = self~resolveId(self_, a[1])
+  if id == -1 then return -1
+  keyword = a[2]~strip~upper
+  p = map~wordPos(keyword)
+  if p == 0 then
+    raise syntax 98.900 array("ooDialog/WASM: the event" keyword "is not available yet")
+  method = self~opt(a, 3)
+  if method == "" then method = "on" || keyword
+  do event over map~word(p + 1)~makeArray("+")
+    self~addNotify(self_, id, event, method, keyword)
+  end
+  return 0
+
+::method en_connectListViewEvent unguarded
+  use arg self_, msg, a
+  map = "CLICK CLICK DBLCLK DBLCLK COLUMNCLICK COLUMNCLICK ACTIVATE ACTIVATE KEYDOWN KEYDOWN" -
+        "SELECTCHANGED SEL CHANGED SEL FOCUSCHANGED FOC SELECTFOCUSCHANGED SEL+FOC CHECKBOXCHANGED CHECK"
+  return self~connectNotify(self_, a, map)
+::method en_connectTreeViewEvent unguarded
+  use arg self_, msg, a
+  return self~connectNotify(self_, a, "SELCHANGED SELCHANGED EXPANDED EXPANDED EXPANDING EXPANDING")
+::method en_connectTabEvent unguarded
+  use arg self_, msg, a
+  return self~connectNotify(self_, a, "SELCHANGE SELCHANGE SELCHANGING SELCHANGING")
+
+::method notify unguarded          -- the arguments are those the DLL builds for each event
+  use arg key, id, event, extra
+  d = self~dialogOf(key)
+  if d == .nil then return
+  dlg = d~rexxSelf
+  parts = extra~makeArray(self~sep)
+  kind = d~kinds[id]
+  hwnd = "0x"d2x(key * 65536 + id)~right(16, "0")
+  do entry over d~notifyTable
+    if entry[1] \== id then iterate
+    if entry[2] \== event then iterate
+    select
+      when kind == "LISTVIEW" then do
+        ctl = dlg~newListView(id)
+        select
+          when event == "CLICK" | event == "DBLCLK" then args = .array~of(id, parts[1], parts[2], parts[3], (event == "CLICK"), ctl)
+          when event == "COLUMNCLICK" | event == "ACTIVATE" | event == "KEYDOWN" then args = .array~of(id, extra, ctl)
+          otherwise args = .array~of(id, parts[1], parts[2], ctl)
+        end
+      end
+      when kind == "TREEVIEW" then do
+        ctl = dlg~newTreeView(id)
+        if event == "SELCHANGED" then do
+          old = self~tvHandle(parts[1])
+          new = self~tvHandle(parts[2])
+          args = .array~of(id, old, self~itemData(d, id, parts[1]), new, self~itemData(d, id, parts[2]), parts[3], ctl, event)
+        end
+        else args = .array~of(id, self~tvHandle(parts[1]), parts[2], "", ctl, event)
+      end
+      when kind == "TAB" then args = .array~of(id, hwnd, dlg~newTab(id))
+      when kind == "UPDOWN" then args = .array~of(parts[1], parts[2], id, hwnd, dlg~newUpDown(id))
+      otherwise args = .array~of(id, extra)
+    end
+    self~invoke(dlg, entry[3], args)
+  end
+
+/*---- UpDown --------------------------------------------------------------------------*/
+::method en_connectUpDownEvent unguarded
+  use arg self_, msg, a
+  return self~connectNotify(self_, a, "DELTAPOS DELTAPOS")
+::method ud_setRange unguarded
+  use arg self_, msg, a
+  low = 0
+  high = 100
+  if a~hasIndex(1) then do
+    first = a[1]
+    if first~isA(.String) then low = first
+    else do
+      low = first~min
+      high = first~max
+    end
+  end
+  if a~hasIndex(2) then high = a[2]
+  self~wb_sendWinIntMsg(self_, "", .array~of(1135, low, high))
+  return 0
+::method ud_getRange unguarded
+  use arg self_
+  parse value self~op(self_, "ud.range") with low high
+  d = .directory~new
+  d~min = low
+  d~max = high
+  return d
+::method ud_getPosition unguarded
+  use arg self_
+  return self~wb_sendWinIntMsg(self_, "", .array~of(1138, 0, 0))
+::method ud_getBuddy unguarded
+  use arg self_
+  p = self_~oodPeer
+  id = self~op(self_, "ud.buddy")
+  if id == "" | id == 0 then return .nil
+  return p~dlg~rexxSelf~newEdit(id)
+::method ud_setBuddy unguarded
+  use arg self_, msg, a
+  old = self~ud_getBuddy(self_)
+  self~op(self_, "ud.buddy", a[1]~id)
+  return old
+::method ud_setAcceleration unguarded
+  return .true
+
+/*---- user data of list-view and tree-view items ------------------------------------*/
+::method itemData unguarded
+  use arg d, id, uid
+  value = d~store[id uid]
+  if value == .nil then return .nil
+  return value
+::method setItemDataOf unguarded
+  use arg d, id, uid, value
+  if uid == 0 | uid == "" then return .false
+  if value == .nil then d~store~remove(id uid)
+  else d~store[id uid] = value
+  return .true
+
+/*---- ListView -------------------------------------------------------------------------*/
+::method lvIndex unguarded         -- an optional item index: the last item if omitted
+  use arg self_, a, i
+  if a~hasIndex(i) then return a[i]
+  return self~wb_sendWinIntMsg(self_, "", .array~of(4100, 0, 0)) - 1
+
+::method lv_insertColumnPx unguarded
+  use arg self_, msg, a
+  at = -1
+  if a~hasIndex(1) then at = a[1]
+  fmt = self~opt(a, 4)~strip~upper
+  align = "left"
+  if fmt~pos("CENTER") > 0 then align = "center"
+  if fmt~pos("RIGHT") > 0 then align = "right"
+  return self~op(self_, "lv.insCol", at, a[2] || self~sep || a[3] || self~sep || align)
+::method lv_deleteColumn unguarded
+  use arg self_, msg, a
+  return self~op(self_, "lv.delCol", a[1]) == 1
+::method lv_getColumnCount unguarded
+  use arg self_
+  return self~op(self_, "lv.colCount")
+::method lv_getColumnText unguarded
+  use arg self_, msg, a
+  sep = self~sep
+  parse value self~op(self_, "lv.colInfo", a[1]) with text (sep) .
+  return text
+::method lv_getColumnInfo unguarded
+  use arg self_, msg, a
+  info = self~op(self_, "lv.colInfo", a[1])
+  if info == "" then return .false
+  sep = self~sep
+  parse var info text (sep) width (sep) align
+  d = a[2]
+  d~text = text
+  d~width = width
+  d~column = a[1]
+  d~fmt = align~upper
+  d~alignment = align~upper
+  return .true
+::method lv_setColumnWidthPx unguarded
+  use arg self_, msg, a
+  width = -1
+  if a~hasIndex(2) then if a[2]~datatype("W") then width = a[2]
+  return self~op(self_, "lv.setColWidth", a[1], width) == 1
+
+::method lv_addRow unguarded       -- addRow(index, imageIndex, text, subitem texts ...)
+  use arg self_, msg, a
+  at = -1
+  if a~hasIndex(1) then at = a[1]
+  texts = self~opt(a, 3)
+  do i = 4 to a~last
+    texts = texts || self~sep || self~opt(a, i)
+  end
+  return self~op(self_, "lv.insRow", at, texts)
+::method lv_add unguarded          -- add(text, imageIndex): a new item; add(,, text): the next subitem of the last item
+  use arg self_, msg, a
+  first = a~first
+  if first == .nil then return -1
+  if first == 1 then return self~op(self_, "lv.insRow", -1, a[1])
+  last = self~wb_sendWinIntMsg(self_, "", .array~of(4100, 0, 0)) - 1
+  if last < 0 then return -1
+  self~op(self_, "lv.setCell", last, first - 1, a[first])
+  return last
+::method lv_insert unguarded       -- insert(itemIndex, subitemIndex, text, imageIndex)
+  use arg self_, msg, a
+  sub = 0
+  if a~hasIndex(2) then sub = a[2]
+  if sub == 0 then do
+    at = -1
+    if a~hasIndex(1) then at = a[1]
+    return self~op(self_, "lv.insRow", at, a[3])
+  end
+  item = self~lvIndex(self_, a, 1)
+  if self~op(self_, "lv.setCell", item, sub, a[3]) == 1 then return item
+  return -1
+::method lv_modify unguarded
+  use arg self_, msg, a
+  if a~hasIndex(1) then item = a[1]
+  else item = self~op(self_, "lv.next", -1, "SELECTED")
+  sub = 0
+  if a~hasIndex(2) then sub = a[2]
+  if self~op(self_, "lv.setCell", item, sub, a[3]) == 1 then return 0
+  return -1
+::method lv_setItemText unguarded
+  use arg self_, msg, a
+  sub = 0
+  if a~hasIndex(2) then sub = a[2]
+  if self~op(self_, "lv.setCell", a[1], sub, a[3]) == 1 then return 0
+  return -1
+::method lv_itemText unguarded
+  use arg self_, msg, a
+  sub = 0
+  if a~hasIndex(2) then sub = a[2]
+  return self~op(self_, "lv.cell", a[1], sub)
+::method lv_delete unguarded
+  use arg self_, msg, a
+  p = self_~oodPeer
+  self~setItemDataOf(p~dlg, p~id, self~op(self_, "lv.uid", a[1]), .nil)
+  if self~op(self_, "lv.del", a[1]) == 1 then return 0
+  return 1
+::method lv_deleteAll unguarded
+  use arg self_
+  self~op(self_, "lv.clear")
+  return 0
+::method lv_getNextItem unguarded  -- next, previous, nextSelected, previousSelected ...
+  use arg self_, msg, a
+  start = -1
+  if a~hasIndex(1) then start = a[1]
+  flags = "ANY"
+  if msg~pos("SELECTED") > 0 then flags = "SELECTED"
+  if msg~left(8) == "PREVIOUS" then do
+    flags = flags "PREV"
+    if \a~hasIndex(1) then start = self~wb_sendWinIntMsg(self_, "", .array~of(4100, 0, 0))
+  end
+  return self~op(self_, "lv.next", start, flags)
+::method lv_getNextItemWithState unguarded   -- selected, focused, dropHighlighted
+  use arg self_, msg
+  if msg == "DROPHIGHLIGHTED" then return -1
+  return self~op(self_, "lv.next", -1, msg)
+::method lv_setSpecificState unguarded       -- select, deselect, focus
+  use arg self_, msg, a
+  if self~op(self_, "lv.state", a[1], msg) == 1 then return 0
+  return -1
+::method lv_deselectAll unguarded
+  use arg self_
+  self~op(self_, "lv.deselAll")
+  return 0
+::method lv_itemState unguarded
+  use arg self_, msg, a
+  return self~op(self_, "lv.itemState", a[1])
+::method lv_checkUncheck unguarded
+  use arg self_, msg, a
+  self~op(self_, "lv.check", a[1], (msg == "CHECK"))
+  return 0
+::method lv_isChecked unguarded
+  use arg self_, msg, a
+  return self~op(self_, "lv.isChecked", a[1]) == 1
+::method lv_getCheck unguarded
+  use arg self_, msg, a
+  if self~op(self_, "lv.ex", "GET")~wordPos("CHECKBOXES") == 0 then return -1
+  return self~op(self_, "lv.isChecked", a[1])
+::method lv_hasCheckBoxes unguarded
+  use arg self_
+  return self~op(self_, "lv.ex", "GET")~wordPos("CHECKBOXES") > 0
+::method lv_addClearExtendStyle unguarded    -- addExtendedStyle, removeExtendedStyle
+  use arg self_, msg, a
+  how = "ADD"
+  if msg~left(6) == "REMOVE" then how = "REMOVE"
+  self~op(self_, "lv.ex", how, a[1]~upper)
+  return 0
+::method lv_replaceExtendStyle unguarded
+  use arg self_, msg, a
+  self~op(self_, "lv.ex", "REMOVE", a[1]~upper)
+  self~op(self_, "lv.ex", "ADD", a[2]~upper)
+  return 0
+::method lv_getExtendedStyle unguarded
+  use arg self_
+  return self~op(self_, "lv.ex", "GET")
+::method lv_find unguarded         -- find, findPartial
+  use arg self_, msg, a
+  start = -1
+  if a~hasIndex(2) then start = a[2]
+  flags = ""
+  if a~hasIndex(3) then if a[3] == .true then flags = "W"
+  if msg == "FINDPARTIAL" then flags = flags"P"
+  return self~op(self_, "lv.find", a[1], start, flags)
+::method lv_setView unguarded
+  use arg self_, msg, a
+  self~op(self_, "lv.view", a[1]~strip~upper)
+  return 0
+::method lv_getView unguarded
+  use arg self_
+  return self~op(self_, "lv.view", "")
+::method lv_getItemData unguarded
+  use arg self_, msg, a
+  p = self_~oodPeer
+  return self~itemData(p~dlg, p~id, self~op(self_, "lv.uid", a[1]))
+::method lv_setItemData unguarded
+  use arg self_, msg, a
+  p = self_~oodPeer
+  return self~setItemDataOf(p~dlg, p~id, self~op(self_, "lv.uid", a[1]), a[2])
+::method lv_removeItemData unguarded
+  use arg self_, msg, a
+  p = self_~oodPeer
+  uid = self~op(self_, "lv.uid", a[1])
+  old = self~itemData(p~dlg, p~id, uid)
+  self~setItemDataOf(p~dlg, p~id, uid, .nil)
+  return old
+
+/*---- TreeView -------------------------------------------------------------------------*/
+::method tvHandle unguarded        -- an item of the page as the handle Rexx sees; 0 is no item
+  use arg h
+  if h == 0 | h == "" then return 0
+  return "0x"d2x(h)~right(16, "0")
+::method tvItem unguarded          -- a handle argument as the page's item; ROOT and omitted are 0
+  use arg a, i
+  if \a~hasIndex(i) then return 0
+  v = a[i]~strip~upper
+  if v == "ROOT" | v == "TVI_ROOT" then return 0
+  return self~number(v)
+
+::method tv_insert unguarded       -- insert(parent, after, label, image, selectedImage, opts, children, userData)
+  use arg self_, msg, a
+  parent = self~tvItem(a, 1)
+  after = "LAST"
+  if a~hasIndex(2) then do
+    after = a[2]~strip~upper
+    if after~left(4) == "TVI_" then after = after~substr(5)
+    if after~wordPos("FIRST LAST SORT ROOT") == 0 then after = self~number(after)
+    if after == "ROOT" then after = "LAST"
+  end
+  h = self~op(self_, "tv.ins", parent, after, self~opt(a, 3) || self~sep || self~opt(a, 6)~upper)
+  if h == "" | h == 0 then return 0
+  if a~hasIndex(8) then do
+    p = self_~oodPeer
+    self~setItemDataOf(p~dlg, p~id, h, a[8])
+  end
+  return self~tvHandle(h)
+::method tv_delete unguarded
+  use arg self_, msg, a
+  if self~op(self_, "tv.del", self~tvItem(a, 1)) == 1 then return 0
+  return 1
+::method tv_deleteAll unguarded
+  use arg self_
+  self~op(self_, "tv.clear")
+  return 0
+::method tv_expand unguarded       -- expand, collapse, collapseAndReset, toggle
+  use arg self_, msg, a
+  how = "EXPAND"
+  if msg~left(8) == "COLLAPSE" then how = "COLLAPSE"
+  if msg == "TOGGLE" then how = "TOGGLE"
+  if self~op(self_, "tv.expand", self~tvItem(a, 1), how) == 1 then return 0
+  return 1
+::method tv_find unguarded
+  use arg self_, msg, a
+  abbrev = 0
+  if a~hasIndex(3) then if a[3] == .true then abbrev = 1
+  return self~tvHandle(self~op(self_, "tv.find", a[1], self~tvItem(a, 2), abbrev))
+::method tv_getNextItem unguarded  -- child, next, nextVisible, parent, previous, previousVisible
+  use arg self_, msg, a
+  return self~tvHandle(self~op(self_, "tv.rel", self~tvItem(a, 1), msg))
+::method tv_getSpecificItem unguarded        -- root, selected, firstVisible, dropHighlighted
+  use arg self_, msg
+  return self~tvHandle(self~op(self_, "tv.special", msg))
+::method tv_itemText unguarded
+  use arg self_, msg, a
+  return self~op(self_, "tv.text", self~tvItem(a, 1))
+::method tv_itemInfo unguarded
+  use arg self_, msg, a
+  info = self~op(self_, "tv.info", self~tvItem(a, 1))
+  if info == "" then return -1
+  sep = self~sep
+  parse var info text (sep) children (sep) state
+  d = .directory~new
+  d~text = text
+  d~children = children
+  d~image = -1
+  d~selectedImage = -1
+  d~state = state
+  return d
+::method tv_modify unguarded       -- modify(item, label, image, selectedImage, opts, children, userData)
+  use arg self_, msg, a
+  if a~hasIndex(1) then h = self~tvItem(a, 1)
+  else h = self~op(self_, "tv.special", "SELECTED")
+  flag = ""
+  if a~hasIndex(2) then flag = flag"T"
+  if a~hasIndex(5) then flag = flag"O"
+  change = flag || self~sep || self~opt(a, 2) || self~sep || self~opt(a, 5)~upper
+  if self~op(self_, "tv.modify", h, change) == 1 then return 0
+  return -1
+::method tv_selectItem unguarded   -- select, makeFirstVisible, dropHighlight
+  use arg self_, msg, a
+  if msg \== "SELECT" then return 0
+  if self~op(self_, "tv.select", self~tvItem(a, 1)) == 1 then return 0
+  return 1
+::method tv_getItemData unguarded
+  use arg self_, msg, a
+  p = self_~oodPeer
+  return self~itemData(p~dlg, p~id, self~tvItem(a, 1))
+::method tv_setItemData unguarded
+  use arg self_, msg, a
+  p = self_~oodPeer
+  value = .nil
+  if a~hasIndex(2) then value = a[2]
+  old = self~itemData(p~dlg, p~id, self~tvItem(a, 1))
+  self~setItemDataOf(p~dlg, p~id, self~tvItem(a, 1), value)
+  return old
+
+/*---- Tab ---------------------------------------------------------------------------------*/
+::method tab_insert unguarded      -- insert(index, label, imageIndex, userData)
+  use arg self_, msg, a
+  at = -1
+  if a~hasIndex(1) then at = a[1]
+  return self~op(self_, "tab.ins", at, self~opt(a, 2))
+::method tab_addSequence unguarded
+  use arg self_, msg, a
+  last = -1
+  do tabText over a
+    last = self~op(self_, "tab.ins", -1, tabText)
+  end
+  return last
+::method tab_addFullSeq unguarded  -- label, imageIndex, userData triples
+  use arg self_, msg, a
+  last = -1
+  do i = 1 to a~last by 3
+    last = self~op(self_, "tab.ins", -1, self~opt(a, i))
+  end
+  return last
+::method tab_itemInfo unguarded
+  use arg self_, msg, a
+  count = self~wb_sendWinIntMsg(self_, "", .array~of(4868, 0, 0))
+  if a[1] < 0 | a[1] >= count then return -1
+  d = .directory~new
+  d~text = self~op(self_, "tab.text", a[1])
+  d~image = -1
+  d~userData = .nil
+  return d
+::method tab_modify unguarded
+  use arg self_, msg, a
+  if a~hasIndex(2) then if self~op(self_, "tab.setText", a[1], a[2]) \== 1 then return 1
+  return 0
+::method tab_select unguarded
+  use arg self_, msg, a
+  return self~op(self_, "tab.selectText", a[1])
+::method tab_selected unguarded
+  use arg self_
+  current = self~wb_sendWinIntMsg(self_, "", .array~of(4875, 0, 0))
+  if current < 0 then return ""
+  return self~op(self_, "tab.text", current)
+::method tab_calcRect unguarded    -- calcDisplayRect(rect): the area for the pages, in the dialog's client pixels
+  use arg self_, msg, a
+  parse value self~op(self_, "tab.rect") with left top right bottom
+  if left == "" then return .false
+  r = a[1]
+  r~left = left; r~top = top; r~right = right; r~bottom = bottom
+  return .true
+::method tab_setItemSize unguarded
+  return .Size~new
+::method tab_setPadding unguarded
+  return 0
+
 /*---- WindowBase: dialogs and controls -----------------------------------------*/
 ::method wb_init_windowBase unguarded
   return 0
@@ -1629,6 +2111,25 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
 .ood-frame{pointer-events:none}
 .ood-todo{border:1px dashed #a33;color:#a33;font-size:.85em;overflow:hidden;padding:2px}
 .ood-u{text-decoration:underline}
+.ood-lv,.ood-tv{border:1px solid #7a7a7a;background:#fff;overflow:auto;outline:none;cursor:default}
+.ood-lv table{border-collapse:collapse;table-layout:fixed}
+.ood-lv th{position:sticky;top:0;background:#fff;border-right:1px solid #e5e5e5;border-bottom:1px solid #e5e5e5;font-weight:normal;padding:2px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ood-lv th:hover{background:#d9ebf9}
+.ood-lv td{padding:1px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ood-lv table.ood-grid td{border:1px solid #f0f0f0}
+.ood-lv tr.ood-sel td,.ood-tv .ood-tvrow.ood-sel{background:#cce8ff}
+.ood-lv:focus tr.ood-sel td,.ood-tv:focus .ood-tvrow.ood-sel{background:#0078d7;color:#fff}
+.ood-lvchk{margin:0 .4em 0 0;vertical-align:middle}
+.ood-tvrow{white-space:nowrap;padding:1px 4px}
+.ood-tvtw{display:inline-block;width:1.1em;text-align:center;color:#555}
+.ood-ud{display:flex;flex-direction:column}
+.ood-ud button{flex:1;min-height:0;padding:0;border:1px solid #adadad;background:#e1e1e1;font-size:.6em;line-height:1;color:#000;cursor:default}
+.ood-ud button:hover{background:#e5f1fb;border-color:#0078d7}
+.ood-tab{pointer-events:none}
+.ood-tabstrip{display:flex;pointer-events:auto;height:1.75em;align-items:flex-end;padding-left:2px}
+.ood-tabbtn{border:1px solid #d9d9d9;border-bottom:0;background:#f0f0f0;padding:0 .7em;height:1.5em;margin-right:-1px;cursor:default;color:#000}
+.ood-tabbtn.ood-cur{background:#fff;height:1.75em;position:relative;top:1px}
+.ood-tabpage{position:absolute;left:0;right:0;top:1.75em;bottom:0;border:1px solid #d9d9d9;background:#fff}
 `;
 
   function boot() {
@@ -1865,6 +2366,38 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
         c.min = 0; c.max = 100; c.pos = 0; c.step = 10; c.focusable = false; c.vertical = has(o, 'VERTICAL');
         if (c.vertical) { el.style.position = 'absolute'; c.bar.style.cssText = 'position:absolute;left:0;bottom:0;width:100%;height:0'; }
         break;
+      case 'LISTVIEW':
+        el = main = D.createElement('div'); el.className = 'ood-lv'; el.tabIndex = 0;
+        c.cols = []; c.rows = []; c.uid = 0; c.focusIdx = -1; c.ex = new Set(); c.single = has(o, 'SINGLESEL');
+        c.view = has(o, 'REPORT') ? 'REPORT' : has(o, 'SMALLICON') ? 'SMALLICON' : has(o, 'LIST') ? 'LIST' : 'ICON';
+        c.table = D.createElement('table'); c.thead = D.createElement('thead'); c.tbody = D.createElement('tbody');
+        c.table.append(c.thead, c.tbody); el.appendChild(c.table); c.el = el; lvWire(dlg, c);
+        break;
+      case 'TREEVIEW':
+        el = main = D.createElement('div'); el.className = 'ood-tv'; el.tabIndex = 0;
+        c.nodes = new Map(); c.roots = []; c.nextH = 0; c.selH = 0; c.body = D.createElement('div'); el.appendChild(c.body); c.el = el; tvWire(dlg, c);
+        break;
+      case 'TAB':
+        el = main = D.createElement('div'); el.className = 'ood-tab'; c.tabs = []; c.cur = -1;
+        c.strip = D.createElement('div'); c.strip.className = 'ood-tabstrip'; c.page = D.createElement('div'); c.page.className = 'ood-tabpage';
+        el.append(c.strip, c.page); tabWire(dlg, c);
+        break;
+      case 'UPDOWN': {
+        el = main = D.createElement('div'); el.className = 'ood-ud'; c.focusable = false;
+        c.min = 0; c.max = 100; c.pos = 0; c.buddy = 0;
+        const up = D.createElement('button'), dn = D.createElement('button');
+        up.type = dn.type = 'button'; up.tabIndex = dn.tabIndex = -1; up.textContent = '\u25B4'; dn.textContent = '\u25BE';
+        el.append(up, dn);
+        if (has(o, 'AUTOBUDDY') && dlg.all.length) c.buddy = dlg.all[dlg.all.length - 1].id;
+        c.setInt = has(o, 'SETBUDDYINT'); c.wrap = has(o, 'WRAP');
+        const step = (d) => {
+          let np = c.pos + d;
+          if (np > c.max) np = c.wrap ? c.min : c.max; if (np < c.min) np = c.wrap ? c.max : c.min;
+          note(dlg, c, 'DELTAPOS', c.pos + SEP + (np - c.pos));
+          udSet(dlg, c, np);
+        };
+        up.addEventListener('click', () => step(1)); dn.addEventListener('click', () => step(-1));
+        break; }
       default:                                              // a control kind not ported yet
         el = main = D.createElement('div'); el.className = 'ood-todo'; el.textContent = spec.kind + ' ' + c.id; c.focusable = false;
     }
@@ -1872,6 +2405,14 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
     place(dlg, el, c);
     if (c.kind === 'COMBO' && c.droplist) el.style.height = Math.round(12 * dlg.fy) + 'px';   // cy is the dropped height
     if (c.kind === 'COMBO' && !c.droplist) el.style.height = Math.round(12 * dlg.fy) + 'px';
+    if (c.kind === 'UPDOWN' && c.buddy && (has(o, 'RIGHT') || has(o, 'LEFT'))) {   // sits inside its buddy's edge
+      const b = dlg.ctrls.get(c.buddy);
+      if (b) {
+        const w = Math.round(9 * dlg.fx), bl = parseInt(b.el.style.left), bw = parseInt(b.el.style.width);
+        el.style.left = (has(o, 'RIGHT') ? bl + bw - w - 1 : bl + 1) + 'px'; el.style.top = (parseInt(b.el.style.top) + 1) + 'px';
+        el.style.width = w + 'px'; el.style.height = (parseInt(b.el.style.height) - 2) + 'px';
+      }
+    }
     if (has(o, 'HIDDEN')) el.hidden = true;
     if (has(o, 'DISABLED')) main.disabled = true;
     if (has(o, 'NOTAB')) main.tabIndex = -1;
@@ -1884,6 +2425,173 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
     const dlg = ood.dialogs.get(Number(key)); if (!dlg) return '0';
     addControl(dlg, spec); return '1';
   };
+
+  /* ---- list-view, tree-view, tab ----------------------------------------- */
+  const SEP = '\x1f';
+  function note(dlg, c, ev, extra) {                           // a WM_NOTIFY to Rexx, if connected
+    if (dlg.subs.has(c.id + '.' + ev)) fire(dlg.key, 'NOTIFY', c.id, ev, extra);
+  }
+  function later(c, fn) { if (c.dirty) return; c.dirty = true; queueMicrotask(() => { c.dirty = false; fn(c); }); }
+
+  function lvRender(c) {
+    const report = c.view === 'REPORT';
+    c.thead.textContent = ''; c.tbody.textContent = '';
+    c.table.classList.toggle('ood-grid', c.ex.has('GRIDLINES'));
+    if (report) {
+      const tr = D.createElement('tr');
+      c.cols.forEach((col) => {
+        const th = D.createElement('th'); th.textContent = col.text; th.style.width = col.w < 0 ? 'auto' : col.w + 'px';
+        th.style.minWidth = th.style.maxWidth = th.style.width; th.style.textAlign = col.fmt; tr.appendChild(th);
+      });
+      c.thead.appendChild(tr);
+    }
+    c.rows.forEach((row, i) => {
+      const tr = D.createElement('tr');
+      if (row.sel) tr.classList.add('ood-sel');
+      if (i === c.focusIdx) tr.classList.add('ood-foc');
+      const n = report ? Math.max(1, c.cols.length) : 1;
+      for (let k = 0; k < n; k++) {
+        const td = D.createElement('td');
+        if (k === 0 && c.ex.has('CHECKBOXES')) {
+          const cb = D.createElement('input'); cb.type = 'checkbox'; cb.checked = !!row.chk; cb.tabIndex = -1; cb.className = 'ood-lvchk'; td.appendChild(cb);
+        }
+        td.append(row.cells[k] == null ? '' : row.cells[k]);
+        if (report && c.cols[k]) td.style.textAlign = c.cols[k].fmt;
+        tr.appendChild(td);
+      }
+      c.tbody.appendChild(tr);
+    });
+  }
+  function lvSel(dlg, c, i, on) {
+    const row = c.rows[i]; if (!row || !!row.sel === on) return;
+    row.sel = on; later(c, lvRender);
+    note(dlg, c, 'SEL', i + SEP + (on ? 'SELECTED' : 'UNSELECTED'));
+  }
+  function lvFocus(dlg, c, i) {
+    if (c.focusIdx === i) return;
+    const old = c.focusIdx; c.focusIdx = i; later(c, lvRender);
+    if (old >= 0 && old < c.rows.length) note(dlg, c, 'FOC', old + SEP + 'UNFOCUSED');
+    if (i >= 0) note(dlg, c, 'FOC', i + SEP + 'FOCUSED');
+  }
+  function lvPick(dlg, c, i, e) {                              // a click or key chooses row i
+    const ctrl = e && (e.ctrlKey || e.metaKey), shift = e && e.shiftKey;
+    if (i < 0) { c.rows.forEach((r, k) => lvSel(dlg, c, k, false)); return; }
+    if (c.single || (!ctrl && !shift)) {
+      c.rows.forEach((r, k) => { if (k !== i) lvSel(dlg, c, k, false); });
+      lvSel(dlg, c, i, true); c.anchor = i;
+    } else if (ctrl) { lvSel(dlg, c, i, !c.rows[i].sel); c.anchor = i; }
+    else {
+      const a = c.anchor == null ? i : c.anchor, lo = Math.min(a, i), hi = Math.max(a, i);
+      c.rows.forEach((r, k) => lvSel(dlg, c, k, k >= lo && k <= hi));
+    }
+    lvFocus(dlg, c, i);
+  }
+  const keysOf = (e) => [e.shiftKey ? 'SHIFT' : '', e.ctrlKey ? 'CONTROL' : '', e.altKey ? 'ALT' : ''].filter(Boolean).join(' ') || 'NONE';
+  function lvWire(dlg, c) {
+    const hit = (e) => {
+      const tr = e.target.closest('tbody tr'), td = e.target.closest('td');
+      return tr ? [tr.sectionRowIndex, td ? td.cellIndex : 0] : [-1, -1];
+    };
+    c.el.addEventListener('click', (e) => {
+      const th = e.target.closest('th');
+      if (th) { note(dlg, c, 'COLUMNCLICK', th.cellIndex); return; }
+      const [i, sub] = hit(e);
+      if (e.target.classList.contains('ood-lvchk')) {
+        c.rows[i].chk = e.target.checked; note(dlg, c, 'CHECK', i + SEP + (e.target.checked ? 'CHECKED' : 'UNCHECKED')); return;
+      }
+      lvPick(dlg, c, i, e);
+      note(dlg, c, 'CLICK', i + SEP + sub + SEP + keysOf(e));
+    });
+    c.el.addEventListener('dblclick', (e) => {
+      const [i, sub] = hit(e); if (e.target.closest('th')) return;
+      note(dlg, c, 'DBLCLK', i + SEP + sub + SEP + keysOf(e));
+      if (i >= 0) note(dlg, c, 'ACTIVATE', i);
+    });
+    c.el.addEventListener('keydown', (e) => {
+      const n = c.rows.length; let i = c.focusIdx;
+      if (e.key === 'ArrowDown' && n) { e.preventDefault(); lvPick(dlg, c, Math.min(n - 1, i + 1), e); }
+      else if (e.key === 'ArrowUp' && n) { e.preventDefault(); lvPick(dlg, c, Math.max(0, i - 1), e); }
+      else if (e.key === 'Enter' && i >= 0) { e.stopPropagation(); note(dlg, c, 'ACTIVATE', i); }
+      note(dlg, c, 'KEYDOWN', e.keyCode);
+    });
+  }
+  function lvNext(c, start, flags) {
+    const back = has(flags, 'PREV'), n = c.rows.length;
+    for (let i = start + (back ? -1 : 1); i >= 0 && i < n; i += back ? -1 : 1) {
+      if (has(flags, 'SELECTED') && !c.rows[i].sel) continue;
+      if (has(flags, 'FOCUSED') && i !== c.focusIdx) continue;
+      return i;
+    }
+    return -1;
+  }
+
+  function tvRender(c) {
+    c.body.textContent = '';
+    const walk = (list, depth) => list.forEach((h) => {
+      const nd = c.nodes.get(h), row = D.createElement('div'); row.className = 'ood-tvrow'; row.dataset.h = h;
+      row.style.paddingLeft = (depth * 1.3 + 0.2) + 'em';
+      if (h === c.selH) row.classList.add('ood-sel');
+      const tw = D.createElement('span'); tw.className = 'ood-tvtw';
+      tw.textContent = nd.kids.length ? (nd.open ? '▾' : '▸') : '';
+      const tx = D.createElement('span'); tx.textContent = nd.text; if (nd.bold) tx.style.fontWeight = 'bold';
+      row.append(tw, tx); c.body.appendChild(row);
+      if (nd.open) walk(nd.kids, depth + 1);
+    });
+    walk(c.roots, 0);
+  }
+  function tvSelect(dlg, c, h, action) {
+    if (c.selH === h) return;
+    const old = c.selH; c.selH = h; later(c, tvRender);
+    note(dlg, c, 'SELCHANGED', old + SEP + h + SEP + action);
+  }
+  function tvOpen(dlg, c, h, how) {
+    const nd = c.nodes.get(h); if (!nd) return false;
+    const open = how === 'TOGGLE' ? !nd.open : how === 'EXPAND';
+    if (nd.open === open) return true;
+    note(dlg, c, 'EXPANDING', h + SEP + (open ? 'EXPANDED' : 'COLLAPSED'));
+    nd.open = open; later(c, tvRender);
+    note(dlg, c, 'EXPANDED', h + SEP + (open ? 'EXPANDED' : 'COLLAPSED'));
+    return true;
+  }
+  function tvVisible(c) { const out = []; const walk = (l) => l.forEach((h) => { out.push(h); const nd = c.nodes.get(h); if (nd.open) walk(nd.kids); }); walk(c.roots); return out; }
+  function tvDrop(c, h) { const nd = c.nodes.get(h); if (!nd) return; nd.kids.slice().forEach((k) => tvDrop(c, k)); c.nodes.delete(h); if (c.selH === h) c.selH = 0; }
+  function tvWire(dlg, c) {
+    c.el.addEventListener('click', (e) => {
+      const row = e.target.closest('.ood-tvrow'); if (!row) return;
+      const h = Number(row.dataset.h);
+      if (e.target.classList.contains('ood-tvtw')) tvOpen(dlg, c, h, 'TOGGLE'); else tvSelect(dlg, c, h, 'MOUSE');
+    });
+    c.el.addEventListener('dblclick', (e) => {
+      const row = e.target.closest('.ood-tvrow'); if (row && !e.target.classList.contains('ood-tvtw')) tvOpen(dlg, c, Number(row.dataset.h), 'TOGGLE');
+    });
+    c.el.addEventListener('keydown', (e) => {
+      const vis = tvVisible(c), i = vis.indexOf(c.selH), nd = c.nodes.get(c.selH);
+      if (e.key === 'ArrowDown' && i < vis.length - 1) { e.preventDefault(); tvSelect(dlg, c, vis[i + 1], 'KEYBOARD'); }
+      else if (e.key === 'ArrowUp' && i > 0) { e.preventDefault(); tvSelect(dlg, c, vis[i - 1], 'KEYBOARD'); }
+      else if (e.key === 'ArrowRight' && nd) { e.preventDefault(); tvOpen(dlg, c, c.selH, 'EXPAND'); }
+      else if (e.key === 'ArrowLeft' && nd) { e.preventDefault(); tvOpen(dlg, c, c.selH, 'COLLAPSE'); }
+    });
+  }
+
+  function udSet(dlg, c, pos) {
+    c.pos = Math.max(c.min, Math.min(c.max, pos));
+    const b = dlg.ctrls.get(c.buddy);
+    if (b && c.setInt && b.kind === 'EDIT') { b.main.value = String(c.pos); cmd(dlg, b, 0x400); cmd(dlg, b, 0x300); }
+  }
+  function tabRender(c) {
+    c.strip.textContent = '';
+    c.tabs.forEach((t, i) => {
+      const b = D.createElement('button'); b.type = 'button'; b.className = 'ood-tabbtn'; b.tabIndex = i === c.cur ? 0 : -1;
+      label(b, t.text); if (i === c.cur) b.classList.add('ood-cur'); c.strip.appendChild(b);
+    });
+  }
+  function tabWire(dlg, c) {
+    c.strip.addEventListener('click', (e) => {
+      const b = e.target.closest('.ood-tabbtn'); if (!b) return;
+      const i = Array.prototype.indexOf.call(c.strip.children, b); if (i === c.cur) return;
+      note(dlg, c, 'SELCHANGING', ''); c.cur = i; tabRender(c); note(dlg, c, 'SELCHANGE', '');
+    });
+  }
 
   /* list helpers: positions are zero-based here, as in the Win32 messages */
   const optsOf = (c) => (c.items ? c.items : c.main).children;
@@ -1994,6 +2702,34 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
         }
         break;
     }
+    if (c.kind === 'LISTVIEW') switch (msg) {
+      case 0x1004: return String(c.rows.length);                                       // LVM_GETITEMCOUNT
+      case 0x1032: return String(c.rows.filter((r) => r.sel).length);                  // LVM_GETSELECTEDCOUNT
+      case 0x101D: return String(c.cols[w] ? Math.max(0, c.cols[w].w) : 0);            // LVM_GETCOLUMNWIDTH
+      case 0x1013: { const tr = c.tbody.children[w]; if (tr) tr.scrollIntoView({ block: 'nearest' }); return '1'; } // LVM_ENSUREVISIBLE
+      case 0x102F: case 0x1027: case 0x102A: case 0x1015: return '0';
+    }
+    if (c.kind === 'TREEVIEW') switch (msg) {
+      case 0x1105: return String(c.nodes.size);                                        // TVM_GETCOUNT
+      case 0x1114: return '1';                                                         // TVM_ENSUREVISIBLE
+    }
+    if (c.kind === 'UPDOWN') switch (msg) {
+      case 0x471: { const old = c.pos; udSet(dlg, c, l); return String(old); }         // UDM_SETPOS32
+      case 0x472: return String(c.pos);                                                // UDM_GETPOS32
+      case 0x46F: c.min = Math.min(w, l); c.max = Math.max(w, l); udSet(dlg, c, c.pos); return '0'; // UDM_SETRANGE32
+      case 0x46E: return '10';                                                         // UDM_GETBASE
+      case 0x46D: return '10';                                                         // UDM_SETBASE
+    }
+    if (c.kind === 'TAB') switch (msg) {
+      case 0x1304: return String(c.tabs.length);                                       // TCM_GETITEMCOUNT
+      case 0x130B: return String(c.cur);                                               // TCM_GETCURSEL
+      case 0x130C: { const old = c.cur; if (w >= 0 && w < c.tabs.length) { c.cur = w; tabRender(c); } return String(old); } // TCM_SETCURSEL
+      case 0x1308: if (w < 0 || w >= c.tabs.length) return '0'; c.tabs.splice(w, 1); if (c.cur >= c.tabs.length) c.cur = c.tabs.length - 1; tabRender(c); return '1'; // TCM_DELETEITEM
+      case 0x1309: c.tabs = []; c.cur = -1; tabRender(c); return '1';                  // TCM_DELETEALLITEMS
+      case 0x132F: return String(c.cur);                                               // TCM_GETCURFOCUS
+      case 0x1330: if (w >= 0 && w < c.tabs.length) { c.cur = w; tabRender(c); } return '0'; // TCM_SETCURFOCUS
+      case 0x132C: return '1';                                                         // TCM_GETROWCOUNT
+    }
     ood.log.push('msg ' + c.kind + ' 0x' + msg.toString(16));
     return '0';
   };
@@ -2069,9 +2805,120 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
         if (c.kind === 'LIST' || c.droplist) m.selectedIndex = i; else m.value = i >= 0 ? optsOf(c)[i].textContent : String(a);
         return String(i); }
     }
+    if (c && name === 'ud.range') return c.min + ' ' + c.max;
+    if (c && name === 'ud.buddy') { const old = c.buddy; if (a !== '') c.buddy = Number(a); return String(old); }
+    if (c && name.startsWith('lv.')) return lvOp(dlg, c, name.slice(3), a, b, c2);
+    if (c && name.startsWith('tv.')) return tvOp(dlg, c, name.slice(3), a, b, c2);
+    if (c && name.startsWith('tab.')) return tabOp(dlg, c, name.slice(4), a, b, c2);
     ood.log.push('op ' + name);
     return '';
   };
+
+  function lvOp(dlg, c, name, a, b, c2) {
+    const i = Number(a);
+    switch (name) {
+      case 'insCol': {
+        const [text, w, fmt] = String(b).split(SEP); const at = i < 0 || i > c.cols.length ? c.cols.length : i;
+        c.cols.splice(at, 0, { text, w: Number(w), fmt: fmt || 'left' });
+        c.rows.forEach((r) => { if (r.cells.length > at) r.cells.splice(at, 0, ''); });
+        later(c, lvRender); return String(at); }
+      case 'delCol': if (!c.cols[i]) return '0'; c.cols.splice(i, 1); c.rows.forEach((r) => r.cells.splice(i, 1)); later(c, lvRender); return '1';
+      case 'colCount': return String(c.cols.length);
+      case 'colInfo': return c.cols[i] ? c.cols[i].text + SEP + c.cols[i].w + SEP + c.cols[i].fmt : '';
+      case 'setColWidth': if (!c.cols[i]) return '0'; c.cols[i].w = Number(b); later(c, lvRender); return '1';
+      case 'insRow': {
+        const at = i < 0 || i > c.rows.length ? c.rows.length : i;
+        c.rows.splice(at, 0, { cells: String(b).split(SEP), sel: false, chk: false, uid: ++c.uid });
+        if (c.focusIdx >= at) c.focusIdx++;
+        later(c, lvRender); return String(at); }
+      case 'setCell': if (!c.rows[i]) return '0'; c.rows[i].cells[Number(b)] = String(c2); later(c, lvRender); return '1';
+      case 'cell': return c.rows[i] && c.rows[i].cells[Number(b)] != null ? c.rows[i].cells[Number(b)] : '';
+      case 'del': if (!c.rows[i]) return '0'; c.rows.splice(i, 1); if (c.focusIdx === i) c.focusIdx = -1; else if (c.focusIdx > i) c.focusIdx--; later(c, lvRender); return '1';
+      case 'clear': c.rows = []; c.focusIdx = -1; later(c, lvRender); return '1';
+      case 'next': return String(lvNext(c, i, String(b)));
+      case 'state':
+        if (!c.rows[i]) return '0';
+        if (b === 'SELECT') { if (c.single) c.rows.forEach((r, k) => { if (k !== i) lvSel(dlg, c, k, false); }); lvSel(dlg, c, i, true); }
+        else if (b === 'DESELECT') lvSel(dlg, c, i, false); else lvFocus(dlg, c, i);
+        return '1';
+      case 'itemState': return c.rows[i] ? [(c.rows[i].sel ? 'SELECTED' : ''), (i === c.focusIdx ? 'FOCUSED' : '')].filter(Boolean).join(' ') : '';
+      case 'deselAll': c.rows.forEach((r, k) => lvSel(dlg, c, k, false)); return '1';
+      case 'check':
+        c.rows.forEach((r, k) => { if ((i < 0 || k === i) && !!r.chk !== (b === '1')) { r.chk = b === '1'; note(dlg, c, 'CHECK', k + SEP + (r.chk ? 'CHECKED' : 'UNCHECKED')); } });
+        later(c, lvRender); return '1';
+      case 'isChecked': return c.rows[i] && c.rows[i].chk ? '1' : '0';
+      case 'ex':
+        if (a === 'GET') return Array.from(c.ex).join(' ');
+        String(b).split(/\s+/).filter(Boolean).forEach((w) => { if (a === 'ADD') c.ex.add(w); else c.ex.delete(w); });
+        later(c, lvRender); return '1';
+      case 'find': {
+        const t = String(a).toLowerCase(), n = c.rows.length, start = Number(b), partial = has(String(c2), 'P'), wrap = has(String(c2), 'W');
+        for (let k = 1; k <= n; k++) {
+          let j = start + k; if (j >= n) { if (!wrap) break; j -= n; }
+          const v = String(c.rows[j].cells[0] || '').toLowerCase();
+          if (partial ? v.startsWith(t) : v === t) return String(j);
+        }
+        return '-1'; }
+      case 'view': if (a === '') return c.view; c.view = String(a); later(c, lvRender); return '1';
+      case 'uid': return c.rows[i] ? String(c.rows[i].uid) : '0';
+      case 'sort': { const col = i, dir = b === 'D' ? -1 : 1; c.rows.sort((x, y) => dir * String(x.cells[col] || '').localeCompare(String(y.cells[col] || ''), undefined, { numeric: true })); c.focusIdx = -1; later(c, lvRender); return '1'; }
+    }
+    return '';
+  }
+  function tvOp(dlg, c, name, a, b, c2) {
+    const h = Number(a), nd = c.nodes.get(h);
+    const sibs = (x) => (x.parent ? c.nodes.get(x.parent).kids : c.roots);
+    switch (name) {
+      case 'ins': {
+        const [text, opts] = String(c2).split(SEP); const parent = c.nodes.get(h);
+        const id = ++c.nextH, list = parent ? parent.kids : c.roots;
+        c.nodes.set(id, { h: id, text, parent: parent ? h : 0, kids: [], open: has(opts || '', 'EXPANDED'), bold: has(opts || '', 'BOLD') });
+        if (b === 'FIRST') list.unshift(id);
+        else if (b === 'SORT') { let k = 0; while (k < list.length && c.nodes.get(list[k]).text.localeCompare(text) <= 0) k++; list.splice(k, 0, id); }
+        else if (b === 'LAST' || b === '') list.push(id);
+        else { const k = list.indexOf(Number(b)); if (k < 0) list.push(id); else list.splice(k + 1, 0, id); }
+        later(c, tvRender); return String(id); }
+      case 'del': if (!nd) return '0'; { const l = sibs(nd); l.splice(l.indexOf(h), 1); tvDrop(c, h); later(c, tvRender); return '1'; }
+      case 'clear': c.nodes.clear(); c.roots = []; c.selH = 0; later(c, tvRender); return '1';
+      case 'expand': return tvOpen(dlg, c, h, String(b)) ? '1' : '0';
+      case 'find': {
+        const t = String(a).toLowerCase(); let go = Number(b) === 0;
+        const all = []; const walk = (l) => l.forEach((x) => { all.push(x); walk(c.nodes.get(x).kids); }); walk(c.roots);
+        for (const x of all) {
+          if (!go) { if (x === Number(b)) go = true; continue; }
+          const v = c.nodes.get(x).text.toLowerCase(); if (c2 === '1' ? v.startsWith(t) : v === t) return String(x);
+        }
+        return '0'; }
+      case 'rel': {
+        if (!nd) return '0';
+        if (b === 'CHILD') return String(nd.kids[0] || 0);
+        if (b === 'PARENT') return String(nd.parent);
+        const l = b.endsWith('VISIBLE') ? tvVisible(c) : sibs(nd), k = l.indexOf(h);
+        if (k < 0) return '0';
+        return String((b.startsWith('NEXT') ? l[k + 1] : l[k - 1]) || 0); }
+      case 'special': return String(a === 'ROOT' ? (c.roots[0] || 0) : a === 'SELECTED' ? c.selH : a === 'FIRSTVISIBLE' ? (c.roots[0] || 0) : 0);
+      case 'info': return nd ? nd.text + SEP + nd.kids.length + SEP + [(nd.open ? 'EXPANDED' : ''), (nd.bold ? 'BOLD' : ''), (h === c.selH ? 'SELECTED' : '')].filter(Boolean).join(' ') : '';
+      case 'text': return nd ? nd.text : '';
+      case 'modify': {
+        if (!nd) return '0'; const [flag, text, opts] = String(b).split(SEP);
+        if (has(flag, 'T')) nd.text = text;
+        if (has(flag, 'O')) { nd.bold = has(opts, 'BOLD') ? true : has(opts, 'NOTBOLD') ? false : nd.bold; if (has(opts, 'EXPANDED')) nd.open = !has(opts, 'NOTEXPANDED'); }
+        later(c, tvRender); return '1'; }
+      case 'select': if (h !== 0 && !nd) return '0'; { let p = nd && nd.parent; while (p) { c.nodes.get(p).open = true; p = c.nodes.get(p).parent; } tvSelect(dlg, c, h, 'UNKNOWN'); later(c, tvRender); return '1'; }
+    }
+    return '';
+  }
+  function tabOp(dlg, c, name, a, b) {
+    const i = Number(a);
+    switch (name) {
+      case 'ins': { const at = i < 0 || i > c.tabs.length ? c.tabs.length : i; c.tabs.splice(at, 0, { text: String(b) }); if (c.cur < 0) c.cur = 0; else if (at <= c.cur) c.cur++; tabRender(c); return String(at); }
+      case 'text': return c.tabs[i] ? c.tabs[i].text : '';
+      case 'setText': if (!c.tabs[i]) return '0'; c.tabs[i].text = String(b); tabRender(c); return '1';
+      case 'selectText': { const t = String(a).toLowerCase(), k = c.tabs.findIndex((x) => plain(x.text).toLowerCase() === t || x.text.toLowerCase() === t); if (k >= 0) { c.cur = k; tabRender(c); } return String(k); }
+      case 'rect': { const o = dlg.client.getBoundingClientRect(), r = c.page.getBoundingClientRect(); return [r.left - o.left + 2, r.top - o.top + 2, r.right - o.left - 2, r.bottom - o.top - 2].map(Math.round).join(' '); }
+    }
+    return '';
+  }
 
   /* ---- message box ------------------------------------------------------ */
   ood.msgBox = function (token, text, title, buttons, icon) {

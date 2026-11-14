@@ -14,8 +14,62 @@ from playwright.sync_api import sync_playwright
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PORT = 8017
 def log(*a): print('oodtest:', *a, flush=True)
+def sweep(tree, report):
+    """Run every .rex of a tree that requires ooDialog.cls, 5 s each, and classify what happens."""
+    import re, json
+    for f in ('ooDialog.cls', 'oodWeb.cls', 'ooShapes.cls'):
+        (ROOT / 'site' / f).write_bytes((ROOT / 'dist' / f).read_bytes())
+    files = {'/home/rexx/' + f: (ROOT / 'dist' / f).read_text() for f in ('ooDialog.cls', 'oodWeb.cls', 'ooShapes.cls')}
+    progs = []
+    for x in sorted(tree.rglob('*')):
+        if x.is_file() and x.suffix.lower() in ('.rex', '.rc', '.h', '.cls', '.txt', '.dlg', '.inp'):
+            text = x.read_text(encoding='latin-1')
+            files['/home/rexx/' + str(x.relative_to(tree))] = text
+            if x.suffix.lower() == '.rex' and re.search(r'::requires\s+["\']ooDialog.cls', text, re.I): progs.append(x)
+    srv = subprocess.Popen(['node', str(ROOT / 'site/serve.mjs'), str(ROOT / 'site'), '--port', str(PORT)],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(1.2)
+    rows = []
+    try:
+        with sync_playwright() as p:
+            b = p.chromium.launch()
+            for n, x in enumerate(progs, 1):
+                rel = str(x.relative_to(tree))
+                pg = b.new_page(viewport={'width': 1000, 'height': 700})
+                pg.goto(f'http://localhost:{PORT}/harness.html')
+                pg.evaluate('([prog, files]) => window.oodRun(prog, files)', [rel, files])
+                state = 'timeout'
+                for _ in range(25):
+                    time.sleep(0.2)
+                    if pg.evaluate('window.oodDone !== null'): state = 'ended'; break
+                    if pg.evaluate("document.querySelector('.ood-dlg') !== null"):
+                        time.sleep(0.6); state = 'dialog'; break
+                out = ''.join(pg.evaluate('window.oodOut'))
+                m = re.search(r'native function (\w+)', out)
+                err = re.search(r'Error (\d+)(?:\.\d+)?:? +(.*)', out)
+                todo = pg.evaluate("[...new Set([...document.querySelectorAll('.ood-todo')].map(e => e.textContent.split(' ')[0]))].join(' ')")
+                if m: verdict = 'native:' + m.group(1)
+                elif err and state != 'dialog': verdict = 'error:' + out[err.start():err.start() + 90].replace('\n', ' ')
+                elif state == 'dialog': verdict = 'shows' + (' placeholders:' + todo if todo else '') + (' +error' if err else '')
+                else: verdict = state
+                rows.append((rel, verdict)); log(f'{n}/{len(progs)}', rel, '->', verdict[:110])
+                pg.close()
+            b.close()
+    finally:
+        srv.terminate()
+    report.write_text('\n'.join(f'{a}\t{v}' for a, v in rows) + '\n')
+    kinds = {}
+    for _, v in rows:
+        k = v.split(' ')[0] if v.startswith('native:') else v.split(':')[0].split(' ')[0]
+        kinds[k] = kinds.get(k, 0) + 1
+    log('sweep summary:', json.dumps(dict(sorted(kinds.items(), key=lambda kv: -kv[1]))))
+    return 0
+
 def main():
     args = sys.argv[1:]
+    if '--sweep' in args:
+        i = args.index('--sweep')
+        return sweep(pathlib.Path(args[i + 1]), ROOT / 'sweep.tsv')
     shots = '--shots' in args
     tree = None
     if '--tree' in args:
