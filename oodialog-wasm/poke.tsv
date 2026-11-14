@@ -1,0 +1,70 @@
+GUI_Template.rex	1	
+calculator.rex	11	
+controls/ComboBox/comboBoxTypes.rex	8	did-not-end
+controls/ListBox/incrementalSearch.rex	1	
+controls/ListView/columnClickListView.rex	3	
+controls/ListView/subitem.editing/importList.rex	0	native:BFF_INIT
+controls/ToolTip/toolTip.rex	2	event-not-produced
+controls/TreeView/treeViewCustomDraw.rex	0	
+controls/fiscalReports.rex	8	event-not-produced
+controls/upDown.rex	10	
+controls/userStringDTP.rex	3	event-not-produced
+examples/addManyRows.rex	7	
+examples/browsePrinters.rex	5	native:BFF_INIT
+examples/fileNameDialog_demo.rex	7	
+examples/genGUID.rex	1	
+examples/imageButton.rex	1	native:BC_GETIMAGELIST
+examples/openSaveFileDemo.rex	8	native:OFD_INIT
+examples/publicRoutines_demo.rex	7	
+examples/saveFileWithFilter.rex	6	native:SFD_INIT
+examples/simpleFolderBrowse.rex	5	
+examples/useTools.rex	10	did-not-end
+menus/ContextMenu.rex	3	
+menus/ScriptMenuBar.rex	7	
+menus/UserMenuBar.rex	7	
+oobandit.rex	5	
+oobmpvu.rex	4	
+oodStandardDialogs.rex	8	
+oodStandardRoutines.rex	8	
+oodpbar.rex	3	
+oophil.rex	9	
+propertySheet.tabControls/PropertySheetDemo.rex	10	event-not-produced
+propertySheet.tabControls/UserTabDemo.rex	5	
+propertySheet.tabControls/oodListViews.rex	1	error 97.1 Object "The NIL object" does not understand message "ADDNEWATTRIBUTE". ; event-not-produced ; unhandled msg TAB 0x1331
+propertySheet.tabControls/ticketWizard.rex	3	native:PSDLG_SETWIZBUTTONS
+resizableDialogs/DialogAreaU/dlgAreaUDemo.rex	9	
+resizableDialogs/DialogAreaU/dlgAreaUDemoThree.rex	9	event-not-produced
+resizableDialogs/DialogAreaU/dlgAreaUDemoTwo.rex	9	
+resizableDialogs/ResizingAdmin/PropertySheetDemo.rex	10	event-not-produced
+resizableDialogs/ResizingAdmin/augmentedResize.rex	7	
+resizableDialogs/ResizingAdmin/basicResize.rex	5	
+sample.rex	11	did-not-end
+simple/ChangeFont.rex	3	
+simple/SimpleUpDown.rex	2	
+tutorial/drawing1.rex	4	native:DLGEXT_GETWINDOWDC
+tutorial/employe1.rex	6	
+tutorial/employe2.rex	8	
+tutorial/employe3.rex	9	
+tutorial/employe4.rex	9	
+tutorial/employe4validate.rex	9	
+tutorial/employe5.rex	10	
+tutorial/employe6.rex	10	
+tutorial/employe7.rex	10	
+tutorial/employe8.rex	9	
+tutorial/employe9.rex	9	
+tutorial/employee10menuRc.rex	11	native:GENERIC_SETLISTTABULATORS
+tutorial/employee11tab.rex	1	did-not-end
+tutorial/textScroll.rex	6	
+userGuide/exercises/Exercise02/HelloWorld.rex	1	
+userGuide/exercises/Exercise02/WoW.rex	2	
+userGuide/exercises/Exercise02/WoW2.rex	2	
+userGuide/exercises/Exercise03/Wow3.rex	2	
+userGuide/exercises/Exercise04/Extras/DlgData/ASimpleDialog.rex	4	
+userGuide/exercises/Exercise06/Customer/CustomerView.rex	0	
+userGuide/exercises/Exercise06/Extras/Popups/OffsetPopups.rex	2	
+userGuide/exercises/Exercise06/Extras/Popups/Popups.rex	2	
+userGuide/exercises/Exercise06/Order/OrderFormView.rex	0	
+userGuide/exercises/Exercise06/OrderMgr/OrderMgrView.rex	0	error 43.1 Could not find routine "OrderMgr\RequiresList.rex".
+userGuide/exercises/Exercise07/OrderMgr/OrderMgrView.rex	0	error 43.1 Could not find routine "OrderMgr\RequiresList.rex".
+userGuide/exercises/Exercise07/Support/MessageSender.rex	0	
+userGuide/exercises/Exercise08/Support/MessageSender.rex	0	

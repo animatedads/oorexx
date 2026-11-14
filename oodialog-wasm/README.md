@@ -1,4 +1,4 @@
-# ooDialog for ooRexx/WASM — v0.8.0
+# ooDialog for ooRexx/WASM — v0.9.0
 
 Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: Josep Maria Blasco's
 ooRexx/WASM (`oorexxwasm` 0.2.4, ooRexx 5.3.0) and its `js.cls`.
@@ -45,11 +45,12 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
 
     rexx tools/oodbuild.rex
     python3 tools/oodtest.py --sweep upstream/examples
+    python3 tools/oodtest.py --poke upstream/examples 0 24
     python3 tools/oodtest.py --tree upstream/examples tests/t*.rex tests/up/calculator.rex tests/up/oodpbar.rex tests/up/oodStandardRoutines.rex
 
-## State on 2026-11-14 (v0.8.0)
+## State on 2026-11-14 (v0.9.0)
 
-- Natives ported: 446 of 1,184 (37.7%). (The total fell from 1,196 because 12
+- Natives ported: 456 of 1,184 (38.5%). (The total fell from 1,196 because 12
   natives are now plain Rexx in `src/patches.txt`.)
 - Tests: 18 of 18 pass in headless Chromium (`tests/t01`..`t13` with expected
   output, the binary resource hand-off test `tests/res/t07_resdialog_binary`,
@@ -58,14 +59,21 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
   `employee11tab.rex`, a four-page property sheet from an .rc file, in which
   an employee is added and then found on the list page).
 - Sweep of all 140 upstream example programs (`oodtest.py --sweep`, results in
-  `sweep.tsv`): 68 show their dialog, 7 run to the end, 22 stop at a native not
-  ported yet (named in the file), 43 stop on another error. Of the 43, most are
-  Error 43 (a routine or `::requires` file not found: `winSystm.cls`, which is
-  Windows-only, `::requires` paths written with `\`, component files that are
-  not programs); the rest are Error 98 raised by this layer (a ResDialog or
-  BinaryMenuBar with no resource reader) and one syntax error in a sample.
-  The sweep checks that a dialog appears, not that
-  it behaves.
+  `sweep.tsv`), each run from its own directory: 61 show their dialog, 7 run to
+  the end, 9 show only a message box (6 of them are component files that cannot
+  find their header because they are meant to be started from a parent
+  program), 23 stop at a native not ported yet, 40 stop on another error (most
+  are Error 43: `winSystm.cls`, `::requires` paths written with `\`).
+  Earlier counts of "shows a dialog" included message boxes and were too high.
+- Depth probe (`oodtest.py --poke`, results in `poke.tsv`): the 70 examples
+  that show a dialog or a message box are used automatically (tabs, rows,
+  check boxes, lists, edits, menus, every button, then closed). 49 come through
+  with no error, no unhandled Windows message and a clean end. 6 more have no
+  fault except connecting an event this layer does not produce. 15 have a real
+  problem, each named in `poke.tsv`: the shell dialog classes (BrowseForFolder,
+  OpenFileDialog, SaveFileDialog), the wizard buttons, drawing, four programs
+  that do not end, and four single faults.
+  The probe proves the absence of errors, not that results are right.
 - Working, each asserted by a test: UserDialog; RcDialog (upstream's own .rc
   parser); push button, check box, radio button, group box, static text and
   frames, edit, list box, combo box, progress bar; list-view (report view,
@@ -83,7 +91,8 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
   own thread, placed with setWindowPos); tool tips (the browser's own);
   image lists (kept and counted by the controls; item icons are not drawn);
   a sizing border (THICKFRAME) with connectResize, connectMove and
-  connectSizeMoveEnded; track bar DRAG and ENDTRACK events;
+  connectSizeMoveEnded; track bar DRAG and ENDTRACK events; data attributes of
+  up-down, track bar and tab (found by the probe);
   data attributes and dlgData. stems; the connectXxxEvent methods of those
   controls; MessageDialog and the routines built on it; InputBox, IntegerBox,
   PasswordBox, MultiInputBox, ListChoice, MultiListChoice, CheckList,

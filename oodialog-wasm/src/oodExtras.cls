@@ -19,8 +19,8 @@
 ::attribute chosen unguarded       -- the answer: a path, several joined by the separator, or 0
 
 ::method init
-  expose dir fileName filters saving multi sepChar defExt caption
-  use arg preselected = "", fileFilter = "", saving = .false, caption = "", defExt = "", multi = .false, sepChar = " "
+  expose dir fileName filters saving multi sepChar defExt caption folders
+  use arg preselected = "", fileFilter = "", saving = .false, caption = "", defExt = "", multi = .false, sepChar = " ", folders = .false
   self~init:super
   self~chosen = 0
   dir = directory()
@@ -52,11 +52,12 @@
   if caption == "" then do
     if saving then caption = "Save As"
     else caption = "Open"
+    if folders then caption = "Browse For Folder"
   end
   self~create(30, 30, 260, 176, caption, "CENTER")
 
 ::method defineDialog
-  expose saving multi
+  expose saving multi folders
   self~autoDetect = .false
   self~createStaticText(-1, 8, 9, 34, 10, , "Look &in:")
   self~createEdit(10, 44, 7, 208, 12, "READONLY")
@@ -69,6 +70,7 @@
   self~createComboBox(22, 54, 148, 142, 60, "LIST")
   okText = "&Open"
   if saving then okText = "&Save"
+  if folders then okText = "OK"
   self~createPushButton(IDOK, 202, 129, 50, 14, "DEFAULT", okText)
   self~createPushButton(IDCANCEL, 202, 147, 50, 14, , "Cancel")
   self~connectListBoxEvent(20, "DBLCLK", onPick)
@@ -86,7 +88,7 @@
   self~refresh
 
 ::method refresh unguarded         -- the directory's sub-directories, then its files that match the type
-  expose dir filters
+  expose dir filters folders
   self~newEdit(10)~setText(dir)
   list = self~newListBox(20)
   list~deleteAll
@@ -101,6 +103,7 @@
   do name over names~sortWith(.CaselessComparator~new)
     list~add("["name"]")
   end
+  if folders then return               -- a folder dialog lists no files
   index = self~newComboBox(22)~selectedIndex
   if index < 1 then index = 1
   patterns = filters[index][2]~makeArray(";")
@@ -192,8 +195,13 @@
   self~refresh
 
 ::method validate unguarded        -- OK: enter a directory, or accept the file name(s)
-  expose saving multi sepChar defExt dir
+  expose saving multi sepChar defExt dir folders
   text = self~newEdit(21)~getText~strip
+  if folders then do                   -- the answer is the directory shown, or the one named
+    if text \== "" then if \self~enter(text) then return .false
+    self~chosen = dir
+    return .true
+  end
   if text == "" then return .false
   if multi then if text~pos('"') > 0 then do
     names = .array~new

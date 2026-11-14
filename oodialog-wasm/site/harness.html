@@ -5,13 +5,15 @@
 <script src="ooRexx.js"></script>
 <script>
 // Runs one Rexx program with the ooDialog files in the interpreter's file system.
-window.oodRun = async function (prog, files) {
+window.oodRun = async function (prog, files, cwd) {
   const out = document.getElementById('out');
   window.oodOut = []; window.oodDone = null;
   for (const k of Object.keys(files)) if (files[k] && files[k].b64) files[k] = Uint8Array.from(atob(files[k].b64), (ch) => ch.charCodeAt(0));
   const rexx = await ooRexx.load();
   const add = (t) => { window.oodOut.push(t); out.textContent += t; out.scrollTop = out.scrollHeight; };
-  const run = rexx.run({ args: [prog], files, js: { page: true, worker: true }, onOut: add, onErr: add });
+  const opts = { args: [prog], files, js: { page: true, worker: true }, onOut: add, onErr: add };
+  if (cwd) opts.cwd = cwd;
+  const run = rexx.run(opts);
   run.done.then((r) => { window.oodDone = { rc: r.rc, ms: r.ms }; });
   return true;
 };

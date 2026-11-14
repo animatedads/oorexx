@@ -4,27 +4,27 @@ calculator.rex	shows
 controls/ComboBox/comboBoxTypes.rex	shows
 controls/ListBox/incrementalSearch.rex	shows
 controls/ListView/columnClickListView.rex	shows
-controls/ListView/columnIcons.rex	error:Error 98 running /home/rexx/oodWeb.cls line 1274:  Execution error. Error 98.900:  ooDialo
+controls/ListView/columnIcons.rex	error:Error 98 running /home/rexx/controls/ListView/oodWeb.cls line 1297:  Execution error. Erro
 controls/ListView/customDrawListview.rex	native:CD_CUSTOMDRAWCONTROL
 controls/ListView/subitem.editing/dropDownComboBox.rex	native:CB_GETEDITCONTROL
 controls/ListView/subitem.editing/dropDownListComboBox.rex	native:DLGCTRL_SETPARENT
 controls/ListView/subitem.editing/editControl.rex	native:DLGCTRL_SETPARENT
-controls/ListView/subitem.editing/importList.rex	shows
+controls/ListView/subitem.editing/importList.rex	message:Could not locate the default importer file list directory.  Do you wish to pick an alterna
 controls/PaidHolidays.rex	native:MC_GETMINRECT
 controls/ToolBar/customizeToolBar.rex	native:TBB_INIT
-controls/ToolBar/toolBar.rex	error:Error 98 running /home/rexx/oodWeb.cls line 1274:  Execution error. Error 98.900:  ooDialo
+controls/ToolBar/toolBar.rex	error:Error 98 running /home/rexx/controls/ToolBar/oodWeb.cls line 1297:  Execution error. Error
 controls/ToolTip/comboBoxToolTip.rex	native:CB_SETCUE
 controls/ToolTip/customPositionToolTip.rex	native:GENERIC_GETTOOLTIPS
 controls/ToolTip/manageControlTool.rex	native:TI_INIT
 controls/ToolTip/toolTip.rex	shows
-controls/TreeView/treeViewCustomDraw.rex	shows
+controls/TreeView/treeViewCustomDraw.rex	message:The required data file /home/rexx/controls/TreeView/rc\treeViewCustomDraw.bmp does not exi
 controls/fiscalReports.rex	shows
 controls/upDown.rex	shows
 controls/userStringDTP.rex	shows
 editrex.rex	error:Error 43 running /home/rexx/editrex.rex line 184:  Routine not found. Error 43.901:  Could
 examples/addManyRows.rex	shows
 examples/browsePrinters.rex	shows
-examples/fileNameDialog_demo.rex	shows
+examples/fileNameDialog_demo.rex	message:REMEMBER, FileNameDialog does NOT actually open or save your specified file, it simply pro
 examples/genGUID.rex	shows
 examples/imageButton.rex	shows +error
 examples/openSaveFileDemo.rex	shows
@@ -34,9 +34,9 @@ examples/simpleFolderBrowse.rex	shows
 examples/stopWatch.rex	error:Error 43 running /home/rexx/examples/stopWatch.rex line 48:  Routine not found. Error 43.9
 examples/useTools.rex	shows
 ftyperex.rex	error:Error 43 running /home/rexx/ftyperex.rex line 180:  Routine not found. Error 43.901:  Coul
-menus/BinaryMenuBar.rex	error:Error 98 running /home/rexx/oodWeb.cls line 1274:  Execution error. Error 98.900:  ooDialo
+menus/BinaryMenuBar.rex	error:Error 98 running /home/rexx/menus/oodWeb.cls line 1297:  Execution error. Error 98.900:  o
 menus/ContextMenu.rex	shows
-menus/ScriptMenuBar.rex	error:Error 98 running /home/rexx/oodWeb.cls line 3147:  Execution error. Error 98.900:  Unable 
+menus/ScriptMenuBar.rex	shows
 menus/UserMenuBar.rex	shows
 mouse/dragNdrop.rex	native:MOUSE_LOADCURSORFROMFILE_CLS
 mouse/mouseWheel.rex	native:MOUSE_NEW_CLS
@@ -51,19 +51,19 @@ oodraw.rex	native:DLGEXT_GETWINDOWDC
 oograph.rex	native:DLGEXT_GETBITMAPSIZE
 oophil.rex	shows
 oovideo.rex	error:Error 6 running /home/rexx/oovideo.rex line 44:  Unmatched "/*" or quote. Error 6.1:  Unma
-oowalk2.rex	error:Error 98 running /home/rexx/oodWeb.cls line 1274:  Execution error. Error 98.900:  ooDialo
-oowalker.rex	shows +error
+oowalk2.rex	error:Error 98 running /home/rexx/oodWeb.cls line 1297:  Execution error. Error 98.900:  ooDialo
+oowalker.rex	native:DLGEXT_WRITETOWINDOW
 propertySheet.tabControls/PropertySheetDemo.rex	shows
-propertySheet.tabControls/TabDemo.rex	error:Error 98 running /home/rexx/oodWeb.cls line 1274:  Execution error. Error 98.900:  ooDialo
+propertySheet.tabControls/TabDemo.rex	error:Error 98 running /home/rexx/propertySheet.tabControls/oodWeb.cls line 1297:  Execution err
 propertySheet.tabControls/TabOwnerDemo.rex	native:CDI_INIT
 propertySheet.tabControls/UserTabDemo.rex	shows
-propertySheet.tabControls/oodListViews.rex	error:Error 97 running /home/rexx/ooDialog.cls line 3607:  Object method not found. Error 97.1: 
+propertySheet.tabControls/oodListViews.rex	shows +error
 propertySheet.tabControls/ticketWizard.rex	shows
 resizableDialogs/DialogAreaU/dlgAreaUDemo.rex	shows
 resizableDialogs/DialogAreaU/dlgAreaUDemoThree.rex	shows
 resizableDialogs/DialogAreaU/dlgAreaUDemoTwo.rex	shows
 resizableDialogs/ResizingAdmin/PropertySheetDemo.rex	shows
-resizableDialogs/ResizingAdmin/TabDemo.rex	error:Error 98 running /home/rexx/oodWeb.cls line 1274:  Execution error. Error 98.900:  ooDialo
+resizableDialogs/ResizingAdmin/TabDemo.rex	error:Error 98 running /home/rexx/resizableDialogs/ResizingAdmin/oodWeb.cls line 1297:  Executio
 resizableDialogs/ResizingAdmin/augmentedResize.rex	shows
 resizableDialogs/ResizingAdmin/basicResize.rex	shows
 resizableDialogs/ResizingAdmin/gbStationary.rex	native:RA_SETMAXSIZE
@@ -88,9 +88,9 @@ tutorial/employe6.rex	shows
 tutorial/employe7.rex	shows
 tutorial/employe8.rex	shows
 tutorial/employe9.rex	shows
-tutorial/employe9menuDyn.rex	error:Error 98 running /home/rexx/oodWeb.cls line 1274:  Execution error. Error 98.900:  ooDialo
-tutorial/employee10menuRc.rex	error:Error 98 running /home/rexx/oodWeb.cls line 3147:  Execution error. Error 98.900:  Unable 
-tutorial/employee11tab.rex	error:Error 98 running /home/rexx/oodWeb.cls line 3147:  Execution error. Error 98.900:  Unable 
+tutorial/employe9menuDyn.rex	error:Error 98 running /home/rexx/tutorial/oodWeb.cls line 1297:  Execution error. Error 98.900:
+tutorial/employee10menuRc.rex	shows
+tutorial/employee11tab.rex	shows
 tutorial/textScroll.rex	shows
 userGuide/exercises/Exercise02/HelloWorld.rex	shows
 userGuide/exercises/Exercise02/WoW.rex	shows
@@ -99,16 +99,16 @@ userGuide/exercises/Exercise03/Wow3.rex	shows
 userGuide/exercises/Exercise03/WowView.rex	ended
 userGuide/exercises/Exercise04/CustomerView.rex	ended
 userGuide/exercises/Exercise04/Extras/DlgData/ASimpleDialog.rex	shows
-userGuide/exercises/Exercise04/Extras/DlgData/ASimpleDialog2.rex	shows
+userGuide/exercises/Exercise04/Extras/DlgData/ASimpleDialog2.rex	error:Error 98 running /home/rexx/userGuide/exercises/Exercise04/Extras/DlgData/oodWeb.cls line 
 userGuide/exercises/Exercise05/ProductView.rex	error:Error 43 running /home/rexx/userGuide/exercises/Exercise05/ProductView.rex line 54:  Routi
 userGuide/exercises/Exercise06/Customer/CustomerListView.rex	error:Error 43 running /home/rexx/userGuide/exercises/Exercise06/Customer/CustomerListView.rex l
-userGuide/exercises/Exercise06/Customer/CustomerView.rex	shows
+userGuide/exercises/Exercise06/Customer/CustomerView.rex	message:Unable to find header file "Customer\CustomerView.h"
 userGuide/exercises/Exercise06/Extras/Popups/OffsetPopups.rex	shows
 userGuide/exercises/Exercise06/Extras/Popups/Popups.rex	shows
-userGuide/exercises/Exercise06/Order/OrderFormView.rex	shows
+userGuide/exercises/Exercise06/Order/OrderFormView.rex	message:Unable to find header file "Order\OrderFormView.h"
 userGuide/exercises/Exercise06/Order/OrderListView.rex	error:Error 43 running /home/rexx/userGuide/exercises/Exercise06/Order/OrderListView.rex line 61
 userGuide/exercises/Exercise06/Order/OrderView.rex	error:Error 43 running /home/rexx/userGuide/exercises/Exercise06/Order/OrderView.rex line 61:  R
-userGuide/exercises/Exercise06/OrderMgr/OrderMgrView.rex	shows
+userGuide/exercises/Exercise06/OrderMgr/OrderMgrView.rex	message:Unable to find header file "OrderMgr\OrderMgrView.h"
 userGuide/exercises/Exercise06/Product/ProductListView.rex	error:Error 43 running /home/rexx/userGuide/exercises/Exercise06/Product/ProductListView.rex lin
 userGuide/exercises/Exercise06/Product/ProductView.rex	error:Error 43 running /home/rexx/userGuide/exercises/Exercise06/Product/ProductView.rex line 63
 userGuide/exercises/Exercise07/Customer/CustomerListView.rex	error:Error 43 running /home/rexx/userGuide/exercises/Exercise07/Customer/CustomerListView.rex l
@@ -118,10 +118,10 @@ userGuide/exercises/Exercise07/Extras/Wow4/WowView.rex	error:Error 43 running /h
 userGuide/exercises/Exercise07/Order/OrderFormView.rex	error:Error 43 running /home/rexx/userGuide/exercises/Exercise07/Order/OrderFormView.rex line 60
 userGuide/exercises/Exercise07/Order/OrderListView.rex	error:Error 43 running /home/rexx/userGuide/exercises/Exercise07/Order/OrderListView.rex line 66
 userGuide/exercises/Exercise07/Order/OrderView.rex	error:Error 43 running /home/rexx/userGuide/exercises/Exercise07/Order/OrderView.rex line 66:  R
-userGuide/exercises/Exercise07/OrderMgr/OrderMgrView.rex	shows
+userGuide/exercises/Exercise07/OrderMgr/OrderMgrView.rex	message:Unable to find header file "OrderMgr\OrderMgrView.h"
 userGuide/exercises/Exercise07/Product/ProductListView.rex	error:Error 43 running /home/rexx/userGuide/exercises/Exercise07/Product/ProductListView.rex lin
 userGuide/exercises/Exercise07/Product/ProductView.rex	error:Error 43 running /home/rexx/userGuide/exercises/Exercise07/Product/ProductView.rex line 64
-userGuide/exercises/Exercise07/Support/MessageSender.rex	shows
+userGuide/exercises/Exercise07/Support/MessageSender.rex	message:Unable to find header file "..\Exercise07\Support\MessageSender.h"
 userGuide/exercises/Exercise07/Support/Model.rex	ended
 userGuide/exercises/Exercise07/Support/RcView.rex	ended
 userGuide/exercises/Exercise07/Support/ResView.rex	ended
@@ -135,6 +135,6 @@ userGuide/exercises/Exercise08/Order/OrderView.rex	error:Error 43 running /home/
 userGuide/exercises/Exercise08/OrderMgr/OrderMgrView.rex	error:Error 43 running /home/rexx/userGuide/exercises/Exercise08/OrderMgr/OrderMgrView.rex line 
 userGuide/exercises/Exercise08/Product/ProductListView.rex	error:Error 43 running /home/rexx/userGuide/exercises/Exercise08/Product/ProductListView.rex lin
 userGuide/exercises/Exercise08/Product/ProductView.rex	error:Error 43 running /home/rexx/userGuide/exercises/Exercise08/Product/ProductView.rex line 67
-userGuide/exercises/Exercise08/Support/MessageSender.rex	shows
+userGuide/exercises/Exercise08/Support/MessageSender.rex	message:Unable to find header file "..\Exercise08\Support\MessageSender.h"
 userGuide/exercises/Exercise08/Support/View.rex	error:Error 43 running /home/rexx/userGuide/exercises/Exercise08/Support/View.rex line 65:  Rout
 winsystem/deskicon.rex	error:Error 43 running /home/rexx/winsystem/deskicon.rex line 98:  Routine not found. Error 43.9

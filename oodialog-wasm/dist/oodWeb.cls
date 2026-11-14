@@ -24,7 +24,7 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.8.0"
+  return "0.9.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute key unguarded
@@ -102,7 +102,7 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.8.0"
+  return "0.9.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute rexxSelf unguarded
@@ -131,7 +131,7 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.8.0"
+  return "0.9.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute dlg unguarded             -- its dialog's OodDlg
@@ -149,7 +149,7 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.8.0"
+  return "0.9.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::method module_version unguarded
@@ -875,6 +875,16 @@ syntax:
   use arg d, id, kind
   select
     when kind == "CHECK" | kind == "RADIO" then return self~winMsg(d, id, 240)
+    when kind == "UPDOWN" then return self~winMsg(d, id, 1138)
+    when kind == "TRACKBAR" then return self~winMsg(d, id, 1024)
+    when kind == "TAB" then do
+      current = self~winMsg(d, id, 4875)
+      if current < 0 then return ""
+      return self~ctlOp(d, id, "tab.text", current)
+    end
+    when kind == "LISTVIEW" then return self~ctlOp(d, id, "lv.next", -1, "SELECTED")
+    when kind == "TREEVIEW" then return self~ctlOp(d, id, "tv.text", self~ctlOp(d, id, "tv.special", "SELECTED"))
+    when kind == "DATETIMEPICKER" | kind == "MONTHCALENDAR" | kind == "SCROLLBAR" | kind == "PROGRESS" then return ""
     when kind == "LIST" then do
       if self~kindOpts(d, id)~pos("MULTI") > 0 then return self~ctlOp(d, id, "selItems")
       return self~ctlOp(d, id, "getText")
@@ -901,6 +911,17 @@ syntax:
     when kind == "COMBO" then do
       if data \== "" then self~ctlOp(d, id, "selectText", data)
     end
+    when kind == "UPDOWN" then do
+      if data~datatype("W") then self~winMsg(d, id, 1137, 0, data)
+    end
+    when kind == "TRACKBAR" then do
+      if data~datatype("W") then self~winMsg(d, id, 1029, 1, data)
+    end
+    when kind == "TAB" then do
+      if data \== "" then self~ctlOp(d, id, "tab.selectText", data)
+    end
+    when kind == "EDIT" | kind == "STATIC" then self~ctlOp(d, id, "setText", data)
+    when kind == "LISTVIEW" | kind == "TREEVIEW" | kind == "DATETIMEPICKER" | kind == "MONTHCALENDAR" | kind == "SCROLLBAR" | kind == "PROGRESS" then nop
     otherwise self~ctlOp(d, id, "setText", data)
   end
   return 0
@@ -1246,10 +1267,12 @@ syntax:
 ::method dyndlg_addIconResource unguarded     -- icons are not shown yet
   return 0
 
-::method dyndlg_createNamedControl unguarded  -- list-view, tree-view, tab ...: shown as a placeholder for now
+::method dyndlg_createNamedControl unguarded  -- createListView, createTreeView, createTab, createUpDown, createTrackBar ...
   use arg self_, msg, a
-  id = self~addItem(self_, msg~substr(7), a[1], a[2], a[3], a[4], a[5], self~opt(a, 6), "")
+  kind = msg~substr(7)
+  id = self~addItem(self_, kind, a[1], a[2], a[3], a[4], a[5], self~opt(a, 6), "")
   if id < 1 then return id
+  if self_~autoDetect then self~connectCreated(self_, a[1], id, self~opt(a, 7), kind)
   return 0
 
 /*---- ResDialog and BinaryMenuBar: binary Windows resources -----------------------------*/
@@ -2121,7 +2144,7 @@ syntax:
   return self_~oodPeer~size
 ::method il_handle unguarded
   use arg self_
-  return "0x"d2x(self_~oodPeer~identityHash)~right(16, "0")
+  return "0x"d2x(self_~oodPeer~identityHash~abs)~right(16, "0")
 ::method il_isNull unguarded
   return .false
 ::method il_release unguarded
@@ -2175,6 +2198,9 @@ syntax:
   list = p~dlg~store[p~id "imagelist"]
   if list == .nil then return .nil
   return list
+::method bc_getImageList unguarded
+  use arg self_
+  return self~getImageListOf(self_)
 ::method lv_getImageList unguarded
   use arg self_
   return self~getImageListOf(self_)
@@ -2203,6 +2229,10 @@ syntax:
   return cached
 ::method tt_addTool unguarded      -- addTool(control, text)
   use arg self_, msg, a
+  p = self_~oodPeer
+  count = p~dlg~store[p~id "tools"]
+  if count == .nil then count = 0
+  p~dlg~store[p~id "tools"] = count + 1
   tool = a[1]~oodPeer
   if tool~isA(.OodDlg) then self~ctlOpWhenLive(tool, 0, "tip", self~opt(a, 2))
   else self~ctlOpWhenLive(tool~dlg, tool~id, "tip", self~opt(a, 2))
@@ -2236,6 +2266,13 @@ syntax:
   size = 8
   if a~hasIndex(2) then size = a[2]
   style = ""
+  if a~hasIndex(3) then if a[3]~isA(.String) then do
+    words = a[3]~upper
+    if words~pos("BOLD") > 0 | words~pos("THICK") > 0 then style = style"B"
+    if words~pos("ITALIC") > 0 then style = style"I"
+    if words~pos("UNDERLINE") > 0 then style = style"U"
+    return self~newFont(a[1], size, style)
+  end
   if a~hasIndex(3) then do
     d = a[3]
     if d~hasIndex("WEIGHT") then if d~weight >= 600 then style = style"B"
@@ -2270,6 +2307,47 @@ syntax:
   if a~hasIndex(2) then background = self~colorOf(a[2])
   if a~hasIndex(3) then foreground = self~colorOf(a[3])
   self~ctlOp(self_~oodPeer, self~resolveId(self_, a[1]), "color", background, foreground)
+  return 0
+
+/*---- the folder dialog, and what the depth probe named -------------------------------------------*/
+::method sfb_getFolder unguarded   -- .SimpleFolderBrowse~getFolder(title, banner, hint, startDir, root, owner): "" if cancelled
+  use arg self_, msg, a
+  start = self~opt(a, 4)
+  if start \== "" then start = self~path(start)
+  dlg = self~classOf("OodFileDialog")~new(start, "", .false, self~opt(a, 1), "", .false, " ", .true)
+  dlg~execute("SHOWTOP")
+  if dlg~chosen == 0 then return ""
+  return dlg~chosen
+::method winex_deleteObject unguarded
+  return 0
+::method winex_deleteFont unguarded
+  return 0
+::method e_style unguarded         -- addStyle, removeStyle, replaceStyle of an edit control: not applied yet
+  return 0
+::method ud_getAcceleration unguarded
+  return .array~new
+::method tt_getToolCount unguarded
+  use arg self_
+  count = self_~oodPeer~dlg~store[self_~oodPeer~id "tools"]
+  if count == .nil then return 0
+  return count
+::method cb_setFullColor unguarded
+  use arg self_, msg, a
+  self~op(self_, "color", self~colorOf(self~argOr(a, 1)), self~colorOf(self~argOr(a, 2)))
+  return .true
+::method cb_removeFullColor unguarded
+  return .true
+::method cb_setCue unguarded
+  use arg self_, msg, a
+  self~op(self_, "cue", a[1])
+  return 0
+::method dlgext_scrollText unguarded -- scrollText(control, text ...): the text is shown, not scrolled
+  use arg self_, msg, a
+  target = a[1]
+  if \target~isA(.String) then target = target~hwnd
+  id = self~number(target) // 65536
+  if \target~left(2)~caselessEquals("0x") then id = self~resolveId(self_, target)
+  self~ctlOp(self_~oodPeer, id, "setText", self~opt(a, 2))
   return 0
 
 /*---- more small ones ------------------------------------------------------------------------------*/
@@ -2821,25 +2899,29 @@ syntax:
 ::method wb_foreGroundWindow unguarded
   return 0
 
-::method wb_windowRect unguarded
+::method wb_windowRect unguarded    -- of this window, or of the window whose handle is given
   use arg self_, msg, a
-  parse value self~op(self_, "rect") with left top right bottom
-  if left == "" then return .Rect~new
   if a~hasIndex(1) then do
-    r = a[1]
-    r~left = left; r~top = top; r~right = right; r~bottom = bottom
-    return 0
+    handle = self~number(a[1])
+    owner = self~dialogOf(handle % 65536)
+    if owner == .nil then return .Rect~new
+    answer = self~ctlOp(owner, handle // 65536, "rect")
   end
+  else answer = self~op(self_, "rect")
+  parse var answer left top right bottom
+  if left == "" then return .Rect~new
   return .Rect~new(left, top, right, bottom)
-::method wb_clientRect unguarded
+::method wb_clientRect unguarded    -- of this window, or of the window whose handle is given
   use arg self_, msg, a
-  parse value self~op(self_, "clientRect") with left top right bottom
-  if left == "" then return .Rect~new
   if a~hasIndex(1) then do
-    r = a[1]
-    r~left = left; r~top = top; r~right = right; r~bottom = bottom
-    return 0
+    handle = self~number(a[1])
+    owner = self~dialogOf(handle % 65536)
+    if owner == .nil then return .Rect~new
+    answer = self~ctlOp(owner, handle // 65536, "clientRect")
   end
+  else answer = self~op(self_, "clientRect")
+  parse var answer left top right bottom
+  if left == "" then return .Rect~new
   return .Rect~new(left, top, right, bottom)
 ::method wb_getSizePos unguarded   -- getRealPos, getRealSize
   use arg self_, msg
@@ -3475,7 +3557,7 @@ syntax:
   return self_~oodPeer~wID
 ::method menu_getHMenu unguarded
   use arg self_
-  return "0x"d2x(self_~oodPeer~identityHash)~right(16, "0")
+  return "0x"d2x(self_~oodPeer~identityHash~abs)~right(16, "0")
 ::method menu_getMenuHandle unguarded
   forward message "menu_getHMenu"
 ::method menu_isValidMenu unguarded
@@ -4189,7 +4271,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
         up.type = dn.type = 'button'; up.tabIndex = dn.tabIndex = -1; up.textContent = '\u25B4'; dn.textContent = '\u25BE';
         el.append(up, dn);
         if (has(o, 'AUTOBUDDY') && dlg.all.length) c.buddy = dlg.all[dlg.all.length - 1].id;
-        c.setInt = has(o, 'SETBUDDYINT'); c.wrap = has(o, 'WRAP');
+        c.setInt = has(o, 'BUDDYINT'); c.wrap = has(o, 'WRAP');
         const step = (d) => {
           let np = c.pos + d;
           if (np > c.max) np = c.wrap ? c.min : c.max; if (np < c.min) np = c.wrap ? c.max : c.min;
@@ -4483,6 +4565,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
           case 0x18B: return String(m.options.length);                                 // LB_GETCOUNT
           case 0x190: return String(m.selectedOptions.length);                         // LB_GETSELCOUNT
           case 0x18E: return '0';                                                      // LB_GETTOPINDEX
+          case 0x194: case 0x193: return '0';                                          // LB_SETHORIZONTALEXTENT, LB_GETHORIZONTALEXTENT
           case 0x197: if (m.options[w]) m.options[w].scrollIntoView({ block: 'nearest' }); return '0'; // LB_SETTOPINDEX
         }
         break;

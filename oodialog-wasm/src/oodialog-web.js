@@ -398,7 +398,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
         up.type = dn.type = 'button'; up.tabIndex = dn.tabIndex = -1; up.textContent = '\u25B4'; dn.textContent = '\u25BE';
         el.append(up, dn);
         if (has(o, 'AUTOBUDDY') && dlg.all.length) c.buddy = dlg.all[dlg.all.length - 1].id;
-        c.setInt = has(o, 'SETBUDDYINT'); c.wrap = has(o, 'WRAP');
+        c.setInt = has(o, 'BUDDYINT'); c.wrap = has(o, 'WRAP');
         const step = (d) => {
           let np = c.pos + d;
           if (np > c.max) np = c.wrap ? c.min : c.max; if (np < c.min) np = c.wrap ? c.max : c.min;
@@ -692,6 +692,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
           case 0x18B: return String(m.options.length);                                 // LB_GETCOUNT
           case 0x190: return String(m.selectedOptions.length);                         // LB_GETSELCOUNT
           case 0x18E: return '0';                                                      // LB_GETTOPINDEX
+          case 0x194: case 0x193: return '0';                                          // LB_SETHORIZONTALEXTENT, LB_GETHORIZONTALEXTENT
           case 0x197: if (m.options[w]) m.options[w].scrollIntoView({ block: 'nearest' }); return '0'; // LB_SETTOPINDEX
         }
         break;
