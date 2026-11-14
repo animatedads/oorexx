@@ -1,0 +1,10 @@
+wait .ood-dlg >> text=Close
+sleep 300
+click .ood-dlg .ood-tv >> text=RxSock
+sleep 300
+expect document.querySelector('.ood-dlg').innerText.includes('Node: RxSock') ==> True
+click .ood-dlg >> text=Read the level
+sleep 300
+expect document.querySelector('.ood-dlg').innerText.includes('Level: 30') ==> True
+shot gadgets_run
+click .ood-dlg >> text=Close

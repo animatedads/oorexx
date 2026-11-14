@@ -228,6 +228,24 @@
           body.appendChild(b);
         });
         break; }
+      case 'TREEVIEW': {
+        body.className = 'dz-tree';
+        for (const node of String(c.nodes || '').split('|').filter(Boolean)) {
+          const depth = node.length - node.replace(/^\.+/, '').length;
+          const r = D.createElement('div'); r.style.paddingLeft = (depth * 1.1 + 0.2) + 'em';
+          r.textContent = (depth ? '└ ' : '') + node.slice(depth); body.appendChild(r);
+        }
+        break; }
+      case 'TRACKBAR': {
+        body.className = 'dz-track';
+        const span = (Number(c.max) - Number(c.min)) || 1;
+        const k = D.createElement('i'); k.style.left = 'calc(' + Math.max(0, Math.min(100, (Number(c.pos) - Number(c.min)) * 100 / span)) + '% - 4px)';
+        body.appendChild(k); break; }
+      case 'DATETIME': {
+        body.className = 'dz-edit dz-date';
+        const now = new Date();
+        body.append(opts.includes('TIME') ? now.toTimeString().slice(0, 8) : now.toLocaleDateString(), Object.assign(D.createElement('span'), { textContent: '▾' }));
+        break; }
       default: body.textContent = c.type;
     }
     el.appendChild(body);
@@ -350,7 +368,7 @@
     const id = D.createElement('div'); id.className = 'ro hint'; id.textContent = 'id ' + c.id + (c.role ? ' → ID' + c.role : ''); box.appendChild(id);
   }
   const LABELS = { w: 'width', h: 'height', items: 'items (a|b|c)', groupstart: 'starts group', interval: 'interval (s)',
-    columns: 'columns (Title:width|…)', rows: 'rows (a;b|c;d)', tabs: 'tabs (a|b)', popup: 'menu', text: 'text' };
+    columns: 'columns (Title:width|…)', nodes: 'nodes (a|.child|..grandchild)', rows: 'rows (a;b|c;d)', tabs: 'tabs (a|b)', popup: 'menu', text: 'text' };
   function propInput(name, key, value) {
     const l = D.createElement('label'); l.append(LABELS[key] || key);
     const i = D.createElement('input'); i.type = 'text'; i.value = value == null ? '' : value; i.dataset.prop = key;

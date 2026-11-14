@@ -82,7 +82,7 @@ call check "actions name the control", acts~pos("self~lcd~setText(") > 0
 call check "list actions for a list only", acts~pos("~add(") == 0
 
 -- 8. versions
-call check "module_version", .OodDesign~module_version == "0.2.0" & d~module_version == "0.2.0"
+call check "module_version", .OodDesign~module_version == "0.3.0" & d~module_version == "0.3.0"
 call check "module_lastChanged", .OodCatalog~module_lastChanged \== ""
 
 -- 9. v0.2: tab pages, list view, menu bar
@@ -110,6 +110,17 @@ call check "renaming a tab moves its pages", v~getProp("txtNotes", "page") == "t
 v~removeControl("tabs1")
 call check "removing a tab leaves its controls on no page", v~getProp("txtNotes", "page") == ""
 
+-- 10. v0.3: tree view, track bar, date picker
+g = .gadgetsDesign~build
+gsrc = g~generate
+call check "gadgets round trip", .OodDesign~fromSource(gsrc)~generate == gsrc
+call check "tree root expanded", gsrc~pos('self~tvRexx~add("ooRexx", , , "EXPANDED")') > 0
+call check "tree depth as blank arguments", gsrc~pos('self~tvRexx~add( , , "RxSock")') > 0
+call check "track bar range and position", gsrc~pos("self~trkLevel~initRange(0, 50)") > 0 & gsrc~pos("self~trkLevel~pos = 30") > 0
+call check "date picker event connected", gsrc~pos('self~connectDateTimePickerEvent(103, "DATETIMECHANGE", "on_dtpWhen_datetimechange")') > 0
+call refuses "a tree whose first node is a child", "g~setProp('tvRexx', 'nodes', '.orphan|top')"
+call refuses "a tree node with no text", "g~setProp('tvRexx', 'nodes', 'top|..')"
+
 say "t01_model:" checks - fails "of" checks "checks passed"
 if fails > 0 then return 1
 return 0
@@ -124,7 +135,7 @@ check: procedure expose fails checks
   end
   return
 
-refuses: procedure expose fails checks d v
+refuses: procedure expose fails checks d v g
   use arg refLabel, refCode
   checks = checks + 1
   signal on syntax name refused
@@ -147,3 +158,4 @@ write: procedure
 ::requires "OodDesigner.cls"
 ::requires "calculator.rex"
 ::requires "views.rex"
+::requires "gadgets.rex"

@@ -6,7 +6,7 @@
      OODIALOG_DIST_DIR  ooDialog/WASM's dist/ (ooDialog.cls, oodWeb.cls, ooShapes.cls)
    Run in the designer's directory.  Writes site/: the page, the runtime,
    OodDesigner.cls, ood/ (ooDialog/WASM) and examples/ (made by
-   tests/calculator.rex, threads.rex and views.rex through OodDesign). */
+   tests/calculator.rex, threads.rex, views.rex and gadgets.rex through OodDesign). */
 parse arg runtime oodDist
 if oodDist == "" then do
   say "usage: rexx tools/build.rex RUNTIME_DIR OODIALOG_DIST_DIR"
@@ -27,6 +27,7 @@ call SysMkDir "site" || sep || "examples"
 call write "site/examples/Calculator.rex", .calcDesign~build~generate
 call write "site/examples/Threads.rex", .threadsDesign~build~generate
 call write "site/examples/Contacts.rex", .viewsDesign~build~generate
+call write "site/examples/Gadgets.rex", .gadgetsDesign~build~generate
 call log "build: done"
 return 0
 
@@ -58,3 +59,4 @@ write: procedure
 ::requires "calculator.rex"
 ::requires "threads.rex"
 ::requires "views.rex"
+::requires "gadgets.rex"

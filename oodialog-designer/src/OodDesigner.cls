@@ -19,11 +19,11 @@
 
 ::class OodModule public mixinclass Object
 ::method module_version class
-  return "0.2.0"
+  return "0.3.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::method module_version
-  return "0.2.0"
+  return "0.3.0"
 ::method module_lastChanged
   return "2026-11-14"
 
@@ -312,6 +312,12 @@
     c~setProp("exstyles", "FULLROWSELECT")
   end
   if k~type == "TAB" then c~setProp("tabs", "Page 1|Page 2")
+  if k~type == "TREEVIEW" then c~setProp("nodes", "Top|.Child|.Child")
+  if k~type == "TRACKBAR" then do
+    c~setProp("min", 0)
+    c~setProp("max", 100)
+    c~setProp("pos", 0)
+  end
   if k~type == "MENUITEM" then do
     popup = "&File"
     do o over controls
@@ -526,6 +532,15 @@
     when key == "interval" then do
       if \datatype(value, "N") then raise syntax 93.900 array("interval is a number of seconds")
       if value <= 0 then raise syntax 93.900 array("interval must be more than 0")
+      c~setProp(key, value)
+    end
+    when key == "nodes" then do
+      do node over value~makeArray("|")
+        depth = node~verify(".") - 1
+        if depth < 0 then raise syntax 93.900 array("A node needs text after its dots:" node)
+        if node~substr(depth + 1)~strip == "" then raise syntax 93.900 array("A node needs text after its dots:" node)
+      end
+      if value~left(1) == "." then raise syntax 93.900 array("The first node is a top node (no dots)")
       c~setProp(key, value)
     end
     when key == "text" | key == "items" | key == "rows" then do
@@ -997,6 +1012,25 @@
         end
       end
     end
+    if c~type == "TREEVIEW" then do
+      -- a node's dots are its depth: TreeView~add takes it as leading blank
+      -- arguments; a node with children starts expanded
+      nodes = c~prop("nodes")~makeArray("|")
+      do i = 1 to nodes~items
+        node = nodes[i]
+        depth = node~verify(".") - 1
+        tail = ""
+        if i < nodes~items then do
+          if nodes[i + 1]~verify(".") - 1 > depth then tail = ", , , ""EXPANDED"""
+        end
+        if depth = 0 then out~append("  self~"c~name"~add("oodRx(node) || tail")")
+        else out~append("  self~"c~name"~add(" || copies(" ,", depth) || " " || oodRx(node~substr(depth + 1)) || tail || ")")
+      end
+    end
+    if c~type == "TRACKBAR" then do
+      out~append("  self~"c~name"~initRange("c~prop("min")"," c~prop("max")")")
+      out~append("  self~"c~name"~pos =" c~prop("pos"))
+    end
     if c~type == "TAB" then do
       line = ""
       do t over c~prop("tabs")~makeArray("|")
@@ -1333,6 +1367,9 @@ kind type=COMBOBOX label="Combo box" prefix=cbo create=createComboBox access=new
 kind type=PROGRESSBAR label="Progress bar" prefix=prg create=createProgressBar access=newProgressBar args="" w=100 h=10 opts="SMOOTH VERTICAL HIDDEN" props="min max pos opts"
 kind type=LISTVIEW label="List view" prefix=lv create=createListView access=newListView args="" w=120 h=60 events="SELECTCHANGED COLUMNCLICK CHECKBOXCHANGED" connect=connectListViewEvent opts="REPORT LIST ICON SMALLICON SINGLESEL SHOWSELALWAYS GROUP NOTAB DISABLED HIDDEN" defopts="REPORT SHOWSELALWAYS" exopts="FULLROWSELECT GRIDLINES CHECKBOXES" props="columns rows exstyles opts"
 kind type=TAB label="Tab strip" prefix=tab create=createTab access=newTab args="" w=120 h=14 events=SELCHANGE connect=connectTabEvent opts="BUTTONS MULTILINE GROUP NOTAB DISABLED HIDDEN" props="tabs opts"
+kind type=TREEVIEW label="Tree view" prefix=tv create=createTreeView access=newTreeView args="" w=100 h=60 events=SELCHANGED connect=connectTreeViewEvent opts="LINES BUTTONS ATROOT SHOWSELALWAYS GROUP NOTAB DISABLED HIDDEN" defopts="LINES BUTTONS ATROOT SHOWSELALWAYS" props="nodes opts"
+kind type=TRACKBAR label="Track bar" prefix=trk create=createTrackBar access=newTrackBar args="" w=100 h=16 opts="HORIZONTAL VERTICAL AUTOTICKS NOTICKS BOTH TOP BOTTOM GROUP NOTAB DISABLED HIDDEN" defopts="HORIZONTAL AUTOTICKS" props="min max pos opts"
+kind type=DATETIME label="Date picker" prefix=dtp create=createDateTimePicker access=newDateTimePicker args="" w=80 h=12 events=DATETIMECHANGE connect=connectDateTimePickerEvent opts="SHORT LONG TIME SHOWNONE UPDOWN GROUP NOTAB DISABLED HIDDEN" defopts=SHORT props="opts"
 kind type=MENUITEM label="Menu item" prefix=mnu nonvisual=1 events=CLICKED props="popup text checked grayed"
 kind type=TIMER label="Timer thread" prefix=tmr nonvisual=1 events=TICK props="interval enabled"
 form events="INIT OK CANCEL"
@@ -1341,6 +1378,8 @@ evargs type=LISTVIEW event=COLUMNCLICK args="id, column, list"
 evargs type=LISTVIEW event=CHECKBOXCHANGED args="id, item, state, list"
 evargs type=TAB event=SELCHANGE args="id, hwnd, tab"
 evargs type=MENUITEM event=CLICKED args="info"
+evargs type=TREEVIEW event=SELCHANGED args="id, old, oldData, new, newData, action, tree"
+evargs type=DATETIME event=DATETIMECHANGE args="dt, valid, id, hwnd, code, dtp"
 action types=* label="Set its text" code="self~%n~setText(""text"")"
 action types=* label="Get its text" code="text = self~%n~getText"
 action types=* label="Disable it" code="self~%n~disable"
@@ -1364,6 +1403,14 @@ action types=LISTVIEW label="Count the rows" code="n = self~%n~items"
 action types=LISTVIEW label="Remove all rows" code="self~%n~deleteAll"
 action types=TAB label="The selected tab (1 = first)" code="page = self~%n~selectedIndex + 1"
 action types=TAB label="Its selected tab's text" code="text = self~%n~selected"
+action types=TREEVIEW label="The selected node's text" code="text = self~%n~itemText(self~%n~selected)"
+action types=TREEVIEW label="Add a top node" code="node = self~%n~add(""text"")"
+action types=TREEVIEW label="Add a child to the last node" code="node = self~%n~add( , ""text"")"
+action types=TREEVIEW label="Remove all nodes" code="self~%n~deleteAll"
+action types=TRACKBAR label="Its position" code="pos = self~%n~pos"
+action types=TRACKBAR label="Set its position" code="self~%n~pos = 50"
+action types=DATETIME label="Its date and time" code="dt = self~%n~getDateTime"
+action types=DATETIME label="Set it to now" code="self~%n~setDateTime(.DateTime~new)"
 action types=MENUITEM label="Check it" code="self~menuBar~check(self~%n)"
 action types=MENUITEM label="Uncheck it" code="self~menuBar~unCheck(self~%n)"
 action types=MENUITEM label="Is it checked?" code="if self~menuBar~isChecked(self~%n) then nop"

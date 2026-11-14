@@ -1,4 +1,4 @@
-# ooDialog Designer — v0.2.0
+# ooDialog Designer — v0.3.0
 
 Architecture: Tom Dyer. Code: Claude (Opus 5.5). README written by Claude (Opus 5.5).
 It runs on ooDialog/WASM v0.7.0 (code: Claude (Fable 5.2)) and on Josep Maria
@@ -39,6 +39,9 @@ ooDialog/WASM:
   passes the event on to your own SELCHANGE code, if you wrote any;
 - **list views**: columns (`Name:80|Role:84`, widths in dialog units),
   starting rows and extended styles;
+- **tree views** (nodes `ooRexx|.Interpreter|.Extensions|..ooDialog`: the
+  dots give the depth, and a node with children starts expanded), **track
+  bars** (range and position) and **date pickers** (DATETIMECHANGE);
 - **a menu bar**: menu items are non-visual controls, each with a menu
   (popup), text (`-` is a separator), checked/grayed flags and a CLICKED
   event. The bar is attached in `initDialog`; upstream keeps it as
@@ -105,14 +108,15 @@ Then open `http://localhost:8080/designer.html`.
 Python drives the browser in the second command only; everything the
 designer decides is in ooRexx.
 
-## State (2026-11-14, v0.2.0)
+## State (2026-11-14, v0.3.0)
 
-- `tests/t01_model.rex`: 56 of 56 checks pass under ooRexx/WASM in Node. They
+- `tests/t01_model.rex`: 63 of 63 checks pass under ooRexx/WASM in Node. They
   cover generation, a byte-identical round trip through the `::RESOURCE`,
   background and timer threads, renames that rewrite `self~old` (and move a
   tab's pages), fifteen refusals, the tab page handler, list-view columns and
-  rows, the menu bar, actions, and `module_version`.
-- `tools/dztest.py`: 6 of 6 scenarios pass in headless Chromium:
+  rows, the menu bar, tree depth and expansion, track bar and date picker,
+  actions, and `module_version`.
+- `tools/dztest.py`: 7 of 7 scenarios pass in headless Chromium:
   1. **hand:** a dialog built with the mouse (drop, rename, styles,
      variable, drag-an-action, move and resize), then run. The event code sees
      the variable and the field, and INIT's text survives `execute`.
@@ -129,18 +133,29 @@ designer decides is in ooRexx.
      switch while you design, and the page property is set. In the run, the
      list view's event fires, the Notes page shows, the menu adds a row and
      Exit cancels.
-- `tests/gen/Calculator.rex` and `tests/gen/Contacts.rex` (generated) also
-  pass the ooDialog/WASM harness, `oodtest.py`, with their `.steps` files.
+  7. **gadgets:** tree view, track bar and date picker drawn while
+     designing; in the run, the tree's SELCHANGED fires and the track bar
+     reads 30.
+- `tests/gen/Calculator.rex`, `Contacts.rex` and `Gadgets.rex` (generated)
+  also pass the ooDialog/WASM harness, `oodtest.py`, with their `.steps`
+  files.
+- `tests/wincheck.rex` is the Windows ooDialog check: it loads the
+  Calculator, Threads and Contacts examples, shows each with
+  `executeAsync`, presses their buttons with `Button~click` (BM_CLICK) and
+  makes 24 checks. It has been sent to CODEX-PC (REQ-00003589). On
+  ooDialog/WASM 18 of 24 pass: `executeAsync` there takes no events until
+  `endAsyncExecution`, so the clicks arrive late. That is a limit of
+  ooDialog/WASM, not of the designer.
 - Pitfall lint (Boston Crab `rexx_pitfalls.rex`): clean on all ooRexx here.
 - Not yet run on Windows ooDialog. The generated code uses only documented
   upstream API (`createXxx`, `connectXxxEvent`, `newXxx`, `setData`/`getData`,
   `isDialogActive`, `start`, `SysSleep`, `UserMenuBar`, `insertColumn`,
-  `addRow`, `addSequence`).
+  `addRow`, `addSequence`, `TreeView~add`, `initRange`).
 
 ## Not yet
 
-- Controls: tree-view, track bar, up-down, date-time picker and images. The
-  port has them, and each is a catalogue line plus its drawing in the page.
+- Controls: up-down (it must follow its buddy), month calendar and images.
+- Track bar events: ooDialog/WASM has none yet.
 - Tab pages as ControlDialogs. A page here is a set of controls shown and
   hidden; the tab strip is a strip, with its controls placed beside it, not
   over it (Windows draws controls over a tab control in z-order).

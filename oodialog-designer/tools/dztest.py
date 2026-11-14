@@ -3,7 +3,7 @@
 Architecture: Tom Dyer.  Code: Claude (Opus 5.5).
 
 usage: python3 tools/dztest.py [scenario ...]     (after rexx tools/build.rex)
-Scenarios: hand, calculator, threads, refuse, saveopen, views (default: all).
+Scenarios: hand, calculator, threads, refuse, saveopen, views, gadgets (default: all).
 Python is used here only because this tool drives a browser (Playwright);
 the designer's model, generator and reader are ooRexx (src/OodDesigner.cls)
 and are tested without a browser by tests/t01_model.rex.  Progress is logged
@@ -181,7 +181,22 @@ def sc_views(pg):
     pg.click('.ood-menubar >> text=People'); pg.click('.ood-menu >> text=Exit')
     expect('Exit cancels', wait_end(pg)['rc'], 2)
 
-SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views}
+def sc_gadgets(pg):
+    """Tree view, track bar, date picker: drawn while designing, then run: the
+    tree's SELCHANGED and the track bar's position."""
+    ready(pg); open_example(pg, 'examples/Gadgets.rex')
+    expect('round trip in the browser is byte-identical', program_text(pg), (SITE / 'examples/Gadgets.rex').read_text())
+    expect_in('tree drawn', 'RxSock', pg.inner_text('#client .dz[data-name="tvRexx"]'))
+    pg.screenshot(path=str(SHOTS / 'gadgets_design.png'))
+    run(pg)
+    pg.click('.ood-dlg .ood-tv >> text=RxSock'); settle(pg)
+    expect_in('tree event', 'Node: RxSock', dlg_text(pg))
+    press(pg, 'Read the level'); settle(pg)
+    expect_in('track bar position', 'Level: 30', dlg_text(pg))
+    pg.screenshot(path=str(SHOTS / 'gadgets_run.png'))
+    press(pg, 'Close'); expect('closed', wait_end(pg)['rc'], 2)
+
+SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views, 'gadgets': sc_gadgets}
 def main():
     names = sys.argv[1:] or list(SCENARIOS)
     srv = subprocess.Popen(['node', str(SITE / 'serve.mjs'), str(SITE), '--port', str(PORT)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
