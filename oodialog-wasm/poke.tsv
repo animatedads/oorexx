@@ -1,6 +1,6 @@
 GUI_Template.rex	1	
 calculator.rex	11	
-controls/ComboBox/comboBoxTypes.rex	8	did-not-end
+controls/ComboBox/comboBoxTypes.rex	8	
 controls/ListBox/incrementalSearch.rex	1	
 controls/ListView/columnClickListView.rex	3	
 controls/ListView/subitem.editing/importList.rex	0	native:BFF_INIT
@@ -13,12 +13,12 @@ examples/addManyRows.rex	7
 examples/browsePrinters.rex	5	native:BFF_INIT
 examples/fileNameDialog_demo.rex	7	
 examples/genGUID.rex	1	
-examples/imageButton.rex	1	native:BC_GETIMAGELIST
+examples/imageButton.rex	1	error 97.1 Object "an ImageList" does not understand message "IMAGELIST".
 examples/openSaveFileDemo.rex	8	native:OFD_INIT
 examples/publicRoutines_demo.rex	7	
 examples/saveFileWithFilter.rex	6	native:SFD_INIT
 examples/simpleFolderBrowse.rex	5	
-examples/useTools.rex	10	did-not-end
+examples/useTools.rex	10	
 menus/ContextMenu.rex	3	
 menus/ScriptMenuBar.rex	7	
 menus/UserMenuBar.rex	7	
@@ -38,7 +38,7 @@ resizableDialogs/DialogAreaU/dlgAreaUDemoTwo.rex	9
 resizableDialogs/ResizingAdmin/PropertySheetDemo.rex	10	event-not-produced
 resizableDialogs/ResizingAdmin/augmentedResize.rex	7	
 resizableDialogs/ResizingAdmin/basicResize.rex	5	
-sample.rex	11	did-not-end
+sample.rex	11	error 91.999 Message "SPEED" did not return a result. ; native:DLGEXT_GETBITMAPSIZE ; native:RI_INIT
 simple/ChangeFont.rex	3	
 simple/SimpleUpDown.rex	2	
 tutorial/drawing1.rex	4	native:DLGEXT_GETWINDOWDC
@@ -53,7 +53,7 @@ tutorial/employe7.rex	10
 tutorial/employe8.rex	9	
 tutorial/employe9.rex	9	
 tutorial/employee10menuRc.rex	11	native:GENERIC_SETLISTTABULATORS
-tutorial/employee11tab.rex	1	did-not-end
+tutorial/employee11tab.rex	1	
 tutorial/textScroll.rex	6	
 userGuide/exercises/Exercise02/HelloWorld.rex	1	
 userGuide/exercises/Exercise02/WoW.rex	2	

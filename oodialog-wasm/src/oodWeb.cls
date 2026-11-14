@@ -24,7 +24,7 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.9.0"
+  return "0.9.1"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute key unguarded
@@ -102,7 +102,7 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.9.0"
+  return "0.9.1"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute rexxSelf unguarded
@@ -131,7 +131,7 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.9.0"
+  return "0.9.1"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute dlg unguarded             -- its dialog's OodDlg
@@ -149,7 +149,7 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.9.0"
+  return "0.9.1"
 ::method module_lastChanged class
   return "2026-11-14"
 ::method module_version unguarded
@@ -765,6 +765,7 @@ syntax:
     self~web~destroy(d~key)
     d~live = .false
     self~deregister(d)
+    self~finishOwned(self_)
     code = 0
   end
   if a~hasIndex(1) then self_~finalStopIt(a[1])
@@ -1397,6 +1398,18 @@ syntax:
   use arg self_, msg, a
   if \self~resTemplate(self_, a[1], a[2]) then return .false
   return self~startInOwner(self_) \== 0
+
+/* Windows destroys an owned window with its owner.  The owned dialog's own
+   thread is waiting in waitForDialog: mark it finished and it runs its own stopIt. */
+::method finishOwned unguarded
+  expose dialogs
+  use arg owner
+  do owned over dialogs~allItems
+    if owned~ownerDialog \== owner then iterate
+    if \owned~live then iterate
+    if owned~embed \== .nil then iterate
+    owned~rexxSelf~finished = .true
+  end
 
 ::method finishChildren unguarded  -- the dialogs shown inside a dialog end with it
   expose dialogs

@@ -153,9 +153,22 @@ def poke(tree, lo, hi):
                 except Exception as e:
                     todo, acts = '', ['PROBE FAILED ' + str(e).splitlines()[0][:80]]
                 ended = False
-                for _ in range(15):
+                for _ in range(150):                     # close whatever is still open, topmost first, until the program ends (up to a minute: queued clicks may each open another dialog)
                     if pg.evaluate('window.oodDone !== null'): ended = True; break
-                    time.sleep(0.2)
+                    pg.evaluate("""(() => {
+                      const m = [...document.querySelectorAll('.ood-msgbox')].pop();
+                      if (m) { m.querySelector('button.ood-c').click(); return; }
+                      const tried = (window.__tried = window.__tried || new WeakSet());   // each way out is tried once
+                      const ds = [...document.querySelectorAll('.ood-dlg:not(.ood-child)')].sort((a, b) => Number(b.style.zIndex) - Number(a.style.zIndex));
+                      for (const d of ds) {                // topmost first; a dialog that refuses to close is passed over for its owner
+                        const x = d.querySelector('.ood-x');
+                        if (x && !x.disabled && !tried.has(x)) { tried.add(x); x.click(); return; }
+                        const b = [...d.querySelectorAll('button.ood-c')].find(b => !b.disabled && !tried.has(b) && /^(ok|cancel|exit|close|quit|done|end|finish)/i.test(b.textContent.trim()));
+                        if (b) { tried.add(b); b.click(); return; }
+                        if (!tried.has(d)) { tried.add(d); d.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true})); return; }
+                      }
+                    })()""")
+                    time.sleep(0.4)
                 out = ''.join(pg.evaluate('window.oodOut'))
                 unknown = pg.evaluate("window.__ood ? [...new Set(window.__ood.log)].join(' | ') : ''")
                 probs = []
@@ -167,10 +180,15 @@ def poke(tree, lo, hi):
                     if u: probs.append('unhandled ' + u)
                 if todo: probs.append('placeholder ' + todo)
                 for e in perr: probs.append('pageerror ' + e)
-                if not ended: probs.append('did-not-end')
+                if not ended:
+                    left = pg.evaluate("[...document.querySelectorAll('.ood-dlg:not(.ood-child)')].map(e => (e.classList.contains('ood-msgbox') ? 'msgbox: ' + e.querySelector('.ood-msgtext').textContent.slice(0, 60) : 'dialog: ' + ((e.querySelector('.ood-title span') || {}).textContent || '')) + (e.querySelector('.ood-x') && e.querySelector('.ood-x').disabled ? ' [close disabled]' : '')).join(' / ')")
+                    probs.append('did-not-end, left open: ' + (left or 'nothing').replace('\n', ' '))
                 probs = sorted(set(probs))
                 rows.append((rel, len(acts), probs))
                 log(f'{n}', rel, 'actions', len(acts), '->', ('; '.join(probs))[:150] if probs else 'clean')
+                if os.environ.get('OODPOKE_VERBOSE'):
+                    log('   actions:', ' '.join(acts)[:300])
+                    for l in out.splitlines()[:25]: log('   |', l[:170])
                 pg.close()
             b.close()
     finally:

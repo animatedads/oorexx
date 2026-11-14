@@ -1,4 +1,4 @@
-# ooDialog for ooRexx/WASM — v0.9.0
+# ooDialog for ooRexx/WASM — v0.9.1
 
 Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: Josep Maria Blasco's
 ooRexx/WASM (`oorexxwasm` 0.2.4, ooRexx 5.3.0) and its `js.cls`.
@@ -48,16 +48,17 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
     python3 tools/oodtest.py --poke upstream/examples 0 24
     python3 tools/oodtest.py --tree upstream/examples tests/t*.rex tests/up/calculator.rex tests/up/oodpbar.rex tests/up/oodStandardRoutines.rex
 
-## State on 2026-11-14 (v0.9.0)
+## State on 2026-11-14 (v0.9.1)
 
 - Natives ported: 456 of 1,184 (38.5%). (The total fell from 1,196 because 12
   natives are now plain Rexx in `src/patches.txt`.)
-- Tests: 18 of 18 pass in headless Chromium (`tests/t01`..`t13` with expected
+- Tests: 22 of 22 pass in headless Chromium (`tests/t01`..`t14` with expected
   output, the binary resource hand-off test `tests/res/t07_resdialog_binary`,
-  and four unmodified upstream samples: `calculator.rex`,
+  four unmodified upstream samples: `calculator.rex`,
   `oodpbar.rex`, `oodStandardRoutines.rex`, and the tutorial
   `employee11tab.rex`, a four-page property sheet from an .rc file, in which
-  an employee is added and then found on the list page).
+  an employee is added and then found on the list page; and the three
+  programs written by ooDialog Designer v0.3.0, in `tests/designer`).
 - Sweep of all 140 upstream example programs (`oodtest.py --sweep`, results in
   `sweep.tsv`), each run from its own directory: 61 show their dialog, 7 run to
   the end, 9 show only a message box (6 of them are component files that cannot
@@ -67,12 +68,18 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
   Earlier counts of "shows a dialog" included message boxes and were too high.
 - Depth probe (`oodtest.py --poke`, results in `poke.tsv`): the 70 examples
   that show a dialog or a message box are used automatically (tabs, rows,
-  check boxes, lists, edits, menus, every button, then closed). 49 come through
+  check boxes, lists, edits, menus, every button, then closed). 52 come through
   with no error, no unhandled Windows message and a clean end. 6 more have no
-  fault except connecting an event this layer does not produce. 15 have a real
+  fault except connecting an event this layer does not produce. 12 have a real
   problem, each named in `poke.tsv`: the shell dialog classes (BrowseForFolder,
-  OpenFileDialog, SaveFileDialog), the wizard buttons, drawing, four programs
-  that do not end, and four single faults.
+  OpenFileDialog, SaveFileDialog), the wizard buttons, drawing, and single
+  faults. Every program now ends. Of the four that did not in v0.9.0, three
+  were faults of the probe (it pressed a button named Close that closes
+  something else; it gave up on a dialog that refuses to close instead of
+  closing its owner; it did not wait for queued clicks) and one was a fault of
+  this layer: a dialog with an `ownerDialog` now ends with its owner
+  (`tests/t14_owned`). `oovideo.rex` fails on an unmatched `/*` at line 44 of
+  the upstream file itself (r13513).
   The probe proves the absence of errors, not that results are right.
 - Working, each asserted by a test: UserDialog; RcDialog (upstream's own .rc
   parser); push button, check box, radio button, group box, static text and

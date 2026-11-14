@@ -1,0 +1,6 @@
+wait .ood-dlg >> text=Tool
+expect document.querySelectorAll('.ood-dlg').length ==> 2
+eval (() => { const d = [...document.querySelectorAll('.ood-dlg')].find(d => d.innerText.includes('Tool')); d.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true})); return 'esc'; })()
+sleep 400
+expect document.querySelectorAll('.ood-dlg').length ==> 2
+eval (() => { const d = [...document.querySelectorAll('.ood-dlg')].find(d => !d.innerText.includes('Tool')); d.querySelector('button.ood-def').click(); return 'closed'; })()
