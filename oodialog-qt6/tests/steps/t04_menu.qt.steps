@@ -1,0 +1,15 @@
+wait .ood-menubar >> text=File
+click .ood-menubar >> text=View
+shot t04_menu_open
+click .ood-menu >> text=Ruler
+click .ood-menubar >> text=View
+click .ood-menu >> text=Toolbar
+click .ood-menubar >> text=File
+click .ood-menu >> text=Print
+press Escape
+click .ood-menubar >> text=File
+click .ood-menu >> text=Open
+sleep 300
+expect text .ood-dlg .ood-static:not(:empty) ==> Open chosen
+click .ood-menubar >> text=File
+click .ood-menu >> text=Exit
