@@ -11,7 +11,7 @@ Python is used here because this tool drives a browser (Playwright); the
 library, its generator and its build are ooRexx.  Progress is logged per step."""
 import subprocess, sys, time, os, pathlib, base64
 TEXT = ('.rex', '.rc', '.h', '.cls', '.txt', '.dlg', '.inp')
-BINARY = ('.bmp', '.ico', '.png', '.gif', '.jpg')
+BINARY = ('.bmp', '.ico', '.png', '.gif', '.jpg', '.dll', '.exe', '.res', '.cur')
 from playwright.sync_api import sync_playwright
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PORT = 8017
@@ -97,8 +97,9 @@ def main():
                 files = {'/home/rexx/' + f: (ROOT / 'dist' / f).read_text() for f in ('ooDialog.cls', 'oodWeb.cls', 'ooShapes.cls')}
                 extra = tp.parent / (tp.stem + '.files')
                 if extra.is_dir():
-                    for x in extra.iterdir():
-                        files['/home/rexx/' + x.name] = x.read_text(encoding='latin-1')
+                    for x in extra.iterdir():            # files beside the test; binaries go as bytes
+                        if x.suffix.lower() in BINARY: files['/home/rexx/' + x.name] = {'b64': base64.b64encode(x.read_bytes()).decode()}
+                        else: files['/home/rexx/' + x.name] = x.read_text(encoding='latin-1')
                 if tree:                     # a whole directory, with its subdirectories; images go as base64
                     for x in tree.rglob('*'):
                         if x.is_file() and x.suffix.lower() in TEXT:

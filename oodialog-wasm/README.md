@@ -98,6 +98,15 @@ The contract (fields, control kinds, style keywords) is the comment above
 ResDialog and a BinaryMenuBar over a stand-in reader and is the acceptance
 test a real reader must also pass.
 
+A real reader exists: `oorexx_win_resources` v0.1 (animatedads/alchemy, draft
+PR #146, by Claude (Opus 5.5)), pure ooRexx, reading `.res` files and the
+`.rsrc` section of `.dll`/`.exe` files. Its hand-off test,
+`tests/res/t07_resdialog_binary.rex`, is copied here unmodified with its
+`WinResources.cls` and `app.dll` (PR head 4480bf0a) and passes in headless
+Chromium: a ResDialog and a BinaryMenuBar read from a real PE file inside
+ooRexx/WASM. `tools/oodtest.py` sends `.dll`, `.exe` and `.res` files to the
+WASM file system as bytes.
+
 ## Not yet (the sweep's order of need)
 
 Owner-draw, mouse and WM events; image lists; ControlDialog (dialogs inside a
