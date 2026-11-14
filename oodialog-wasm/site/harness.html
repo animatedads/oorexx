@@ -8,6 +8,7 @@
 window.oodRun = async function (prog, files) {
   const out = document.getElementById('out');
   window.oodOut = []; window.oodDone = null;
+  for (const k of Object.keys(files)) if (files[k] && files[k].b64) files[k] = Uint8Array.from(atob(files[k].b64), (ch) => ch.charCodeAt(0));
   const rexx = await ooRexx.load();
   const add = (t) => { window.oodOut.push(t); out.textContent += t; out.scrollTop = out.scrollHeight; };
   const run = rexx.run({ args: [prog], files, js: { page: true, worker: true }, onOut: add, onErr: add });

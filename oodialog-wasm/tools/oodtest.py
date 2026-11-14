@@ -9,7 +9,9 @@ Each test.rex may have a test.steps file beside it, one step per line:
 The program's output is compared with test.expect if that file exists.
 Python is used here because this tool drives a browser (Playwright); the
 library, its generator and its build are ooRexx.  Progress is logged per step."""
-import subprocess, sys, time, os, pathlib
+import subprocess, sys, time, os, pathlib, base64
+TEXT = ('.rex', '.rc', '.h', '.cls', '.txt', '.dlg', '.inp')
+BINARY = ('.bmp', '.ico', '.png', '.gif', '.jpg')
 from playwright.sync_api import sync_playwright
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PORT = 8017
@@ -22,7 +24,9 @@ def sweep(tree, report):
     files = {'/home/rexx/' + f: (ROOT / 'dist' / f).read_text() for f in ('ooDialog.cls', 'oodWeb.cls', 'ooShapes.cls')}
     progs = []
     for x in sorted(tree.rglob('*')):
-        if x.is_file() and x.suffix.lower() in ('.rex', '.rc', '.h', '.cls', '.txt', '.dlg', '.inp'):
+        if x.is_file() and x.suffix.lower() in BINARY:
+            files['/home/rexx/' + str(x.relative_to(tree))] = {'b64': base64.b64encode(x.read_bytes()).decode()}
+        if x.is_file() and x.suffix.lower() in TEXT:
             text = x.read_text(encoding='latin-1')
             files['/home/rexx/' + str(x.relative_to(tree))] = text
             if x.suffix.lower() == '.rex' and re.search(r'::requires\s+["\']ooDialog.cls', text, re.I): progs.append(x)
@@ -95,10 +99,12 @@ def main():
                 if extra.is_dir():
                     for x in extra.iterdir():
                         files['/home/rexx/' + x.name] = x.read_text(encoding='latin-1')
-                if tree:                     # a whole directory of text files, with its subdirectories
+                if tree:                     # a whole directory, with its subdirectories; images go as base64
                     for x in tree.rglob('*'):
-                        if x.is_file() and x.suffix.lower() in ('.rex', '.rc', '.h', '.cls', '.txt', '.dlg', '.inp'):
+                        if x.is_file() and x.suffix.lower() in TEXT:
                             files['/home/rexx/' + str(x.relative_to(tree))] = x.read_text(encoding='latin-1')
+                        elif x.is_file() and x.suffix.lower() in BINARY:
+                            files['/home/rexx/' + str(x.relative_to(tree))] = {'b64': base64.b64encode(x.read_bytes()).decode()}
                 files['/home/rexx/' + tp.name] = tp.read_text(encoding='latin-1')
                 log('RUN', tp.name)
                 pg.evaluate('([prog, files]) => window.oodRun(prog, files)', [tp.name, files])

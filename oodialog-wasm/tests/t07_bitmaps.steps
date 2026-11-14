@@ -1,0 +1,7 @@
+wait .ood-image img
+sleep 500
+expect document.querySelector('button.ood-bmp').style.backgroundImage.startsWith('url("data:image/bmp;base64,') ==> True
+expect document.querySelector('.ood-image img').naturalWidth > 0 ==> True
+click button.ood-bmp
+shot t07_bitmaps
+click .ood-dlg >> text=Close

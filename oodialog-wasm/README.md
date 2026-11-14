@@ -1,4 +1,4 @@
-# ooDialog for ooRexx/WASM — v0.3.0
+# ooDialog for ooRexx/WASM — v0.4.0
 
 Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: Josep Maria Blasco's
 ooRexx/WASM (`oorexxwasm` 0.2.4, ooRexx 5.3.0) and its `js.cls`.
@@ -34,20 +34,20 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
     python3 tools/oodtest.py --sweep upstream/examples
     python3 tools/oodtest.py --tree upstream/examples tests/t0*.rex tests/up/calculator.rex tests/up/oodpbar.rex tests/up/oodStandardRoutines.rex
 
-## State on 2026-11-14 (v0.3.0)
+## State on 2026-11-14 (v0.4.0)
 
-- Natives ported: 334 of 1,196 (27.9%).
-- Tests: 9 of 9 pass in headless Chromium (`tests/t01`..`t06` with expected
+- Natives ported: 355 of 1,196 (29.7%).
+- Tests: 11 of 11 pass in headless Chromium (`tests/t01`..`t08` with expected
   output, and three unmodified upstream samples: `calculator.rex`,
   `oodpbar.rex`, `oodStandardRoutines.rex`).
 - Sweep of all 140 upstream example programs (`oodtest.py --sweep`, results in
-  `sweep.tsv`): 46 show their dialog, 7 run to the end, 43 stop at a native not
-  ported yet (named in the file), 44 stop on another error. Of the 44, 31 are
+  `sweep.tsv`): 49 show their dialog, 7 run to the end, 45 stop at a native not
+  ported yet (named in the file), 39 stop on another error. Of the 39, most are
   Error 43 (a routine or `::requires` file not found: `winSystm.cls`, which is
   Windows-only, `::requires` paths written with `\`, component files that are
-  not programs), 12 are Error 98 raised by this layer (an event keyword not
-  ported, or a ResDialog / BinaryMenuBar with no resource reader), 1 is a
-  syntax error in the sample. The sweep checks that a dialog appears, not that
+  not programs); the rest are Error 98 raised by this layer (a ResDialog or
+  BinaryMenuBar with no resource reader) and one syntax error in a sample.
+  The sweep checks that a dialog appears, not that
   it behaves.
 - Working, each asserted by a test: UserDialog; RcDialog (upstream's own .rc
   parser); push button, check box, radio button, group box, static text and
@@ -55,6 +55,9 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
   check boxes, selection), tree-view, tab; up-down with buddy, track bar,
   date-time picker; menu bars (UserMenuBar, template methods, insert, check,
   enable, command events); fonts (createFontEx, setFont) and control colours;
+  bitmap buttons, static images, `.Image~getImage`, loadBitmap (BMP, PNG, GIF,
+  JPEG, ICO files, read by Rexx and shown by the page); connectKeyPress and
+  connectFKeyPress;
   data attributes and dlgData. stems; the connectXxxEvent methods of those
   controls; MessageDialog and the routines built on it; InputBox, IntegerBox,
   PasswordBox, MultiInputBox, ListChoice, MultiListChoice, CheckList,
@@ -76,13 +79,17 @@ test a real reader must also pass.
 
 ## Not yet (the sweep's order of need)
 
-Bitmap buttons and images; draw, key, mouse and WM events; property sheets and
+Owner-draw, mouse and WM events; image lists; property sheets and
 ControlDialog; tool tips; month calendar; scroll bar; tool bar, status bar,
 re-bar; list-view LvItem/LvFullRow objects and the remaining list-view and
 tree-view events; track bar events; resizing; file and folder dialogs
 (FileNameDialog says so and answers as cancelled); popup/popupAsChild untested.
 
 ## Known
+
+An event keyword this layer cannot produce yet (for example a list-view's
+BEGINSCROLL) is accepted by connectXxxEvent, and a line saying so is written
+to the program's output; the event never arrives.
 
 `.DlgUtil~version` reports 4.2.5. Windows file names in samples (`rc\CALC.RC`)
 are resolved with `/` and without regard to case. `.OS` answers as a Windows

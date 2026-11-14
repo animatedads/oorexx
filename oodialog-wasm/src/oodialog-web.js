@@ -68,6 +68,10 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
 .ood-mark{width:1.3em;text-align:center}
 .ood-mtext{flex:1}
 .ood-macc{margin-left:2em;color:#555}
+.ood-image{overflow:hidden}
+.ood-image.ood-imgcenter{display:flex;align-items:center;justify-content:center}
+.ood-image img{display:block;image-rendering:auto}
+button.ood-c.ood-bmp:hover{background-color:transparent}
 .ood-track{margin:0;padding:0}
 .ood-ud{display:flex;flex-direction:column}
 .ood-ud button{flex:1;min-height:0;padding:0;border:1px solid #adadad;background:#e1e1e1;font-size:.6em;line-height:1;color:#000;cursor:default}
@@ -171,6 +175,9 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
       fire(dlg.key, 'CTX', c && c.id > 0 ? c.id : 0, Math.round(e.clientX), Math.round(e.clientY));
     });
     el.addEventListener('keydown', (e) => {
+      if (dlg.subs.has('0.KEY')) fire(dlg.key, 'KEY', e.keyCode, (e.shiftKey ? 'S' : '') + (e.ctrlKey ? 'C' : '') + (e.altKey ? 'A' : ''));
+    }, true);
+    el.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') { e.preventDefault(); if (!dlg.noClose) fire(dlg.key, 'CMD', 2, 0); return; }
       if (e.key === 'F1') { e.preventDefault(); fire(dlg.key, 'CMD', 9, 0); return; }
       if (e.key === 'Enter') {
@@ -235,8 +242,11 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
         if (has(o, 'DEFAULT')) { main.classList.add('ood-def'); dlg.defId = c.id; }
         main.addEventListener('click', () => cmd(dlg, c, 0, true));
         main.addEventListener('dblclick', () => cmd(dlg, c, 5));
-        main.addEventListener('focus', () => cmd(dlg, c, 6));
-        main.addEventListener('blur', () => cmd(dlg, c, 7));
+        main.addEventListener('focus', () => { paintButton(c); cmd(dlg, c, 6); });
+        main.addEventListener('blur', () => { c.down = false; paintButton(c); cmd(dlg, c, 7); });
+        main.addEventListener('pointerdown', () => { c.down = true; paintButton(c); });
+        main.addEventListener('pointerup', () => { c.down = false; paintButton(c); });
+        main.addEventListener('pointerleave', () => { if (c.down) { c.down = false; paintButton(c); } });
         break;
       case 'CHECK': case 'RADIO': {
         el = D.createElement('label'); el.className = 'ood-check';
@@ -263,6 +273,12 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
         if (has(o, 'CENTER')) el.style.textAlign = 'center'; else if (has(o, 'RIGHT')) el.style.textAlign = 'right';
         if (has(o, 'BORDER')) el.style.border = '1px solid #7a7a7a';
         if (has(o, 'NOTIFY')) { el.addEventListener('click', () => cmd(dlg, c, 0, true)); el.addEventListener('dblclick', () => cmd(dlg, c, 1, true)); }
+        break;
+      case 'IMAGE':                                         // createStaticImage: a bitmap or icon
+        el = main = D.createElement('div'); el.className = 'ood-image'; c.focusable = false;
+        c.img = D.createElement('img'); c.img.alt = ''; c.img.hidden = true; el.appendChild(c.img);
+        if (has(o, 'CENTERIMAGE')) el.classList.add('ood-imgcenter');
+        if (has(o, 'SUNKEN') || has(o, 'BORDER')) el.style.border = '1px solid #a0a0a0';
         break;
       case 'FRAME': {                                       // createBlackRect, createGrayFrame ...
         el = main = D.createElement('div'); el.className = 'ood-frame'; c.focusable = false;
@@ -756,7 +772,7 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
       case 'show': el.hidden = false; if (!c) el.style.visibility = 'visible'; return '1';
       case 'hide': if (c) el.hidden = true; else el.style.visibility = 'hidden'; return '1';
       case 'isVisible': return c ? (el.hidden ? '0' : '1') : (el.style.visibility === 'hidden' ? '0' : '1');
-      case 'enable': if (c) m.disabled = (a === '0'); else el.inert = (a === '0'); return '1';
+      case 'enable': if (c) { m.disabled = (a === '0'); paintButton(c); } else el.inert = (a === '0'); return '1';
       case 'isEnabled': return c ? (m.disabled ? '0' : '1') : (el.inert ? '0' : '1');
       case 'focus': m.focus(); return '1';
       case 'focusId': { const f = dlg.all.find((x) => x.main === D.activeElement); return f ? String(f.id) : '0'; }
@@ -800,6 +816,17 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
         const i = listFind(c, String(a), -1, false);
         if (c.kind === 'LIST' || c.droplist) m.selectedIndex = i; else m.value = i >= 0 ? optsOf(c)[i].textContent : String(a);
         return String(i); }
+    }
+    if (c && name === 'bitmap') {                             // installBitmapButton: normal, focused|selected|disabled, style
+      const [f, sel, dis] = String(b).split(SEP), st = String(c2);
+      c.bmp = { n: String(a), f: f || '', s: sel || '', d: dis || '', stretch: has(st, 'STRETCH'), frame: has(st, 'FRAME') };
+      if (c.kind === 'BUTTON') { c.main.textContent = ''; paintButton(c); }
+      return '1';
+    }
+    if (c && name === 'image') {                              // a static's image
+      const url = ood.images.get(String(a));
+      if (c.img) { c.img.src = url || ''; c.img.hidden = !url; if (b === 'STRETCH') c.img.style.cssText = 'width:100%;height:100%'; }
+      return url ? '1' : '0';
     }
     if (c && name === 'dtp.get') return dtpGet(c);
     if (c && name === 'dtp.set') { dtpSet(c, new Date(String(a))); return '1'; }
@@ -1028,6 +1055,23 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
     openMenu(menuTree(data), Number(x), Number(y), (id) => done(id), 0);
     return '1';
   };
+
+  /* ---- images: Rexx sends each file once, as a data URL ------------------- */
+  ood.images = new Map();
+  ood.image = function (name, url) { ood.images.set(String(name), String(url)); return '1'; };
+  ood.hasImage = (name) => (ood.images.has(String(name)) ? '1' : '0');
+  function paintButton(c) {                                   // the bitmap for the button's present state
+    const b = c.bmp; if (!b) return;
+    const m = c.main;
+    const key = m.disabled && b.d ? b.d : c.down && b.s ? b.s : D.activeElement === m && b.f ? b.f : b.n;
+    const url = ood.images.get(key);
+    m.style.backgroundImage = url ? 'url("' + url + '")' : 'none';
+    m.style.backgroundRepeat = 'no-repeat';
+    m.style.backgroundSize = b.stretch ? '100% 100%' : 'auto';
+    m.style.backgroundPosition = b.stretch ? '0 0' : 'center';
+    if (!b.frame) { m.style.border = '0'; m.style.backgroundColor = 'transparent'; }
+    if (url) m.classList.add('ood-bmp');
+  }
 
   ood.screen = () => W.innerWidth + ' ' + W.innerHeight;
   ood.setHandler = function (fn) { ood.handler = fn; return '1'; };

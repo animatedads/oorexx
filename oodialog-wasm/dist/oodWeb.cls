@@ -24,7 +24,7 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.3.0"
+  return "0.4.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute key unguarded
@@ -53,13 +53,15 @@
 ::attribute notifyTable unguarded     -- WM_NOTIFY connections: (id event method keyword)
 ::attribute store unguarded           -- user data of items, by "id item"
 ::attribute menu unguarded            -- the menu bar's OodMenu, if one is attached
+::attribute keyTable unguarded        -- key press connections: (method, set of key codes, filter)
+::attribute deferred unguarded        -- operations asked for before the dialog exists: (id name a b c)
 ::attribute contextMethod unguarded   -- the method of the context menu event
 ::attribute parentDlg unguarded
 ::attribute ownerDialog unguarded
 ::method init
   expose key rexxSelf library resourceID dlgID autoDetect fontName fontSize sizeX sizeY factorX factorY -
          pixelCX pixelCY initCode live templateActive spec template dataTable cmdTable controls kinds -
-         parentDlg ownerDialog notifyTable store menu contextMethod
+         parentDlg ownerDialog notifyTable store menu contextMethod deferred keyTable
   use arg key, rexxSelf, library, resourceID
   dlgID = -1
   autoDetect = .true
@@ -77,6 +79,8 @@
   kinds = .directory~new
   notifyTable = .array~new
   store = .directory~new
+  deferred = .array~new
+  keyTable = .array~new
   menu = .nil
   contextMethod = ""
   parentDlg = .nil
@@ -88,7 +92,7 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.3.0"
+  return "0.4.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute rexxSelf unguarded
@@ -117,7 +121,7 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.3.0"
+  return "0.4.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute dlg unguarded             -- its dialog's OodDlg
@@ -135,7 +139,7 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.3.0"
+  return "0.4.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::method module_version unguarded
@@ -267,7 +271,88 @@
     when kind == "CMD" then self~command(key, id, code)
     when kind == "NOTIFY" then self~notify(key, id, code, extra)
     when kind == "CTX" then self~contextMenu(key, id, code, extra)
+    when kind == "KEY" then self~keyPress(key, id, code)
     otherwise nop
+  end
+
+/* Key presses: connectKeyPress(method, keys, filter), connectFKeyPress(method). */
+::method keySet unguarded          -- "ALL", "FKEYS", "65-90", "13, 27" ... as a set of virtual key codes
+  use arg keys
+  codes = .set~new
+  do token over keys~translate(" ", ",")~upper~makeArray(" ")
+    low = 0
+    high = -1
+    select
+      when token == "ALL" then do
+        low = 1; high = 255
+      end
+      when token == "FKEYS" then do
+        low = 112; high = 135
+      end
+      when token == "ALPHA" then do
+        low = 65; high = 90
+      end
+      when token == "NUMERIC" then do
+        low = 48; high = 57
+      end
+      when token == "ALPHANUMERIC" then do
+        low = 48; high = 90
+      end
+      when token~pos("-") > 1 then parse var token low "-" high
+      when token~datatype("W") then do
+        low = token; high = token
+      end
+      otherwise nop
+    end
+    if low~datatype("W") then if high~datatype("W") then do code = low to high
+      codes~put(code)
+    end
+  end
+  return codes
+::method connectKeys unguarded
+  use arg dlg, method, keys, filter
+  d = dlg~oodPeer
+  d~keyTable~append(.array~of(method~upper, self~keySet(keys), filter~upper))
+  d~cmdTable~append(.array~of(0, "KEY", ""))
+  if d~live then self~web~sub(d~key, 0, "KEY")
+  return 0
+::method en_connectKeyPress unguarded
+  use arg self_, msg, a
+  return self~connectKeys(self_, a[1], a[2], self~opt(a, 3))
+::method en_connectFKeyPress unguarded
+  use arg self_, msg, a
+  return self~connectKeys(self_, a[1], "FKEYS", "")
+::method en_disconnectKeyPress unguarded
+  use arg self_, msg, a
+  d = self_~oodPeer
+  keep = .array~new
+  do entry over d~keyTable
+    if a~hasIndex(1) then if entry[1] \== a[1]~upper then keep~append(entry)
+  end
+  d~keyTable = keep
+  return 0
+::method en_hasKeyPressConnection unguarded
+  use arg self_, msg, a
+  do entry over self_~oodPeer~keyTable
+    if \a~hasIndex(1) then return .true
+    if entry[1] == a[1]~upper then return .true
+  end
+  return .false
+::method keyPress unguarded        -- the method gets (key code, shift, control, alt, info)
+  use arg key, code, mods
+  d = self~dialogOf(key)
+  if d == .nil then return
+  shift = (mods~pos("S") > 0)
+  control = (mods~pos("C") > 0)
+  alt = (mods~pos("A") > 0)
+  do entry over d~keyTable
+    if \entry[2]~hasIndex(code) then iterate
+    filter = entry[3]
+    if filter~wordPos("NONE") > 0 then if shift | control | alt then iterate
+    if filter~wordPos("SHIFT") > 0 then if \shift then iterate
+    if filter~wordPos("CONTROL") > 0 then if \control then iterate
+    if filter~wordPos("ALT") > 0 then if \alt then iterate
+    self~invoke(d~rexxSelf, entry[1], .array~of(code, shift, control, alt, mods))
   end
 
 /* WM_CONTEXTMENU: the method gets the window's handle and the position. */
@@ -888,6 +973,10 @@ syntax:
     self~web~sub(d~key, entry[1], entry[2])
   end
   if d~menu \== .nil then self~menuSync(d~menu)
+  do entry over d~deferred
+    self~web~op(d~key, entry[1], entry[2], entry[3], entry[4], entry[5])
+  end
+  d~deferred~empty
   return .true
 
 ::method dyndlg_stop unguarded
@@ -1228,8 +1317,10 @@ syntax:
   if id == -1 then return -1
   keyword = a[2]~strip~upper
   p = map~wordPos(keyword)
-  if p == 0 then
-    raise syntax 98.900 array("ooDialog/WASM: the event" keyword "is not available yet")
+  if p == 0 then do                  -- the connection is accepted; the page never produces this event
+    say "ooDialog/WASM: the event" keyword "of control" id "is connected but is not produced yet"
+    return 0
+  end
   method = self~opt(a, 3)
   if method == "" then method = "on" || keyword
   do event over map~word(p + 1)~makeArray("+")
@@ -1352,6 +1443,124 @@ syntax:
   return 0
 ::method dtp_setFormat unguarded
   return .true
+
+/*---- bitmaps and images --------------------------------------------------------------------*/
+::method ctlOpWhenLive unguarded   -- an operation on a control: now, or when the dialog starts
+  use arg d, id, name, a = "", b = "", c = ""
+  if d~live then return self~web~op(d~key, id, name, a, b, c)
+  d~deferred~append(.array~of(id, name, a, b, c))
+  return 1
+
+::method imageKey                  -- a bitmap file, or a handle of loadBitmap, known to the page; "" if not there
+  expose bitmaps
+  use arg source
+  if \var("BITMAPS") then bitmaps = .directory~new
+  if \source~isA(.String) then return ""
+  if source == "" | source == 0 then return ""
+  if bitmaps~hasIndex(source) then return bitmaps[source]      -- a handle
+  file = self~path(source)
+  if self~web~hasImage(file) == 1 then return file
+  if \SysIsFile(file) then return ""
+  stream = .stream~new(file)
+  if stream~open("READ") \== "READY:" then return ""
+  bytes = stream~charIn(1, stream~chars)
+  stream~close
+  kind = "bmp"
+  ext = filespec("EXTENSION", file)~lower
+  if "png gif jpg jpeg ico svg"~wordPos(ext) > 0 then kind = ext
+  if kind == "jpg" then kind = "jpeg"
+  if kind == "ico" then kind = "x-icon"
+  if kind == "svg" then kind = "svg+xml"
+  self~web~image(file, "data:image/"kind";base64,"bytes~encodeBase64)
+  return file
+
+::method winex_loadBitmap          -- loadBitmap(file): a handle, 0 if the file is not there
+  expose bitmaps
+  use arg self_, msg, a
+  key = self~imageKey(a[1])
+  if key == "" then return 0
+  handle = "0x"d2x(8192 + bitmaps~items)~right(16, "0")
+  bitmaps[handle] = key
+  return handle
+::method winex_removeBitmap unguarded
+  return .true
+
+::method bitmapButton unguarded    -- installBitmapButton / changeBitmapButton
+  use arg self_, id, normal, focused, selected, disabled, style
+  sep = self~sep
+  other = self~imageKey(focused) || sep || self~imageKey(selected) || sep || self~imageKey(disabled)
+  self~ctlOpWhenLive(self_~oodPeer, id, "bitmap", self~imageKey(normal), other, style~upper)
+  return 0
+::method argOr unguarded
+  use arg a, i
+  if a~hasIndex(i) then return a[i]
+  return ""
+::method dlgext_installBitmapButton unguarded   -- (id, msgToRaise, normal, focused, selected, disabled, style)
+  use arg self_, msg, a
+  id = self~resolveId(self_, a[1])
+  if id < 1 then return 1
+  method = self~opt(a, 2)
+  if method \== "" then self~addCommand(self_, id, 0, method)
+  return self~bitmapButton(self_, id, a[3], self~argOr(a, 4), self~argOr(a, 5), self~argOr(a, 6), self~opt(a, 7))
+::method dlgext_changeBitmapButton unguarded    -- (id, normal, focused, selected, disabled, style)
+  use arg self_, msg, a
+  id = self~resolveId(self_, a[1])
+  if id < 1 then return 1
+  return self~bitmapButton(self_, id, a[2], self~argOr(a, 3), self~argOr(a, 4), self~argOr(a, 5), self~opt(a, 6))
+
+::method dyndlg_createStaticImage unguarded
+  use arg self_, msg, a
+  id = self~addItem(self_, "IMAGE", a[1], a[2], a[3], a[4], a[5], self~opt(a, 6), "")
+  if id < -1 then return id
+  return 0
+
+/* .Image: an image file; the object's state is the file's key in the page. */
+::method image_getImage_cls unguarded           -- .Image~getImage(file, type, size, flags)
+  use arg self_, msg, a
+  return self_~new(self~imageKey(a[1]))
+::method image_init unguarded
+  use arg self_, msg, a
+  self_~oodPeer = a[1]
+  return 0
+::method image_isNull unguarded
+  use arg self_
+  return self_~oodPeer == ""
+::method image_handle unguarded
+  use arg self_
+  return self_~oodPeer
+::method image_release unguarded
+  return 0
+::method image_systemErrorCode unguarded
+  return 0
+::method image_colorRef_cls unguarded           -- colorRef(r, g, b)
+  use arg self_, msg, a
+  red = 0; green = 0; blue = 0
+  if a~hasIndex(1) then red = a[1]
+  if a~hasIndex(2) then green = a[2]
+  if a~hasIndex(3) then blue = a[3]
+  return red + green * 256 + blue * 65536
+::method image_getRValue_cls unguarded
+  use arg self_, msg, a
+  return a[1] // 256
+::method image_getGValue_cls unguarded
+  use arg self_, msg, a
+  return (a[1] % 256) // 256
+::method image_getBValue_cls unguarded
+  use arg self_, msg, a
+  return (a[1] % 65536) // 256
+::method setImageOf unguarded
+  use arg self_, image
+  key = ""
+  if image \== .nil then key = image~oodPeer
+  p = self_~oodPeer
+  self~ctlOpWhenLive(p~dlg, p~id, "image", key)
+  return .nil
+::method stc_setImage unguarded
+  use arg self_, msg, a
+  return self~setImageOf(self_, a[1])
+::method stc_setIcon unguarded
+  use arg self_, msg, a
+  return self~setImageOf(self_, a[1])
 
 /*---- fonts and colours ------------------------------------------------------------------*/
 ::method newFont                   -- a font "handle": the name, the point size, and B I U for the style
@@ -2906,6 +3115,10 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
 .ood-mark{width:1.3em;text-align:center}
 .ood-mtext{flex:1}
 .ood-macc{margin-left:2em;color:#555}
+.ood-image{overflow:hidden}
+.ood-image.ood-imgcenter{display:flex;align-items:center;justify-content:center}
+.ood-image img{display:block;image-rendering:auto}
+button.ood-c.ood-bmp:hover{background-color:transparent}
 .ood-track{margin:0;padding:0}
 .ood-ud{display:flex;flex-direction:column}
 .ood-ud button{flex:1;min-height:0;padding:0;border:1px solid #adadad;background:#e1e1e1;font-size:.6em;line-height:1;color:#000;cursor:default}
@@ -3009,6 +3222,9 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
       fire(dlg.key, 'CTX', c && c.id > 0 ? c.id : 0, Math.round(e.clientX), Math.round(e.clientY));
     });
     el.addEventListener('keydown', (e) => {
+      if (dlg.subs.has('0.KEY')) fire(dlg.key, 'KEY', e.keyCode, (e.shiftKey ? 'S' : '') + (e.ctrlKey ? 'C' : '') + (e.altKey ? 'A' : ''));
+    }, true);
+    el.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') { e.preventDefault(); if (!dlg.noClose) fire(dlg.key, 'CMD', 2, 0); return; }
       if (e.key === 'F1') { e.preventDefault(); fire(dlg.key, 'CMD', 9, 0); return; }
       if (e.key === 'Enter') {
@@ -3073,8 +3289,11 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
         if (has(o, 'DEFAULT')) { main.classList.add('ood-def'); dlg.defId = c.id; }
         main.addEventListener('click', () => cmd(dlg, c, 0, true));
         main.addEventListener('dblclick', () => cmd(dlg, c, 5));
-        main.addEventListener('focus', () => cmd(dlg, c, 6));
-        main.addEventListener('blur', () => cmd(dlg, c, 7));
+        main.addEventListener('focus', () => { paintButton(c); cmd(dlg, c, 6); });
+        main.addEventListener('blur', () => { c.down = false; paintButton(c); cmd(dlg, c, 7); });
+        main.addEventListener('pointerdown', () => { c.down = true; paintButton(c); });
+        main.addEventListener('pointerup', () => { c.down = false; paintButton(c); });
+        main.addEventListener('pointerleave', () => { if (c.down) { c.down = false; paintButton(c); } });
         break;
       case 'CHECK': case 'RADIO': {
         el = D.createElement('label'); el.className = 'ood-check';
@@ -3101,6 +3320,12 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
         if (has(o, 'CENTER')) el.style.textAlign = 'center'; else if (has(o, 'RIGHT')) el.style.textAlign = 'right';
         if (has(o, 'BORDER')) el.style.border = '1px solid #7a7a7a';
         if (has(o, 'NOTIFY')) { el.addEventListener('click', () => cmd(dlg, c, 0, true)); el.addEventListener('dblclick', () => cmd(dlg, c, 1, true)); }
+        break;
+      case 'IMAGE':                                         // createStaticImage: a bitmap or icon
+        el = main = D.createElement('div'); el.className = 'ood-image'; c.focusable = false;
+        c.img = D.createElement('img'); c.img.alt = ''; c.img.hidden = true; el.appendChild(c.img);
+        if (has(o, 'CENTERIMAGE')) el.classList.add('ood-imgcenter');
+        if (has(o, 'SUNKEN') || has(o, 'BORDER')) el.style.border = '1px solid #a0a0a0';
         break;
       case 'FRAME': {                                       // createBlackRect, createGrayFrame ...
         el = main = D.createElement('div'); el.className = 'ood-frame'; c.focusable = false;
@@ -3594,7 +3819,7 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
       case 'show': el.hidden = false; if (!c) el.style.visibility = 'visible'; return '1';
       case 'hide': if (c) el.hidden = true; else el.style.visibility = 'hidden'; return '1';
       case 'isVisible': return c ? (el.hidden ? '0' : '1') : (el.style.visibility === 'hidden' ? '0' : '1');
-      case 'enable': if (c) m.disabled = (a === '0'); else el.inert = (a === '0'); return '1';
+      case 'enable': if (c) { m.disabled = (a === '0'); paintButton(c); } else el.inert = (a === '0'); return '1';
       case 'isEnabled': return c ? (m.disabled ? '0' : '1') : (el.inert ? '0' : '1');
       case 'focus': m.focus(); return '1';
       case 'focusId': { const f = dlg.all.find((x) => x.main === D.activeElement); return f ? String(f.id) : '0'; }
@@ -3638,6 +3863,17 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
         const i = listFind(c, String(a), -1, false);
         if (c.kind === 'LIST' || c.droplist) m.selectedIndex = i; else m.value = i >= 0 ? optsOf(c)[i].textContent : String(a);
         return String(i); }
+    }
+    if (c && name === 'bitmap') {                             // installBitmapButton: normal, focused|selected|disabled, style
+      const [f, sel, dis] = String(b).split(SEP), st = String(c2);
+      c.bmp = { n: String(a), f: f || '', s: sel || '', d: dis || '', stretch: has(st, 'STRETCH'), frame: has(st, 'FRAME') };
+      if (c.kind === 'BUTTON') { c.main.textContent = ''; paintButton(c); }
+      return '1';
+    }
+    if (c && name === 'image') {                              // a static's image
+      const url = ood.images.get(String(a));
+      if (c.img) { c.img.src = url || ''; c.img.hidden = !url; if (b === 'STRETCH') c.img.style.cssText = 'width:100%;height:100%'; }
+      return url ? '1' : '0';
     }
     if (c && name === 'dtp.get') return dtpGet(c);
     if (c && name === 'dtp.set') { dtpSet(c, new Date(String(a))); return '1'; }
@@ -3866,6 +4102,23 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
     openMenu(menuTree(data), Number(x), Number(y), (id) => done(id), 0);
     return '1';
   };
+
+  /* ---- images: Rexx sends each file once, as a data URL ------------------- */
+  ood.images = new Map();
+  ood.image = function (name, url) { ood.images.set(String(name), String(url)); return '1'; };
+  ood.hasImage = (name) => (ood.images.has(String(name)) ? '1' : '0');
+  function paintButton(c) {                                   // the bitmap for the button's present state
+    const b = c.bmp; if (!b) return;
+    const m = c.main;
+    const key = m.disabled && b.d ? b.d : c.down && b.s ? b.s : D.activeElement === m && b.f ? b.f : b.n;
+    const url = ood.images.get(key);
+    m.style.backgroundImage = url ? 'url("' + url + '")' : 'none';
+    m.style.backgroundRepeat = 'no-repeat';
+    m.style.backgroundSize = b.stretch ? '100% 100%' : 'auto';
+    m.style.backgroundPosition = b.stretch ? '0 0' : 'center';
+    if (!b.frame) { m.style.border = '0'; m.style.backgroundColor = 'transparent'; }
+    if (url) m.classList.add('ood-bmp');
+  }
 
   ood.screen = () => W.innerWidth + ' ' + W.innerHeight;
   ood.setHandler = function (fn) { ood.handler = fn; return '1'; };

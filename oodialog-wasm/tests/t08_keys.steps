@@ -1,0 +1,8 @@
+wait .ood-dlg input
+press F5
+press Shift+F2
+press Control+k
+press x
+press Control+x
+sleep 300
+click .ood-dlg >> text=Close

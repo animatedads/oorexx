@@ -24,7 +24,7 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.3.0"
+  return "0.4.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute key unguarded
@@ -53,13 +53,15 @@
 ::attribute notifyTable unguarded     -- WM_NOTIFY connections: (id event method keyword)
 ::attribute store unguarded           -- user data of items, by "id item"
 ::attribute menu unguarded            -- the menu bar's OodMenu, if one is attached
+::attribute keyTable unguarded        -- key press connections: (method, set of key codes, filter)
+::attribute deferred unguarded        -- operations asked for before the dialog exists: (id name a b c)
 ::attribute contextMethod unguarded   -- the method of the context menu event
 ::attribute parentDlg unguarded
 ::attribute ownerDialog unguarded
 ::method init
   expose key rexxSelf library resourceID dlgID autoDetect fontName fontSize sizeX sizeY factorX factorY -
          pixelCX pixelCY initCode live templateActive spec template dataTable cmdTable controls kinds -
-         parentDlg ownerDialog notifyTable store menu contextMethod
+         parentDlg ownerDialog notifyTable store menu contextMethod deferred keyTable
   use arg key, rexxSelf, library, resourceID
   dlgID = -1
   autoDetect = .true
@@ -77,6 +79,8 @@
   kinds = .directory~new
   notifyTable = .array~new
   store = .directory~new
+  deferred = .array~new
+  keyTable = .array~new
   menu = .nil
   contextMethod = ""
   parentDlg = .nil
@@ -88,7 +92,7 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.3.0"
+  return "0.4.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute rexxSelf unguarded
@@ -117,7 +121,7 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.3.0"
+  return "0.4.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute dlg unguarded             -- its dialog's OodDlg
@@ -135,7 +139,7 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.3.0"
+  return "0.4.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::method module_version unguarded
@@ -267,7 +271,88 @@
     when kind == "CMD" then self~command(key, id, code)
     when kind == "NOTIFY" then self~notify(key, id, code, extra)
     when kind == "CTX" then self~contextMenu(key, id, code, extra)
+    when kind == "KEY" then self~keyPress(key, id, code)
     otherwise nop
+  end
+
+/* Key presses: connectKeyPress(method, keys, filter), connectFKeyPress(method). */
+::method keySet unguarded          -- "ALL", "FKEYS", "65-90", "13, 27" ... as a set of virtual key codes
+  use arg keys
+  codes = .set~new
+  do token over keys~translate(" ", ",")~upper~makeArray(" ")
+    low = 0
+    high = -1
+    select
+      when token == "ALL" then do
+        low = 1; high = 255
+      end
+      when token == "FKEYS" then do
+        low = 112; high = 135
+      end
+      when token == "ALPHA" then do
+        low = 65; high = 90
+      end
+      when token == "NUMERIC" then do
+        low = 48; high = 57
+      end
+      when token == "ALPHANUMERIC" then do
+        low = 48; high = 90
+      end
+      when token~pos("-") > 1 then parse var token low "-" high
+      when token~datatype("W") then do
+        low = token; high = token
+      end
+      otherwise nop
+    end
+    if low~datatype("W") then if high~datatype("W") then do code = low to high
+      codes~put(code)
+    end
+  end
+  return codes
+::method connectKeys unguarded
+  use arg dlg, method, keys, filter
+  d = dlg~oodPeer
+  d~keyTable~append(.array~of(method~upper, self~keySet(keys), filter~upper))
+  d~cmdTable~append(.array~of(0, "KEY", ""))
+  if d~live then self~web~sub(d~key, 0, "KEY")
+  return 0
+::method en_connectKeyPress unguarded
+  use arg self_, msg, a
+  return self~connectKeys(self_, a[1], a[2], self~opt(a, 3))
+::method en_connectFKeyPress unguarded
+  use arg self_, msg, a
+  return self~connectKeys(self_, a[1], "FKEYS", "")
+::method en_disconnectKeyPress unguarded
+  use arg self_, msg, a
+  d = self_~oodPeer
+  keep = .array~new
+  do entry over d~keyTable
+    if a~hasIndex(1) then if entry[1] \== a[1]~upper then keep~append(entry)
+  end
+  d~keyTable = keep
+  return 0
+::method en_hasKeyPressConnection unguarded
+  use arg self_, msg, a
+  do entry over self_~oodPeer~keyTable
+    if \a~hasIndex(1) then return .true
+    if entry[1] == a[1]~upper then return .true
+  end
+  return .false
+::method keyPress unguarded        -- the method gets (key code, shift, control, alt, info)
+  use arg key, code, mods
+  d = self~dialogOf(key)
+  if d == .nil then return
+  shift = (mods~pos("S") > 0)
+  control = (mods~pos("C") > 0)
+  alt = (mods~pos("A") > 0)
+  do entry over d~keyTable
+    if \entry[2]~hasIndex(code) then iterate
+    filter = entry[3]
+    if filter~wordPos("NONE") > 0 then if shift | control | alt then iterate
+    if filter~wordPos("SHIFT") > 0 then if \shift then iterate
+    if filter~wordPos("CONTROL") > 0 then if \control then iterate
+    if filter~wordPos("ALT") > 0 then if \alt then iterate
+    self~invoke(d~rexxSelf, entry[1], .array~of(code, shift, control, alt, mods))
   end
 
 /* WM_CONTEXTMENU: the method gets the window's handle and the position. */
@@ -888,6 +973,10 @@ syntax:
     self~web~sub(d~key, entry[1], entry[2])
   end
   if d~menu \== .nil then self~menuSync(d~menu)
+  do entry over d~deferred
+    self~web~op(d~key, entry[1], entry[2], entry[3], entry[4], entry[5])
+  end
+  d~deferred~empty
   return .true
 
 ::method dyndlg_stop unguarded
@@ -1228,8 +1317,10 @@ syntax:
   if id == -1 then return -1
   keyword = a[2]~strip~upper
   p = map~wordPos(keyword)
-  if p == 0 then
-    raise syntax 98.900 array("ooDialog/WASM: the event" keyword "is not available yet")
+  if p == 0 then do                  -- the connection is accepted; the page never produces this event
+    say "ooDialog/WASM: the event" keyword "of control" id "is connected but is not produced yet"
+    return 0
+  end
   method = self~opt(a, 3)
   if method == "" then method = "on" || keyword
   do event over map~word(p + 1)~makeArray("+")
@@ -1352,6 +1443,124 @@ syntax:
   return 0
 ::method dtp_setFormat unguarded
   return .true
+
+/*---- bitmaps and images --------------------------------------------------------------------*/
+::method ctlOpWhenLive unguarded   -- an operation on a control: now, or when the dialog starts
+  use arg d, id, name, a = "", b = "", c = ""
+  if d~live then return self~web~op(d~key, id, name, a, b, c)
+  d~deferred~append(.array~of(id, name, a, b, c))
+  return 1
+
+::method imageKey                  -- a bitmap file, or a handle of loadBitmap, known to the page; "" if not there
+  expose bitmaps
+  use arg source
+  if \var("BITMAPS") then bitmaps = .directory~new
+  if \source~isA(.String) then return ""
+  if source == "" | source == 0 then return ""
+  if bitmaps~hasIndex(source) then return bitmaps[source]      -- a handle
+  file = self~path(source)
+  if self~web~hasImage(file) == 1 then return file
+  if \SysIsFile(file) then return ""
+  stream = .stream~new(file)
+  if stream~open("READ") \== "READY:" then return ""
+  bytes = stream~charIn(1, stream~chars)
+  stream~close
+  kind = "bmp"
+  ext = filespec("EXTENSION", file)~lower
+  if "png gif jpg jpeg ico svg"~wordPos(ext) > 0 then kind = ext
+  if kind == "jpg" then kind = "jpeg"
+  if kind == "ico" then kind = "x-icon"
+  if kind == "svg" then kind = "svg+xml"
+  self~web~image(file, "data:image/"kind";base64,"bytes~encodeBase64)
+  return file
+
+::method winex_loadBitmap          -- loadBitmap(file): a handle, 0 if the file is not there
+  expose bitmaps
+  use arg self_, msg, a
+  key = self~imageKey(a[1])
+  if key == "" then return 0
+  handle = "0x"d2x(8192 + bitmaps~items)~right(16, "0")
+  bitmaps[handle] = key
+  return handle
+::method winex_removeBitmap unguarded
+  return .true
+
+::method bitmapButton unguarded    -- installBitmapButton / changeBitmapButton
+  use arg self_, id, normal, focused, selected, disabled, style
+  sep = self~sep
+  other = self~imageKey(focused) || sep || self~imageKey(selected) || sep || self~imageKey(disabled)
+  self~ctlOpWhenLive(self_~oodPeer, id, "bitmap", self~imageKey(normal), other, style~upper)
+  return 0
+::method argOr unguarded
+  use arg a, i
+  if a~hasIndex(i) then return a[i]
+  return ""
+::method dlgext_installBitmapButton unguarded   -- (id, msgToRaise, normal, focused, selected, disabled, style)
+  use arg self_, msg, a
+  id = self~resolveId(self_, a[1])
+  if id < 1 then return 1
+  method = self~opt(a, 2)
+  if method \== "" then self~addCommand(self_, id, 0, method)
+  return self~bitmapButton(self_, id, a[3], self~argOr(a, 4), self~argOr(a, 5), self~argOr(a, 6), self~opt(a, 7))
+::method dlgext_changeBitmapButton unguarded    -- (id, normal, focused, selected, disabled, style)
+  use arg self_, msg, a
+  id = self~resolveId(self_, a[1])
+  if id < 1 then return 1
+  return self~bitmapButton(self_, id, a[2], self~argOr(a, 3), self~argOr(a, 4), self~argOr(a, 5), self~opt(a, 6))
+
+::method dyndlg_createStaticImage unguarded
+  use arg self_, msg, a
+  id = self~addItem(self_, "IMAGE", a[1], a[2], a[3], a[4], a[5], self~opt(a, 6), "")
+  if id < -1 then return id
+  return 0
+
+/* .Image: an image file; the object's state is the file's key in the page. */
+::method image_getImage_cls unguarded           -- .Image~getImage(file, type, size, flags)
+  use arg self_, msg, a
+  return self_~new(self~imageKey(a[1]))
+::method image_init unguarded
+  use arg self_, msg, a
+  self_~oodPeer = a[1]
+  return 0
+::method image_isNull unguarded
+  use arg self_
+  return self_~oodPeer == ""
+::method image_handle unguarded
+  use arg self_
+  return self_~oodPeer
+::method image_release unguarded
+  return 0
+::method image_systemErrorCode unguarded
+  return 0
+::method image_colorRef_cls unguarded           -- colorRef(r, g, b)
+  use arg self_, msg, a
+  red = 0; green = 0; blue = 0
+  if a~hasIndex(1) then red = a[1]
+  if a~hasIndex(2) then green = a[2]
+  if a~hasIndex(3) then blue = a[3]
+  return red + green * 256 + blue * 65536
+::method image_getRValue_cls unguarded
+  use arg self_, msg, a
+  return a[1] // 256
+::method image_getGValue_cls unguarded
+  use arg self_, msg, a
+  return (a[1] % 256) // 256
+::method image_getBValue_cls unguarded
+  use arg self_, msg, a
+  return (a[1] % 65536) // 256
+::method setImageOf unguarded
+  use arg self_, image
+  key = ""
+  if image \== .nil then key = image~oodPeer
+  p = self_~oodPeer
+  self~ctlOpWhenLive(p~dlg, p~id, "image", key)
+  return .nil
+::method stc_setImage unguarded
+  use arg self_, msg, a
+  return self~setImageOf(self_, a[1])
+::method stc_setIcon unguarded
+  use arg self_, msg, a
+  return self~setImageOf(self_, a[1])
 
 /*---- fonts and colours ------------------------------------------------------------------*/
 ::method newFont                   -- a font "handle": the name, the point size, and B I U for the style
