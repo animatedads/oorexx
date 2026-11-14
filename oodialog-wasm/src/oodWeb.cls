@@ -24,7 +24,7 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.6.0"
+  return "0.7.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute key unguarded
@@ -56,6 +56,7 @@
 ::attribute pageInfo unguarded        -- a property sheet page's state, else .nil
 ::attribute sheet unguarded           -- a property sheet's state, else .nil
 ::attribute embed unguarded           -- (parent key, x, y in pixels) of a dialog shown inside another, else .nil
+::attribute ctlInfo unguarded         -- a ControlDialog's state, else .nil
 ::attribute keyTable unguarded        -- key press connections: (method, set of key codes, filter)
 ::attribute deferred unguarded        -- operations asked for before the dialog exists: (id name a b c)
 ::attribute contextMethod unguarded   -- the method of the context menu event
@@ -64,7 +65,7 @@
 ::method init
   expose key rexxSelf library resourceID dlgID autoDetect fontName fontSize sizeX sizeY factorX factorY -
          pixelCX pixelCY initCode live templateActive spec template dataTable cmdTable controls kinds -
-         parentDlg ownerDialog notifyTable store menu contextMethod deferred keyTable pageInfo sheet embed
+         parentDlg ownerDialog notifyTable store menu contextMethod deferred keyTable pageInfo sheet embed ctlInfo
   use arg key, rexxSelf, library, resourceID
   dlgID = -1
   autoDetect = .true
@@ -84,6 +85,7 @@
   store = .directory~new
   deferred = .array~new
   keyTable = .array~new
+  ctlInfo = .nil
   pageInfo = .nil
   sheet = .nil
   embed = .nil
@@ -98,7 +100,7 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.6.0"
+  return "0.7.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute rexxSelf unguarded
@@ -127,7 +129,7 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.6.0"
+  return "0.7.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute dlg unguarded             -- its dialog's OodDlg
@@ -145,7 +147,7 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.6.0"
+  return "0.7.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::method module_version unguarded
@@ -720,6 +722,7 @@ syntax:
   code = -1
   if d~live then do
     if self_~finished then self_~leaving
+    self~finishChildren(d)
     self~web~destroy(d~key)
     d~live = .false
     self~deregister(d)
@@ -1231,12 +1234,12 @@ syntax:
   if self~resourceProvider \== .nil then return self~resourceProvider
   raise syntax 98.900 array("ooDialog/WASM:" what "needs a reader of binary Windows resources; set .oodn~resourceProvider (see oodWeb.cls)")
 
-::method resdlg_startDialog_pvt unguarded
-  use arg self_, msg, a
+::method resTemplate unguarded     -- the dialog's template from the resource reader; .false if there is none
+  use arg self_, library, rxID
   d = self_~oodPeer
-  provider = self~needProvider("a ResDialog")
-  id = self~resolveId(self_, a[2])
-  t = provider~dialogTemplate(self~path(a[1]), id)
+  provider = self~needProvider("a dialog from a resource file")
+  id = self~resolveId(self_, rxID)
+  t = provider~dialogTemplate(self~path(library), id)
   if t == .nil then return .false
   spec = .StringTable~new
   spec["key"] = d~key
@@ -1253,6 +1256,10 @@ syntax:
     cid = self~addItem(self_, c~kind, c~id, c~x, c~y, c~cx, c~cy, c~opts, c~text)
     if cid > 0 then if "EDIT CHECK RADIO LIST COMBO"~wordPos(c~kind) > 0 then d~dataTable~append(.array~of(cid, c~kind))
   end
+  return .true
+::method resdlg_startDialog_pvt unguarded
+  use arg self_, msg, a
+  if \self~resTemplate(self_, a[1], a[2]) then return .false
   return self~dyndlg_startParentDialog(self_, msg, .array~of(a[3], a[4]))
 ::method resdlg_getDataTableIDs_pvt unguarded
   use arg self_
@@ -1261,6 +1268,119 @@ syntax:
     ids~append(entry[1])
   end
   return ids
+
+/*---- ControlDialog: a dialog shown inside its owner dialog ---------------------------------------*/
+::method ctlInfoOf unguarded
+  use arg dlg
+  d = dlg~oodPeer
+  if d~ctlInfo == .nil then do
+    info = .directory~new
+    info~extraOptions = ""
+    info~initializing = .true
+    info~pageTitle = ""
+    info~wasActivated = .false
+    d~ctlInfo = info
+  end
+  return d~ctlInfo
+::method cd_init unguarded
+  return 0
+::method cd_controlDlgInit unguarded
+  return 0
+::method cd_get_extraOptions unguarded
+  use arg self_
+  return self~ctlInfoOf(self_)~extraOptions
+::method cd_set_extraOptions unguarded
+  use arg self_, msg, a
+  self~ctlInfoOf(self_)~extraOptions = a[1]
+  return
+::method cd_get_initializing unguarded
+  use arg self_
+  return self~ctlInfoOf(self_)~initializing
+::method cd_set_initializing unguarded
+  use arg self_, msg, a
+  self~ctlInfoOf(self_)~initializing = (a[1] == .true)
+  return
+::method cd_get_isManaged unguarded
+  return .false
+::method cd_get_pageTitle unguarded
+  use arg self_
+  return self~ctlInfoOf(self_)~pageTitle
+::method cd_set_pageTitle unguarded
+  use arg self_, msg, a
+  self~ctlInfoOf(self_)~pageTitle = a[1]
+  return
+::method cd_get_wasActivated unguarded
+  use arg self_
+  return self~ctlInfoOf(self_)~wasActivated
+
+::method startInOwner unguarded    -- make the dialog inside its owner, at its template's position
+  use arg self_
+  d = self_~oodPeer
+  owner = d~ownerDialog
+  if owner == .nil then return 0
+  od = owner~oodPeer
+  if \od~live then return 0
+  if \d~templateActive then return 0
+  left = (d~spec["x"] * od~factorX)~format(, 0)
+  top = (d~spec["y"] * od~factorY)~format(, 0)
+  d~embed = .array~of(od~key, left, top)
+  if \self~dyndlg_startParentDialog(self_, "", .array~new) then return 0
+  self~ctlInfoOf(self_)~wasActivated = .true
+  self~web~show(d~key, "NORMAL")
+  return d~hwnd
+::method dyndlg_startChildDialog unguarded
+  use arg self_
+  return self~startInOwner(self_)
+::method resCtrlDlg_startDialog_pvt unguarded
+  use arg self_, msg, a
+  if \self~resTemplate(self_, a[1], a[2]) then return .false
+  return self~startInOwner(self_) \== 0
+
+::method finishChildren unguarded  -- the dialogs shown inside a dialog end with it
+  expose dialogs
+  use arg d
+  do child over dialogs~allItems
+    if child~embed == .nil then iterate
+    if child~embed[1] \== d~key then iterate
+    child~live = .false
+    self~deregister(child)
+    child~rexxSelf~finished = .true
+  end
+
+/* setWindowPos(hwndBehind, rect | point, size | x, y, cx, cy, opts): pixels in the parent's client area. */
+::method wb_setWindowPos unguarded
+  use arg self_, msg, a
+  opts = ""
+  nums = .array~new
+  do i = 2 to a~last
+    if \a~hasIndex(i) then iterate
+    v = a[i]
+    select
+      when v~isA(.String) then do
+        if v~datatype("N") then nums~append(v)
+        else opts = v~upper
+      end
+      when v~hasMethod("WIDTH") then do
+        nums~append(v~width)
+        nums~append(v~height)
+      end
+      when v~hasMethod("RIGHT") then do
+        nums~append(v~left); nums~append(v~top)
+        nums~append(v~right - v~left); nums~append(v~bottom - v~top)
+      end
+      otherwise do
+        nums~append(v~x)
+        nums~append(v~y)
+      end
+    end
+  end
+  if nums~items >= 2 then if opts~pos("NOMOVE") == 0 then self~op(self_, "move", nums[1], nums[2])
+  if nums~items >= 4 then if opts~pos("NOSIZE") == 0 then self~op(self_, "size", nums[3], nums[4])
+  if opts~pos("SHOWWINDOW") > 0 then self~op(self_, "show")
+  if opts~pos("HIDEWINDOW") > 0 then self~op(self_, "hide")
+  return .true
+::method wb_moveSizeWindow unguarded
+  forward message "wb_setWindowPos"
 
 /*---- property sheets -------------------------------------------------------------------------*/
 /* A property sheet is drawn by this layer as an ordinary dialog: a tab control (ID 12320),
@@ -1344,6 +1464,13 @@ syntax:
   if info~kind == "RC" then do
     if self_~loadFrame(info~expected) \== 0 then return 1
     return self_~loadItems(info~connectOpts)
+  end
+  if info~kind == "RES" then do
+    if \self~resTemplate(self_, self_~library, self_~resourceID) then return 1
+    info~cx = d~sizeX
+    info~cy = d~sizeY
+    if info~title == "" then info~title = d~spec["title"]
+    return 0
   end
   self~pageTemplate(self_, info~cx, info~cy)
   self_~defineDialog
@@ -1913,6 +2040,139 @@ syntax:
 ::method stc_setIcon unguarded
   use arg self_, msg, a
   return self~setImageOf(self_, a[1])
+
+/*---- image lists: kept, counted, accepted by the controls; the page does not draw item icons yet --*/
+::method il_create_cls unguarded   -- .ImageList~create(size, flags, count, grow)
+  use arg self_, msg, a
+  state = .directory~new
+  state~images = .array~new
+  state~size = .Size~new(16, 16)
+  if a~hasIndex(1) then state~size = a[1]
+  return self_~new(state)
+::method il_init unguarded
+  use arg self_, msg, a
+  self_~oodPeer = a[1]
+  return 0
+::method il_add unguarded
+  use arg self_, msg, a
+  images = self_~oodPeer~images
+  images~append(a[1])
+  return images~items - 1
+::method il_addMasked unguarded
+  forward message "il_add"
+::method il_addIcon unguarded
+  forward message "il_add"
+::method il_addImages unguarded
+  use arg self_, msg, a
+  images = self_~oodPeer~images
+  do image over a[1]
+    images~append(image)
+  end
+  return images~items - 1
+::method il_getCount unguarded
+  use arg self_
+  return self_~oodPeer~images~items
+::method il_getImageSize unguarded
+  use arg self_
+  return self_~oodPeer~size
+::method il_handle unguarded
+  use arg self_
+  return "0x"d2x(self_~oodPeer~identityHash)~right(16, "0")
+::method il_isNull unguarded
+  return .false
+::method il_release unguarded
+  return 0
+::method il_remove unguarded
+  use arg self_, msg, a
+  images = self_~oodPeer~images
+  if a[1] < 0 | a[1] >= images~items then return .false
+  images~delete(a[1] + 1)
+  return .true
+::method il_removeAll unguarded
+  use arg self_
+  self_~oodPeer~images~empty
+  return .true
+::method il_duplicate unguarded
+  use arg self_
+  state = .directory~new
+  state~images = self_~oodPeer~images~copy
+  state~size = self_~oodPeer~size
+  return self_~class~new(state)
+::method image_fromFiles_cls unguarded
+  use arg self_, msg, a
+  out = .array~new
+  do file over a[1]
+    out~append(self_~new(self~imageKey(file)))
+  end
+  return out
+::method setImageListOf unguarded  -- the control keeps its image list; the previous one is the answer
+  use arg self_, list
+  p = self_~oodPeer
+  key = p~id "imagelist"
+  old = p~dlg~store[key]
+  p~dlg~store[key] = list
+  if old == .nil then return .nil
+  return old
+::method lv_setImageList unguarded
+  use arg self_, msg, a
+  return self~setImageListOf(self_, a[1])
+::method tv_setImageList unguarded
+  use arg self_, msg, a
+  return self~setImageListOf(self_, a[1])
+::method tab_setImageList unguarded
+  use arg self_, msg, a
+  return self~setImageListOf(self_, a[1])
+::method bc_setImageList unguarded
+  use arg self_, msg, a
+  return self~setImageListOf(self_, a[1])
+::method getImageListOf unguarded
+  use arg self_
+  p = self_~oodPeer
+  list = p~dlg~store[p~id "imagelist"]
+  if list == .nil then return .nil
+  return list
+::method lv_getImageList unguarded
+  use arg self_
+  return self~getImageListOf(self_)
+::method tv_getImageList unguarded
+  use arg self_
+  return self~getImageListOf(self_)
+::method tab_getImageList unguarded
+  use arg self_
+  return self~getImageListOf(self_)
+
+/*---- tool tips: the browser's own, set as the control's title ---------------------------------------*/
+::method pbdlg_createToolTip unguarded   -- createToolTip(id, style): a ToolTip object
+  use arg self_, msg, a
+  d = self_~oodPeer
+  id = self~resolveId(self_, a[1])
+  if id < 1 then return .nil
+  cached = d~controls[id "TOOLTIP"]
+  if cached \== .nil then return cached
+  tip = self~classOf("ToolTip")~new(self_, id, .OodCtl~new(d, id, "TOOLTIP"))
+  d~controls[id "TOOLTIP"] = tip
+  return tip
+::method pbdlg_newToolTip unguarded
+  use arg self_, msg, a
+  cached = self_~oodPeer~controls[self~resolveId(self_, a[1]) "TOOLTIP"]
+  if cached == .nil then return .nil
+  return cached
+::method tt_addTool unguarded      -- addTool(control, text)
+  use arg self_, msg, a
+  tool = a[1]~oodPeer
+  if tool~isA(.OodDlg) then self~ctlOpWhenLive(tool, 0, "tip", self~opt(a, 2))
+  else self~ctlOpWhenLive(tool~dlg, tool~id, "tip", self~opt(a, 2))
+  return .true
+::method tt_addToolRect unguarded
+  return .true
+::method tt_setTitle unguarded
+  return .true
+::method tt_activate unguarded
+  return 0
+::method tt_setMaxTipWidth unguarded
+  return -1
+::method tt_setDelayTime unguarded
+  return 0
 
 /*---- fonts and colours ------------------------------------------------------------------*/
 ::method newFont                   -- a font "handle": the name, the point size, and B I U for the style

@@ -157,3 +157,17 @@
 ::attribute startPage unguarded
 --@replace PropertySheetDialog watermark
 ::attribute watermark unguarded
+
+--@replace ResPSPDialog init
+-- respspdlg_init, in Rexx (it forwards to the superclass, PlainBaseDialog's init through ResDialog).
+::method init
+  use arg dllFile, resourceID, , includeFile, pageOpts = ""
+  newArgs = .array~new(4)
+  newArgs[1] = dllFile
+  newArgs[2] = resourceID
+  if arg(3, "E") then newArgs[3] = arg(3)
+  if arg(4, "E") then newArgs[4] = includeFile
+  forward class (super) arguments (newArgs) continue
+  initResult = result
+  .oodn~pageInit(self, "RES", pageOpts, "", 200)
+  return initResult

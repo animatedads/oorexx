@@ -3062,6 +3062,7 @@ expose dlgObjList
 ::attribute resources unguarded
 ::attribute startPage unguarded
 ::attribute watermark unguarded
+
 -- psdlg_init, in Rexx: the object variables it sets belong to this scope.
 ::method init
   expose appIcon caption header imageList pages resources startPage watermark
@@ -3346,9 +3347,18 @@ expose dlgObjList
 ::class 'ResPSPDialog' public subclass ResDialog inherit PropertySheetPage
 ::attribute oodPeer unguarded
 
-::method init 
-  forward to (.oodn) message "respspdlg_init" arguments (.array~of(self, "INIT", arg(1, "A")))
-
+-- respspdlg_init, in Rexx (it forwards to the superclass, PlainBaseDialog's init through ResDialog).
+::method init
+  use arg dllFile, resourceID, , includeFile, pageOpts = ""
+  newArgs = .array~new(4)
+  newArgs[1] = dllFile
+  newArgs[2] = resourceID
+  if arg(3, "E") then newArgs[3] = arg(3)
+  if arg(4, "E") then newArgs[4] = includeFile
+  forward class (super) arguments (newArgs) continue
+  initResult = result
+  .oodn~pageInit(self, "RES", pageOpts, "", 200)
+  return initResult
 ::method execute unguarded
     -- if autodetection is on, create the data attributes
     if self~autoDetect then do

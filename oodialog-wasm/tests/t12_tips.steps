@@ -1,0 +1,3 @@
+wait .ood-lv >> text=Chocolate
+expect document.querySelector('.ood-dlg button.ood-def').title ==> Closes the dialog
+click .ood-dlg >> text=Close

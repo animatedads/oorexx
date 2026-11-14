@@ -820,6 +820,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       case 'replaceSel': m.setRangeText(String(a), m.selectionStart, m.selectionEnd, 'end'); c.modified = true; return '1';
       case 'line': { const ls = m.value.split('\n'); return ls[Number(a) - 1] == null ? '' : ls[Number(a) - 1]; }
       case 'cue': m.placeholder = String(a); return '1';
+      case 'tip': (c ? c.el : el).title = String(a); return '1';   // a tool tip: the browser's own
       // list box and combo box; positions zero-based
       case 'add': return String(listInsert(c, -1, String(a)));
       case 'insert': return String(listInsert(c, Number(a), String(b)));

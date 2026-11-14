@@ -847,7 +847,6 @@ rebar_sizeToRect
 resCtrlDlg_startDialog_pvt
 resdlg_getDataTableIDs_pvt
 resdlg_startDialog_pvt
-respspdlg_init
 ri_getImage
 ri_getImages
 ri_handle

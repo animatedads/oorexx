@@ -1,0 +1,10 @@
+wait .ood-child >> text=City:
+expect [...document.querySelectorAll('.ood-child')].filter(e => e.style.visibility !== 'hidden').length ==> 1
+click .ood-child >> text=Glasgow
+click .ood-tabbtn >> text=Delivery
+wait .ood-child >> text=Express
+click .ood-child .ood-check input
+sleep 300
+expect [...document.querySelectorAll('.ood-child')].filter(e => e.style.visibility !== 'hidden').length ==> 1
+shot t11_controldialog
+click .ood-dlg > .ood-client > button
