@@ -1,4 +1,4 @@
-# ooDialog for ooRexx/WASM — v0.5.0
+# ooDialog for ooRexx/WASM — v0.6.0
 
 Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: Josep Maria Blasco's
 ooRexx/WASM (`oorexxwasm` 0.2.4, ooRexx 5.3.0) and its `js.cls`.
@@ -17,7 +17,7 @@ Rexx **unchanged** and replaces only the DLL:
 | Page runtime | `src/oodialog-web.js` | Dialogs and controls as DOM, a subset of Win32 control messages, WM_COMMAND events; embedded into `oodWeb.cls` by the build |
 | Shapes | `src/ooShapes.cls` | `.Point`, `.Size`, `.Rect` in Rexx (native on Windows) |
 | Additions | `src/oodExtras.cls` | Classes of the port that need ooDialog's own classes (the file dialog); appended to the generated `ooDialog.cls` |
-| Patches | `src/patches.txt` | 6 members replaced, 3 dropped: only what must run in the class's own scope |
+| Patches | `src/patches.txt` | 17 members replaced, 3 dropped: only what must run in the class's own scope |
 
 Existing programs keep `::requires "ooDialog.cls"`. Three files go into the
 interpreter's file system: `ooDialog.cls`, `oodWeb.cls`, `ooShapes.cls`.
@@ -47,15 +47,18 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
     python3 tools/oodtest.py --sweep upstream/examples
     python3 tools/oodtest.py --tree upstream/examples tests/t0*.rex tests/up/calculator.rex tests/up/oodpbar.rex tests/up/oodStandardRoutines.rex
 
-## State on 2026-11-14 (v0.5.0)
+## State on 2026-11-14 (v0.6.0)
 
-- Natives ported: 355 of 1,196 (29.7%).
-- Tests: 12 of 12 pass in headless Chromium (`tests/t01`..`t09` with expected
-  output, and three unmodified upstream samples: `calculator.rex`,
-  `oodpbar.rex`, `oodStandardRoutines.rex`).
+- Natives ported: 384 of 1,185 (32.4%). (The total fell from 1,196 because 11
+  natives of PropertySheetDialog are now plain Rexx in `src/patches.txt`.)
+- Tests: 14 of 14 pass in headless Chromium (`tests/t01`..`t10` with expected
+  output, and four unmodified upstream samples: `calculator.rex`,
+  `oodpbar.rex`, `oodStandardRoutines.rex`, and the tutorial
+  `employee11tab.rex`, a four-page property sheet from an .rc file, in which
+  an employee is added and then found on the list page).
 - Sweep of all 140 upstream example programs (`oodtest.py --sweep`, results in
-  `sweep.tsv`): 50 show their dialog, 7 run to the end, 45 stop at a native not
-  ported yet (named in the file), 38 stop on another error. Of the 38, most are
+  `sweep.tsv`): 51 show their dialog, 7 run to the end, 42 stop at a native not
+  ported yet (named in the file), 40 stop on another error. Of the 40, most are
   Error 43 (a routine or `::requires` file not found: `winSystm.cls`, which is
   Windows-only, `::requires` paths written with `\`, component files that are
   not programs); the rest are Error 98 raised by this layer (a ResDialog or
@@ -72,7 +75,10 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
   JPEG, ICO files, read by Rexx and shown by the page); connectKeyPress and
   connectFKeyPress; FileNameDialog (open, save, type filters, sub-directories)
   over the file system of the WASM machine: it is itself an ooDialog
-  UserDialog, class OodFileDialog in `src/oodExtras.cls`;
+  UserDialog, class OodFileDialog in `src/oodExtras.cls`; PropertySheetDialog
+  with UserPSPDialog and RcPSPDialog pages (tabbed sheets: pages made when
+  first shown, killActive, apply, queryCancel, setCurSel, getResult);
+  control~connectEvent;
   data attributes and dlgData. stems; the connectXxxEvent methods of those
   controls; MessageDialog and the routines built on it; InputBox, IntegerBox,
   PasswordBox, MultiInputBox, ListChoice, MultiListChoice, CheckList,
@@ -94,13 +100,18 @@ test a real reader must also pass.
 
 ## Not yet (the sweep's order of need)
 
-Owner-draw, mouse and WM events; image lists; property sheets and
-ControlDialog; tool tips; month calendar; scroll bar; tool bar, status bar,
+Owner-draw, mouse and WM events; image lists; ControlDialog (dialogs inside a
+tab the program manages itself); wizards, ResPSPDialog and a modeless
+property sheet; tool tips; month calendar; scroll bar; tool bar, status bar,
 re-bar; list-view LvItem/LvFullRow objects and the remaining list-view and
 tree-view events; track bar events; resizing; the folder dialog;
 popup/popupAsChild untested.
 
 ## Known
+
+A property sheet's tab control can be narrower than its row of tabs.
+Setting an edit control's text from the program sends its CHANGE and UPDATE
+events, as Windows does.
 
 An event keyword this layer cannot produce yet (for example a list-view's
 BEGINSCROLL) is accepted by connectXxxEvent, and a line saying so is written

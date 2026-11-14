@@ -1,0 +1,17 @@
+wait .ood-msgbox >> text=Employee Database is empty
+click .ood-msgbox >> text=OK
+wait .ood-child >> text=Person:
+fill .ood-child input.ood-edit => Jane Doe
+sleep 300
+click .ood-child button:text-is("Add")
+sleep 700
+expect document.querySelector('.ood-child input.ood-edit').value === '' ==> True
+click .ood-tabbtn >> text=List Employees
+sleep 900
+expect [...document.querySelectorAll('.ood-lv tbody tr')].length ==> 1
+expect document.querySelector('.ood-lv tbody tr td').textContent ==> Jane Doe
+shot up_employee_list
+click .ood-tabbtn >> text=Browse Employees
+sleep 700
+shot up_employee_browse
+click .ood-dlg button:text-is("Cancel")

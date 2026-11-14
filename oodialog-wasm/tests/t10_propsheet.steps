@@ -1,0 +1,13 @@
+wait .ood-tabbtn >> text=Options
+click .ood-tabbtn >> text=Options
+sleep 400
+expect document.querySelector('.ood-tabbtn.ood-cur').textContent ==> Name
+fill .ood-child input.ood-edit => Tom
+click .ood-tabbtn >> text=Options
+wait .ood-child >> text=I agree
+click .ood-child .ood-check input
+shot t10_propsheet
+click .ood-tabbtn >> text=Name
+sleep 300
+expect [...document.querySelectorAll('.ood-child')].filter(e => e.style.visibility !== 'hidden').length ==> 1
+click .ood-dlg >> text=OK

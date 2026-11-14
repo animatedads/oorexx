@@ -1,0 +1,3 @@
+execute 1 result CLOSEDOK
+name: Tom | second page shown: 1 | agree: 1
+log: pages 2 refused active2 active1

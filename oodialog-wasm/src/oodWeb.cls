@@ -24,7 +24,7 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.5.0"
+  return "0.6.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute key unguarded
@@ -53,6 +53,9 @@
 ::attribute notifyTable unguarded     -- WM_NOTIFY connections: (id event method keyword)
 ::attribute store unguarded           -- user data of items, by "id item"
 ::attribute menu unguarded            -- the menu bar's OodMenu, if one is attached
+::attribute pageInfo unguarded        -- a property sheet page's state, else .nil
+::attribute sheet unguarded           -- a property sheet's state, else .nil
+::attribute embed unguarded           -- (parent key, x, y in pixels) of a dialog shown inside another, else .nil
 ::attribute keyTable unguarded        -- key press connections: (method, set of key codes, filter)
 ::attribute deferred unguarded        -- operations asked for before the dialog exists: (id name a b c)
 ::attribute contextMethod unguarded   -- the method of the context menu event
@@ -61,7 +64,7 @@
 ::method init
   expose key rexxSelf library resourceID dlgID autoDetect fontName fontSize sizeX sizeY factorX factorY -
          pixelCX pixelCY initCode live templateActive spec template dataTable cmdTable controls kinds -
-         parentDlg ownerDialog notifyTable store menu contextMethod deferred keyTable
+         parentDlg ownerDialog notifyTable store menu contextMethod deferred keyTable pageInfo sheet embed
   use arg key, rexxSelf, library, resourceID
   dlgID = -1
   autoDetect = .true
@@ -81,6 +84,9 @@
   store = .directory~new
   deferred = .array~new
   keyTable = .array~new
+  pageInfo = .nil
+  sheet = .nil
+  embed = .nil
   menu = .nil
   contextMethod = ""
   parentDlg = .nil
@@ -92,7 +98,7 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.5.0"
+  return "0.6.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute rexxSelf unguarded
@@ -121,7 +127,7 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.5.0"
+  return "0.6.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute dlg unguarded             -- its dialog's OodDlg
@@ -139,7 +145,7 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.5.0"
+  return "0.6.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::method module_version unguarded
@@ -369,6 +375,7 @@
   d = self~dialogOf(key)
   if d == .nil then return
   dlg = d~rexxSelf
+  if d~sheet \== .nil then if code == 0 then if self~sheetButton(d, id) then return
   method = ""
   do entry over d~cmdTable
     if entry[1] \== id then iterate
@@ -450,6 +457,9 @@ syntax:
   end
   return -1
 
+::method global_resolveSymbolicId unguarded   -- resolveSymbolicId(symbol): by the global .constDir
+  use arg self_, msg, a
+  return self~resolveId(.nil, a[1])
 ::method rsrcUtils_resolveResourceID unguarded
   use arg self_, msg, a
   return self~resolveId(self_, a[1])
@@ -960,6 +970,11 @@ syntax:
   spec["fontName"] = d~fontName
   spec["fontSize"] = d~fontSize
   if a~hasIndex(2) then if a[2] == .true then spec["modeless"] = 1
+  if d~embed \== .nil then do
+    spec["parent"] = d~embed[1]
+    spec["px"] = d~embed[2]
+    spec["py"] = d~embed[3]
+  end
   answer = self~web~create(spec, d~template)
   parse var answer fx fy pw ph
   d~factorX = fx
@@ -1247,6 +1262,315 @@ syntax:
   end
   return ids
 
+/*---- property sheets -------------------------------------------------------------------------*/
+/* A property sheet is drawn by this layer as an ordinary dialog: a tab control (ID 12320),
+ * the pages as dialogs embedded in it, and OK / Cancel / Apply (12321) / Help buttons.
+ * A page's dialog is made the first time the page is shown, as Windows does. */
+::method pageInit unguarded        -- from the pages' init methods (patches.txt)
+  use arg page, kind, pageOpts, connectOpts, expected
+  info = .directory~new
+  info~kind = kind
+  info~opts = pageOpts~upper
+  info~connectOpts = connectOpts
+  info~expected = expected
+  info~title = ""
+  info~cx = 0
+  info~cy = 0
+  info~sheet = .nil
+  info~number = -1
+  info~activated = .false
+  page~oodPeer~pageInfo = info
+  return 0
+::method pageInfoOf unguarded
+  use arg page
+  return page~oodPeer~pageInfo
+::method psp_init_propertySheetPage unguarded
+  return .true
+::method psp_getcx unguarded       -- cx, cy
+  use arg self_, msg
+  if msg == "CX" then return self~pageInfoOf(self_)~cx
+  return self~pageInfoOf(self_)~cy
+::method psp_setcx unguarded
+  use arg self_, msg, a
+  if msg == "CX=" then self~pageInfoOf(self_)~cx = a[1]
+  else self~pageInfoOf(self_)~cy = a[1]
+  return
+::method psp_setSize unguarded
+  use arg self_, msg, a
+  info = self~pageInfoOf(self_)
+  first = a[1]
+  if first~isA(.String) then do
+    info~cx = first
+    info~cy = a[2]
+  end
+  else do
+    info~cx = first~width
+    info~cy = first~height
+  end
+  return 0
+::method psp_getPageTitle unguarded
+  use arg self_, msg
+  if msg == "PAGETITLE" then return self~pageInfoOf(self_)~title
+  return ""
+::method psp_setPageTitle unguarded
+  use arg self_, msg, a
+  if msg == "PAGETITLE=" then self~pageInfoOf(self_)~title = a[1]
+  return
+::method psp_pageID_atr unguarded
+  use arg self_
+  return self_~oodPeer~hwnd
+::method psp_pageNumber_atr unguarded
+  use arg self_
+  return self~pageInfoOf(self_)~number + 1
+::method psp_propSheet_atr unguarded
+  use arg self_
+  return self~pageInfoOf(self_)~sheet
+::method psp_wasActivated_atr unguarded
+  use arg self_
+  return self~pageInfoOf(self_)~activated
+::method psp_getWantNotification unguarded
+  return .false
+::method psp_setWantNotification unguarded
+  return
+::method psp_setResources_atr unguarded
+  return
+::method psp_setTabIcon_atr unguarded
+  return
+
+::method psp_initTemplate unguarded            -- the page's controls: from its .rc file, or from defineDialog
+  use arg self_
+  d = self_~oodPeer
+  info = d~pageInfo
+  if info~kind == "RC" then do
+    if self_~loadFrame(info~expected) \== 0 then return 1
+    return self_~loadItems(info~connectOpts)
+  end
+  self~pageTemplate(self_, info~cx, info~cy)
+  self_~defineDialog
+  return 0
+::method pageTemplate unguarded
+  use arg page, cx, cy
+  d = page~oodPeer
+  spec = .StringTable~new
+  spec["key"] = d~key
+  spec["x"] = 0; spec["y"] = 0; spec["cx"] = cx; spec["cy"] = cy
+  spec["title"] = d~pageInfo~title
+  spec["opts"] = ""
+  d~spec = spec
+  d~sizeX = cx
+  d~sizeY = cy
+  d~templateActive = .true
+  return 0
+::method rcpspdlg_startTemplate unguarded      -- (cx, cy, title, fontName, fontSize, expected), from loadFrame
+  use arg self_, msg, a
+  d = self_~oodPeer
+  info = d~pageInfo
+  info~cx = a[1]
+  info~cy = a[2]
+  if info~title == "" then info~title = a[3]
+  if a[4] \== "" then d~fontName = a[4]
+  if a[5]~datatype("W") then if a[5] > 0 then d~fontSize = a[5]
+  return self~pageTemplate(self_, a[1], a[2])
+
+::method sheetInit unguarded       -- from PropertySheetDialog~init (patches.txt)
+  use arg sheet, pages, opts
+  info = .directory~new
+  info~pages = pages
+  info~opts = opts~upper
+  info~outcome = "NOTFINISHED"
+  info~current = 0
+  sheet~oodPeer~sheet = info
+  do i = 1 to pages~items
+    pageInfo = self~pageInfoOf(pages[i])
+    pageInfo~sheet = sheet
+    pageInfo~number = i - 1
+  end
+  return 0
+
+::method psdlg_execute unguarded
+  use arg self_, msg, a
+  d = self_~oodPeer
+  info = d~sheet
+  pages = info~pages
+  width = 100
+  height = 60
+  do page over pages                 -- every page's template, to know the sheet's size
+    page~initTemplate
+    pageInfo = self~pageInfoOf(page)
+    width = max(width, pageInfo~cx)
+    height = max(height, pageInfo~cy)
+  end
+  first = pages[1]~oodPeer
+  d~fontName = first~fontName
+  d~fontSize = first~fontSize
+  spec = .StringTable~new
+  spec["key"] = d~key
+  spec["x"] = 0; spec["y"] = 0; spec["cx"] = width + 14; spec["cy"] = height + 48
+  spec["title"] = self_~caption
+  spec["opts"] = "CENTER"
+  d~spec = spec
+  d~sizeX = width + 14
+  d~sizeY = height + 48
+  d~templateActive = .true
+  self~addItem(self_, "TAB", 12320, 4, 4, width + 6, height + 20, "", "")
+  buttons = .array~of(.array~of(1, "OK", "DEFAULT"), .array~of(2, "Cancel", ""))
+  if info~opts~wordPos("NOAPPLYNOW") == 0 then buttons~append(.array~of(12321, "&Apply", "DISABLED"))
+  if info~opts~wordPos("HASHELP") > 0 then buttons~append(.array~of(9, "Help", ""))
+  x = width + 10 - buttons~items * 54
+  do b over buttons
+    self~addItem(self_, "BUTTON", b[1], x, height + 29, 50, 14, b[3], b[2])
+    x = x + 54
+  end
+  d~notifyTable~append(.array~of(12320, "SELCHANGE", "@SHEETTAB", "SELCHANGE"))
+  d~cmdTable~append(.array~of(12320, "SELCHANGE", ""))
+  if \self~dyndlg_startParentDialog(self_, msg, .array~new) then return -1
+  do page over pages
+    self~ctlOp(d, 12320, "tab.ins", -1, self~pageInfoOf(page)~title)
+  end
+  start = self_~startPage
+  if \start~datatype("W") then start = 1
+  if start < 1 | start > pages~items then start = 1
+  self~sheetActivate(self_, start, .false)
+  self_~initDialog
+  self~web~show(d~key, "NORMAL")
+  self~pumpUntilFinished(self_)
+  do page over pages
+    pd = page~oodPeer
+    if pd~pageInfo~activated then do
+      if pd~live then do
+        self~web~destroy(pd~key)
+        pd~live = .false
+        self~deregister(pd)
+      end
+    end
+  end
+  self_~stopIt
+  if info~outcome == "CLOSEDOK" then return 1
+  return 2
+
+/* Show page number index; make its dialog the first time. */
+::method sheetActivate unguarded
+  use arg sheet, index, leaveCurrent
+  d = sheet~oodPeer
+  info = d~sheet
+  pages = info~pages
+  if index < 1 | index > pages~items then return .false
+  if info~current == index then return .true
+  if leaveCurrent then if info~current > 0 then do
+    if pages[info~current]~killActive(sheet) \== .true then do
+      self~winMsg(d, 12320, 4876, info~current - 1)      -- the tab goes back to the page that refused
+      return .false
+    end
+  end
+  page = pages[index]
+  pd = page~oodPeer
+  pageInfo = pd~pageInfo
+  if \pageInfo~activated then do
+    parse value self~ctlOp(d, 12320, "tab.rect") with left top .
+    pd~embed = .array~of(d~key, left + 4, top + 4)
+    if \self~dyndlg_startParentDialog(page, "", .array~new) then return .false
+    pageInfo~activated = .true
+    page~pageCreate(sheet)
+    page~execute
+  end
+  if info~current > 0 then self~web~show(pages[info~current]~oodPeer~key, "HIDE")
+  info~current = index
+  self~winMsg(d, 12320, 4876, index - 1)
+  self~web~show(pd~key, "NORMAL")
+  page~setActive(sheet)
+  return .true
+
+::method sheetTab unguarded        -- the user chose a tab
+  use arg sheet
+  d = sheet~oodPeer
+  self~sheetActivate(sheet, self~winMsg(d, 12320, 4875) + 1, .true)
+
+/* OK, Cancel, Apply, Help of a sheet.  .true: the command was the sheet's own. */
+::method sheetButton unguarded
+  use arg d, id
+  info = d~sheet
+  sheet = d~rexxSelf
+  pages = info~pages
+  select
+    when id == 1 | id == 12321 then do
+      isOk = (id == 1)
+      if info~current > 0 then if pages[info~current]~killActive(sheet) \== .true then return .true
+      do i = 1 to pages~items
+        page = pages[i]
+        if \self~pageInfoOf(page)~activated then iterate
+        if page~apply(isOk, i, info~current, sheet) \== 0 then do
+          self~sheetActivate(sheet, i, .false)
+          return .true
+        end
+      end
+      if \isOk then do
+        self~ctlOp(d, 12321, "enable", 0)
+        return .true
+      end
+      info~outcome = "CLOSEDOK"
+      sheet~initCode = 1
+      sheet~finished = .true
+    end
+    when id == 2 then do
+      do page over pages
+        if \self~pageInfoOf(page)~activated then iterate
+        if page~queryCancel(sheet) \== .true then return .true
+      end
+      do page over pages
+        if self~pageInfoOf(page)~activated then page~reset(.true, sheet)
+      end
+      info~outcome = "CLOSEDCANCEL"
+      sheet~initCode = 2
+      sheet~finished = .true
+    end
+    when id == 9 then do
+      if info~current > 0 then pages[info~current]~help(sheet)
+    end
+    otherwise return .false
+  end
+  return .true
+
+::method psdlg_getResult unguarded
+  use arg self_
+  return self_~oodPeer~sheet~outcome
+::method psdlg_setCurSel unguarded -- setCurSel(index, hPage)
+  use arg self_, msg, a
+  if \self_~oodPeer~live then return .false
+  if \a~hasIndex(1) then return .false
+  return self~sheetActivate(self_, a[1], .true)
+::method psdlg_getPage unguarded
+  use arg self_, msg, a
+  page = self_~oodPeer~sheet~pages[a[1]]
+  if page == .nil then return .nil
+  return page
+::method psdlg_pageToIndex unguarded
+  use arg self_, msg, a
+  return self~pageInfoOf(a[1])~number + 1
+::method psdlg_getTabControl unguarded
+  use arg self_
+  return self_~newTab(12320)
+::method psdlg_changed unguarded
+  use arg self_
+  self~ctlOp(self_~oodPeer, 12321, "enable", 1)
+  return 0
+::method psdlg_unchanged unguarded
+  use arg self_
+  return 0
+::method psdlg_setTitle unguarded
+  use arg self_, msg, a
+  self~ctlOp(self_~oodPeer, 0, "setText", a[1])
+  return 0
+::method psdlg_cancelToClose unguarded
+  use arg self_
+  self~ctlOp(self_~oodPeer, 1, "setText", "Close")
+  self~ctlOp(self_~oodPeer, 2, "enable", 0)
+  return 0
+::method psdlg_getCurrentPageHwnd unguarded
+  use arg self_
+  info = self_~oodPeer~sheet
+  if info~current == 0 then return 0
+  return info~pages[info~current]~oodPeer~hwnd
+
 /*---- EventNotification ---------------------------------------------------------*/
 ::method en_init_eventNotification unguarded
   return .true
@@ -1298,6 +1622,30 @@ syntax:
   if id == -1 then return -1
   self~addCommand(self_, id, "*", a[2])
   return 0
+
+::method dlgctrl_connectEvent unguarded      -- control~connectEvent(event, methodName): as the dialog's connectXxxEvent
+  use arg self_, msg, a
+  p = self_~oodPeer
+  dlg = p~dlg~rexxSelf
+  args = .array~of(p~id, a[1])
+  if a~hasIndex(2) then args[3] = a[2]
+  kind = p~dlg~kinds[p~id]
+  select
+    when kind == "BUTTON" | kind == "CHECK" | kind == "RADIO" then return self~en_connectButtonEvent(dlg, msg, args)
+    when kind == "EDIT" then return self~en_connectEditEvent(dlg, msg, args)
+    when kind == "LIST" then return self~en_connectListBoxEvent(dlg, msg, args)
+    when kind == "COMBO" then return self~en_connectComboBoxEvent(dlg, msg, args)
+    when kind == "STATIC" then return self~en_connectStaticEvent(dlg, msg, args)
+    when kind == "LISTVIEW" then return self~en_connectListViewEvent(dlg, msg, args)
+    when kind == "TREEVIEW" then return self~en_connectTreeViewEvent(dlg, msg, args)
+    when kind == "TAB" then return self~en_connectTabEvent(dlg, msg, args)
+    when kind == "UPDOWN" then return self~en_connectUpDownEvent(dlg, msg, args)
+    when kind == "DATETIMEPICKER" then return self~en_connectDateTimePickerEvent(dlg, msg, args)
+    otherwise do
+      say "ooDialog/WASM: connectEvent" a[1] "for control" p~id "is connected but is not produced yet"
+      return 0
+    end
+  end
 
 /*---- WM_NOTIFY events: list-view, tree-view, tab ---------------------------------*/
 ::method sep unguarded             -- the separator of the values in one answer of the page
@@ -1351,6 +1699,10 @@ syntax:
   do entry over d~notifyTable
     if entry[1] \== id then iterate
     if entry[2] \== event then iterate
+    if entry[3] == "@SHEETTAB" then do
+      self~sheetTab(dlg)
+      iterate
+    end
     select
       when kind == "LISTVIEW" then do
         ctl = dlg~newListView(id)

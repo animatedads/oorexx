@@ -17,6 +17,7 @@
 .ood-dlg{position:fixed;background:#f0f0f0;color:#000;border:1px solid #6b6b6b;box-shadow:0 6px 24px rgba(0,0,0,.35);
   font-family:"Segoe UI",Tahoma,"DejaVu Sans",Arial,sans-serif;line-height:normal;user-select:none;-webkit-user-select:none}
 .ood-dlg *{box-sizing:border-box;font:inherit}
+.ood-dlg.ood-child{position:absolute;border:0;box-shadow:none;background:transparent}
 .ood-title{display:flex;align-items:center;height:1.9em;background:#fff;border-bottom:1px solid #d0d0d0;cursor:move;padding-left:.5em;touch-action:none}
 .ood-dlg.ood-inactive .ood-title{color:#777}
 .ood-title span{flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
@@ -78,7 +79,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
 .ood-ud button:hover{background:#e5f1fb;border-color:#0078d7}
 .ood-tab{pointer-events:none}
 .ood-tabstrip{display:flex;pointer-events:auto;height:1.75em;align-items:flex-end;padding-left:2px}
-.ood-tabbtn{border:1px solid #d9d9d9;border-bottom:0;background:#f0f0f0;padding:0 .7em;height:1.5em;margin-right:-1px;cursor:default;color:#000}
+.ood-tabbtn{flex:none;white-space:nowrap;border:1px solid #d9d9d9;border-bottom:0;background:#f0f0f0;padding:0 .7em;height:1.5em;margin-right:-1px;cursor:default;color:#000}
 .ood-tabbtn.ood-cur{background:#fff;height:1.75em;position:relative;top:1px}
 .ood-tabpage{position:absolute;left:0;right:0;top:1.75em;bottom:0;border:1px solid #d9d9d9;background:#fff}
 `;
@@ -118,6 +119,9 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
     if (spec.fontName && !/^MS Shell Dlg|^MS Sans Serif|^System$/i.test(spec.fontName))
       el.style.fontFamily = '"' + spec.fontName + '",' + '"Segoe UI",Tahoma,sans-serif';
     el.style.visibility = 'hidden';
+    const host = spec.parent != null && spec.parent !== '' ? ood.dialogs.get(Number(spec.parent)) : null;
+    dlg.child = !!host;
+    if (host) { dlg.modal = false; el.classList.add('ood-child'); }
     const title = dlg.titleEl = D.createElement('div'); title.className = 'ood-title';
     const cap = dlg.capEl = D.createElement('span'); cap.textContent = spec.title || '';
     title.appendChild(cap);
@@ -127,10 +131,9 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       title.appendChild(x);
     }
     const client = dlg.client = D.createElement('div'); client.className = 'ood-client';
-    el.append(title, client);
+    if (host) el.append(client); else el.append(title, client);
     if (dlg.modal) { dlg.back = D.createElement('div'); dlg.back.className = 'ood-back'; dlg.back.style.zIndex = ++ood.z; D.body.appendChild(dlg.back); dlg.back.hidden = true; }
-    el.style.zIndex = ++ood.z;
-    D.body.appendChild(el);
+    if (host) host.client.appendChild(el); else { el.style.zIndex = ++ood.z; D.body.appendChild(el); }
 
     // dialog base units, as Windows computes them from the dialog font
     const s = D.createElement('span');
@@ -147,10 +150,11 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
     const rect = el.getBoundingClientRect();
     let left = Math.round(Number(spec.x) * dlg.fx), top = Math.round(Number(spec.y) * dlg.fy);
     if (has(opts, 'CENTER')) { left = Math.max(0, (W.innerWidth - rect.width) / 2); top = Math.max(0, (W.innerHeight - rect.height) / 2); }
+    if (host) { left = Number(spec.px || 0); top = Number(spec.py || 0); }
     el.style.left = Math.round(left) + 'px'; el.style.top = Math.round(top) + 'px';
     ood.dialogs.set(key, dlg);
     for (const c of ctrls || []) addControl(dlg, c);
-    wireDialog(dlg);
+    if (!host) wireDialog(dlg);
     return dlg.fx + ' ' + dlg.fy + ' ' + Math.round(rect.width) + ' ' + Math.round(rect.height);
   };
 
@@ -204,7 +208,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
     const dlg = ood.dialogs.get(Number(key)); if (!dlg) return '0';
     how = String(how || '').toUpperCase();
     const hide = has(how, 'HIDE');
-    if (!hide && !dlg.shown) fit(dlg);
+    if (!hide && !dlg.shown && !dlg.child) fit(dlg);
     dlg.el.style.visibility = hide ? 'hidden' : 'visible';
     if (dlg.back) dlg.back.hidden = hide;
     if (!hide && !dlg.shown) {
@@ -775,7 +779,8 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       case 'setText':
         a = String(a);
         if (!c) { dlg.capEl.textContent = a; return '1'; }
-        if (c.kind === 'EDIT' || (c.kind === 'COMBO' && !c.droplist)) { m.value = a; return '1'; }
+        if (c.kind === 'EDIT') { m.value = a; cmd(dlg, c, 0x400); cmd(dlg, c, 0x300); return '1'; }   // as WM_SETTEXT: EN_UPDATE, EN_CHANGE
+        if (c.kind === 'COMBO' && !c.droplist) { m.value = a; return '1'; }
         if (c.kind === 'GROUP' && !c.textEl.parentNode && a !== '') el.appendChild(c.textEl);
         c.rawText = a; label(c.textEl || m, a); return '1';
       case 'show': el.hidden = false; if (!c) el.style.visibility = 'visible'; return '1';

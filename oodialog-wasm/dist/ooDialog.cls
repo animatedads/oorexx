@@ -3054,42 +3054,32 @@ expose dlgObjList
 
 
 -- The application icon for the property sheet dialog
-::attribute appIcon get unguarded
-::method "appIcon=" unguarded
-  forward to (.oodn) message "psdlg_setAppIcon_atr" arguments (.array~of(self, "APPICON=", arg(1, "A")))
-
--- The caption (title) for the property sheet dialog
-::attribute caption get unguarded
-::method "caption=" unguarded
-  forward to (.oodn) message "psdlg_setCaption_atr" arguments (.array~of(self, "CAPTION=", arg(1, "A")))
-
-::attribute header get unguarded
-::method "header=" unguarded
-  forward to (.oodn) message "psdlg_setHeader_atr" arguments (.array~of(self, "HEADER=", arg(1, "A")))
-
--- Icons for each tab can come from an ImageList owned by the property dialog
-::attribute imageList get unguarded
-::method "imageList=" unguarded
-  forward to (.oodn) message "psdlg_setImageList_atr" arguments (.array~of(self, "IMAGELIST=", arg(1, "A")))
-
-::method pages unguarded
-  forward to (.oodn) message "psdlg_getPages_atr" arguments (.array~of(self, "PAGES", arg(1, "A")))
-
--- A resource image from which to get resources for the property sheet dialog
-::attribute resources get unguarded
-::method "resources=" unguarded
-  forward to (.oodn) message "psdlg_setResources_atr" arguments (.array~of(self, "RESOURCES=", arg(1, "A")))
-
-::attribute startPage get unguarded
-::method "startPage=" unguarded
-  forward to (.oodn) message "psdlg_setStartPage_atr" arguments (.array~of(self, "STARTPAGE=", arg(1, "A")))
-
-::attribute watermark get unguarded
-::method "watermark=" unguarded
-  forward to (.oodn) message "psdlg_setWatermark_atr" arguments (.array~of(self, "WATERMARK=", arg(1, "A")))
-
-::method init 
-  forward to (.oodn) message "psdlg_init" arguments (.array~of(self, "INIT", arg(1, "A")))
+::attribute appIcon unguarded
+::attribute caption unguarded
+::attribute header unguarded
+::attribute imageList unguarded
+::attribute pages get unguarded
+::attribute resources unguarded
+::attribute startPage unguarded
+::attribute watermark unguarded
+-- psdlg_init, in Rexx: the object variables it sets belong to this scope.
+::method init
+  expose appIcon caption header imageList pages resources startPage watermark
+  use arg pageArray, opts = "", caption = "ooRexx Property Sheet Dialog", hFile, id = 0
+  newArgs = .array~new(4)
+  newArgs[1] = ""
+  newArgs[2] = id
+  if arg(4, "E") then newArgs[4] = hFile
+  forward class (super) arguments (newArgs) continue
+  appIcon = .nil
+  header = .nil
+  imageList = .nil
+  resources = .nil
+  watermark = .nil
+  startPage = 1
+  pages = pageArray~copy
+  .oodn~sheetInit(self, pages, opts)
+  return 0
 
 ::method addPage unguarded
   forward to (.oodn) message "psdlg_addPage" arguments (.array~of(self, "ADDPAGE", arg(1, "A")))
@@ -3384,8 +3374,19 @@ expose dlgObjList
 ::class 'UserPSPDialog' public subclass UserDialog inherit PropertySheetPage
 ::attribute oodPeer unguarded
 
-::method init 
-  forward to (.oodn) message "userpspdlg_init" arguments (.array~of(self, "INIT", arg(1, "A")))
+-- userpspdlg_init, in Rexx.
+::method init
+  use arg , includeFile, pageOpts = "", pageTitle = "", fontName = "", fontSize = 0, expected = 200
+  newArgs = .array~new(2)
+  if arg(1, "E") then newArgs[1] = arg(1)
+  if arg(2, "E") then newArgs[2] = includeFile
+  forward class (super) arguments (newArgs) continue
+  initResult = result
+  .oodn~pageInit(self, "USER", pageOpts, "", expected)
+  if pageTitle \== "" then self~pageTitle = pageTitle
+  if fontName \== "" then self~fontName = fontName
+  if fontSize > 0 then self~fontSize = fontSize
+  return initResult
 
 ::method execute unguarded
     forward class (.PropertySheetPage)
@@ -3403,8 +3404,19 @@ expose dlgObjList
 ::class 'RcPSPDialog' public subclass UserDialog inherit PropertySheetPage
 ::attribute oodPeer unguarded
 
-::method init 
-  forward to (.oodn) message "rcpspdlg_init" arguments (.array~of(self, "INIT", arg(1, "A")))
+-- rcpspdlg_init of oodPropertySheetDialog.cpp, in Rexx (it forwards to the superclass).
+::method init
+  use arg scriptFile, resource, , includeFile, pageOpts = "", connectOpts = "", expected = 200
+  newArgs = .array~new(4)
+  if arg(3, "E") then newArgs[1] = arg(3)
+  if arg(4, "E") then newArgs[2] = includeFile
+  newArgs[3] = scriptFile
+  newArgs[4] = resource
+  forward class (super) arguments (newArgs) continue
+  initResult = result
+  .oodn~pageInit(self, "RC", pageOpts, connectOpts, expected)
+  return initResult
+
 ::method startTemplate 
   forward to (.oodn) message "rcpspdlg_startTemplate" arguments (.array~of(self, "STARTTEMPLATE", arg(1, "A")))
 
@@ -10428,7 +10440,10 @@ syntax:
   newArgs = .array~new(5)
   if arg(1, "E") then newArgs[3] = arg(1)
   if arg(2, "E") then newArgs[4] = includeFile
-  if self~isA(.RcDialog) then do
+  rcBased = self~isA(.RcDialog)
+  if \rcBased then rcBased = self~isA(.RcPSPDialog)
+  if \rcBased then rcBased = self~isA(.RcControlDialog)
+  if rcBased then do
     if arg(3, "E") then newArgs[1] = libOrOwnerData
     if arg(4, "E") then newArgs[2] = resourceID
     else newArgs[2] = ""

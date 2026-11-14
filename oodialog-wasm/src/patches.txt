@@ -54,7 +54,10 @@
   newArgs = .array~new(5)
   if arg(1, "E") then newArgs[3] = arg(1)
   if arg(2, "E") then newArgs[4] = includeFile
-  if self~isA(.RcDialog) then do
+  rcBased = self~isA(.RcDialog)
+  if \rcBased then rcBased = self~isA(.RcPSPDialog)
+  if \rcBased then rcBased = self~isA(.RcControlDialog)
+  if rcBased then do
     if arg(3, "E") then newArgs[1] = libOrOwnerData
     if arg(4, "E") then newArgs[2] = resourceID
     else newArgs[2] = ""
@@ -88,3 +91,69 @@
   return 0
 
 --@drop ResDialog init
+
+--@replace RcPSPDialog init
+-- rcpspdlg_init of oodPropertySheetDialog.cpp, in Rexx (it forwards to the superclass).
+::method init
+  use arg scriptFile, resource, , includeFile, pageOpts = "", connectOpts = "", expected = 200
+  newArgs = .array~new(4)
+  if arg(3, "E") then newArgs[1] = arg(3)
+  if arg(4, "E") then newArgs[2] = includeFile
+  newArgs[3] = scriptFile
+  newArgs[4] = resource
+  forward class (super) arguments (newArgs) continue
+  initResult = result
+  .oodn~pageInit(self, "RC", pageOpts, connectOpts, expected)
+  return initResult
+
+--@replace UserPSPDialog init
+-- userpspdlg_init, in Rexx.
+::method init
+  use arg , includeFile, pageOpts = "", pageTitle = "", fontName = "", fontSize = 0, expected = 200
+  newArgs = .array~new(2)
+  if arg(1, "E") then newArgs[1] = arg(1)
+  if arg(2, "E") then newArgs[2] = includeFile
+  forward class (super) arguments (newArgs) continue
+  initResult = result
+  .oodn~pageInit(self, "USER", pageOpts, "", expected)
+  if pageTitle \== "" then self~pageTitle = pageTitle
+  if fontName \== "" then self~fontName = fontName
+  if fontSize > 0 then self~fontSize = fontSize
+  return initResult
+
+--@replace PropertySheetDialog init
+-- psdlg_init, in Rexx: the object variables it sets belong to this scope.
+::method init
+  expose appIcon caption header imageList pages resources startPage watermark
+  use arg pageArray, opts = "", caption = "ooRexx Property Sheet Dialog", hFile, id = 0
+  newArgs = .array~new(4)
+  newArgs[1] = ""
+  newArgs[2] = id
+  if arg(4, "E") then newArgs[4] = hFile
+  forward class (super) arguments (newArgs) continue
+  appIcon = .nil
+  header = .nil
+  imageList = .nil
+  resources = .nil
+  watermark = .nil
+  startPage = 1
+  pages = pageArray~copy
+  .oodn~sheetInit(self, pages, opts)
+  return 0
+
+--@replace PropertySheetDialog appIcon
+::attribute appIcon unguarded
+--@replace PropertySheetDialog caption
+::attribute caption unguarded
+--@replace PropertySheetDialog header
+::attribute header unguarded
+--@replace PropertySheetDialog imageList
+::attribute imageList unguarded
+--@replace PropertySheetDialog pages
+::attribute pages get unguarded
+--@replace PropertySheetDialog resources
+::attribute resources unguarded
+--@replace PropertySheetDialog startPage
+::attribute startPage unguarded
+--@replace PropertySheetDialog watermark
+::attribute watermark unguarded
