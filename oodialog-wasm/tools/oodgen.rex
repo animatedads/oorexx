@@ -64,7 +64,7 @@ return gen~run
                    "ShellObjects.cls")
 
 ::method run
-  expose upstreamDir outDir natives counts patches usedPatches
+  expose upstreamDir patchFile outDir natives counts patches usedPatches
   self~loadPatches
   out = .stream~new(outDir"/ooDialog.cls")
   if out~open("WRITE REPLACE") \== "READY:" then do
@@ -83,6 +83,12 @@ return gen~run
   do name over self~sourceFiles
     self~log("reading" name)
     self~processFile(upstreamDir"/"name, out)
+  end
+  extras = .stream~new(patchFile~left(patchFile~lastPos("/"))"oodExtras.cls")
+  if extras~open("READ") == "READY:" then do
+    self~log("appending oodExtras.cls")
+    out~arrayOut(extras~arrayIn)
+    extras~close
   end
   out~close
 

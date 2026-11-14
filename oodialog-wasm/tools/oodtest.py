@@ -133,7 +133,7 @@ def main():
                                 pg.screenshot(path=str(ROOT / 'shots' / (rest + '.png')))
                             log('  step', line[:90])
                         except Exception as e:
-                            log('  STEP FAILED', line, '::', str(e).splitlines()[0]); ok = False; break
+                            log('  STEP FAILED', line, '::', ' | '.join(str(e).splitlines()[:12])[:900]); ok = False; break
                 try:
                     pg.wait_for_function('window.oodDone !== null', timeout=30000 if ok else 3000)
                 except Exception:

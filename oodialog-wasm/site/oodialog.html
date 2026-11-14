@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ooDialog for ooRexx/WASM</title>
+<style>
+body{margin:0;font:15px/1.4 system-ui,sans-serif;background:#3a6ea5;color:#fff}
+header{padding:10px 14px;background:#1f3f66}
+h1{font-size:18px;margin:0 0 2px}
+header p{margin:0;font-size:12px;opacity:.85}
+main{padding:12px 14px;max-width:760px}
+select,button{font:inherit;padding:6px 10px}
+#out{background:#111;color:#ddd;font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;padding:8px;min-height:6em;max-height:40vh;overflow:auto;margin-top:10px}
+#state{font-size:12px;opacity:.85;margin-left:8px}
+</style></head>
+<body>
+<header><h1>ooDialog for ooRexx/WASM</h1>
+<p>Upstream ooDialog (r13513) over a Rexx + JavaScript native layer, on Josep Maria Blasco's ooRexx/WASM.
+Architecture: Tom Dyer. Code: Claude (Fable 5.2).</p></header>
+<main>
+<label for="sample">Sample </label>
+<select id="sample"></select>
+<button id="run">Run</button><button id="stop" disabled>Stop</button><span id="state"></span>
+<pre id="out"></pre>
+</main>
+<script src="ooRexx.js"></script>
+<script>
+// Each sample: the program, and the other files it needs beside it.
+const SAMPLES = [
+  { name: 'Simple dialog (UserDialog, data attribute, event)', prog: 'simple.rex' },
+  { name: 'Calculator (upstream sample, RcDialog)', prog: 'calculator.rex', files: ['rc/calculator.rc'] },
+  { name: 'Standard dialogs and routines (upstream sample)', prog: 'oodStandardRoutines.rex' },
+  { name: 'Progress bars (upstream sample)', prog: 'oodpbar.rex', files: ['rc/oodpbar.rc'] },
+  { name: 'List-view, tree-view, tab', prog: 'views.rex' },
+  { name: 'Menu bar', prog: 'menu.rex' },
+  { name: 'Up-down, track bar, date picker, font', prog: 'controls.rex' },
+  { name: 'File dialog on the WASM file system', prog: 'filedialog.rex' },
+];
+const $ = (id) => document.getElementById(id);
+SAMPLES.forEach((s, i) => $('sample').add(new Option(s.name, i)));
+let current = null;
+const text = async (url) => { const r = await fetch(url); if (!r.ok) throw new Error(url + ': ' + r.status); return r.text(); };
+$('run').onclick = async () => {
+  const s = SAMPLES[$('sample').value];
+  $('out').textContent = ''; $('state').textContent = 'loading'; $('run').disabled = true;
+  try {
+    const files = {};
+    for (const f of ['ooDialog.cls', 'oodWeb.cls', 'ooShapes.cls']) files['/home/rexx/' + f] = await text(f);
+    for (const f of [s.prog].concat(s.files || [])) files['/home/rexx/' + f] = await text('samples/' + f);
+    const rexx = await ooRexx.load();
+    const add = (t) => { $('out').textContent += t; $('out').scrollTop = $('out').scrollHeight; };
+    current = rexx.run({ args: [s.prog], files, js: { page: true, worker: true }, onOut: add, onErr: add });
+    $('state').textContent = 'running'; $('stop').disabled = false;
+    const r = await current.done;
+    $('state').textContent = 'ended, rc ' + r.rc;
+  } catch (e) { $('state').textContent = 'failed: ' + e.message; }
+  document.querySelectorAll('.ood-dlg,.ood-back,.ood-menu').forEach((el) => el.remove());
+  $('run').disabled = false; $('stop').disabled = true; current = null;
+};
+$('stop').onclick = () => { if (current && current.stop) current.stop(); };
+</script></body></html>

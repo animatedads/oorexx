@@ -192,10 +192,19 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
     });
   }
 
+  function fit(dlg) {                                         // a dialog larger than the window is scaled down to it
+    const el = dlg.el, w = el.offsetWidth, h = el.offsetHeight;
+    const k = Math.min(1, (W.innerWidth - 8) / w, (W.innerHeight - 8) / h);
+    if (k >= 1) return;
+    el.style.transformOrigin = '0 0'; el.style.transform = 'scale(' + k + ')';
+    el.style.left = Math.max(0, Math.round((W.innerWidth - w * k) / 2)) + 'px';
+    el.style.top = Math.max(0, Math.round((W.innerHeight - h * k) / 2)) + 'px';
+  }
   ood.show = function (key, how) {
     const dlg = ood.dialogs.get(Number(key)); if (!dlg) return '0';
     how = String(how || '').toUpperCase();
     const hide = has(how, 'HIDE');
+    if (!hide && !dlg.shown) fit(dlg);
     dlg.el.style.visibility = hide ? 'hidden' : 'visible';
     if (dlg.back) dlg.back.hidden = hide;
     if (!hide && !dlg.shown) {

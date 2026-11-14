@@ -24,7 +24,7 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.4.0"
+  return "0.5.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute key unguarded
@@ -92,7 +92,7 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.4.0"
+  return "0.5.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute rexxSelf unguarded
@@ -121,7 +121,7 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.4.0"
+  return "0.5.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute dlg unguarded             -- its dialog's OodDlg
@@ -139,7 +139,7 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.4.0"
+  return "0.5.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::method module_version unguarded
@@ -3029,9 +3029,23 @@ syntax:
   end
   return msgResults~remove(token)
 
-::method fileNameDlg_rtn unguarded -- not ported yet: says so, and answers as a cancelled dialog does
-  self~messageDialog_rtn(.nil, "", .array~of("The file selection dialog is not available in ooDialog for ooRexx/WASM yet.", 0, "ooDialog", "OK", "WARNING"))
-  return 0
+::method fileNameDlg_rtn unguarded -- FileNameDialog(preselected, hwnd, filter, loadOrSave, title, defExt, multi, sepChar)
+  use arg , , a
+  saving = .false
+  if a~hasIndex(4) then if a[4] \== "" then do
+    first = a[4]~left(1)~upper
+    saving = (first == "S" | first == "0")
+  end
+  multi = .false
+  if \saving then if a~hasIndex(7) then if a[7] \== "" then do
+    first = a[7]~left(1)~upper
+    multi = (first == "M" | first == "1")
+  end
+  sepChar = " "
+  if a~hasIndex(8) then if a[8] \== "" then sepChar = a[8]~left(1)
+  dlg = self~classOf("OodFileDialog")~new(self~opt(a, 1), self~opt(a, 3), saving, self~opt(a, 5), self~opt(a, 6), multi, sepChar)
+  dlg~execute("SHOWTOP")
+  return dlg~chosen
 
 ::method msSleep_rtn unguarded
   use arg , , a
