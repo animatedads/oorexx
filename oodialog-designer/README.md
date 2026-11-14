@@ -1,4 +1,4 @@
-# ooDialog Designer — v0.1.0
+# ooDialog Designer — v0.2.0
 
 Architecture: Tom Dyer. Code: Claude (Opus 5.5). README written by Claude (Opus 5.5).
 It runs on ooDialog/WASM v0.7.0 (code: Claude (Fable 5.2)) and on Josep Maria
@@ -34,6 +34,16 @@ ooDialog/WASM:
 - **background events**: tick *its own thread* and the method replies at once
   and carries on, so the dialog keeps answering;
 - **timer threads**: a non-visual control that ticks on a thread of its own;
+- **tab strips with pages**: any control can sit on a page of a tab strip
+  (`page` property). The program shows and hides the controls itself, then
+  passes the event on to your own SELCHANGE code, if you wrote any;
+- **list views**: columns (`Name:80|Role:84`, widths in dialog units),
+  starting rows and extended styles;
+- **a menu bar**: menu items are non-visual controls, each with a menu
+  (popup), text (`-` is a separator), checked/grayed flags and a CLICKED
+  event. The bar is attached in `initDialog`; upstream keeps it as
+  `self~menuBar`, and an item's accessor is its id
+  (`self~menuBar~check(self~mnuGrid)`);
 - the design itself, as `::RESOURCE oodDesign` at the end of the same file.
   DrDialog kept its design in a `.RES` file; here one `.rex` is both the
   program and the design you reopen. `Open…` reads it back, event code
@@ -62,12 +72,16 @@ one `kind` line; a new code-insertion action is one `action` line.
 - **Palette:** drag onto the form, or click to add. Move and resize with the
   mouse (2-DU grid) or with the arrow keys (Shift resizes); Delete removes.
 - **Properties:** name, geometry in dialog units, text, styles (only those
-  the control takes), role OK/Cancel, list items (`a|b|c`), and so on.
+  the control takes), role OK/Cancel, list items (`a|b|c`), the page a
+  control is on, and so on. Clicking a tab of a tab strip on the form shows
+  that page while you design.
 - **Variables:** the dialog's attributes; each first value is a Rexx expression.
 - **Events view (VisPro's):** objects and their events on the left (● has
   code, ⇉ background); the code pane on the right. Drag a control's name onto
   the code pane and pick an action ("Set its text", "Add an item", ...) to
-  insert the Rexx. `Insert…` does the same without dragging.
+  insert the Rexx. `Insert…` does the same without dragging. When an event's
+  method receives arguments, a new event starts with `use arg` and the
+  argument names (for a list view's SELECTCHANGED: `id, item, state, list`).
 - **Program:** shows the ooRexx that will be written. **Save .rex**
   downloads it. **▶ Run** runs it with ooDialog/WASM in the same page.
 
@@ -91,13 +105,14 @@ Then open `http://localhost:8080/designer.html`.
 Python drives the browser in the second command only; everything the
 designer decides is in ooRexx.
 
-## State (2026-11-14)
+## State (2026-11-14, v0.2.0)
 
-- `tests/t01_model.rex`: 38 of 38 checks pass under ooRexx/WASM in Node. They
+- `tests/t01_model.rex`: 56 of 56 checks pass under ooRexx/WASM in Node. They
   cover generation, a byte-identical round trip through the `::RESOURCE`,
-  background and timer threads, renames that rewrite `self~old`, nine
-  refusals, actions, and `module_version`.
-- `tools/dztest.py`: 5 of 5 scenarios pass in headless Chromium:
+  background and timer threads, renames that rewrite `self~old` (and move a
+  tab's pages), fifteen refusals, the tab page handler, list-view columns and
+  rows, the menu bar, actions, and `module_version`.
+- `tools/dztest.py`: 6 of 6 scenarios pass in headless Chromium:
   1. **hand:** a dialog built with the mouse (drop, rename, styles,
      variable, drag-an-action, move and resize), then run. The event code sees
      the variable and the field, and INIT's text survives `execute`.
@@ -110,16 +125,25 @@ designer decides is in ooRexx.
      the reason shown.
   5. **saveopen:** a downloaded program is the same text, and reopening it
      gives the design back.
+  6. **views:** the Contacts example (tab strip, list view, menu). Its pages
+     switch while you design, and the page property is set. In the run, the
+     list view's event fires, the Notes page shows, the menu adds a row and
+     Exit cancels.
+- `tests/gen/Calculator.rex` and `tests/gen/Contacts.rex` (generated) also
+  pass the ooDialog/WASM harness, `oodtest.py`, with their `.steps` files.
 - Pitfall lint (Boston Crab `rexx_pitfalls.rex`): clean on all ooRexx here.
 - Not yet run on Windows ooDialog. The generated code uses only documented
   upstream API (`createXxx`, `connectXxxEvent`, `newXxx`, `setData`/`getData`,
-  `isDialogActive`, `start`, `SysSleep`).
+  `isDialogActive`, `start`, `SysSleep`, `UserMenuBar`, `insertColumn`,
+  `addRow`, `addSequence`).
 
 ## Not yet
 
-- Controls: list-view, tree-view, tab, track bar, up-down, date-time picker,
-  menus and images. The port has them, and each is a catalogue line plus its
-  drawing in the page.
+- Controls: tree-view, track bar, up-down, date-time picker and images. The
+  port has them, and each is a catalogue line plus its drawing in the page.
+- Tab pages as ControlDialogs. A page here is a set of controls shown and
+  hidden; the tab strip is a strip, with its controls placed beside it, not
+  over it (Windows draws controls over a tab control in z-order).
 - Undo, copy and paste, and alignment tools.
 - Exporting `.rc` for RcDialog users.
 - A rename does not rewrite the text of strings, only `self~name` references.

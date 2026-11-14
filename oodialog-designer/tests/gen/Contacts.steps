@@ -1,0 +1,26 @@
+wait .ood-dlg >> text=Close
+sleep 300
+expect [...document.querySelectorAll('.ood-dlg textarea')].map(e=>e.offsetParent!==null).join() ==> false
+expect document.querySelectorAll('.ood-dlg .ood-lv tbody tr').length ==> 4
+click .ood-dlg >> text=Rick McGuire
+sleep 300
+expect document.querySelector('.ood-dlg').innerText.includes('Rick McGuire -- ooRexx interpreter') ==> True
+click .ood-dlg .ood-tabbtn >> text=Notes
+sleep 300
+expect [...document.querySelectorAll('.ood-dlg textarea')].map(e=>e.offsetParent!==null).join() ==> true
+expect document.querySelector('.ood-dlg').innerText.includes('Page: Notes') ==> True
+shot contacts_notes
+click .ood-dlg .ood-tabbtn >> text=People
+sleep 300
+click .ood-menubar >> text=People
+click .ood-menu >> text=Add a Rexx person
+sleep 300
+expect document.querySelectorAll('.ood-dlg .ood-lv tbody tr').length ==> 5
+expect document.querySelector('.ood-dlg').innerText.includes('5 people') ==> True
+click .ood-menubar >> text=View
+click .ood-menu >> text=Grid lines
+sleep 300
+expect document.querySelector('.ood-dlg').innerText.includes('Grid lines: 0') ==> True
+shot contacts_people
+click .ood-menubar >> text=People
+click .ood-menu >> text=Exit

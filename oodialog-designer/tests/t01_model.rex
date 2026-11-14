@@ -82,8 +82,33 @@ call check "actions name the control", acts~pos("self~lcd~setText(") > 0
 call check "list actions for a list only", acts~pos("~add(") == 0
 
 -- 8. versions
-call check "module_version", .OodDesign~module_version == "0.1.0" & d~module_version == "0.1.0"
+call check "module_version", .OodDesign~module_version == "0.2.0" & d~module_version == "0.2.0"
 call check "module_lastChanged", .OodCatalog~module_lastChanged \== ""
+
+-- 9. v0.2: tab pages, list view, menu bar
+v = .viewsDesign~build
+vsrc = v~generate
+call write "Contacts.rex", vsrc
+call check "views round trip", .OodDesign~fromSource(vsrc)~generate == vsrc
+call check "tab page handler connected", vsrc~pos('self~connectTabEvent(100, "SELCHANGE", "tabMain_pageChanged")') > 0
+call check "page handler passes on to the user's SELCHANGE", vsrc~pos('forward message ("on_tabMain_selchange")') > 0
+call check "first page shown at start", vsrc~pos("self~tabMain_show(1)") > 0
+call check "list view columns in dialog units", vsrc~pos('self~lvPeople~insertColumn(1, "Role", 84)') > 0
+call check "list view rows", vsrc~pos('self~lvPeople~addRow( , , "Mike Cowlishaw", "Created Rexx", "1979")') > 0
+call check "menu popups and END", vsrc~pos('menu~addPopup(9002, "&View", "END")') > 0
+call check "menu item with its event", vsrc~pos('menu~addItem(108, "&Grid lines", "CHECKED END", "on_mnuGrid_clicked")') > 0
+call check "separator", vsrc~pos('menu~addSeparator(106, "")') > 0
+call check "menu item accessor is its id", vsrc~pos("::method mnuGrid unguarded" || "0a"x || "  return 108") > 0
+call check "event arguments known", v~eventArgs("lvPeople", "SELECTCHANGED") == "id, item, state, list"
+call refuses "a page of a missing tab", "v~setProp('lblInfo', 'page', 'nope:1')"
+call refuses "a page past the last tab", "v~setProp('lblInfo', 'page', 'tabMain:3')"
+call refuses "a page for the tab itself", "v~setProp('tabMain', 'page', 'tabMain:1')"
+call refuses "an unknown extended style", "v~setProp('lvPeople', 'exstyles', 'GRIDLINES SPARKLES')"
+call refuses "a column width that is not a number", "v~setProp('lvPeople', 'columns', 'Name:wide')"
+v~setProp("tabMain", "name", "tabs1")
+call check "renaming a tab moves its pages", v~getProp("txtNotes", "page") == "tabs1:2"
+v~removeControl("tabs1")
+call check "removing a tab leaves its controls on no page", v~getProp("txtNotes", "page") == ""
 
 say "t01_model:" checks - fails "of" checks "checks passed"
 if fails > 0 then return 1
@@ -99,7 +124,7 @@ check: procedure expose fails checks
   end
   return
 
-refuses: procedure expose fails checks d
+refuses: procedure expose fails checks d v
   use arg refLabel, refCode
   checks = checks + 1
   signal on syntax name refused
@@ -121,3 +146,4 @@ write: procedure
 
 ::requires "OodDesigner.cls"
 ::requires "calculator.rex"
+::requires "views.rex"

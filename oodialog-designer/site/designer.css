@@ -95,3 +95,14 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#56606b;ma
 footer{font-size:11px;color:#56606b;padding:4px 10px;background:#f7f9fb;border-top:1px solid #d3d9e0}
 @media (max-width:860px){#work{grid-template-columns:1fr}#events{grid-template-columns:1fr;height:auto}#tree{max-height:180px}#code{min-height:160px}}
 #propTitle{text-transform:none;letter-spacing:0;font-size:13px;color:#1b1f24}
+#formMenu{display:flex;background:#fff;border-bottom:1px solid #e5e5e5;padding:0 2px}
+#formMenu span{padding:.15em .6em}
+.dz-lv{border:1px solid #7a7a7a;background:#fff;overflow:hidden}
+.dz-lv table{border-collapse:collapse;table-layout:fixed}
+.dz-lv th{font-weight:normal;text-align:left;border-right:1px solid #e5e5e5;border-bottom:1px solid #e5e5e5;padding:1px 4px;overflow:hidden}
+.dz-lv td{padding:0 4px;overflow:hidden;white-space:nowrap}
+.dz-lv table.grid td{border:1px solid #f0f0f0}
+.dz-tab{display:flex;align-items:flex-end;border-bottom:1px solid #d9d9d9}
+.dz-tab span{border:1px solid #d9d9d9;border-bottom:0;background:#f0f0f0;padding:0 .7em;margin-right:-1px;cursor:pointer}
+.dz-tab span.cur{background:#fff;padding-bottom:2px}
+.dz-edit.multi{align-items:flex-start;white-space:pre-wrap}

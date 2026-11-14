@@ -1,4 +1,4 @@
-/* Calculator.rex -- an ooDialog program made with the ooDialog Designer 0.1.0
+/* Calculator.rex -- an ooDialog program made with the ooDialog Designer 0.2.0
    Design: the ::RESOURCE oodDesign at the end.  The designer writes this
    whole file; what you type is the body of each event method.
    ooDialog Designer -- architecture: Tom Dyer; code: Claude (Opus 5.5). */
@@ -200,7 +200,7 @@ return dlg~execute("SHOWTOP")
   self~enter
 
 ::resource oodDesign
-designer version=0.1.0
+designer version=0.2.0
 form name=Calculator title="RPN Calculator" w=132 h=132 style=CENTER
 var name=entry value=""
 var name=stack value=.queue~new

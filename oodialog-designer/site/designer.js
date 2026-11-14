@@ -20,6 +20,7 @@
     cur: null,                                  // {type:'event', ctl, ev} | {type:'method', name}
     fx: 1.5, fy: 1.6,                           // pixels per dialog unit
     oodFiles: null, run: null, saveTimer: null,
+    page: {},                                   // tab strip name -> the page shown while designing
   };
   window.oodDesigner = st;                      // for tests
 
@@ -142,15 +143,32 @@
     client.style.backgroundSize = (4 * st.fx) + 'px ' + (4 * st.fy) + 'px';
     $('form').classList.toggle('sel', st.sel === 'form');
     client.textContent = ''; $('tray').textContent = '';
+    drawMenuBar();
     for (const c of st.snap.controls) {
       if (st.kinds[c.type].nonvisual === '1') {
         const chip = D.createElement('span'); chip.className = 'chip' + (st.sel === c.name ? ' sel' : '');
-        chip.textContent = '⏱ ' + c.name + ' (' + c.interval + ' s)'; chip.dataset.name = c.name;
+        chip.textContent = c.type === 'TIMER' ? '⏱ ' + c.name + ' (' + c.interval + ' s)'
+          : '☰ ' + c.name + ': ' + plainText(c.popup) + ' › ' + (c.text === '-' ? '———' : plainText(c.text));
+        chip.dataset.name = c.name;
         chip.addEventListener('click', () => select(c.name));
         $('tray').appendChild(chip); continue;
       }
+      if (c.page) {                              // on a tab page: shown while that page is
+        const [t, n] = c.page.split(':');
+        if (String(st.page[t.toLowerCase()] || 1) !== n) continue;
+      }
       client.appendChild(drawControl(c));
     }
+  }
+  // the menu bar, from the menu items, as Windows puts it under the title
+  function drawMenuBar() {
+    let bar = $('formMenu');
+    const popups = [];
+    for (const c of st.snap.controls) if (c.type === 'MENUITEM' && !popups.includes(c.popup)) popups.push(c.popup);
+    if (!popups.length) { if (bar) bar.remove(); return; }
+    if (!bar) { bar = D.createElement('div'); bar.id = 'formMenu'; $('form').insertBefore(bar, $('client')); }
+    bar.textContent = '';
+    for (const p of popups) { const b = D.createElement('span'); b.textContent = plainText(p); bar.appendChild(b); }
   }
   function drawControl(c) {
     const el = D.createElement('div');
@@ -166,7 +184,7 @@
       case 'STATIC':
         body.className = 'dz-static' + (opts.includes('RIGHT') ? ' right' : opts.includes('CENTER') ? ' center' : ''); body.textContent = text; break;
       case 'EDIT':
-        body.className = 'dz-edit' + (opts.includes('READONLY') ? ' ro' : '') + (opts.includes('RIGHT') ? ' right' : opts.includes('CENTER') ? ' center' : '');
+        body.className = 'dz-edit' + (opts.includes('READONLY') ? ' ro' : '') + (opts.includes('MULTILINE') ? ' multi' : '') + (opts.includes('RIGHT') ? ' right' : opts.includes('CENTER') ? ' center' : '');
         body.textContent = opts.includes('PASSWORD') ? '•'.repeat(text.length) : text; break;
       case 'CHECKBOX': case 'RADIOBUTTON': {
         body.className = 'dz-check' + (c.type === 'RADIOBUTTON' ? ' radio' : '');
@@ -188,6 +206,28 @@
         const bar = D.createElement('div'); const span = (Number(c.max) - Number(c.min)) || 1;
         bar.style.width = Math.max(0, Math.min(100, (Number(c.pos) - Number(c.min)) * 100 / span)) + '%';
         body.appendChild(bar); break; }
+      case 'LISTVIEW': {
+        body.className = 'dz-lv';
+        const tbl = D.createElement('table'); const hr = tbl.insertRow();
+        for (const col of String(c.columns || '').split('|')) {
+          const [title, width] = col.split(':'); const th = D.createElement('th');
+          th.textContent = title; th.style.width = Math.round((Number(width) || 50) * st.fx) + 'px'; hr.appendChild(th);
+        }
+        for (const row of String(c.rows || '').split('|').filter(Boolean)) {
+          const tr = tbl.insertRow(); for (const cell of row.split(';')) tr.insertCell().textContent = cell;
+        }
+        if (String(c.exstyles || '').toUpperCase().includes('GRIDLINES')) tbl.className = 'grid';
+        body.appendChild(tbl); break; }
+      case 'TAB': {
+        body.className = 'dz-tab';
+        const cur = String(st.page[c.name.toLowerCase()] || 1);
+        String(c.tabs || '').split('|').forEach((t, i) => {
+          const b = D.createElement('span'); b.textContent = plainText(t); b.dataset.page = String(i + 1);
+          if (String(i + 1) === cur) b.className = 'cur';
+          b.title = 'Show page ' + (i + 1) + ' while designing';
+          body.appendChild(b);
+        });
+        break; }
       default: body.textContent = c.type;
     }
     el.appendChild(body);
@@ -227,7 +267,13 @@
     };
     const onUp = async () => {
       el.removeEventListener('pointermove', onMove); el.removeEventListener('pointerup', onUp);
-      if (!moved) return;
+      if (!moved) {
+        if (c.type === 'TAB' && e.target.dataset.page) {
+          st.page[c.name.toLowerCase()] = e.target.dataset.page; drawForm();
+          status(c.name + ': designing page ' + e.target.dataset.page + '.  A control\'s "page" property puts it on a page.');
+        }
+        return;
+      }
       await rx(() => st.d.setGeometry(c.name, g.x, g.y, g.w, g.h)).catch(() => {});
       await refresh();
     };
@@ -285,17 +331,26 @@
     const kind = st.kinds[c.type];
     $('propTitle').textContent = c.name + ' — ' + kind.label;
     const keys = ['name'].concat(kind.nonvisual === '1' ? [] : ['x', 'y', 'w', 'h']).concat(String(kind.props || '').split(/\s+/).filter(Boolean));
+    const tabs = st.snap.controls.filter((o) => o.type === 'TAB');
+    if (kind.nonvisual !== '1' && c.type !== 'TAB' && tabs.length) keys.push('page');
     for (const k of keys) {
-      if (k === 'opts') box.appendChild(optsInput(c, kind));
+      if (k === 'opts') box.appendChild(optsInput(c, kind, 'opts', kind.opts, 'styles'));
+      else if (k === 'exstyles') box.appendChild(optsInput(c, kind, 'exstyles', kind.exopts, 'extended'));
+      else if (k === 'page') {
+        const vals = [''], labels = ['— (always shown)'];
+        for (const t of tabs) String(t.tabs || '').split('|').forEach((p, i) => { vals.push(t.name + ':' + (i + 1)); labels.push(t.name + ' › ' + plainText(p)); });
+        box.appendChild(selectInput(c.name, k, c.page, vals, labels));
+      }
       else if (k === 'role') box.appendChild(selectInput(c.name, k, c[k], ['', 'OK', 'CANCEL'], ['—', 'OK (IDOK, default)', 'Cancel (IDCANCEL)']));
-      else if (['checked', 'enabled', 'groupstart'].includes(k)) box.appendChild(checkInput(c.name, k, c[k]));
+      else if (['checked', 'enabled', 'groupstart', 'grayed'].includes(k)) box.appendChild(checkInput(c.name, k, c[k]));
       else box.appendChild(propInput(c.name, k, c[k]));
     }
     const del = D.createElement('button'); del.textContent = 'Remove ' + c.name; del.style.marginTop = '8px';
     del.addEventListener('click', removeSelected); box.appendChild(del);
     const id = D.createElement('div'); id.className = 'ro hint'; id.textContent = 'id ' + c.id + (c.role ? ' → ID' + c.role : ''); box.appendChild(id);
   }
-  const LABELS = { w: 'width', h: 'height', items: 'items (a|b|c)', groupstart: 'starts group', interval: 'interval (s)' };
+  const LABELS = { w: 'width', h: 'height', items: 'items (a|b|c)', groupstart: 'starts group', interval: 'interval (s)',
+    columns: 'columns (Title:width|…)', rows: 'rows (a;b|c;d)', tabs: 'tabs (a|b)', popup: 'menu', text: 'text' };
   function propInput(name, key, value) {
     const l = D.createElement('label'); l.append(LABELS[key] || key);
     const i = D.createElement('input'); i.type = 'text'; i.value = value == null ? '' : value; i.dataset.prop = key;
@@ -316,15 +371,15 @@
     i.addEventListener('change', () => setProp(name, key, i.checked ? '1' : '0'));
     const w = D.createElement('span'); w.appendChild(i); l.appendChild(w); return l;
   }
-  function optsInput(c, kind) {
-    const l = D.createElement('label'); l.append('styles');
-    const w = D.createElement('div'); w.className = 'opts';
-    const on = String(c.opts || '').toUpperCase().split(/\s+/);
-    for (const o of String(kind.opts || '').split(/\s+/).filter(Boolean)) {
+  function optsInput(c, kind, prop, allowed, label) {
+    const l = D.createElement('label'); l.append(label);
+    const w = D.createElement('div'); w.className = 'opts'; w.dataset.prop = prop;
+    const on = String(c[prop] || '').toUpperCase().split(/\s+/);
+    for (const o of String(allowed || '').split(/\s+/).filter(Boolean)) {
       const b = D.createElement('label'); const i = D.createElement('input'); i.type = 'checkbox'; i.checked = on.includes(o); i.dataset.opt = o;
       i.addEventListener('change', () => {
         const now = [...w.querySelectorAll('input')].filter((x) => x.checked).map((x) => x.dataset.opt).join(' ');
-        setProp(c.name, 'opts', now);
+        setProp(c.name, prop, now);
       });
       b.append(i, o); w.appendChild(b);
     }
@@ -420,8 +475,10 @@
     if (!st.cur) { $('codeTitle').textContent = 'Pick an event or a method'; code.value = ''; code.disabled = true; $('threadBox').hidden = true; return; }
     if (st.cur.type === 'event') {
       const { ctl, ev } = st.cur;
-      $('codeTitle').textContent = ctl + ' · ' + ev + '  →  ' + methodName(ctl, ev);
+      const args = String(await rx(() => st.d.eventArgs(ctl, ev)).catch(() => ''));
+      $('codeTitle').textContent = ctl + ' · ' + ev + '  →  ' + methodName(ctl, ev) + (args ? '(' + args + ')' : '');
       code.value = String(await rx(() => st.d.getEventCode(ctl, ev)).catch(() => ''));
+      if (!code.value && args) code.value = 'use arg ' + args + '\n';
       const th = String(await rx(() => st.d.getEventThread(ctl, ev)).catch(() => ''));
       const canBg = ctl !== 'form' && findCtl(ctl) && findCtl(ctl).type !== 'TIMER';
       $('threadBox').hidden = !canBg; $('thread').value = th === 'background' ? 'background' : 'ui';

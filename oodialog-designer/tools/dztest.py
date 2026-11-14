@@ -3,7 +3,7 @@
 Architecture: Tom Dyer.  Code: Claude (Opus 5.5).
 
 usage: python3 tools/dztest.py [scenario ...]     (after rexx tools/build.rex)
-Scenarios: hand, calculator, threads, refuse, saveopen (default: all).
+Scenarios: hand, calculator, threads, refuse, saveopen, views (default: all).
 Python is used here only because this tool drives a browser (Playwright);
 the designer's model, generator and reader are ooRexx (src/OodDesigner.cls)
 and are tested without a browser by tests/t01_model.rex.  Progress is logged
@@ -153,7 +153,35 @@ def sc_saveopen(pg):
     pg.wait_for_function("document.getElementById('status').textContent.startsWith('Opened')", timeout=30000)
     expect('reopened design', snap(pg)['form']['name'], 'Threads')
 
-SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen}
+def sc_views(pg):
+    """Tabs, list view and menu: pages while designing, the page property, then
+    run: the page swaps, the list view's event, the menu adds a row and exits."""
+    ready(pg); open_example(pg, 'examples/Contacts.rex')
+    expect('round trip in the browser is byte-identical', program_text(pg), (SITE / 'examples/Contacts.rex').read_text())
+    shown = lambda: [e.get_attribute('data-name') for e in pg.query_selector_all('#client .dz')]
+    expect('page 1 while designing', 'txtNotes' in shown(), False)
+    pg.click('#client .dz[data-name="tabMain"] [data-page="2"]'); settle(pg)
+    expect('page 2 while designing', ('txtNotes' in shown(), 'lvPeople' in shown()), (True, False))
+    expect('menu bar drawn', pg.inner_text('#formMenu').split(), ['People', 'View'])
+    pg.click('#client .dz[data-name="lblInfo"]'); settle(pg)
+    pg.select_option('#props [data-prop="page"]', 'tabMain:2'); settle(pg)
+    expect('page property set', [c['page'] for c in snap(pg)['controls'] if c['name'] == 'lblInfo'], ['tabMain:2'])
+    pg.select_option('#props [data-prop="page"]', ''); settle(pg)
+    pg.screenshot(path=str(SHOTS / 'views_design.png'))
+    run(pg)
+    expect('four rows', pg.evaluate("document.querySelectorAll('.ood-dlg .ood-lv tbody tr').length"), 4)
+    pg.click('.ood-dlg >> text=Mark Miesfeld'); settle(pg)
+    expect_in('list view event', 'Mark Miesfeld -- ooDialog', dlg_text(pg))
+    pg.click('.ood-dlg .ood-tabbtn >> text=Notes'); settle(pg)
+    expect('notes page shown', pg.evaluate("document.querySelector('.ood-dlg textarea').offsetParent !== null"), True)
+    pg.click('.ood-dlg .ood-tabbtn >> text=People'); settle(pg)
+    pg.click('.ood-menubar >> text=People'); pg.click('.ood-menu >> text=Add a Rexx person'); settle(pg)
+    expect('menu item added a row', pg.evaluate("document.querySelectorAll('.ood-dlg .ood-lv tbody tr').length"), 5)
+    pg.screenshot(path=str(SHOTS / 'views_run.png'))
+    pg.click('.ood-menubar >> text=People'); pg.click('.ood-menu >> text=Exit')
+    expect('Exit cancels', wait_end(pg)['rc'], 2)
+
+SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views}
 def main():
     names = sys.argv[1:] or list(SCENARIOS)
     srv = subprocess.Popen(['node', str(SITE / 'serve.mjs'), str(SITE), '--port', str(PORT)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

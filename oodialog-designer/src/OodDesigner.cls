@@ -19,11 +19,11 @@
 
 ::class OodModule public mixinclass Object
 ::method module_version class
-  return "0.1.0"
+  return "0.2.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::method module_version
-  return "0.1.0"
+  return "0.2.0"
 ::method module_lastChanged
   return "2026-11-14"
 
@@ -45,8 +45,9 @@
 ::attribute defopts
 ::attribute props
 ::attribute nonvisual
+::attribute exopts
 ::method init
-  expose type label prefix create access args w h text events connect opts defopts props nonvisual
+  expose type label prefix create access args w h text events connect opts defopts props nonvisual exopts
   use strict arg f
   type = oodAt(f, "TYPE")~upper
   label = oodAt(f, "LABEL")
@@ -63,6 +64,7 @@
   defopts = oodAt(f, "DEFOPTS")~upper
   props = oodAt(f, "PROPS")~lower
   nonvisual = (oodAt(f, "NONVISUAL") == "1")
+  exopts = oodAt(f, "EXOPTS")~upper
   if label == "" then label = type
 
 
@@ -75,12 +77,14 @@
 ::attribute formEvents class   -- blank-separated
 ::attribute actions class      -- .Array of .Directory  TYPES LABEL CODE
 ::attribute reserved class     -- .Set of lower-case method names
+::attribute evargs class       -- .Directory  "TYPE.EVENT" -> the event method's arguments
 ::method activate class
-  expose kinds order formEvents actions reserved
+  expose kinds order formEvents actions reserved evargs
   kinds = .directory~new
   order = .array~new
   actions = .array~new
   reserved = .set~new
+  evargs = .directory~new
   formEvents = ""
   do line over .resources~oodKinds
     if line~strip == "" then iterate
@@ -94,6 +98,7 @@
       end
       when f["*"] == "form" then formEvents = f["EVENTS"]~upper
       when f["*"] == "action" then actions~append(f)
+      when f["*"] == "evargs" then evargs[(f["TYPE"]"."f["EVENT"])~upper] = f["ARGS"]
       otherwise raise syntax 93.900 array("Unknown catalogue line:" line)
     end
   end
@@ -302,6 +307,20 @@
     c~setProp("interval", 1)
     c~setProp("enabled", 1)
   end
+  if k~type == "LISTVIEW" then do
+    c~setProp("columns", "Name:60|Value:50")
+    c~setProp("exstyles", "FULLROWSELECT")
+  end
+  if k~type == "TAB" then c~setProp("tabs", "Page 1|Page 2")
+  if k~type == "MENUITEM" then do
+    popup = "&File"
+    do o over controls
+      if o~type == "MENUITEM" then popup = o~prop("popup")
+    end
+    c~setProp("popup", popup)
+    c~setProp("text", "&" || name)
+    c~setProp("grayed", "0")
+  end
   controls~append(c)
   return name
 
@@ -310,6 +329,10 @@
   use strict arg name
   c = self~control(name)
   controls~removeItem(c)
+  -- controls on its pages stay, on no page
+  do o over controls
+    if o~prop("page")~caselessPos(c~name":") = 1 then o~setProp("page", "")
+  end
   gone = .array~new
   do key over events~allIndexes
     if events[key]["CONTROL"]~caselessEquals(c~name) then gone~append(key)
@@ -356,7 +379,38 @@
   use strict arg name
   if name~caselessEquals("form") then return "name title w h"
   c = self~control(name)
-  return ("name x y w h" c~kind~props)~space
+  if c~kind~nonvisual then return ("name" c~kind~props)~space
+  names = "name x y w h" c~kind~props
+  if self~onPageAllowed(c) then names = names "page"
+  return names~space
+
+-- A visual control other than a tab strip can sit on a page of a tab strip:
+-- the program shows it only while that tab is selected.
+::method onPageAllowed
+  expose controls
+  use strict arg c
+  if c~kind~nonvisual | c~type == "TAB" then return .false
+  do o over controls
+    if o~type == "TAB" then return .true
+  end
+  return .false
+
+-- "tabName:n" -> the pages of tab strip tabName (1 = its first tab)
+::method checkPage
+  expose controls
+  use strict arg value
+  if value == "" then return ""
+  parse var value tabName ":" n
+  t = .nil
+  do o over controls
+    if o~name~caselessEquals(tabName) then t = o
+  end
+  if t == .nil then raise syntax 93.900 array("page is tabName:n; there is no control" tabName)
+  if t~type \== "TAB" then raise syntax 93.900 array(tabName "is not a tab strip")
+  count = t~prop("tabs")~makeArray("|")~items
+  if \datatype(n, "W") then raise syntax 93.900 array("page is tabName:n with n a tab number")
+  if n < 1 | n > count then raise syntax 93.900 array(tabName "has tabs 1 to" count)
+  return t~name":"format(n)
 
 ::method getProp
   expose form
@@ -404,6 +458,10 @@
     when key == "y" then self~setGeometry(name, c~x, value, c~w, c~h)
     when key == "w" then self~setGeometry(name, c~x, c~y, value, c~h)
     when key == "h" then self~setGeometry(name, c~x, c~y, c~w, value)
+    when key == "page" then do
+      if \self~onPageAllowed(c) then raise syntax 93.900 array(c~name "cannot sit on a tab page")
+      c~setProp(key, self~checkPage(value))
+    end
     when c~kind~props~wordpos(key) = 0 then
       raise syntax 93.900 array(c~type "has no property" key)
     when key == "opts" then do
@@ -415,7 +473,34 @@
       end
       c~setProp(key, value)
     end
-    when key == "checked" | key == "enabled" | key == "groupstart" then do
+    when key == "exstyles" then do
+      allowed = c~kind~exopts
+      value = value~upper~space
+      do o over value~makeArray(" ")
+        if wordpos(o, allowed) = 0 then
+          raise syntax 93.900 array(o "is not an extended style of" c~type"; it takes" allowed)
+      end
+      c~setProp(key, value)
+    end
+    when key == "columns" then do
+      do col over value~makeArray("|")
+        parse var col title ":" width
+        if title~strip == "" then raise syntax 93.900 array("columns is Title:width|Title:width, width in dialog units")
+        if width \== "" then do
+          if \datatype(width, "W") then raise syntax 93.900 array("column" title"'s width is a whole number of dialog units")
+        end
+      end
+      c~setProp(key, value)
+    end
+    when key == "tabs" then do
+      if value == "" then raise syntax 93.900 array("A tab strip needs at least one tab")
+      c~setProp(key, value)
+    end
+    when key == "popup" then do
+      if value~strip == "" then raise syntax 93.900 array("A menu item needs the menu (popup) it is in")
+      c~setProp(key, value)
+    end
+    when key == "checked" | key == "enabled" | key == "groupstart" | key == "grayed" then do
       if value \== "0" & value \== "1" then raise syntax 93.900 array(key "is 0 or 1")
       c~setProp(key, value)
     end
@@ -443,7 +528,7 @@
       if value <= 0 then raise syntax 93.900 array("interval must be more than 0")
       c~setProp(key, value)
     end
-    when key == "text" | key == "items" then do
+    when key == "text" | key == "items" | key == "rows" then do
       if value~pos("0a"x) > 0 | value~pos("0d"x) > 0 then raise syntax 93.900 array(key "is one line")
       c~setProp(key, value)
     end
@@ -454,7 +539,7 @@
 -- Renaming moves the control's events to the new name and rewrites
 -- self~old in all the event and method code, where it is a whole symbol.
 ::method renameControl
-  expose events methods
+  expose events methods controls
   use strict arg c, newName
   old = c~name
   if old == newName then return 0
@@ -477,6 +562,10 @@
   end
   do m over methods
     m["CODE"] = oodRenameRef(m["CODE"], old, newName)
+  end
+  do o over controls
+    p = o~prop("page")
+    if p~caselessPos(old":") = 1 then o~setProp("page", newName":"p~substr(length(old) + 2))
   end
   c~name = newName
   return 0
@@ -576,6 +665,14 @@
   if wordpos(event, self~eventNames(name)) = 0 then
     raise syntax 93.900 array(name "has no event" event)
   return (name"."event)~upper
+
+-- the arguments ooDialog passes the event's method, "" when none are useful
+::method eventArgs
+  use strict arg name, event
+  if name~caselessEquals("form") then return ""
+  a = .OodCatalog~evargs~at((self~control(name)~type"."event)~upper)
+  if a == .nil then return ""
+  return a
 
 ::method methodName
   use strict arg name, event
@@ -699,6 +796,7 @@
     do p over c~kind~props~makeArray(" ")
       if p \== "" then line = line p"="oodQ(c~prop(p))
     end
+    if c~prop("page") \== "" then line = line "page="c~prop("page")
     out~append(line)
   end
   do m over methods
@@ -787,7 +885,7 @@
   k = .OodCatalog~kind(f["TYPE"])
   self~checkName(f["NAME"], .nil)
   c = .OodControl~new(k~type, f["NAME"], f["ID"], f["X"], f["Y"], f["W"], f["H"])
-  do p over k~props~makeArray(" ")
+  do p over (k~props "page")~makeArray(" ")
     if p == "" then iterate
     v = f~at(p~upper)
     if v \== .nil then c~setProp(p, v)
@@ -853,8 +951,17 @@
     e = events[key]
     if e["CONTROL"]~caselessEquals("form") then iterate
     c = self~control(e["CONTROL"])
-    if c~type == "TIMER" then iterate
+    if c~kind~nonvisual then iterate
+    if c~type == "TAB" then do
+      if self~pageMembers(c)~items > 0 then iterate
+    end
     out~append("  self~"c~kind~connect"("c~dlgId"," oodRx(e["EVENT"])"," oodRx(self~methodName(c~name, e["EVENT"]))")")
+  end
+  -- a tab strip with controls on its pages: its own method shows the page
+  do c over controls
+    if c~type \== "TAB" then iterate
+    if self~pageMembers(c)~items = 0 then iterate
+    out~append("  self~connectTabEvent("c~dlgId", ""SELCHANGE"", "oodRx(c~name"_pageChanged")")")
   end
   out~append("")
   -- initDialog: list items, ranges, timers, then the form's INIT code
@@ -871,7 +978,36 @@
       out~append("  self~"c~name"~setRange("c~prop("min")"," c~prop("max")")")
       out~append("  self~"c~name"~setPos("c~prop("pos")")")
     end
+    if c~type == "LISTVIEW" then do
+      if c~prop("exstyles") \== "" then out~append("  self~"c~name"~addExtendedStyle("oodRx(c~prop("exstyles"))")")
+      i = 0
+      do col over c~prop("columns")~makeArray("|")
+        parse var col title ":" width
+        if width == "" then width = 50
+        out~append("  self~"c~name"~insertColumn("i"," oodRx(title)"," width")")
+        i = i + 1
+      end
+      if c~prop("rows") \== "" then do
+        do row over c~prop("rows")~makeArray("|")
+          line = "  self~"c~name"~addRow( , "
+          do cell over row~makeArray(";")
+            line = line"," oodRx(cell)
+          end
+          out~append(line")")
+        end
+      end
+    end
+    if c~type == "TAB" then do
+      line = ""
+      do t over c~prop("tabs")~makeArray("|")
+        if line \== "" then line = line", "
+        line = line || oodRx(t)
+      end
+      out~append("  self~"c~name"~addSequence("line")")
+      if self~pageMembers(c)~items > 0 then out~append("  self~"c~name"_show(1)")
+    end
   end
+  self~generateMenu(out)
   -- execute sets the controls from their data attributes after initDialog,
   -- so INIT runs between a setData and a getData: it sees the first values,
   -- and what it sets is kept (the same order holds on Windows)
@@ -885,19 +1021,46 @@
     if hasData then out~append("  self~getData")
   end
   do c over controls
-    if c~type == "TIMER" then out~append("  self~start(""timer_"c~name""")")
+    if c~type == "TIMER" then do
+      if events~hasIndex((c~name".TICK")~upper) then out~append("  self~start(""timer_"c~name""")")
+    end
   end
   out~append("")
   -- accessors: self~display is the control object, as DrDialog's Dlg.display
+  -- (a menu item's accessor is its id: self~menuBar~check(self~mnuRuler))
   do c over controls
+    if c~type == "MENUITEM" then do
+      out~append("::method" c~name "unguarded")
+      out~append("  return" c~id)
+    end
     if c~kind~nonvisual then iterate
     out~append("::method" c~name "unguarded")
     out~append("  return self~"c~kind~access"("c~dlgId")")
   end
   if controls~items > 0 then out~append("")
+  -- tab strips: show the controls of the selected page, hide the others
+  do c over controls
+    if c~type \== "TAB" then iterate
+    members = self~pageMembers(c)
+    if members~items = 0 then iterate
+    out~append("::method" c~name"_pageChanged unguarded")
+    out~append("  self~"c~name"_show(self~"c~name"~selectedIndex + 1)")
+    if events~hasIndex((c~name".SELCHANGE")~upper) then
+      out~append("  forward message ("oodRx(self~methodName(c~name, "SELCHANGE"))")")
+    out~append("")
+    out~append("::method" c~name"_show unguarded")
+    out~append("  use strict arg page")
+    do o over members
+      parse value o~prop("page") with . ":" n
+      out~append("  if page ="  n "then self~"o~name"~show")
+      out~append("  else self~"o~name"~hide")
+    end
+    out~append("")
+  end
   -- timers: a thread each, ticking while the dialog is up
   do c over controls
     if c~type \== "TIMER" then iterate
+    if \events~hasIndex((c~name".TICK")~upper) then iterate
     out~append("::method timer_"c~name "unguarded")
     out~append("  do while self~isDialogActive")
     out~append("    call SysSleep" c~prop("interval"))
@@ -935,6 +1098,61 @@
   end
   out~append("::END")
   return out~makeString("L", "0a"x) || "0a"x
+
+-- the controls on the pages of tab strip t, in creation order
+::method pageMembers
+  expose controls
+  use strict arg t
+  members = .array~new
+  do o over controls
+    if o~prop("page")~caselessPos(t~name":") = 1 then members~append(o)
+  end
+  return members
+
+-- The menu bar: menu items, in creation order, grouped by the menu (popup)
+-- each is in; an item whose text is - is a separator.  Attached in
+-- initDialog; upstream keeps it as self~menuBar.
+::method generateMenu
+  expose controls events
+  use strict arg out
+  popups = .array~new
+  items = .directory~new
+  do c over controls
+    if c~type \== "MENUITEM" then iterate
+    p = c~prop("popup")
+    if \items~hasIndex(p) then do
+      popups~append(p)
+      items[p] = .array~new
+    end
+    items[p]~append(c)
+  end
+  if popups~items = 0 then return
+  out~append("  menu = .UserMenuBar~new(9000, , , .false)")
+  pn = 0
+  do p over popups
+    pn = pn + 1
+    flags = ""
+    if pn = popups~items then flags = "END"
+    out~append("  menu~addPopup("9000 + pn"," oodRx(p)"," oodRx(flags)")")
+    list = items[p]
+    do i = 1 to list~items
+      c = list[i]
+      flags = ""
+      if c~prop("checked") == "1" then flags = flags "CHECKED"
+      if c~prop("grayed") == "1" then flags = flags "GRAYED"
+      if i = list~items then flags = flags "END"
+      flags = flags~strip
+      if c~prop("text") == "-" then out~append("  menu~addSeparator("c~id"," oodRx(flags)")")
+      else do
+        line = "  menu~addItem("c~id"," oodRx(c~prop("text"))"," oodRx(flags)
+        if events~hasIndex((c~name".CLICKED")~upper) then line = line"," oodRx(self~methodName(c~name, "CLICKED"))
+        out~append(line")")
+      end
+    end
+  end
+  out~append("  menu~complete")
+  out~append("  menu~attachTo(self)")
+  return
 
 -- the lines the generator puts round the user's code (the reader removes them)
 ::method replyLine class
@@ -1113,8 +1331,16 @@ kind type=GROUPBOX label="Group box" prefix=grp create=createGroupBox access=new
 kind type=LISTBOX label="List box" prefix=lst create=createListBox access=newListBox args=attr w=80 h=50 events="SELCHANGE DBLCLK" connect=connectListBoxEvent opts="SORT MULTI GROUP NOTAB DISABLED HIDDEN" props="items opts"
 kind type=COMBOBOX label="Combo box" prefix=cbo create=createComboBox access=newComboBox args=attr w=80 h=60 events=SELCHANGE connect=connectComboBoxEvent opts="LIST SIMPLE SORT GROUP NOTAB DISABLED HIDDEN" defopts=LIST props="items opts"
 kind type=PROGRESSBAR label="Progress bar" prefix=prg create=createProgressBar access=newProgressBar args="" w=100 h=10 opts="SMOOTH VERTICAL HIDDEN" props="min max pos opts"
+kind type=LISTVIEW label="List view" prefix=lv create=createListView access=newListView args="" w=120 h=60 events="SELECTCHANGED COLUMNCLICK CHECKBOXCHANGED" connect=connectListViewEvent opts="REPORT LIST ICON SMALLICON SINGLESEL SHOWSELALWAYS GROUP NOTAB DISABLED HIDDEN" defopts="REPORT SHOWSELALWAYS" exopts="FULLROWSELECT GRIDLINES CHECKBOXES" props="columns rows exstyles opts"
+kind type=TAB label="Tab strip" prefix=tab create=createTab access=newTab args="" w=120 h=14 events=SELCHANGE connect=connectTabEvent opts="BUTTONS MULTILINE GROUP NOTAB DISABLED HIDDEN" props="tabs opts"
+kind type=MENUITEM label="Menu item" prefix=mnu nonvisual=1 events=CLICKED props="popup text checked grayed"
 kind type=TIMER label="Timer thread" prefix=tmr nonvisual=1 events=TICK props="interval enabled"
 form events="INIT OK CANCEL"
+evargs type=LISTVIEW event=SELECTCHANGED args="id, item, state, list"
+evargs type=LISTVIEW event=COLUMNCLICK args="id, column, list"
+evargs type=LISTVIEW event=CHECKBOXCHANGED args="id, item, state, list"
+evargs type=TAB event=SELCHANGE args="id, hwnd, tab"
+evargs type=MENUITEM event=CLICKED args="info"
 action types=* label="Set its text" code="self~%n~setText(""text"")"
 action types=* label="Get its text" code="text = self~%n~getText"
 action types=* label="Disable it" code="self~%n~disable"
@@ -1131,6 +1357,18 @@ action types="CHECKBOX RADIOBUTTON" label="Check it" code="self~%n~check"
 action types="CHECKBOX" label="Uncheck it" code="self~%n~uncheck"
 action types=PROGRESSBAR label="Set the position" code="self~%n~setPos(50)"
 action types=PROGRESSBAR label="Set the range" code="self~%n~setRange(0, 100)"
+action types=LISTVIEW label="Add a row" code="self~%n~addRow( , , ""cell 1"", ""cell 2"")"
+action types=LISTVIEW label="Text of a cell" code="text = self~%n~itemText(item, 0)"
+action types=LISTVIEW label="The selected row" code="item = self~%n~selected"
+action types=LISTVIEW label="Count the rows" code="n = self~%n~items"
+action types=LISTVIEW label="Remove all rows" code="self~%n~deleteAll"
+action types=TAB label="The selected tab (1 = first)" code="page = self~%n~selectedIndex + 1"
+action types=TAB label="Its selected tab's text" code="text = self~%n~selected"
+action types=MENUITEM label="Check it" code="self~menuBar~check(self~%n)"
+action types=MENUITEM label="Uncheck it" code="self~menuBar~unCheck(self~%n)"
+action types=MENUITEM label="Is it checked?" code="if self~menuBar~isChecked(self~%n) then nop"
+action types=MENUITEM label="Gray it" code="self~menuBar~disable(self~%n)"
+action types=MENUITEM label="Enable it" code="self~menuBar~enable(self~%n)"
 action types=TIMER label="Start the timer" code="self~%n_enabled = .true"
 action types=TIMER label="Stop the timer" code="self~%n_enabled = .false"
 action types=FORM label="Close the dialog (OK)" code="self~ok"
