@@ -3,20 +3,20 @@ calculator.rex	11
 controls/ComboBox/comboBoxTypes.rex	8	
 controls/ListBox/incrementalSearch.rex	1	
 controls/ListView/columnClickListView.rex	3	
-controls/ListView/subitem.editing/importList.rex	0	native:BFF_INIT
+controls/ListView/subitem.editing/importList.rex	4	event-not-produced ; native:DLGCTRL_SETPARENT
 controls/ToolTip/toolTip.rex	2	event-not-produced
 controls/TreeView/treeViewCustomDraw.rex	0	
 controls/fiscalReports.rex	8	event-not-produced
 controls/upDown.rex	10	
 controls/userStringDTP.rex	3	event-not-produced
 examples/addManyRows.rex	7	
-examples/browsePrinters.rex	5	native:BFF_INIT
+examples/browsePrinters.rex	5	
 examples/fileNameDialog_demo.rex	7	
 examples/genGUID.rex	1	
 examples/imageButton.rex	1	error 97.1 Object "an ImageList" does not understand message "IMAGELIST".
-examples/openSaveFileDemo.rex	8	native:OFD_INIT
+examples/openSaveFileDemo.rex	8	
 examples/publicRoutines_demo.rex	7	
-examples/saveFileWithFilter.rex	6	native:SFD_INIT
+examples/saveFileWithFilter.rex	6	
 examples/simpleFolderBrowse.rex	5	
 examples/useTools.rex	10	
 menus/ContextMenu.rex	3	

@@ -1,0 +1,21 @@
+wait .ood-dlg >> text=Shell open
+expect [...document.querySelectorAll('.ood-dlg select[size] option')].map(o => o.textContent).join(',') ==> [..],b.cls
+expect document.querySelector('.ood-dlg button.ood-def').innerText + '|' + document.querySelector('.ood-dlg').innerText.includes('Name here:') ==> Finished|true
+fill .ood-dlg input:not([readonly]) => b.cls
+click .ood-dlg button.ood-def
+wait .ood-dlg >> text=Shell save
+expect [...document.querySelectorAll('.ood-dlg select[size] option')].map(o => o.textContent).join(',') ==> [..],a.rex,b.cls,c.txt
+fill .ood-dlg input:not([readonly]) => bad
+click .ood-dlg button.ood-def
+sleep 600
+wait .ood-dlg >> text=Shell save
+fill .ood-dlg input:not([readonly]) => good
+click .ood-dlg button.ood-def
+wait .ood-dlg >> text=Shell folder
+fill .ood-dlg input:not([readonly]) => work
+click .ood-dlg button.ood-def
+wait .ood-dlg >> text=Shell browse
+expect document.querySelector('.ood-dlg input[readonly]').value ==> /home/rexx/work
+click .ood-dlg button.ood-def
+wait .ood-dlg >> text=Shell cancel
+press Escape

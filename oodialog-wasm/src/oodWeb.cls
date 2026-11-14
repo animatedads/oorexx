@@ -24,7 +24,7 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.9.1"
+  return "0.10.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute key unguarded
@@ -102,7 +102,7 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.9.1"
+  return "0.10.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute rexxSelf unguarded
@@ -131,7 +131,7 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.9.1"
+  return "0.10.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute dlg unguarded             -- its dialog's OodDlg
@@ -149,7 +149,7 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.9.1"
+  return "0.10.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::method module_version unguarded
@@ -2331,6 +2331,288 @@ syntax:
   dlg~execute("SHOWTOP")
   if dlg~chosen == 0 then return ""
   return dlg~chosen
+
+/* ---- The shell dialog classes: BrowseForFolder, OpenFileDialog, SaveFileDialog ----
+   Windows shows its own shell dialogs through COM.  Here each is an OodFileDialog
+   over the file system of the WASM machine.  The object's state is a directory
+   kept as its oodPeer.  COM calls (initCOM, release, setClientGuid ...) answer S_OK. */
+::method shellFolder unguarded     -- a Windows directory name as one of this machine, "" if there is none
+  use arg name
+  if name == .nil then return ""
+  if name == "" then return ""
+  found = self~path(name)
+  if SysIsFileDirectory(found) then return found
+  return ""
+
+::method bff_init unguarded        -- .BrowseForFolder~new(title, banner, hint, startDir)
+  use arg self_, msg, a
+  p = .directory~new
+  p~dlgTitle = "ooDialog Browse for Folder"
+  p~banner = "Select the folder needed"
+  p~hint = "If the needed folder does not exist it can be created"
+  p~startDir = ""
+  p~root = ""
+  p~owner = .nil
+  p~options = "RETURNONLYFSDIRS NEWDIALOGSTYLE RETURNFSANCESTORS"
+  p~usePathForHint = .false
+  if a~hasIndex(1) then p~dlgTitle = a[1]
+  if a~hasIndex(2) then p~banner = a[2]
+  if a~hasIndex(3) then p~hint = a[3]
+  if a~hasIndex(4) then p~startDir = a[4]
+  self_~oodPeer = p
+  return 0
+::method bff_get unguarded
+  use arg self_, msg
+  return self_~oodPeer[msg]
+::method bff_set unguarded
+  use arg self_, msg, a
+  name = msg~strip("T", "=")
+  self_~oodPeer[name] = a[1]
+  return
+::method bff_banner unguarded
+  forward message "bff_get"
+::method bff_setBanner unguarded
+  forward message "bff_set"
+::method bff_dlgTitle unguarded
+  forward message "bff_get"
+::method bff_setDlgTitle unguarded
+  forward message "bff_set"
+::method bff_hint unguarded
+  forward message "bff_get"
+::method bff_setHint unguarded
+  forward message "bff_set"
+::method bff_options unguarded
+  forward message "bff_get"
+::method bff_setOptions unguarded
+  forward message "bff_set"
+::method bff_Owner unguarded
+  forward message "bff_get"
+::method bff_setOwner unguarded
+  forward message "bff_set"
+::method bff_root unguarded
+  forward message "bff_get"
+::method bff_setRoot unguarded
+  forward message "bff_set"
+::method bff_startDir unguarded
+  forward message "bff_get"
+::method bff_setStartDir unguarded
+  forward message "bff_set"
+::method bff_usePathForHint unguarded
+  forward message "bff_get"
+::method bff_setUsePathForHint unguarded
+  forward message "bff_set"
+::method bff_initialThread unguarded
+  return 0
+::method bff_initCOM unguarded
+  return .true
+::method bff_releaseCOM unguarded
+  return 0
+::method bff_uninit unguarded
+  return 0
+::method bff_releaseItemIDList unguarded
+  return 0
+::method bff_getFolder unguarded   -- the folder chosen, .nil if cancelled
+  use arg self_
+  p = self_~oodPeer
+  dlg = self~classOf("OodFileDialog")~new(self~shellFolder(p~startDir), "", .false, p~dlgTitle, "", .false, " ", .true)
+  dlg~execute("SHOWTOP")
+  if dlg~chosen == 0 then return .nil
+  return dlg~chosen
+::method bff_getItemIDList unguarded   -- Windows answers a pointer to an item id list; here the path stands for it
+  forward message "bff_getFolder"
+::method bff_getDisplayName unguarded  -- getDisplayName(pidl, sigdn): the path, or its last part for the display forms
+  use arg self_, msg, a
+  if a[1] == .nil then return .nil
+  form = self~opt(a, 2)~upper
+  if form == "NORMALDISPLAY" | form == "PARENTRELATIVE" | form == "PARENTRELATIVEEDITING" | form == "PARENTRELATIVEFORADDRESSBAR" then do
+    name = filespec("NAME", a[1])
+    if name \== "" then return name
+  end
+  return a[1]
+
+::method cidPeer unguarded         -- the state of a CommonItemDialog, made when first needed
+  use arg self_, saving
+  p = self_~oodPeer
+  if p~isA(.directory) then return p
+  p = .directory~new
+  p~saving = saving
+  if saving then p~options = "OVERWRITEPROMPT NOREADONLYRETURN PATHMUSTEXIST NOCHANGEDIR"
+  else p~options = "PATHMUSTEXIST FILEMUSTEXIST NOCHANGEDIR"
+  p~title = ""
+  p~fileName = ""
+  p~folder = ""
+  p~defaultFolder = ""
+  p~types = .array~new
+  p~typeIndex = 1
+  p~defExt = ""
+  p~okLabel = ""
+  p~cancelLabel = ""
+  p~nameLabel = ""
+  p~handler = .nil
+  p~filter = .nil
+  p~results = .array~new
+  p~released = .false
+  self_~oodPeer = p
+  return p
+::method cid_init unguarded
+  use arg self_
+  self~cidPeer(self_, self_~isA(self~classOf("SaveFileDialog")))
+  return 0
+::method ofd_init unguarded
+  use arg self_
+  self~cidPeer(self_, .false)
+  return 0
+::method sfd_init unguarded
+  use arg self_
+  self~cidPeer(self_, .true)
+  return 0
+::method cde_init unguarded
+  return 0
+::method sif_init unguarded
+  return 0
+::method cid_options unguarded
+  use arg self_
+  return self_~oodPeer~options
+::method cid_setOptions unguarded
+  use arg self_, msg, a
+  self_~oodPeer~options = a[1]~upper~space
+  return
+::method cidStore unguarded        -- keep one value; answers S_OK
+  use arg self_, name, a
+  self_~oodPeer[name] = a[1]
+  return 0
+::method cid_setTitle unguarded
+  use arg self_, msg, a
+  return self~cidStore(self_, "TITLE", a)
+::method cid_setFileName unguarded
+  use arg self_, msg, a
+  return self~cidStore(self_, "FILENAME", a)
+::method cid_setFileNameLabel unguarded
+  use arg self_, msg, a
+  return self~cidStore(self_, "NAMELABEL", a)
+::method cid_setOkButtonLabel unguarded
+  use arg self_, msg, a
+  return self~cidStore(self_, "OKLABEL", a)
+::method cid_setCancelButtonLabel unguarded
+  use arg self_, msg, a
+  return self~cidStore(self_, "CANCELLABEL", a)
+::method cid_setFolder unguarded
+  use arg self_, msg, a
+  return self~cidStore(self_, "FOLDER", a)
+::method cid_setDefaultFolder unguarded
+  use arg self_, msg, a
+  return self~cidStore(self_, "DEFAULTFOLDER", a)
+::method cid_setDefaultExtension unguarded
+  use arg self_, msg, a
+  return self~cidStore(self_, "DEFEXT", a)
+::method cid_setFileTypeIndex unguarded
+  use arg self_, msg, a
+  return self~cidStore(self_, "TYPEINDEX", a)
+::method cid_setFilter unguarded
+  use arg self_, msg, a
+  return self~cidStore(self_, "FILTER", a)
+::method cid_advise unguarded
+  use arg self_, msg, a
+  return self~cidStore(self_, "HANDLER", a)
+::method cid_unadvise unguarded
+  use arg self_
+  self_~oodPeer~handler = .nil
+  return 0
+::method sfd_setSaveAsItem unguarded   -- the file offered first: its directory and its name
+  use arg self_, msg, a
+  given = a[1]~changeStr("\", "/")
+  self_~oodPeer~fileName = filespec("NAME", given)
+  where = filespec("LOCATION", given)
+  if where \== "" then self_~oodPeer~folder = where
+  return 0
+::method cid_setFileTypes unguarded    -- an array of pairs: description, pattern
+  use arg self_, msg, a
+  types = a[1]
+  if \types~isA(.array) then raise syntax 93.948 array(1, "Array")
+  if types~items // 2 \== 0 then return 2147942487       -- E_INVALIDARG, as Windows answers
+  self_~oodPeer~types = types
+  return 0
+::method cid_getFileTypeIndex unguarded
+  use arg self_
+  return self_~oodPeer~typeIndex
+::method cid_setClientGuid unguarded
+  return 0
+::method cid_clearClientData unguarded
+  return 0
+::method cid_addPlace unguarded
+  return 0
+::method cid_close unguarded
+  return 0
+::method cid_initCOM unguarded
+  return .true
+::method cid_releaseCOM unguarded
+  return 0
+::method cid_uninit unguarded
+  return 0
+::method cid_release unguarded
+  use arg self_
+  self_~oodPeer~released = .true
+  return 0
+::method cid_isReleased unguarded
+  use arg self_
+  return self_~oodPeer~released
+::method cid_show unguarded        -- show(owner): S_OK, or CANCELED
+  use arg self_
+  p = self_~oodPeer
+  opts = p~options
+  folders = (opts~wordPos("PICKFOLDERS") > 0)
+  multi = (\p~saving & opts~wordPos("ALLOWMULTISELECT") > 0)
+  filter = ""
+  do i = 1 to p~types~items by 2
+    filter = filter || p~types[i] || "00"x || p~types[i + 1] || "00"x
+  end
+  if filter == "" then filter = "All Files (*.*)" || "00"x || "*.*" || "00"x
+  where = self~shellFolder(p~folder)
+  if where == "" then where = self~shellFolder(p~defaultFolder)
+  start = where
+  if p~fileName \== "" then do
+    if where == "" then start = p~fileName
+    else start = where"/"p~fileName
+  end
+  sep = "01"x                        -- no file name holds it
+  do forever
+    p~owner = self_
+    dlg = self~classOf("OodFileDialog")~new(start, filter, p~saving, p~title, p~defExt, multi, sep, folders, p)
+    dlg~execute("SHOWTOP")
+    p~results = .array~new
+    if dlg~chosen == 0 then return 2147943623                 -- CANCELED
+    p~typeIndex = dlg~typeIndex
+    parts = dlg~chosen~makeArray(sep)
+    if parts~items > 1 then do
+      do i = 2 to parts~items
+        p~results~append(parts[1]"/"parts[i])
+      end
+    end
+    else p~results~append(parts[1])
+    if p~handler == .nil then leave
+    if p~handler~onFileOk(self_, 0) == 0 then leave           -- anything but S_OK keeps the dialog: it is shown again
+    start = p~results[1]
+  end
+  return 0
+::method cid_getResult unguarded   -- the path chosen, .nil if there is none
+  use arg self_
+  if self_~oodPeer~results~items == 0 then return .nil
+  return self_~oodPeer~results[1]
+::method ofd_getResults unguarded
+  use arg self_
+  if self_~oodPeer~results~items == 0 then return .nil
+  return self_~oodPeer~results~copy
+::method cid_getCurrentSelection unguarded
+  forward message "cid_getResult"
+::method cid_getFileName unguarded
+  use arg self_
+  if self_~oodPeer~results~items == 0 then return self_~oodPeer~fileName
+  return filespec("NAME", self_~oodPeer~results[1])
+::method cid_getFolder unguarded
+  use arg self_
+  if self_~oodPeer~results~items == 0 then return self~shellFolder(self_~oodPeer~folder)
+  return filespec("LOCATION", self_~oodPeer~results[1])~strip("T", "/")
+
 ::method winex_deleteObject unguarded
   return 0
 ::method winex_deleteFont unguarded

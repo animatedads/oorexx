@@ -1,0 +1,6 @@
+options: PATHMUSTEXIST FILEMUSTEXIST NOCHANGEDIR
+open: 0 /home/rexx/work/b.cls type 2
+save: 0 /home/rexx/work/good.txt
+folder: 0 /home/rexx/work
+browse: /home/rexx/work
+cancel: canceled 1

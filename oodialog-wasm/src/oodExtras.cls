@@ -8,7 +8,7 @@
  * of the "WASM machine" (what SysFileTree sees). */
 ::class 'OodFileDialog' subclass UserDialog public
 ::method module_version class
-  return "0.5.0"
+  return "0.6.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::method module_version
@@ -17,12 +17,33 @@
   return self~class~module_lastChanged
 
 ::attribute chosen unguarded       -- the answer: a path, several joined by the separator, or 0
+-- Set by the shell dialog classes (OpenFileDialog, SaveFileDialog) before execute:
+::attribute okLabel unguarded      -- text of the OK button, "" for the usual one
+::attribute cancelLabel unguarded
+::attribute nameLabel unguarded    -- text in front of the file name field
+::attribute typeIndex unguarded    -- the file type selected first; after OK, the one in use
+::attribute itemFilter unguarded   -- .nil, or an object whose includeItem(dialog, hwnd, path) answers 0 to list a file
+::attribute filterOwner unguarded  -- the first argument for includeItem
 
 ::method init
   expose dir fileName filters saving multi sepChar defExt caption folders
-  use arg preselected = "", fileFilter = "", saving = .false, caption = "", defExt = "", multi = .false, sepChar = " ", folders = .false
+  use arg preselected = "", fileFilter = "", saving = .false, caption = "", defExt = "", multi = .false, sepChar = " ", folders = .false, extras = .nil
   self~init:super
   self~chosen = 0
+  self~okLabel = ""
+  self~cancelLabel = ""
+  self~nameLabel = ""
+  self~typeIndex = 1
+  self~itemFilter = .nil
+  self~filterOwner = .nil
+  if extras \== .nil then do           -- defineDialog runs inside create, below: these must be set first
+    self~okLabel = extras~okLabel
+    self~cancelLabel = extras~cancelLabel
+    self~nameLabel = extras~nameLabel
+    self~typeIndex = extras~typeIndex
+    self~itemFilter = extras~filter
+    self~filterOwner = extras~owner
+  end
   dir = directory()
   fileName = ""
   if preselected \== "" then do
@@ -64,15 +85,20 @@
   listStyle = "VSCROLL HSCROLL NOTIFY"
   if multi then listStyle = listStyle "MULTI"
   self~createListBox(20, 8, 24, 244, 100, listStyle)
-  self~createStaticText(-1, 8, 132, 44, 10, , "File &name:")
+  nameText = "File &name:"
+  if self~nameLabel \== "" then nameText = self~nameLabel
+  self~createStaticText(-1, 8, 132, 44, 10, , nameText)
   self~createEdit(21, 54, 130, 142, 12, "AUTOSCROLLH")
   self~createStaticText(-1, 8, 150, 44, 10, , "Files of &type:")
   self~createComboBox(22, 54, 148, 142, 60, "LIST")
   okText = "&Open"
   if saving then okText = "&Save"
   if folders then okText = "OK"
+  if self~okLabel \== "" then okText = self~okLabel
+  cancelText = "Cancel"
+  if self~cancelLabel \== "" then cancelText = self~cancelLabel
   self~createPushButton(IDOK, 202, 129, 50, 14, "DEFAULT", okText)
-  self~createPushButton(IDCANCEL, 202, 147, 50, 14, , "Cancel")
+  self~createPushButton(IDCANCEL, 202, 147, 50, 14, , cancelText)
   self~connectListBoxEvent(20, "DBLCLK", onPick)
   self~connectListBoxEvent(20, "SELCHANGE", onSelect)
   self~connectComboBoxEvent(22, "SELCHANGE", onType)
@@ -83,7 +109,10 @@
   do f over filters
     types~add(f[1])
   end
-  types~selectIndex(1)
+  first = self~typeIndex
+  if \datatype(first, "W") then first = 1
+  if first < 1 | first > filters~items then first = 1
+  types~selectIndex(first)
   self~newEdit(21)~setText(fileName)
   self~refresh
 
@@ -111,6 +140,7 @@
   names = .array~new
   do i = 1 to files.0
     name = filespec("NAME", files.i)
+    if self~itemFilter \== .nil then if self~itemFilter~includeItem(self~filterOwner, self~hwnd, files.i) \== 0 then iterate
     do pattern over patterns
       if self~matches(name, pattern~strip) then do
         names~append(name)
@@ -197,6 +227,8 @@
 ::method validate unguarded        -- OK: enter a directory, or accept the file name(s)
   expose saving multi sepChar defExt dir folders
   text = self~newEdit(21)~getText~strip
+  index = self~newComboBox(22)~selectedIndex
+  if index >= 1 then self~typeIndex = index
   if folders then do                   -- the answer is the directory shown, or the one named
     if text \== "" then if \self~enter(text) then return .false
     self~chosen = dir
