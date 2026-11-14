@@ -55,6 +55,20 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
 .ood-lvchk{margin:0 .4em 0 0;vertical-align:middle}
 .ood-tvrow{white-space:nowrap;padding:1px 4px}
 .ood-tvtw{display:inline-block;width:1.1em;text-align:center;color:#555}
+.ood-menubar{display:flex;background:#fff;border-bottom:1px solid #e5e5e5;padding:0 2px}
+.ood-menubar button{border:0;background:transparent;padding:.15em .6em;cursor:default;color:#000}
+.ood-menubar button:hover,.ood-menubar button.ood-mopen{background:#cce8ff}
+.ood-menubar button:disabled{color:#999}
+.ood-menu{position:fixed;background:#f2f2f2;border:1px solid #ccc;box-shadow:2px 2px 6px rgba(0,0,0,.3);padding:2px;font:13px "Segoe UI",Tahoma,"DejaVu Sans",Arial,sans-serif;color:#000;min-width:8em;user-select:none}
+.ood-menu hr{border:0;border-top:1px solid #d7d7d7;margin:3px 0}
+.ood-mi{display:flex;padding:.2em .4em;white-space:nowrap;cursor:default}
+.ood-mi:hover{background:#91c9f7}
+.ood-mi.ood-off{color:#999}
+.ood-mi.ood-off:hover{background:transparent}
+.ood-mark{width:1.3em;text-align:center}
+.ood-mtext{flex:1}
+.ood-macc{margin-left:2em;color:#555}
+.ood-track{margin:0;padding:0}
 .ood-ud{display:flex;flex-direction:column}
 .ood-ud button{flex:1;min-height:0;padding:0;border:1px solid #adadad;background:#e1e1e1;font-size:.6em;line-height:1;color:#000;cursor:default}
 .ood-ud button:hover{background:#e5f1fb;border-color:#0078d7}
@@ -150,6 +164,12 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
     });
     dlg.titleEl.addEventListener('pointerup', () => { drag = null; });
     el.addEventListener('pointerdown', () => { if (el.style.zIndex != ood.z && !dlg.modal) el.style.zIndex = ++ood.z; }, true);
+    el.addEventListener('contextmenu', (e) => {
+      if (!dlg.subs.has('0.CTX')) return;
+      e.preventDefault();
+      const c = dlg.all.find((x) => x.el.contains(e.target));
+      fire(dlg.key, 'CTX', c && c.id > 0 ? c.id : 0, Math.round(e.clientX), Math.round(e.clientY));
+    });
     el.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') { e.preventDefault(); if (!dlg.noClose) fire(dlg.key, 'CMD', 2, 0); return; }
       if (e.key === 'F1') { e.preventDefault(); fire(dlg.key, 'CMD', 9, 0); return; }
@@ -314,6 +334,19 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
         el = main = D.createElement('div'); el.className = 'ood-tab'; c.tabs = []; c.cur = -1;
         c.strip = D.createElement('div'); c.strip.className = 'ood-tabstrip'; c.page = D.createElement('div'); c.page.className = 'ood-tabpage';
         el.append(c.strip, c.page); tabWire(dlg, c);
+        break;
+      case 'TRACKBAR':
+        el = main = D.createElement('input'); main.type = 'range'; main.min = 0; main.max = 100; main.value = 0; main.className = 'ood-track';
+        c.page = 20; c.line = 1;
+        if (has(o, 'VERTICAL')) { main.style.writingMode = 'vertical-lr'; main.style.direction = 'rtl'; }
+        main.addEventListener('input', () => note(dlg, c, 'TRACK', main.value + SEP + 'DRAG'));
+        main.addEventListener('change', () => note(dlg, c, 'TRACK', main.value + SEP + 'ENDTRACK'));
+        break;
+      case 'DATETIMEPICKER':
+        el = main = D.createElement('input'); main.className = 'ood-edit';
+        main.type = has(o, 'TIME') ? 'time' : 'date'; if (main.type === 'time') main.step = 1;
+        main.addEventListener('change', () => note(dlg, c, 'DATETIMECHANGE', dtpGet(c)));
+        c.main = main; dtpSet(c, new Date());
         break;
       case 'UPDOWN': {
         el = main = D.createElement('div'); el.className = 'ood-ud'; c.focusable = false;
@@ -506,6 +539,21 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
     });
   }
 
+  const two = (n) => String(n).padStart(2, '0');
+  function dtpSet(c, d) {
+    c.date = d;
+    c.main.value = c.main.type === 'time' ? two(d.getHours()) + ':' + two(d.getMinutes()) + ':' + two(d.getSeconds())
+      : d.getFullYear() + '-' + two(d.getMonth() + 1) + '-' + two(d.getDate());
+  }
+  function dtpGet(c) {                                        // the part shown is the user's; the rest is kept
+    const d = new Date(c.date), v = c.main.value;
+    if (v) {
+      if (c.main.type === 'time') { const [h, m, sec] = v.split(':').map(Number); d.setHours(h, m, sec || 0); }
+      else { const [y, mo, da] = v.split('-').map(Number); d.setFullYear(y, mo - 1, da); }
+      c.date = d;
+    }
+    return d.getFullYear() + '-' + two(d.getMonth() + 1) + '-' + two(d.getDate()) + 'T' + two(d.getHours()) + ':' + two(d.getMinutes()) + ':' + two(d.getSeconds());
+  }
   function udSet(dlg, c, pos) {
     c.pos = Math.max(c.min, Math.min(c.max, pos));
     const b = dlg.ctrls.get(c.buddy);
@@ -646,6 +694,21 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
       case 0x1105: return String(c.nodes.size);                                        // TVM_GETCOUNT
       case 0x1114: return '1';                                                         // TVM_ENSUREVISIBLE
     }
+    if (c.kind === 'TRACKBAR') switch (msg) {
+      case 0x400: return String(m.value);                                              // TBM_GETPOS
+      case 0x401: return String(m.min);                                                // TBM_GETRANGEMIN
+      case 0x402: return String(m.max);                                                // TBM_GETRANGEMAX
+      case 0x405: m.value = l; return '0';                                             // TBM_SETPOS
+      case 0x406: m.min = l & 0xFFFF; m.max = l >>> 16; return '0';                    // TBM_SETRANGE
+      case 0x407: m.min = l; return '0';                                               // TBM_SETRANGEMIN
+      case 0x408: m.max = l; return '0';                                               // TBM_SETRANGEMAX
+      case 0x415: { const old = c.page; c.page = l; return String(old); }              // TBM_SETPAGESIZE
+      case 0x416: return String(c.page);
+      case 0x417: { const old = c.line; c.line = l; m.step = l; return String(old); }  // TBM_SETLINESIZE
+      case 0x418: return String(c.line);
+      case 0x414: case 0x404: case 0x409: case 0x40A: case 0x40B: case 0x40C: case 0x413: return '0';
+      case 0x410: return '2';
+    }
     if (c.kind === 'UPDOWN') switch (msg) {
       case 0x471: { const old = c.pos; udSet(dlg, c, l); return String(old); }         // UDM_SETPOS32
       case 0x472: return String(c.pos);                                                // UDM_GETPOS32
@@ -738,6 +801,9 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
         if (c.kind === 'LIST' || c.droplist) m.selectedIndex = i; else m.value = i >= 0 ? optsOf(c)[i].textContent : String(a);
         return String(i); }
     }
+    if (c && name === 'dtp.get') return dtpGet(c);
+    if (c && name === 'dtp.set') { dtpSet(c, new Date(String(a))); return '1'; }
+    if (c && name === 'pointFont') { m.style.fontFamily = '"' + a + '","Segoe UI",Tahoma,sans-serif'; m.style.fontSize = Math.round(Number(b) * 96 / 72 * ood.scale * 100) / 100 + 'px'; const st = String(c2); m.style.fontWeight = st.includes('B') ? 'bold' : 'normal'; m.style.fontStyle = st.includes('I') ? 'italic' : 'normal'; m.style.textDecoration = st.includes('U') ? 'underline' : 'none'; return '1'; }
     if (c && name === 'ud.range') return c.min + ' ' + c.max;
     if (c && name === 'ud.buddy') { const old = c.buddy; if (a !== '') c.buddy = Number(a); return String(old); }
     if (c && name.startsWith('lv.')) return lvOp(dlg, c, name.slice(3), a, b, c2);
@@ -898,6 +964,69 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
     box.remove();
     const fx = Math.floor((b.width / 26 + 1) / 2) / 4, fy = Math.round(b.height) / 8;
     return Math.ceil(r.width / fx) + ' ' + Math.ceil(r.height / fy) + ' ' + Math.ceil(r.width) + ' ' + Math.ceil(r.height) + ' ' + fx + ' ' + fy;
+  };
+
+  /* ---- menus ------------------------------------------------------------- */
+  function menuTree(data) {                                   // records "depth id text flags", depth first
+    const root = { kids: [] }, path = [root];
+    String(data).split('\x1e').filter(Boolean).forEach((rec) => {
+      const [depth, id, text, flags] = rec.split(SEP), it = { id: Number(id), text, flags: ' ' + (flags || '') + ' ', kids: [] };
+      path.length = Number(depth) + 1; path[path.length - 1].kids.push(it); path.push(it);
+    });
+    return root.kids;
+  }
+  function closeMenus() { D.querySelectorAll('.ood-menu').forEach((m) => m.remove()); D.querySelectorAll('.ood-mopen').forEach((b) => b.classList.remove('ood-mopen')); if (ood.menuDone) { const f = ood.menuDone; ood.menuDone = null; f(0); } }
+  function openMenu(items, x, y, pick, level) {
+    D.querySelectorAll('.ood-menu').forEach((m) => { if (Number(m.dataset.level) >= level) m.remove(); });
+    const box = D.createElement('div'); box.className = 'ood-menu'; box.dataset.level = level; box.style.zIndex = ++ood.z;
+    items.forEach((it) => {
+      if (it.flags.includes(' SEPARATOR ')) { box.appendChild(D.createElement('hr')); return; }
+      const row = D.createElement('div'); row.className = 'ood-mi'; row.dataset.id = it.id;
+      const off = it.flags.includes(' GRAYED ') || it.flags.includes(' DISABLED ');
+      if (off) row.classList.add('ood-off');
+      const [name, key] = it.text.split('\t');
+      const mark = D.createElement('span'); mark.className = 'ood-mark'; mark.textContent = it.flags.includes(' CHECKED ') ? (it.flags.includes(' RADIO ') ? '\u2022' : '\u2713') : '';
+      const tx = D.createElement('span'); tx.className = 'ood-mtext'; label(tx, name);
+      const acc = D.createElement('span'); acc.className = 'ood-macc'; acc.textContent = it.kids.length ? '\u25B8' : (key || '');
+      row.append(mark, tx, acc); box.appendChild(row);
+      row.addEventListener('click', (e) => {
+        e.stopPropagation(); if (off) return;
+        if (it.kids.length) { const r = row.getBoundingClientRect(); openMenu(it.kids, r.right - 2, r.top, pick, level + 1); }
+        else { ood.menuDone = null; closeMenus(); pick(it.id); }
+      });
+    });
+    D.body.appendChild(box);
+    box.style.left = Math.max(0, Math.min(x, W.innerWidth - box.offsetWidth)) + 'px';
+    box.style.top = Math.max(0, Math.min(y, W.innerHeight - box.offsetHeight)) + 'px';
+  }
+  D.addEventListener('pointerdown', (e) => { if (!e.target.closest('.ood-menu') && !e.target.closest('.ood-menubar')) closeMenus(); }, true);
+  D.addEventListener('keydown', (e) => { if (e.key === 'Escape' && D.querySelector('.ood-menu')) { e.stopPropagation(); closeMenus(); } }, true);
+
+  ood.setMenu = function (key, data) {
+    const dlg = ood.dialogs.get(Number(key)); if (!dlg) return '0';
+    if (dlg.menuEl) { dlg.menuEl.remove(); dlg.menuEl = null; }
+    const tops = menuTree(data); if (!tops.length) return '1';
+    const bar = dlg.menuEl = D.createElement('div'); bar.className = 'ood-menubar';
+    tops.forEach((it) => {
+      const b = D.createElement('button'); b.type = 'button'; b.tabIndex = -1; label(b, it.text); b.dataset.id = it.id;
+      if (it.flags.includes(' GRAYED ') || it.flags.includes(' DISABLED ')) b.disabled = true;
+      b.addEventListener('click', () => {
+        if (!it.kids.length) { closeMenus(); fire(dlg.key, 'CMD', it.id, 0); return; }
+        const was = b.classList.contains('ood-mopen'); closeMenus(); if (was) return;
+        b.classList.add('ood-mopen'); const r = b.getBoundingClientRect();
+        openMenu(it.kids, r.left, r.bottom, (id) => fire(dlg.key, 'CMD', id, 0), 0);
+      });
+      bar.appendChild(b);
+    });
+    dlg.el.insertBefore(bar, dlg.client);
+    return '1';
+  };
+  ood.popupMenu = function (token, x, y, data) {
+    boot(); closeMenus();
+    const done = (id) => fire(-Number(token), 'MSGBOX', token, id);
+    ood.menuDone = done;
+    openMenu(menuTree(data), Number(x), Number(y), (id) => done(id), 0);
+    return '1';
   };
 
   ood.screen = () => W.innerWidth + ' ' + W.innerHeight;

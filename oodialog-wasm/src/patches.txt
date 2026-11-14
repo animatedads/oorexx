@@ -86,3 +86,5 @@
   use strict arg message, title, sleeping, earlyReply = .false, pos = .nil
   forward class (super) arguments (.array~new) continue
   return 0
+
+--@drop ResDialog init

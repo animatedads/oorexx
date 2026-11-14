@@ -968,6 +968,7 @@
   use strict arg message, title, sleeping, earlyReply = .false, pos = .nil
   forward class (super) arguments (.array~new) continue
   return 0
+
 ::method defineDialog
    expose message sx sy
    self~createStaticText(-1, 10, 10, sx+2, sy, , message)
@@ -10369,10 +10370,6 @@ syntax:
 ::class 'ResDialog' subclass BaseDialog public
 ::attribute oodPeer unguarded
 
-::method init 
-  forward to (.oodn) message "resdlg_init" arguments (.array~of(self, "INIT", arg(1, "A")))
-
--- Documented "internal use only" in 3.2.0 - Do not document.
 ::method startIt
    use strict arg icon = 0, modeless = .false
 

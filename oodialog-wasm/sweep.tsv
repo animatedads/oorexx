@@ -1,28 +1,28 @@
-AnimalGame.rex	native:RESDLG_INIT
+AnimalGame.rex	native:RI_INIT
 GUI_Template.rex	shows
 calculator.rex	shows
 controls/ComboBox/comboBoxTypes.rex	native:IMAGE_COLORREF_CLS
-controls/ListBox/incrementalSearch.rex	native:LB_ADDDIRECTORY
+controls/ListBox/incrementalSearch.rex	native:DLGCTRL_CONNECTEVENT
 controls/ListView/columnClickListView.rex	shows
-controls/ListView/columnIcons.rex	native:RESDLG_INIT
+controls/ListView/columnIcons.rex	error:Error 98 running /home/rexx/oodWeb.cls line 1128:  Execution error. Error 98.900:  ooDialo
 controls/ListView/customDrawListview.rex	native:CD_INIT
-controls/ListView/subitem.editing/dropDownComboBox.rex	error:Error 98 running /home/rexx/oodWeb.cls line 1134:  Execution error. Error 98.900:  ooDialo
-controls/ListView/subitem.editing/dropDownListComboBox.rex	error:Error 98 running /home/rexx/oodWeb.cls line 1134:  Execution error. Error 98.900:  ooDialo
-controls/ListView/subitem.editing/editControl.rex	error:Error 98 running /home/rexx/oodWeb.cls line 1134:  Execution error. Error 98.900:  ooDialo
+controls/ListView/subitem.editing/dropDownComboBox.rex	error:Error 98 running /home/rexx/oodWeb.cls line 1232:  Execution error. Error 98.900:  ooDialo
+controls/ListView/subitem.editing/dropDownListComboBox.rex	error:Error 98 running /home/rexx/oodWeb.cls line 1232:  Execution error. Error 98.900:  ooDialo
+controls/ListView/subitem.editing/editControl.rex	error:Error 98 running /home/rexx/oodWeb.cls line 1232:  Execution error. Error 98.900:  ooDialo
 controls/ListView/subitem.editing/importList.rex	shows
 controls/PaidHolidays.rex	native:EN_CONNECTMONTHCALENDAREVENT
-controls/ToolBar/customizeToolBar.rex	native:RESDLG_INIT
-controls/ToolBar/toolBar.rex	native:RESDLG_INIT
-controls/ToolTip/comboBoxToolTip.rex	native:CB_GETITEMHEIGHT
-controls/ToolTip/customPositionToolTip.rex	native:TV_SETITEMHEIGHT
+controls/ToolBar/customizeToolBar.rex	native:EN_CONNECTTOOLBAREVENT
+controls/ToolBar/toolBar.rex	error:Error 98 running /home/rexx/oodWeb.cls line 1128:  Execution error. Error 98.900:  ooDialo
+controls/ToolTip/comboBoxToolTip.rex	native:CB_SETITEMHEIGHT
+controls/ToolTip/customPositionToolTip.rex	error:Error 98 running /home/rexx/oodWeb.cls line 1232:  Execution error. Error 98.900:  ooDialo
 controls/ToolTip/manageControlTool.rex	native:PBDLG_CREATETOOLTIP
 controls/ToolTip/toolTip.rex	native:IMAGE_GETIMAGE_CLS
 controls/TreeView/treeViewCustomDraw.rex	shows
-controls/fiscalReports.rex	native:EN_CONNECTDATETIMEPICKEREVENT
-controls/upDown.rex	native:PBDLG_NEWCONTROLEX
-controls/userStringDTP.rex	native:EN_CONNECTDATETIMEPICKEREVENT
+controls/fiscalReports.rex	error:Error 98 running /home/rexx/oodWeb.cls line 1232:  Execution error. Error 98.900:  ooDialo
+controls/upDown.rex	shows
+controls/userStringDTP.rex	shows +error
 editrex.rex	error:Error 43 running /home/rexx/editrex.rex line 184:  Routine not found. Error 43.901:  Could
-examples/addManyRows.rex	native:PBDLG_NEWCONTROLEX
+examples/addManyRows.rex	shows
 examples/browsePrinters.rex	shows
 examples/fileNameDialog_demo.rex	shows
 examples/genGUID.rex	native:DLGUTIL_GETGUID_CLS
@@ -32,12 +32,12 @@ examples/publicRoutines_demo.rex	shows
 examples/saveFileWithFilter.rex	shows
 examples/simpleFolderBrowse.rex	shows
 examples/stopWatch.rex	error:Error 43 running /home/rexx/examples/stopWatch.rex line 48:  Routine not found. Error 43.9
-examples/useTools.rex	native:WINEX_CREATEFONTEX
+examples/useTools.rex	native:IMAGE_COLORREF_CLS
 ftyperex.rex	error:Error 43 running /home/rexx/ftyperex.rex line 180:  Routine not found. Error 43.901:  Coul
-menus/BinaryMenuBar.rex	native:BINMENU_INIT
-menus/ContextMenu.rex	native:POPMENU_INIT
-menus/ScriptMenuBar.rex	native:SCRIPTMENU_INIT
-menus/UserMenuBar.rex	native:USERMENU_INIT
+menus/BinaryMenuBar.rex	error:Error 98 running /home/rexx/oodWeb.cls line 1128:  Execution error. Error 98.900:  ooDialo
+menus/ContextMenu.rex	native:GLOBAL_RESOLVESYMBOLICID
+menus/ScriptMenuBar.rex	error:Error 98 running /home/rexx/oodWeb.cls line 2208:  Execution error. Error 98.900:  Unable 
+menus/UserMenuBar.rex	shows
 mouse/dragNdrop.rex	native:MOUSE_LOADCURSORFROMFILE_CLS
 mouse/mouseWheel.rex	native:EN_CONNECTWMEVENT
 oleinfo/oleinfo.rex	error:Error 43 running /home/rexx/oleinfo/oleinfo.rex line 59:  Routine not found. Error 43.901:
@@ -49,12 +49,12 @@ oodStandardRoutines.rex	shows
 oodpbar.rex	shows
 oodraw.rex	native:DLGEXT_GETWINDOWDC
 oograph.rex	native:DLGEXT_INSTALLBITMAPBUTTON
-oophil.rex	native:PBDLG_NEWCONTROLEX
+oophil.rex	native:WINEX_LOADBITMAP
 oovideo.rex	error:Error 6 running /home/rexx/oovideo.rex line 44:  Unmatched "/*" or quote. Error 6.1:  Unma
-oowalk2.rex	native:RESDLG_INIT
+oowalk2.rex	error:Error 98 running /home/rexx/oodWeb.cls line 1128:  Execution error. Error 98.900:  ooDialo
 oowalker.rex	native:DLGEXT_INSTALLBITMAPBUTTON
 propertySheet.tabControls/PropertySheetDemo.rex	native:RCPSPDLG_INIT
-propertySheet.tabControls/TabDemo.rex	native:RESDLG_INIT
+propertySheet.tabControls/TabDemo.rex	native:CD_SET_EXTRAOPTIONS
 propertySheet.tabControls/TabOwnerDemo.rex	native:CDI_INIT
 propertySheet.tabControls/UserTabDemo.rex	native:EN_CONNECTKEYPRESS
 propertySheet.tabControls/oodListViews.rex	native:IMAGE_GETIMAGE_CLS
@@ -63,7 +63,7 @@ resizableDialogs/DialogAreaU/dlgAreaUDemo.rex	native:EN_CONNECTWMEVENT
 resizableDialogs/DialogAreaU/dlgAreaUDemoThree.rex	native:EN_CONNECTWMEVENT
 resizableDialogs/DialogAreaU/dlgAreaUDemoTwo.rex	native:EN_CONNECTWMEVENT
 resizableDialogs/ResizingAdmin/PropertySheetDemo.rex	native:RCPSPDLG_INIT
-resizableDialogs/ResizingAdmin/TabDemo.rex	native:RESDLG_INIT
+resizableDialogs/ResizingAdmin/TabDemo.rex	native:CD_SET_EXTRAOPTIONS
 resizableDialogs/ResizingAdmin/augmentedResize.rex	shows
 resizableDialogs/ResizingAdmin/basicResize.rex	shows
 resizableDialogs/ResizingAdmin/gbStationary.rex	native:SPI_GETWORKAREA_CLS
@@ -71,7 +71,7 @@ sample.rex	native:DLGEXT_INSTALLBITMAPBUTTON
 samplesSetup.rex	ended
 simple/ChangeFont.rex	shows
 simple/SimpleMonthCalendar.rex	native:EN_CONNECTMONTHCALENDAREVENT
-simple/SimpleUpDown.rex	native:PBDLG_NEWCONTROLEX
+simple/SimpleUpDown.rex	shows
 sysinfo/sysinfo.rex	native:MOUSE_NEW_CLS
 tutorial/drawing1.rex	shows
 tutorial/drawing2.rex	native:EN_CONNECTDRAW
@@ -86,12 +86,12 @@ tutorial/employe4validate.rex	shows
 tutorial/employe5.rex	shows
 tutorial/employe6.rex	shows
 tutorial/employe7.rex	native:IL_CREATE_CLS
-tutorial/employe8.rex	native:WINEX_CREATEFONTEX
+tutorial/employe8.rex	native:WB_SENDWINHANDLEMSG
 tutorial/employe9.rex	shows
-tutorial/employe9menuDyn.rex	native:POPMENU_INIT
-tutorial/employee10menuRc.rex	native:SCRIPTMENU_INIT
+tutorial/employe9menuDyn.rex	error:Error 98 running /home/rexx/oodWeb.cls line 1128:  Execution error. Error 98.900:  ooDialo
+tutorial/employee10menuRc.rex	error:Error 98 running /home/rexx/oodWeb.cls line 2208:  Execution error. Error 98.900:  Unable 
 tutorial/employee11tab.rex	native:RCPSPDLG_INIT
-tutorial/textScroll.rex	native:DLGEXT_SETCONTROLCOLOR
+tutorial/textScroll.rex	shows
 userGuide/exercises/Exercise02/HelloWorld.rex	shows
 userGuide/exercises/Exercise02/WoW.rex	shows
 userGuide/exercises/Exercise02/WoW2.rex	shows

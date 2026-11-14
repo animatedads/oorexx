@@ -1,0 +1,7 @@
+wait .ood-menubar >> text=Demo
+click .ood-menubar >> text=Demo
+click .ood-menu >> text=Hello
+click .ood-check input
+fill .ood-dlg input.ood-edit => typed by the user
+shot t06_resdialog
+click .ood-dlg >> text=OK

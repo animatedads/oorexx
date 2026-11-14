@@ -856,7 +856,6 @@ rebar_showBand
 rebar_sizeToRect
 resCtrlDlg_startDialog_pvt
 resdlg_getDataTableIDs_pvt
-resdlg_init
 resdlg_startDialog_pvt
 respspdlg_init
 ri_getImage

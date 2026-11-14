@@ -24,7 +24,7 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.2.0"
+  return "0.3.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute key unguarded
@@ -52,12 +52,14 @@
 ::attribute kinds unguarded           -- kind of control, by id
 ::attribute notifyTable unguarded     -- WM_NOTIFY connections: (id event method keyword)
 ::attribute store unguarded           -- user data of items, by "id item"
+::attribute menu unguarded            -- the menu bar's OodMenu, if one is attached
+::attribute contextMethod unguarded   -- the method of the context menu event
 ::attribute parentDlg unguarded
 ::attribute ownerDialog unguarded
 ::method init
   expose key rexxSelf library resourceID dlgID autoDetect fontName fontSize sizeX sizeY factorX factorY -
          pixelCX pixelCY initCode live templateActive spec template dataTable cmdTable controls kinds -
-         parentDlg ownerDialog notifyTable store
+         parentDlg ownerDialog notifyTable store menu contextMethod
   use arg key, rexxSelf, library, resourceID
   dlgID = -1
   autoDetect = .true
@@ -75,16 +77,47 @@
   kinds = .directory~new
   notifyTable = .array~new
   store = .directory~new
+  menu = .nil
+  contextMethod = ""
   parentDlg = .nil
   ownerDialog = .nil
 ::method hwnd unguarded
   expose key
   return "0x"d2x(key * 65536)~right(16, "0")
 
+/* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
+::class OodMenu
+::method module_version class
+  return "0.3.0"
+::method module_lastChanged class
+  return "2026-11-14"
+::attribute rexxSelf unguarded
+::attribute isBar unguarded
+::attribute wID unguarded
+::attribute items unguarded           -- directories: id text flags popup
+::attribute stack unguarded           -- template levels still open: (menu, closes its parent too)
+::attribute pending unguarded         -- (id method) to connect when a dialog is known
+::attribute dlg unguarded             -- the dialog attached or assigned to
+::attribute owner unguarded           -- the menu this popup is in
+::attribute autoConnect unguarded
+::attribute autoMethod unguarded
+::method init
+  expose rexxSelf isBar wID items stack pending dlg owner autoConnect autoMethod
+  use arg rexxSelf, isBar
+  wID = -1
+  items = .array~new
+  stack = .queue~new
+  stack~push(.array~of(self, .false))
+  pending = .array~new
+  dlg = .nil
+  owner = .nil
+  autoConnect = .false
+  autoMethod = ""
+
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.2.0"
+  return "0.3.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute dlg unguarded             -- its dialog's OodDlg
@@ -102,7 +135,7 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.2.0"
+  return "0.3.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::method module_version unguarded
@@ -112,6 +145,7 @@
 
 ::method init
   expose dialogs nextKey pkg msgResults nextToken appAutoDetect defFontName defFontSize
+  self~resourceProvider = .nil
   dialogs = .directory~new
   nextKey = 0
   nextToken = 0
@@ -232,8 +266,17 @@
     when kind == "MSGBOX" then msgResults[id] = code
     when kind == "CMD" then self~command(key, id, code)
     when kind == "NOTIFY" then self~notify(key, id, code, extra)
+    when kind == "CTX" then self~contextMenu(key, id, code, extra)
     otherwise nop
   end
+
+/* WM_CONTEXTMENU: the method gets the window's handle and the position. */
+::method contextMenu unguarded
+  use arg key, id, x, y
+  d = self~dialogOf(key)
+  if d == .nil then return
+  if d~contextMethod == "" then return
+  self~invoke(d~rexxSelf, d~contextMethod, .array~of("0x"d2x(key * 65536 + id)~right(16, "0"), x, y))
 
 /* WM_COMMAND: the connected method, or OK / Cancel / Help for IDs 1, 2, 9. */
 ::method command unguarded
@@ -657,6 +700,8 @@ syntax:
   ctl = cls~new(self_, id, .OodCtl~new(d, id, d~kinds[id]))
   d~controls[cacheKey] = ctl
   return ctl
+::method pbdlg_newControlEx unguarded   -- newUpDown, newReBar, newStatusBar, newToolBar ...
+  forward message "pbdlg_newControl"
 ::method dlgctrl_unInit unguarded
   return
 
@@ -842,6 +887,7 @@ syntax:
   do entry over d~cmdTable
     self~web~sub(d~key, entry[1], entry[2])
   end
+  if d~menu \== .nil then self~menuSync(d~menu)
   return .true
 
 ::method dyndlg_stop unguarded
@@ -1060,6 +1106,58 @@ syntax:
   if id < 1 then return id
   return 0
 
+/*---- ResDialog and BinaryMenuBar: binary Windows resources -----------------------------*/
+/* This layer does not read .dll or .res files.  A resource reader is plugged in:
+ *     .oodn~resourceProvider = anObject
+ * and must answer two messages.
+ *   dialogTemplate(library, id)  ->  .nil, or a directory with
+ *       x y cx cy (dialog units), title, opts (the style keywords of UserDialog~create),
+ *       fontName, fontSize, and controls: an array, in creation order, of directories
+ *       kind id x y cx cy text opts
+ *       kind is one of BUTTON CHECK RADIO GROUP STATIC FRAME EDIT LIST COMBO PROGRESS
+ *       LISTVIEW TREEVIEW TAB UPDOWN TRACKBAR DATETIMEPICKER; opts are the style
+ *       keywords the createXxx methods of DynamicDialog take.
+ *   menuTemplate(library, id)    ->  .nil, or an array of directories, depth first:
+ *       depth (0 is the bar) id text flags (CHECKED GRAYED SEPARATOR RADIO ...)
+ * library is the name given to ResDialog~new, as a path of this file system; id is numeric. */
+::attribute resourceProvider unguarded
+
+::method needProvider unguarded
+  use arg what
+  if self~resourceProvider \== .nil then return self~resourceProvider
+  raise syntax 98.900 array("ooDialog/WASM:" what "needs a reader of binary Windows resources; set .oodn~resourceProvider (see oodWeb.cls)")
+
+::method resdlg_startDialog_pvt unguarded
+  use arg self_, msg, a
+  d = self_~oodPeer
+  provider = self~needProvider("a ResDialog")
+  id = self~resolveId(self_, a[2])
+  t = provider~dialogTemplate(self~path(a[1]), id)
+  if t == .nil then return .false
+  spec = .StringTable~new
+  spec["key"] = d~key
+  spec["x"] = t~x; spec["y"] = t~y; spec["cx"] = t~cx; spec["cy"] = t~cy
+  spec["title"] = t~title
+  spec["opts"] = t~opts~upper
+  if t~hasIndex("FONTNAME") then d~fontName = t~fontName
+  if t~hasIndex("FONTSIZE") then d~fontSize = t~fontSize
+  d~spec = spec
+  d~sizeX = t~cx
+  d~sizeY = t~cy
+  d~templateActive = .true
+  do c over t~controls
+    cid = self~addItem(self_, c~kind, c~id, c~x, c~y, c~cx, c~cy, c~opts, c~text)
+    if cid > 0 then if "EDIT CHECK RADIO LIST COMBO"~wordPos(c~kind) > 0 then d~dataTable~append(.array~of(cid, c~kind))
+  end
+  return self~dyndlg_startParentDialog(self_, msg, .array~of(a[3], a[4]))
+::method resdlg_getDataTableIDs_pvt unguarded
+  use arg self_
+  ids = .array~new
+  do entry over self_~oodPeer~dataTable
+    ids~append(entry[1])
+  end
+  return ids
+
 /*---- EventNotification ---------------------------------------------------------*/
 ::method en_init_eventNotification unguarded
   return .true
@@ -1182,6 +1280,7 @@ syntax:
       end
       when kind == "TAB" then args = .array~of(id, hwnd, dlg~newTab(id))
       when kind == "UPDOWN" then args = .array~of(parts[1], parts[2], id, hwnd, dlg~newUpDown(id))
+      when kind == "DATETIMEPICKER" then args = .array~of(self~dateTimeOf(extra), .true, id, hwnd, event, dlg~newDateTimePicker(id))
       otherwise args = .array~of(id, extra)
     end
     self~invoke(dlg, entry[3], args)
@@ -1229,6 +1328,103 @@ syntax:
   return old
 ::method ud_setAcceleration unguarded
   return .true
+
+/*---- TrackBar, DateTimePicker ---------------------------------------------------------*/
+::method trckbar_getRange unguarded
+  use arg self_
+  d = .directory~new
+  d~min = self~wb_sendWinIntMsg(self_, "", .array~of(1025, 0, 0))
+  d~max = self~wb_sendWinIntMsg(self_, "", .array~of(1026, 0, 0))
+  return d
+::method en_connectDateTimePickerEvent unguarded
+  use arg self_, msg, a
+  return self~connectNotify(self_, a, "DATETIMECHANGE DATETIMECHANGE")
+::method dateTimeOf unguarded      -- 2026-11-14T20:36:00 as a .DateTime
+  use arg iso
+  parse var iso year "-" month "-" day "T" hours ":" minutes ":" seconds
+  return .DateTime~new(year, month, day, hours, minutes, seconds)
+::method dtp_getDateTime unguarded
+  use arg self_
+  return self~dateTimeOf(self~op(self_, "dtp.get"))
+::method dtp_setDateTime unguarded
+  use arg self_, msg, a
+  self~op(self_, "dtp.set", a[1]~isoDate~left(19))
+  return 0
+::method dtp_setFormat unguarded
+  return .true
+
+/*---- fonts and colours ------------------------------------------------------------------*/
+::method newFont                   -- a font "handle": the name, the point size, and B I U for the style
+  expose fonts
+  use arg name, size, style
+  if \var("FONTS") then fonts = .directory~new
+  handle = "0x"d2x(4096 + fonts~items)~right(16, "0")
+  fonts[handle] = .array~of(name, size, style)
+  return handle
+::method fontOf
+  expose fonts
+  use arg handle
+  if \var("FONTS") then return .nil
+  return fonts[handle]
+::method winex_createFontEx unguarded        -- createFontEx(name, size, directory of weight, italic, underline ...)
+  use arg self_, msg, a
+  size = 8
+  if a~hasIndex(2) then size = a[2]
+  style = ""
+  if a~hasIndex(3) then do
+    d = a[3]
+    if d~hasIndex("WEIGHT") then if d~weight >= 600 then style = style"B"
+    if d~hasIndex("ITALIC") then if d~italic == .true then style = style"I"
+    if d~hasIndex("UNDERLINE") then if d~underline == .true then style = style"U"
+  end
+  return self~newFont(a[1], size, style)
+::method winex_createFont unguarded          -- createFont(name, size, "BOLD ITALIC UNDERLINE", width)
+  use arg self_, msg, a
+  name = "MS Shell Dlg"
+  if a~hasIndex(1) then name = a[1]
+  size = 8
+  if a~hasIndex(2) then if a[2]~datatype("W") then size = a[2]
+  words = self~opt(a, 3)~upper
+  style = ""
+  if words~pos("BOLD") > 0 | words~pos("THICK") > 0 then style = style"B"
+  if words~pos("ITALIC") > 0 then style = style"I"
+  if words~pos("UNDERLINE") > 0 then style = style"U"
+  return self~newFont(name, size, style)
+::method winex_setFont unguarded
+  use arg self_, msg, a
+  font = self~fontOf(a[1])
+  if font == .nil then return 1
+  self~op(self_, "pointFont", font[1], font[2], font[3])
+  return 0
+::method winex_getFont unguarded
+  return "0x0000000000000FFF"
+::method dlgext_setControlColor unguarded    -- setControlColor(id, background, foreground)
+  use arg self_, msg, a
+  background = ""
+  foreground = ""
+  if a~hasIndex(2) then background = self~colorOf(a[2])
+  if a~hasIndex(3) then foreground = self~colorOf(a[3])
+  self~ctlOp(self_~oodPeer, self~resolveId(self_, a[1]), "color", background, foreground)
+  return 0
+
+/*---- small ones ----------------------------------------------------------------------------*/
+::method lb_addDirectory unguarded -- the names matching a file pattern, added to the list
+  use arg self_, msg, a
+  call SysFileTree self~path(a[1]), "found.", "FO"
+  last = 0
+  do i = 1 to found.0
+    last = self~op(self_, "add", filespec("NAME", found.i)) + 1
+  end
+  return last
+::method cb_getItemHeight unguarded
+  return 16
+::method tv_setItemHeight unguarded
+  return 16
+::method bc_getIdealSize unguarded
+  use arg self_
+  d = self~dlgOf(self_)
+  parse value self~web~measure(self~op(self_, "getText"), d~fontName, d~fontSize) with . . width height .
+  return .Size~new(width + 16, height + 8)
 
 /*---- user data of list-view and tree-view items ------------------------------------*/
 ::method itemData unguarded
@@ -1961,24 +2157,599 @@ syntax:
 ::method pbc_setMarquee unguarded
   return .true
 
-/*---- menus: only the system menu's close item so far ------------------------------*/
+/*---- the system menu: its close item ------------------------------------------------*/
 ::method sysMenu_init unguarded
   use arg self_, msg, a
   self_~oodPeer = a[1]             -- the dialog whose system menu this is
   return 0
-::method systemMenuItem unguarded  -- enable or disable an item of a dialog's system menu
-  use arg self_, msg, a, enable
-  dlg = self_~oodPeer
-  if \dlg~isA(self~classOf("PlainBaseDialog")) then
-    raise syntax 98.900 array("ooDialog/WASM: native function" msg "is implemented for the system menu only so far")
-  if a[1] == 61536 then self~op(dlg, "closeBox", enable)
-  return .true
 ::method menu_disable unguarded
   use arg self_, msg, a
-  return self~systemMenuItem(self_, "MENU_DISABLE", a, 0)
+  target = self_~oodPeer
+  if target~isA(.OodMenu) then return self~menuFlag(self_, a, "GRAYED", "")
+  if a[1] == 61536 then self~op(target, "closeBox", 0)
+  return .true
 ::method menu_enable unguarded
   use arg self_, msg, a
-  return self~systemMenuItem(self_, "MENU_ENABLE", a, 1)
+  target = self_~oodPeer
+  if target~isA(.OodMenu) then return self~menuFlag(self_, a, "", "GRAYED DISABLED")
+  if a[1] == 61536 then self~op(target, "closeBox", 1)
+  return .true
+
+/*---- menus ---------------------------------------------------------------------------*/
+::method newMenu unguarded         -- the state of a menu object
+  use arg self_, isBar, rxID
+  m = .OodMenu~new(self_, isBar)
+  if rxID \== .nil then do
+    id = self~resolveId(.nil, rxID)
+    if id \== -1 then m~wID = id
+  end
+  self_~oodPeer = m
+  return m
+
+::method userMenu_init unguarded   -- UserMenuBar~new(id, helpID, count, autoConnect, methodName)
+  use arg self_, msg, a
+  rxID = .nil
+  if a~hasIndex(1) then rxID = a[1]
+  m = self~newMenu(self_, .true, rxID)
+  if a~hasIndex(4) then m~autoConnect = (a[4] == .true)
+  m~autoMethod = self~opt(a, 5)
+  return
+::method userMenu_complete unguarded
+  return .true
+::method scriptMenu_init unguarded -- ScriptMenuBar~new(rcFile, id, helpID, count, connect, attachTo)
+  use arg self_, msg, a
+  rxID = .nil
+  if a~hasIndex(2) then rxID = a[2]
+  m = self~newMenu(self_, .true, rxID)
+  connect = .false
+  if a~hasIndex(5) then connect = (a[5] == .true)
+  menuName = ""
+  if m~wID == -1 then if a~hasIndex(2) then menuName = a[2]
+  self_~load(a[1], m~wID, connect, 100, \a~hasIndex(2), menuName)
+  if a~hasIndex(6) then self~menuBar_attachTo(self_, "", .array~of(a[6]))
+  return
+::method popMenu_init unguarded
+  use arg self_, msg, a
+  rxID = .nil
+  if a~hasIndex(1) then rxID = a[1]
+  self~newMenu(self_, .false, rxID)
+  return
+::method binMenu_init unguarded    -- BinaryMenuBar~new(src, id, helpID, attachTo, autoConnect, methodName)
+  use arg self_, msg, a
+  provider = self~needProvider("a BinaryMenuBar")
+  src = ""
+  if a~hasIndex(1) then src = a[1]
+  if \src~isA(.String) then src = src~library     -- a ResDialog: the menu is in its module
+  rxID = .nil
+  if a~hasIndex(2) then rxID = a[2]
+  m = self~newMenu(self_, .true, rxID)
+  owner = .nil
+  if a~hasIndex(1) then if \a[1]~isA(.String) then owner = a[1]
+  if m~wID == -1 then if rxID \== .nil then m~wID = self~resolveId(owner, rxID)
+  records = provider~menuTemplate(self~path(src), m~wID)
+  if records == .nil then return
+  path = .array~of(m)                  -- the menu being filled at each depth
+  do r over records
+    popup = .nil
+    item = self~menuItem(r~id, r~text, r~flags, .nil)
+    path[r~depth + 1]~items~append(item)
+    path[r~depth + 2] = .nil
+    item~popup = .OodMenu~new(.nil, .false)
+    item~popup~owner = path[r~depth + 1]
+    path[r~depth + 2] = item~popup
+  end
+  self~menuPrune(m)
+  if a~hasIndex(5) then m~autoConnect = (a[5] == .true)
+  m~autoMethod = self~opt(a, 6)
+  if a~hasIndex(4) then self~menuBar_attachTo(self_, "", .array~of(a[4]))
+  return
+::method menuPrune unguarded       -- an item whose popup stayed empty is a command item
+  use arg m
+  do item over m~items
+    if item~popup \== .nil then do
+      if item~popup~items~items == 0 then item~popup = .nil
+      else self~menuPrune(item~popup)
+    end
+  end
+::method menu_menuInit_pvt unguarded
+  return 0
+
+/* The menu template: items arrive in order, END closes a level. */
+::method templateAdd unguarded
+  use arg m, item, opts
+  frame = m~stack~peek
+  if frame == .nil then return .false
+  frame[1]~items~append(item)
+  ends = (opts~wordPos("END") > 0)
+  if item~popup \== .nil then m~stack~push(.array~of(item~popup, ends))
+  else if ends then do
+    do while m~stack~items > 0
+      closed = m~stack~pull
+      if \closed[2] then leave
+    end
+  end
+  return .true
+::method menuItem unguarded
+  use arg rxID, text, opts, popup
+  item = .directory~new
+  id = self~resolveId(.nil, rxID)
+  item~id = id
+  item~text = text
+  item~flags = opts~upper
+  item~popup = popup
+  return item
+::method menuTemplate_addPopup unguarded
+  use arg self_, msg, a
+  m = self_~oodPeer
+  sub = .OodMenu~new(.nil, .false)
+  return self~templateAdd(m, self~menuItem(a[1], a[2], self~opt(a, 3), sub), self~opt(a, 3)~upper)
+::method menuTemplate_addItem unguarded
+  use arg self_, msg, a
+  m = self_~oodPeer
+  item = self~menuItem(a[1], a[2], self~opt(a, 3), .nil)
+  if a~hasIndex(4) then if a[4] \== "" then m~pending~append(.array~of(item~id, a[4]))
+  return self~templateAdd(m, item, self~opt(a, 3)~upper)
+::method menuTemplate_addSeparator unguarded
+  use arg self_, msg, a
+  m = self_~oodPeer
+  rxID = 0
+  if a~hasIndex(1) then rxID = a[1]
+  return self~templateAdd(m, self~menuItem(rxID, "", "SEPARATOR" self~opt(a, 2), .nil), self~opt(a, 2)~upper)
+::method menuTemplate_isComplete unguarded
+  use arg self_
+  return self_~oodPeer~stack~items == 0
+
+/* Find an item: (menu, position) or .nil.  By ID the popups are searched too. */
+::method menuFind unguarded
+  use arg m, rxID, byPosition
+  if byPosition then do
+    if \rxID~datatype("W") then return .nil
+    if rxID < 1 | rxID > m~items~items then return .nil
+    return .array~of(m, rxID)
+  end
+  id = self~resolveId(.nil, rxID)
+  do i = 1 to m~items~items
+    item = m~items[i]
+    if item~id == id then if item~flags~wordPos("SEPARATOR") == 0 | id \== 0 then return .array~of(m, i)
+    if item~popup \== .nil then do
+      found = self~menuFind(item~popup, rxID, .false)
+      if found \== .nil then return found
+    end
+  end
+  return .nil
+::method menuItemOf unguarded
+  use arg self_, a, idArg, posArg
+  byPosition = .false
+  if a~hasIndex(posArg) then byPosition = (a[posArg] == .true)
+  found = self~menuFind(self_~oodPeer, a[idArg], byPosition)
+  if found == .nil then return .nil
+  return found[1]~items[found[2]]
+::method menuInsert unguarded
+  use arg self_, before, item, byPosition
+  m = self_~oodPeer
+  found = self~menuFind(m, before, byPosition)
+  if found == .nil then m~items~append(item)
+  else if found[2] == 1 then found[1]~items~insert(item, .nil)
+  else found[1]~items~insert(item, found[2] - 1)
+  self~menuSync(m)
+  return .true
+::method menu_insertItem unguarded -- insertItem(before, id, text, stateOpts, typeOpts, byPosition, connect, methodName)
+  use arg self_, msg, a
+  m = self_~oodPeer
+  item = self~menuItem(a[2], a[3], self~opt(a, 4) self~opt(a, 5), .nil)
+  byPosition = .false
+  if a~hasIndex(6) then byPosition = (a[6] == .true)
+  if a~hasIndex(7) then if a[7] == .true then do
+    method = self~opt(a, 8)
+    if method == "" then method = self~menu_itemTextToMethodName(self_, "", .array~of(a[3]))
+    self~menuConnect(m, item~id, method, .nil)
+  end
+  return self~menuInsert(self_, a[1], item, byPosition)
+::method menu_insertPopup unguarded -- insertPopup(before, id, popup, text, stateOpts, typeOpts, byPosition)
+  use arg self_, msg, a
+  sub = a[3]~oodPeer
+  sub~owner = self_~oodPeer
+  byPosition = .false
+  if a~hasIndex(7) then byPosition = (a[7] == .true)
+  return self~menuInsert(self_, a[1], self~menuItem(a[2], a[4], self~opt(a, 5) self~opt(a, 6), sub), byPosition)
+::method menu_insertSeparator unguarded
+  use arg self_, msg, a
+  byPosition = .false
+  if a~hasIndex(3) then byPosition = (a[3] == .true)
+  return self~menuInsert(self_, a[1], self~menuItem(a[2], "", "SEPARATOR", .nil), byPosition)
+::method menuRemove unguarded
+  use arg self_, a
+  byPosition = .false
+  if a~hasIndex(2) then byPosition = (a[2] == .true)
+  found = self~menuFind(self_~oodPeer, a[1], byPosition)
+  if found == .nil then return .false
+  found[1]~items~delete(found[2])
+  self~menuSync(self_~oodPeer)
+  return .true
+::method menu_removeItem unguarded
+  use arg self_, msg, a
+  return self~menuRemove(self_, a)
+::method menu_removeSeparator unguarded
+  use arg self_, msg, a
+  return self~menuRemove(self_, a)
+::method menu_deletePopup unguarded
+  use arg self_, msg, a
+  return self~menuRemove(self_, a)
+::method menu_removePopup unguarded
+  use arg self_, msg, a
+  item = self~menuItemOf(self_, a, 1, 2)
+  if item == .nil then return 0
+  popup = item~popup
+  self~menuRemove(self_, a)
+  if popup == .nil then return 0
+  if popup~rexxSelf == .nil then return 0
+  return popup~rexxSelf
+
+::method menuFlag unguarded        -- set or clear a flag of one item or of several
+  use arg self_, a, add, remove
+  m = self_~oodPeer
+  byPosition = .false
+  if a~hasIndex(2) then byPosition = (a[2] == .true)
+  ids = a[1]
+  if ids~isA(.String) then ids = ids~makeArray(" ")
+  ok = .true
+  do rxID over ids
+    found = self~menuFind(m, rxID, byPosition)
+    if found == .nil then do
+      ok = .false
+      iterate
+    end
+    item = found[1]~items[found[2]]
+    flags = item~flags
+    do word over remove~makeArray(" ")
+      p = flags~wordPos(word)
+      if p > 0 then flags = flags~delWord(p, 1)
+    end
+    if add \== "" then if flags~wordPos(add) == 0 then flags = flags add
+    item~flags = flags
+  end
+  self~menuSync(m)
+  return ok
+::method menu_check unguarded
+  use arg self_, msg, a
+  return self~menuFlag(self_, a, "CHECKED", "UNCHECKED")
+::method menu_unCheck unguarded
+  use arg self_, msg, a
+  return self~menuFlag(self_, a, "", "CHECKED")
+::method menu_hilite unguarded
+  return .true
+::method menu_unHilite unguarded
+  return .true
+::method menu_checkRadio unguarded -- checkRadio(start, end, check, byPosition)
+  use arg self_, msg, a
+  m = self_~oodPeer
+  byPosition = .false
+  if a~hasIndex(4) then byPosition = (a[4] == .true)
+  first = self~menuFind(m, a[1], byPosition)
+  last = self~menuFind(m, a[2], byPosition)
+  pick = self~menuFind(m, a[3], byPosition)
+  if first == .nil | last == .nil | pick == .nil then return .false
+  do i = first[2] to last[2]
+    item = first[1]~items[i]
+    flags = item~flags
+    p = flags~wordPos("CHECKED")
+    if p > 0 then flags = flags~delWord(p, 1)
+    if flags~wordPos("RADIO") == 0 then flags = flags "RADIO"
+    if i == pick[2] then flags = flags "CHECKED"
+    item~flags = flags
+  end
+  self~menuSync(m)
+  return .true
+
+::method menuHas unguarded
+  use arg self_, a, word
+  item = self~menuItemOf(self_, a, 1, 2)
+  if item == .nil then return .false
+  return item~flags~wordPos(word) > 0
+::method menu_isChecked unguarded
+  use arg self_, msg, a
+  return self~menuHas(self_, a, "CHECKED")
+::method menu_isSeparator unguarded
+  use arg self_, msg, a
+  return self~menuHas(self_, a, "SEPARATOR")
+::method menu_isDisabled unguarded
+  use arg self_, msg, a
+  if self~menuHas(self_, a, "DISABLED") then return .true
+  return self~menuHas(self_, a, "GRAYED")
+::method menu_isEnabled unguarded
+  use arg self_, msg, a
+  if self~menuItemOf(self_, a, 1, 2) == .nil then return .false
+  return \self~menu_isDisabled(self_, msg, a)
+::method menu_isPopup unguarded
+  use arg self_, msg, a
+  item = self~menuItemOf(self_, a, 1, 2)
+  if item == .nil then return .false
+  return item~popup \== .nil
+::method menu_isCommandItem unguarded
+  use arg self_, msg, a
+  item = self~menuItemOf(self_, a, 1, 2)
+  if item == .nil then return .false
+  if item~popup \== .nil then return .false
+  return item~flags~wordPos("SEPARATOR") == 0
+::method menu_isValidItemID unguarded
+  use arg self_, msg, a
+  return self~menuItemOf(self_, a, 1, 2) \== .nil
+::method menu_getItemState unguarded
+  use arg self_, msg, a
+  item = self~menuItemOf(self_, a, 1, 2)
+  if item == .nil then return ""
+  state = "ENABLED"
+  if item~flags~wordPos("GRAYED") > 0 | item~flags~wordPos("DISABLED") > 0 then state = "DISABLED GRAYED"
+  if item~flags~wordPos("CHECKED") > 0 then state = state "CHECKED"
+  else state = state "UNCHECKED"
+  if item~flags~wordPos("DEFAULT") > 0 then state = state "DEFAULT"
+  return state
+::method menu_getItemType unguarded
+  use arg self_, msg, a
+  item = self~menuItemOf(self_, a, 1, 2)
+  if item == .nil then return ""
+  if item~flags~wordPos("SEPARATOR") > 0 then return "SEPARATOR"
+  if item~flags~wordPos("RADIO") > 0 then return "STRING RADIO"
+  return "STRING"
+::method menu_getText unguarded
+  use arg self_, msg, a
+  item = self~menuItemOf(self_, a, 1, 2)
+  if item == .nil then return ""
+  return item~text
+::method menu_setText unguarded
+  use arg self_, msg, a
+  item = self~menuItemOf(self_, a, 1, 3)
+  if item == .nil then return .false
+  item~text = a[2]
+  self~menuSync(self_~oodPeer)
+  return .true
+::method menu_setID unguarded
+  use arg self_, msg, a
+  item = self~menuItemOf(self_, a, 1, 3)
+  if item == .nil then return .false
+  item~id = self~resolveId(.nil, a[2])
+  self~menuSync(self_~oodPeer)
+  return .true
+::method menu_getCount unguarded
+  use arg self_
+  return self_~oodPeer~items~items
+::method menu_getID unguarded
+  use arg self_, msg, a
+  item = self_~oodPeer~items[a[1]]
+  if item == .nil then return -1
+  if item~popup \== .nil then return -1
+  return item~id
+::method menu_getPopup unguarded
+  use arg self_, msg, a
+  item = self~menuItemOf(self_, a, 1, 2)
+  if item == .nil then return 0
+  if item~popup == .nil then return 0
+  if item~popup~rexxSelf == .nil then do   -- a popup of a template: its PopupMenu object is made when asked for
+    popup = self~classOf("PopupMenu")~new
+    item~popup~rexxSelf = popup
+    item~popup~owner = self_~oodPeer
+    popup~oodPeer = item~popup
+  end
+  return item~popup~rexxSelf
+::method menu_wID unguarded
+  use arg self_
+  return self_~oodPeer~wID
+::method menu_getHMenu unguarded
+  use arg self_
+  return "0x"d2x(self_~oodPeer~identityHash)~right(16, "0")
+::method menu_getMenuHandle unguarded
+  forward message "menu_getHMenu"
+::method menu_isValidMenu unguarded
+  return .true
+::method menu_isValidMenuHandle unguarded
+  return .true
+::method menu_releaseMenuHandle unguarded
+  return .true
+::method menu_destroy unguarded
+  use arg self_
+  m = self_~oodPeer
+  if m~dlg \== .nil then self~menuBar_detach(self_)
+  return .true
+::method menu_uninit unguarded
+  return 0
+::method menu_getHelpID unguarded
+  return 0
+::method menu_setHelpID unguarded
+  return .true
+::method menu_getMaxHeight unguarded
+  return 0
+::method menu_setMaxHeight unguarded
+  return .true
+::method menu_getAutoConnectStatus unguarded
+  use arg self_
+  d = .directory~new
+  d~autoConnect = self_~oodPeer~autoConnect
+  d~methodName = self_~oodPeer~autoMethod
+  return d
+::method menu_setAutoConnection unguarded
+  use arg self_, msg, a
+  self_~oodPeer~autoConnect = (a[1] == .true)
+  self_~oodPeer~autoMethod = self~opt(a, 2)
+  return 0
+::method menu_itemTextToMethodName unguarded
+  use arg self_, msg, a
+  parse value a[1] with text (x2c("09")) .
+  text = text~changeStr("&", "")~changeStr("...", "")
+  name = ""
+  do i = 1 to text~length
+    ch = text~subChar(i)
+    if ch~datatype("A") then name = name || ch
+  end
+  return name
+
+/* Connections: to the dialog at once if there is one, else when the menu is attached. */
+::method menuRoot unguarded
+  use arg m
+  do while m~owner \== .nil
+    m = m~owner
+  end
+  return m
+::method menuConnect unguarded
+  use arg m, id, method, dlg
+  if id < 1 then return .false
+  root = self~menuRoot(m)
+  if dlg == .nil then dlg = root~dlg
+  if dlg == .nil then root~pending~append(.array~of(id, method))
+  else self~addCommand(dlg, id, 0, method)
+  return .true
+::method menuDlgArg unguarded
+  use arg a, i
+  if a~hasIndex(i) then return a[i]
+  return .nil
+::method menu_connectCommandEvent unguarded   -- connectCommandEvent(id, methodName, dlg)
+  use arg self_, msg, a
+  return self~menuConnect(self_~oodPeer, self~resolveId(.nil, a[1]), a[2], self~menuDlgArg(a, 3))
+::method menu_connectCommandEvent_cls unguarded
+  use arg self_, msg, a
+  return self~addCommand(a[3], self~resolveId(a[3], a[1]), 0, a[2])
+::method menuConnectAll unguarded
+  use arg m, top, method, dlg
+  do item over m~items
+    if item~popup \== .nil then self~menuConnectAll(item~popup, top, method, dlg)
+    else if item~flags~wordPos("SEPARATOR") == 0 then do
+      name = method
+      if name == "" then name = self~menu_itemTextToMethodName(.nil, "", .array~of(item~text))
+      if name \== "" then self~menuConnect(top, item~id, name, dlg)
+    end
+  end
+  return .true
+::method menu_connectAllCommandEvents unguarded   -- connectAllCommandEvents(methodName, dlg)
+  use arg self_, msg, a
+  m = self_~oodPeer
+  return self~menuConnectAll(m, m, self~opt(a, 1), self~menuDlgArg(a, 2))
+::method menu_connectSomeCommandEvents unguarded  -- connectSomeCommandEvents(ids, methodName, byPosition, dlg)
+  use arg self_, msg, a
+  m = self_~oodPeer
+  byPosition = .false
+  if a~hasIndex(3) then byPosition = (a[3] == .true)
+  ids = a[1]
+  if ids~isA(.String) then ids = ids~makeArray(" ")
+  do rxID over ids
+    found = self~menuFind(m, rxID, byPosition)
+    if found == .nil then return .false
+    item = found[1]~items[found[2]]
+    name = self~opt(a, 2)
+    if name == "" then name = self~menu_itemTextToMethodName(.nil, "", .array~of(item~text))
+    self~menuConnect(m, item~id, name, self~menuDlgArg(a, 4))
+  end
+  return .true
+
+/* The menu as the page wants it: one record per item, depth first. */
+::method menuRecords unguarded
+  use arg m, depth, out
+  sep = self~sep
+  do item over m~items
+    out~append(depth || sep || item~id || sep || item~text || sep || item~flags)
+    if item~popup \== .nil then self~menuRecords(item~popup, depth + 1, out)
+  end
+  return out
+::method menuSync unguarded        -- show the menu bar's present state in the page
+  use arg m
+  root = self~menuRoot(m)
+  if \root~isBar then return
+  if root~dlg == .nil then return
+  d = root~dlg~oodPeer
+  if \d~live then return
+  records = self~menuRecords(root, 0, .array~new)
+  self~web~setMenu(d~key, records~makeString("L", x2c("1E")))
+  return
+
+::method menuBar_attachTo unguarded
+  use arg self_, msg, a
+  m = self_~oodPeer
+  dlg = a[1]
+  m~dlg = dlg
+  dlg~oodPeer~menu = m
+  dlg~menuBar = self_
+  do entry over m~pending
+    self~addCommand(dlg, entry[1], 0, entry[2])
+  end
+  m~pending~empty
+  if m~autoConnect then self~menuConnectAll(m, m, m~autoMethod, dlg)
+  self~menuSync(m)
+  return .true
+::method menuBar_detach unguarded
+  use arg self_
+  m = self_~oodPeer
+  if m~dlg == .nil then return .false
+  d = m~dlg~oodPeer
+  if d~live then self~web~setMenu(d~key, "")
+  d~menu = .nil
+  m~dlg~menuBar = .nil
+  m~dlg = .nil
+  return .true
+::method menuBar_isAttached unguarded
+  use arg self_
+  return self_~oodPeer~dlg \== .nil
+::method menuBar_redraw unguarded
+  use arg self_
+  self~menuSync(self_~oodPeer)
+  return .true
+::method menuBar_replace unguarded
+  use arg self_, msg, a
+  m = self_~oodPeer
+  dlg = m~dlg
+  if dlg == .nil then return .nil
+  self~menuBar_detach(self_)
+  self~menuBar_attachTo(a[1], "", .array~of(dlg))
+  return self_
+
+/* Popup (context) menus. */
+::method popMenu_assignTo unguarded
+  use arg self_, msg, a
+  m = self_~oodPeer
+  m~dlg = a[1]
+  do entry over m~pending
+    self~addCommand(a[1], entry[1], 0, entry[2])
+  end
+  m~pending~empty
+  if a~hasIndex(2) then if a[2] == .true then self~menuConnectAll(m, m, self~opt(a, 3), a[1])
+  return .true
+::method popMenu_isAssigned unguarded
+  use arg self_
+  return self_~oodPeer~dlg \== .nil
+::method popMenu_track unguarded   -- track(location, dlg, ...): the ID chosen, 0 for none
+  expose msgResults
+  use arg self_, msg, a
+  m = self_~oodPeer
+  token = self~newToken
+  records = self~menuRecords(m, 0, .array~new)
+  where = a[1]
+  self~web~popupMenu(token, where~x, where~y, records~makeString("L", x2c("1E")))
+  do while \msgResults~hasIndex(token)
+    event = .js~nextEvent(0.2)
+    if event \== .nil then event~dispatch
+  end
+  return msgResults~remove(token)
+::method popMenu_show unguarded    -- show(location, dlg, ...): the choice arrives as the dialog's command event
+  use arg self_, msg, a
+  m = self_~oodPeer
+  dlg = m~dlg
+  if a~hasIndex(2) then dlg = a[2]
+  id = self~popMenu_track(self_, msg, a)
+  if id > 0 then if dlg \== .nil then self~command(dlg~oodPeer~key, id, 0)
+  return .true
+::method popMenu_connectContextMenu unguarded -- connectContextMenu(methodName, hwnd, dlg)
+  use arg self_, msg, a
+  dlg = self_~oodPeer~dlg
+  if a~hasIndex(3) then dlg = a[3]
+  if dlg == .nil then return .false
+  return self~connectContext(dlg, a[1])
+::method popMenu_connectContextMenu_cls unguarded
+  use arg self_, msg, a
+  return self~connectContext(a[1], a[2])
+::method connectContext unguarded
+  use arg dlg, method
+  d = dlg~oodPeer
+  d~contextMethod = method~upper
+  d~cmdTable~append(.array~of(0, "CTX", ""))
+  if d~live then self~web~sub(d~key, 0, "CTX")
+  return .true
 
 /*---- files: upstream's Rexx and the samples write Windows paths -----------------*/
 ::method path unguarded            -- "rc\CALC.RC" names rc/calc.rc: separators, and case as Windows ignores it
@@ -2122,6 +2893,20 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
 .ood-lvchk{margin:0 .4em 0 0;vertical-align:middle}
 .ood-tvrow{white-space:nowrap;padding:1px 4px}
 .ood-tvtw{display:inline-block;width:1.1em;text-align:center;color:#555}
+.ood-menubar{display:flex;background:#fff;border-bottom:1px solid #e5e5e5;padding:0 2px}
+.ood-menubar button{border:0;background:transparent;padding:.15em .6em;cursor:default;color:#000}
+.ood-menubar button:hover,.ood-menubar button.ood-mopen{background:#cce8ff}
+.ood-menubar button:disabled{color:#999}
+.ood-menu{position:fixed;background:#f2f2f2;border:1px solid #ccc;box-shadow:2px 2px 6px rgba(0,0,0,.3);padding:2px;font:13px "Segoe UI",Tahoma,"DejaVu Sans",Arial,sans-serif;color:#000;min-width:8em;user-select:none}
+.ood-menu hr{border:0;border-top:1px solid #d7d7d7;margin:3px 0}
+.ood-mi{display:flex;padding:.2em .4em;white-space:nowrap;cursor:default}
+.ood-mi:hover{background:#91c9f7}
+.ood-mi.ood-off{color:#999}
+.ood-mi.ood-off:hover{background:transparent}
+.ood-mark{width:1.3em;text-align:center}
+.ood-mtext{flex:1}
+.ood-macc{margin-left:2em;color:#555}
+.ood-track{margin:0;padding:0}
 .ood-ud{display:flex;flex-direction:column}
 .ood-ud button{flex:1;min-height:0;padding:0;border:1px solid #adadad;background:#e1e1e1;font-size:.6em;line-height:1;color:#000;cursor:default}
 .ood-ud button:hover{background:#e5f1fb;border-color:#0078d7}
@@ -2217,6 +3002,12 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
     });
     dlg.titleEl.addEventListener('pointerup', () => { drag = null; });
     el.addEventListener('pointerdown', () => { if (el.style.zIndex != ood.z && !dlg.modal) el.style.zIndex = ++ood.z; }, true);
+    el.addEventListener('contextmenu', (e) => {
+      if (!dlg.subs.has('0.CTX')) return;
+      e.preventDefault();
+      const c = dlg.all.find((x) => x.el.contains(e.target));
+      fire(dlg.key, 'CTX', c && c.id > 0 ? c.id : 0, Math.round(e.clientX), Math.round(e.clientY));
+    });
     el.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') { e.preventDefault(); if (!dlg.noClose) fire(dlg.key, 'CMD', 2, 0); return; }
       if (e.key === 'F1') { e.preventDefault(); fire(dlg.key, 'CMD', 9, 0); return; }
@@ -2381,6 +3172,19 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
         el = main = D.createElement('div'); el.className = 'ood-tab'; c.tabs = []; c.cur = -1;
         c.strip = D.createElement('div'); c.strip.className = 'ood-tabstrip'; c.page = D.createElement('div'); c.page.className = 'ood-tabpage';
         el.append(c.strip, c.page); tabWire(dlg, c);
+        break;
+      case 'TRACKBAR':
+        el = main = D.createElement('input'); main.type = 'range'; main.min = 0; main.max = 100; main.value = 0; main.className = 'ood-track';
+        c.page = 20; c.line = 1;
+        if (has(o, 'VERTICAL')) { main.style.writingMode = 'vertical-lr'; main.style.direction = 'rtl'; }
+        main.addEventListener('input', () => note(dlg, c, 'TRACK', main.value + SEP + 'DRAG'));
+        main.addEventListener('change', () => note(dlg, c, 'TRACK', main.value + SEP + 'ENDTRACK'));
+        break;
+      case 'DATETIMEPICKER':
+        el = main = D.createElement('input'); main.className = 'ood-edit';
+        main.type = has(o, 'TIME') ? 'time' : 'date'; if (main.type === 'time') main.step = 1;
+        main.addEventListener('change', () => note(dlg, c, 'DATETIMECHANGE', dtpGet(c)));
+        c.main = main; dtpSet(c, new Date());
         break;
       case 'UPDOWN': {
         el = main = D.createElement('div'); el.className = 'ood-ud'; c.focusable = false;
@@ -2573,6 +3377,21 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
     });
   }
 
+  const two = (n) => String(n).padStart(2, '0');
+  function dtpSet(c, d) {
+    c.date = d;
+    c.main.value = c.main.type === 'time' ? two(d.getHours()) + ':' + two(d.getMinutes()) + ':' + two(d.getSeconds())
+      : d.getFullYear() + '-' + two(d.getMonth() + 1) + '-' + two(d.getDate());
+  }
+  function dtpGet(c) {                                        // the part shown is the user's; the rest is kept
+    const d = new Date(c.date), v = c.main.value;
+    if (v) {
+      if (c.main.type === 'time') { const [h, m, sec] = v.split(':').map(Number); d.setHours(h, m, sec || 0); }
+      else { const [y, mo, da] = v.split('-').map(Number); d.setFullYear(y, mo - 1, da); }
+      c.date = d;
+    }
+    return d.getFullYear() + '-' + two(d.getMonth() + 1) + '-' + two(d.getDate()) + 'T' + two(d.getHours()) + ':' + two(d.getMinutes()) + ':' + two(d.getSeconds());
+  }
   function udSet(dlg, c, pos) {
     c.pos = Math.max(c.min, Math.min(c.max, pos));
     const b = dlg.ctrls.get(c.buddy);
@@ -2713,6 +3532,21 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
       case 0x1105: return String(c.nodes.size);                                        // TVM_GETCOUNT
       case 0x1114: return '1';                                                         // TVM_ENSUREVISIBLE
     }
+    if (c.kind === 'TRACKBAR') switch (msg) {
+      case 0x400: return String(m.value);                                              // TBM_GETPOS
+      case 0x401: return String(m.min);                                                // TBM_GETRANGEMIN
+      case 0x402: return String(m.max);                                                // TBM_GETRANGEMAX
+      case 0x405: m.value = l; return '0';                                             // TBM_SETPOS
+      case 0x406: m.min = l & 0xFFFF; m.max = l >>> 16; return '0';                    // TBM_SETRANGE
+      case 0x407: m.min = l; return '0';                                               // TBM_SETRANGEMIN
+      case 0x408: m.max = l; return '0';                                               // TBM_SETRANGEMAX
+      case 0x415: { const old = c.page; c.page = l; return String(old); }              // TBM_SETPAGESIZE
+      case 0x416: return String(c.page);
+      case 0x417: { const old = c.line; c.line = l; m.step = l; return String(old); }  // TBM_SETLINESIZE
+      case 0x418: return String(c.line);
+      case 0x414: case 0x404: case 0x409: case 0x40A: case 0x40B: case 0x40C: case 0x413: return '0';
+      case 0x410: return '2';
+    }
     if (c.kind === 'UPDOWN') switch (msg) {
       case 0x471: { const old = c.pos; udSet(dlg, c, l); return String(old); }         // UDM_SETPOS32
       case 0x472: return String(c.pos);                                                // UDM_GETPOS32
@@ -2805,6 +3639,9 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
         if (c.kind === 'LIST' || c.droplist) m.selectedIndex = i; else m.value = i >= 0 ? optsOf(c)[i].textContent : String(a);
         return String(i); }
     }
+    if (c && name === 'dtp.get') return dtpGet(c);
+    if (c && name === 'dtp.set') { dtpSet(c, new Date(String(a))); return '1'; }
+    if (c && name === 'pointFont') { m.style.fontFamily = '"' + a + '","Segoe UI",Tahoma,sans-serif'; m.style.fontSize = Math.round(Number(b) * 96 / 72 * ood.scale * 100) / 100 + 'px'; const st = String(c2); m.style.fontWeight = st.includes('B') ? 'bold' : 'normal'; m.style.fontStyle = st.includes('I') ? 'italic' : 'normal'; m.style.textDecoration = st.includes('U') ? 'underline' : 'none'; return '1'; }
     if (c && name === 'ud.range') return c.min + ' ' + c.max;
     if (c && name === 'ud.buddy') { const old = c.buddy; if (a !== '') c.buddy = Number(a); return String(old); }
     if (c && name.startsWith('lv.')) return lvOp(dlg, c, name.slice(3), a, b, c2);
@@ -2965,6 +3802,69 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
     box.remove();
     const fx = Math.floor((b.width / 26 + 1) / 2) / 4, fy = Math.round(b.height) / 8;
     return Math.ceil(r.width / fx) + ' ' + Math.ceil(r.height / fy) + ' ' + Math.ceil(r.width) + ' ' + Math.ceil(r.height) + ' ' + fx + ' ' + fy;
+  };
+
+  /* ---- menus ------------------------------------------------------------- */
+  function menuTree(data) {                                   // records "depth id text flags", depth first
+    const root = { kids: [] }, path = [root];
+    String(data).split('\x1e').filter(Boolean).forEach((rec) => {
+      const [depth, id, text, flags] = rec.split(SEP), it = { id: Number(id), text, flags: ' ' + (flags || '') + ' ', kids: [] };
+      path.length = Number(depth) + 1; path[path.length - 1].kids.push(it); path.push(it);
+    });
+    return root.kids;
+  }
+  function closeMenus() { D.querySelectorAll('.ood-menu').forEach((m) => m.remove()); D.querySelectorAll('.ood-mopen').forEach((b) => b.classList.remove('ood-mopen')); if (ood.menuDone) { const f = ood.menuDone; ood.menuDone = null; f(0); } }
+  function openMenu(items, x, y, pick, level) {
+    D.querySelectorAll('.ood-menu').forEach((m) => { if (Number(m.dataset.level) >= level) m.remove(); });
+    const box = D.createElement('div'); box.className = 'ood-menu'; box.dataset.level = level; box.style.zIndex = ++ood.z;
+    items.forEach((it) => {
+      if (it.flags.includes(' SEPARATOR ')) { box.appendChild(D.createElement('hr')); return; }
+      const row = D.createElement('div'); row.className = 'ood-mi'; row.dataset.id = it.id;
+      const off = it.flags.includes(' GRAYED ') || it.flags.includes(' DISABLED ');
+      if (off) row.classList.add('ood-off');
+      const [name, key] = it.text.split('\t');
+      const mark = D.createElement('span'); mark.className = 'ood-mark'; mark.textContent = it.flags.includes(' CHECKED ') ? (it.flags.includes(' RADIO ') ? '\u2022' : '\u2713') : '';
+      const tx = D.createElement('span'); tx.className = 'ood-mtext'; label(tx, name);
+      const acc = D.createElement('span'); acc.className = 'ood-macc'; acc.textContent = it.kids.length ? '\u25B8' : (key || '');
+      row.append(mark, tx, acc); box.appendChild(row);
+      row.addEventListener('click', (e) => {
+        e.stopPropagation(); if (off) return;
+        if (it.kids.length) { const r = row.getBoundingClientRect(); openMenu(it.kids, r.right - 2, r.top, pick, level + 1); }
+        else { ood.menuDone = null; closeMenus(); pick(it.id); }
+      });
+    });
+    D.body.appendChild(box);
+    box.style.left = Math.max(0, Math.min(x, W.innerWidth - box.offsetWidth)) + 'px';
+    box.style.top = Math.max(0, Math.min(y, W.innerHeight - box.offsetHeight)) + 'px';
+  }
+  D.addEventListener('pointerdown', (e) => { if (!e.target.closest('.ood-menu') && !e.target.closest('.ood-menubar')) closeMenus(); }, true);
+  D.addEventListener('keydown', (e) => { if (e.key === 'Escape' && D.querySelector('.ood-menu')) { e.stopPropagation(); closeMenus(); } }, true);
+
+  ood.setMenu = function (key, data) {
+    const dlg = ood.dialogs.get(Number(key)); if (!dlg) return '0';
+    if (dlg.menuEl) { dlg.menuEl.remove(); dlg.menuEl = null; }
+    const tops = menuTree(data); if (!tops.length) return '1';
+    const bar = dlg.menuEl = D.createElement('div'); bar.className = 'ood-menubar';
+    tops.forEach((it) => {
+      const b = D.createElement('button'); b.type = 'button'; b.tabIndex = -1; label(b, it.text); b.dataset.id = it.id;
+      if (it.flags.includes(' GRAYED ') || it.flags.includes(' DISABLED ')) b.disabled = true;
+      b.addEventListener('click', () => {
+        if (!it.kids.length) { closeMenus(); fire(dlg.key, 'CMD', it.id, 0); return; }
+        const was = b.classList.contains('ood-mopen'); closeMenus(); if (was) return;
+        b.classList.add('ood-mopen'); const r = b.getBoundingClientRect();
+        openMenu(it.kids, r.left, r.bottom, (id) => fire(dlg.key, 'CMD', id, 0), 0);
+      });
+      bar.appendChild(b);
+    });
+    dlg.el.insertBefore(bar, dlg.client);
+    return '1';
+  };
+  ood.popupMenu = function (token, x, y, data) {
+    boot(); closeMenus();
+    const done = (id) => fire(-Number(token), 'MSGBOX', token, id);
+    ood.menuDone = done;
+    openMenu(menuTree(data), Number(x), Number(y), (id) => done(id), 0);
+    return '1';
   };
 
   ood.screen = () => W.innerWidth + ' ' + W.innerHeight;

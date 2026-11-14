@@ -1,4 +1,4 @@
-# ooDialog for ooRexx/WASM — v0.2.0
+# ooDialog for ooRexx/WASM — v0.3.0
 
 Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: Josep Maria Blasco's
 ooRexx/WASM (`oorexxwasm` 0.2.4, ooRexx 5.3.0) and its `js.cls`.
@@ -16,7 +16,7 @@ Rexx **unchanged** and replaces only the DLL:
 | Native layer | `src/oodWeb.cls` | `.oodn`: the DLL's functions in Rexx; raises SYNTAX 98.900 naming any function not ported yet |
 | Page runtime | `src/oodialog-web.js` | Dialogs and controls as DOM, a subset of Win32 control messages, WM_COMMAND events; embedded into `oodWeb.cls` by the build |
 | Shapes | `src/ooShapes.cls` | `.Point`, `.Size`, `.Rect` in Rexx (native on Windows) |
-| Patches | `src/patches.txt` | 6 members replaced, 2 dropped: only what must run in the class's own scope |
+| Patches | `src/patches.txt` | 6 members replaced, 3 dropped: only what must run in the class's own scope |
 
 Existing programs keep `::requires "ooDialog.cls"`. Three files go into the
 interpreter's file system: `ooDialog.cls`, `oodWeb.cls`, `ooShapes.cls`.
@@ -32,36 +32,58 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
 
     rexx tools/oodbuild.rex
     python3 tools/oodtest.py --sweep upstream/examples
-    python3 tools/oodtest.py --tree upstream/examples tests/t01_simple.rex tests/t02_timed.rex tests/t03_views.rex tests/up/calculator.rex tests/up/oodpbar.rex tests/up/oodStandardRoutines.rex
+    python3 tools/oodtest.py --tree upstream/examples tests/t0*.rex tests/up/calculator.rex tests/up/oodpbar.rex tests/up/oodStandardRoutines.rex
 
-## State on 2026-11-14 (v0.2.0, end of day 1)
+## State on 2026-11-14 (v0.3.0)
 
-- Natives ported: 250 of 1,197 (20.9%).
-- Tests: 6 of 6 pass in headless Chromium. Three are upstream samples run
-  unmodified: `calculator.rex` (RcDialog, 7*6=42 asserted), `oodpbar.rex`
-  (RcDialog, progress bars), `oodStandardRoutines.rex` (all 14 public routines
-  displayed and dismissed). `t03_views.rex` asserts list-view, tree-view and
-  tab contents and events.
+- Natives ported: 334 of 1,196 (27.9%).
+- Tests: 9 of 9 pass in headless Chromium (`tests/t01`..`t06` with expected
+  output, and three unmodified upstream samples: `calculator.rex`,
+  `oodpbar.rex`, `oodStandardRoutines.rex`).
 - Sweep of all 140 upstream example programs (`oodtest.py --sweep`, results in
-  `sweep.tsv`): 40 show their dialog, 7 run to the end, 58 stop at a native not
-  ported yet (named in the file), 35 stop on another error. Most of the 35 are
-  not ooDialog: `winSystm.cls` (Windows-only), `::requires` with `\` in the
-  path, or component files that are not programs.
-- Working: UserDialog, RcDialog (upstream's own .rc parser), push button,
-  check box, radio button, group box, static text and frames, edit, list box,
-  combo box, progress bar, list-view (report view, check boxes, selection),
-  tree-view, tab, up-down; data attributes and dlgData. stems; connectXxxEvent
-  for buttons, edits, list boxes, combo boxes, statics, list-views, tree-views,
-  tabs, up-downs; MessageDialog and the routines built on it; InputBox,
-  IntegerBox, PasswordBox, MultiInputBox, ListChoice, MultiListChoice,
-  CheckList, SingleSelection, TimedMessage.
-- Not yet (the sweep's order of need): ResDialog (needs binary DLL resources:
-  cannot be ported as it is), bitmap buttons and images, menus, property
-  sheets and ControlDialog, tool tips, fonts on controls, date-time picker,
-  month calendar, track bar, scroll bar, key/mouse/draw/WM events, resizing,
-  LvFullRow/LvItem objects, file and folder dialogs.
-- Asserted by test: everything in the "Working" list except up-down, which is
-  only seen to display in the sweep.
-- Known: `.DlgUtil~version` reports 4.2.5; Windows file names in samples
-  (`rc\CALC.RC`) are resolved with `/` and without regard to case; `.OS`
-  answers as a Windows newer than any it is asked about.
+  `sweep.tsv`): 46 show their dialog, 7 run to the end, 43 stop at a native not
+  ported yet (named in the file), 44 stop on another error. Of the 44, 31 are
+  Error 43 (a routine or `::requires` file not found: `winSystm.cls`, which is
+  Windows-only, `::requires` paths written with `\`, component files that are
+  not programs), 12 are Error 98 raised by this layer (an event keyword not
+  ported, or a ResDialog / BinaryMenuBar with no resource reader), 1 is a
+  syntax error in the sample. The sweep checks that a dialog appears, not that
+  it behaves.
+- Working, each asserted by a test: UserDialog; RcDialog (upstream's own .rc
+  parser); push button, check box, radio button, group box, static text and
+  frames, edit, list box, combo box, progress bar; list-view (report view,
+  check boxes, selection), tree-view, tab; up-down with buddy, track bar,
+  date-time picker; menu bars (UserMenuBar, template methods, insert, check,
+  enable, command events); fonts (createFontEx, setFont) and control colours;
+  data attributes and dlgData. stems; the connectXxxEvent methods of those
+  controls; MessageDialog and the routines built on it; InputBox, IntegerBox,
+  PasswordBox, MultiInputBox, ListChoice, MultiListChoice, CheckList,
+  SingleSelection, TimedMessage.
+- Written but not asserted by a test: ScriptMenuBar (menu from an .rc file),
+  PopupMenu show/track and the context-menu event, lb~addDirectory.
+
+## Binary Windows resources (ResDialog, BinaryMenuBar)
+
+This layer does not read `.dll` or `.res` files; a reader is plugged in:
+
+    .oodn~resourceProvider = aReader
+
+`aReader` answers `dialogTemplate(library, id)` and `menuTemplate(library, id)`.
+The contract (fields, control kinds, style keywords) is the comment above
+`resourceProvider` in `src/oodWeb.cls`; `tests/t06_resdialog.rex` runs a
+ResDialog and a BinaryMenuBar over a stand-in reader and is the acceptance
+test a real reader must also pass.
+
+## Not yet (the sweep's order of need)
+
+Bitmap buttons and images; draw, key, mouse and WM events; property sheets and
+ControlDialog; tool tips; month calendar; scroll bar; tool bar, status bar,
+re-bar; list-view LvItem/LvFullRow objects and the remaining list-view and
+tree-view events; track bar events; resizing; file and folder dialogs
+(FileNameDialog says so and answers as cancelled); popup/popupAsChild untested.
+
+## Known
+
+`.DlgUtil~version` reports 4.2.5. Windows file names in samples (`rc\CALC.RC`)
+are resolved with `/` and without regard to case. `.OS` answers as a Windows
+newer than any it is asked about. Not yet run in the Playground or on a phone.

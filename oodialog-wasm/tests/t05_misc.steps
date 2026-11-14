@@ -1,0 +1,11 @@
+wait .ood-ud
+click .ood-ud button:first-child
+click .ood-ud button:first-child
+click .ood-ud button:first-child
+fill .ood-dlg input[type=date] => 2026-12-25
+press Tab
+sleep 300
+expect document.querySelector('.ood-dlg input.ood-edit').value ==> 5
+expect getComputedStyle(document.querySelector('.ood-static')).fontWeight ==> 700
+shot t05_misc
+click .ood-dlg >> text=Close
