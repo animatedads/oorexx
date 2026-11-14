@@ -24,7 +24,7 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.7.0"
+  return "0.8.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute key unguarded
@@ -56,6 +56,7 @@
 ::attribute pageInfo unguarded        -- a property sheet page's state, else .nil
 ::attribute sheet unguarded           -- a property sheet's state, else .nil
 ::attribute embed unguarded           -- (parent key, x, y in pixels) of a dialog shown inside another, else .nil
+::attribute wmTable unguarded          -- dialog message connections: (event method)
 ::attribute ctlInfo unguarded         -- a ControlDialog's state, else .nil
 ::attribute keyTable unguarded        -- key press connections: (method, set of key codes, filter)
 ::attribute deferred unguarded        -- operations asked for before the dialog exists: (id name a b c)
@@ -65,7 +66,7 @@
 ::method init
   expose key rexxSelf library resourceID dlgID autoDetect fontName fontSize sizeX sizeY factorX factorY -
          pixelCX pixelCY initCode live templateActive spec template dataTable cmdTable controls kinds -
-         parentDlg ownerDialog notifyTable store menu contextMethod deferred keyTable pageInfo sheet embed ctlInfo
+         parentDlg ownerDialog notifyTable store menu contextMethod deferred keyTable pageInfo sheet embed ctlInfo wmTable
   use arg key, rexxSelf, library, resourceID
   dlgID = -1
   autoDetect = .true
@@ -86,6 +87,7 @@
   deferred = .array~new
   keyTable = .array~new
   ctlInfo = .nil
+  wmTable = .array~new
   pageInfo = .nil
   sheet = .nil
   embed = .nil
@@ -100,7 +102,7 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.7.0"
+  return "0.8.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute rexxSelf unguarded
@@ -129,7 +131,7 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.7.0"
+  return "0.8.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute dlg unguarded             -- its dialog's OodDlg
@@ -147,7 +149,7 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.7.0"
+  return "0.8.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::method module_version unguarded
@@ -280,8 +282,45 @@
     when kind == "NOTIFY" then self~notify(key, id, code, extra)
     when kind == "CTX" then self~contextMenu(key, id, code, extra)
     when kind == "KEY" then self~keyPress(key, id, code)
+    when kind == "WM" then self~wmEvent(key, code, extra)
     otherwise nop
   end
+
+/* The dialog's own messages: connectResize, connectMove, connectSizeMoveEnded.
+ * The others (connectActivate, connectHelp, connectPosChanged, connectResizing) are accepted
+ * and not produced. */
+::method en_connectWmEvent unguarded
+  use arg self_, msg, a
+  d = self_~oodPeer
+  event = ""
+  if msg == "CONNECTRESIZE" then event = "RESIZE"
+  if msg == "CONNECTMOVE" then event = "MOVE"
+  if msg == "CONNECTSIZEMOVEENDED" then event = "SIZEMOVEENDED"
+  if event == "" then do
+    say "ooDialog/WASM:" msg~substr(8) "is connected but is not produced yet"
+    return .true
+  end
+  d~wmTable~append(.array~of(event, a[1]~upper))
+  d~cmdTable~append(.array~of(0, event, ""))
+  if d~live then self~web~sub(d~key, 0, event)
+  return .true
+::method wmEvent unguarded         -- the arguments are wParam and lParam, as for WM_SIZE and WM_MOVE
+  use arg key, event, extra
+  d = self~dialogOf(key)
+  if d == .nil then return
+  sep = self~sep
+  parse var extra first (sep) second
+  do entry over d~wmTable
+    if entry[1] \== event then iterate
+    if event == "SIZEMOVEENDED" then args = .array~new
+    else args = .array~of(0, second * 65536 + first)
+    self~invoke(d~rexxSelf, entry[2], args)
+  end
+
+/* Track bar events: DRAG while the thumb moves, ENDTRACK when it is let go. */
+::method en_connectTrackBarEvent unguarded
+  use arg self_, msg, a
+  return self~connectNotify(self_, a, "DRAG TRACK ENDTRACK TRACK POSITION TRACK")
 
 /* Key presses: connectKeyPress(method, keys, filter), connectFKeyPress(method). */
 ::method keySet unguarded          -- "ALL", "FKEYS", "65-90", "13, 27" ... as a set of virtual key codes
@@ -1850,6 +1889,11 @@ syntax:
       end
       when kind == "TAB" then args = .array~of(id, hwnd, dlg~newTab(id))
       when kind == "UPDOWN" then args = .array~of(parts[1], parts[2], id, hwnd, dlg~newUpDown(id))
+      when kind == "TRACKBAR" then do              -- wParam: the code and the position; lParam: the track bar
+        codes = "DRAG 5 ENDTRACK 8 POSITION 4"
+        if entry[4] \== parts[2] then iterate
+        args = .array~of(parts[1] * 65536 + codes~word(codes~wordPos(parts[2]) + 1), hwnd)
+      end
       when kind == "DATETIMEPICKER" then args = .array~of(self~dateTimeOf(extra), .true, id, hwnd, event, dlg~newDateTimePicker(id))
       otherwise args = .array~of(id, extra)
     end
@@ -2227,6 +2271,80 @@ syntax:
   if a~hasIndex(3) then foreground = self~colorOf(a[3])
   self~ctlOp(self_~oodPeer, self~resolveId(self_, a[1]), "color", background, foreground)
   return 0
+
+/*---- more small ones ------------------------------------------------------------------------------*/
+::method wb_screenClient unguarded -- screen2client, client2screen: a Point or Rect converted in place
+  use arg self_, msg, a
+  t = self~target(self_)
+  parse value self~ctlOp(t[1], 0, "origin") with left top
+  if left == "" then return .false
+  if t[2] \== 0 then do
+    parse value self~op(self_, "rect") with left top .
+  end
+  sign = 1
+  if msg == "SCREEN2CLIENT" then sign = -1
+  obj = a[1]
+  if obj~hasMethod("RIGHT") then do
+    obj~left = obj~left + sign * left
+    obj~right = obj~right + sign * left
+    obj~top = obj~top + sign * top
+    obj~bottom = obj~bottom + sign * top
+  end
+  else do
+    obj~x = obj~x + sign * left
+    obj~y = obj~y + sign * top
+  end
+  return .true
+::method pbdlg_backgroundBitmap unguarded    -- backgroundBitmap(file, opts): the dialog's background picture
+  use arg self_, msg, a
+  key = self~imageKey(a[1])
+  if key == "" then return 1
+  self~ctlOpWhenLive(self_~oodPeer, 0, "backdrop", key, self~opt(a, 2)~upper)
+  return 0
+::method cb_setItemHeight unguarded
+  return 0
+::method cb_addDirectory unguarded
+  forward message "lb_addDirectory"
+::method dtp_setRange unguarded
+  return 0
+::method tt_getDelayTime unguarded
+  return 500
+::method bc_setStyle unguarded
+  return ""
+::method dlgext_setBitmapPosition unguarded
+  return 0
+::method dlgutil_getGuid_cls unguarded
+  hex = ""
+  do 32
+    hex = hex || "0123456789ABCDEF"~subChar(random(1, 16))
+  end
+  return hex~left(8)"-"hex~substr(9, 4)"-"hex~substr(13, 4)"-"hex~substr(17, 4)"-"hex~substr(21)
+::method spi_getWorkArea_cls unguarded
+  parse value self~web~screen with w h
+  return .Rect~new(0, 0, w, h)
+::method wb_sendWinHandleMsg unguarded
+  use arg self_, msg, a
+  answer = self~wb_sendWinIntMsg(self_, msg, a)
+  return "0x"d2x(answer~abs)~right(16, "0")
+::method notProduced unguarded     -- an event family this layer accepts and never sends
+  use arg what, a
+  say "ooDialog/WASM:" what "event" self~opt(a, 2) "is connected but is not produced yet"
+  return 0
+::method en_connectMonthCalendarEvent unguarded
+  use arg self_, msg, a
+  return self~notProduced("month calendar", a)
+::method en_connectToolTipEvent unguarded
+  use arg self_, msg, a
+  return self~notProduced("tool tip", a)
+::method en_connectToolBarEvent unguarded
+  use arg self_, msg, a
+  return self~notProduced("tool bar", a)
+::method en_connectStatusBarEvent unguarded
+  use arg self_, msg, a
+  return self~notProduced("status bar", a)
+::method en_connectScrollBarEvent unguarded
+  use arg self_, msg, a
+  return self~notProduced("scroll bar", a)
 
 /*---- small ones ----------------------------------------------------------------------------*/
 ::method lb_addDirectory unguarded -- the names matching a file pattern, added to the list
@@ -3828,6 +3946,19 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
     ood.dialogs.set(key, dlg);
     for (const c of ctrls || []) addControl(dlg, c);
     if (!host) wireDialog(dlg);
+    if (!host && has(opts, 'THICKFRAME')) {                  // a sizing border: the client area can be dragged larger or smaller
+      client.style.resize = 'both'; client.style.minWidth = '60px'; client.style.minHeight = '30px';
+    }
+    if (!host && W.ResizeObserver) {
+      let first = true, timer = null;
+      new W.ResizeObserver(() => {
+        if (first) { first = false; return; }
+        if (!ood.dialogs.has(key)) return;
+        if (dlg.subs.has('0.RESIZE')) fire(key, 'WM', 0, 'RESIZE', client.clientWidth + SEP + client.clientHeight);
+        clearTimeout(timer);
+        timer = setTimeout(() => { if (ood.dialogs.has(key) && dlg.subs.has('0.SIZEMOVEENDED')) fire(key, 'WM', 0, 'SIZEMOVEENDED', ''); }, 250);
+      }).observe(client);
+    }
     return dlg.fx + ' ' + dlg.fy + ' ' + Math.round(rect.width) + ' ' + Math.round(rect.height);
   };
 
@@ -3842,8 +3973,9 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
     dlg.titleEl.addEventListener('pointermove', (e) => {
       if (!drag) return;
       el.style.left = (e.clientX - drag.x) + 'px'; el.style.top = Math.max(0, e.clientY - drag.y) + 'px';
+      if (dlg.subs.has('0.MOVE')) fire(dlg.key, 'WM', 0, 'MOVE', el.offsetLeft + SEP + el.offsetTop);
     });
-    dlg.titleEl.addEventListener('pointerup', () => { drag = null; });
+    dlg.titleEl.addEventListener('pointerup', () => { if (drag && dlg.subs.has('0.SIZEMOVEENDED')) fire(dlg.key, 'WM', 0, 'SIZEMOVEENDED', ''); drag = null; });
     el.addEventListener('pointerdown', () => { if (el.style.zIndex != ood.z && !dlg.modal) el.style.zIndex = ++ood.z; }, true);
     el.addEventListener('contextmenu', (e) => {
       if (!dlg.subs.has('0.CTX')) return;
@@ -4493,7 +4625,10 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       case 'replaceSel': m.setRangeText(String(a), m.selectionStart, m.selectionEnd, 'end'); c.modified = true; return '1';
       case 'line': { const ls = m.value.split('\n'); return ls[Number(a) - 1] == null ? '' : ls[Number(a) - 1]; }
       case 'cue': m.placeholder = String(a); return '1';
-      case 'tip': (c ? c.el : el).title = String(a); return '1';   // a tool tip: the browser's own
+      case 'tip': (c ? c.el : el).title = String(a); return '1';
+      case 'backdrop': { const url = ood.images.get(String(a)); if (!url) return '0'; const t = c ? c.el : dlg.client;
+        t.style.backgroundImage = 'url("' + url + '")'; t.style.backgroundRepeat = has(String(b), 'TILE') || b === '' ? 'repeat' : 'no-repeat';
+        if (has(String(b), 'STRETCH')) t.style.backgroundSize = '100% 100%'; return '1'; }   // a tool tip: the browser's own
       // list box and combo box; positions zero-based
       case 'add': return String(listInsert(c, -1, String(a)));
       case 'insert': return String(listInsert(c, Number(a), String(b)));

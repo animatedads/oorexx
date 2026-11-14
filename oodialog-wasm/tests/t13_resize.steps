@@ -1,0 +1,7 @@
+wait .ood-dlg textarea
+eval (() => { const c = document.querySelector('.ood-client'); c.style.width = '500px'; c.style.height = '300px'; return getComputedStyle(c).resize; })()
+sleep 700
+expect document.querySelector('.ood-dlg textarea').style.width + ' ' + document.querySelector('.ood-dlg textarea').style.height ==> 476px 220px
+eval (() => { const t = document.querySelector('.ood-track'); t.value = 30; t.dispatchEvent(new Event('input', {bubbles: true})); t.dispatchEvent(new Event('change', {bubbles: true})); return t.value; })()
+sleep 300
+click .ood-dlg >> text=Close

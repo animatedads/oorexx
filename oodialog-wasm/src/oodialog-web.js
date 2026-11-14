@@ -155,6 +155,19 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
     ood.dialogs.set(key, dlg);
     for (const c of ctrls || []) addControl(dlg, c);
     if (!host) wireDialog(dlg);
+    if (!host && has(opts, 'THICKFRAME')) {                  // a sizing border: the client area can be dragged larger or smaller
+      client.style.resize = 'both'; client.style.minWidth = '60px'; client.style.minHeight = '30px';
+    }
+    if (!host && W.ResizeObserver) {
+      let first = true, timer = null;
+      new W.ResizeObserver(() => {
+        if (first) { first = false; return; }
+        if (!ood.dialogs.has(key)) return;
+        if (dlg.subs.has('0.RESIZE')) fire(key, 'WM', 0, 'RESIZE', client.clientWidth + SEP + client.clientHeight);
+        clearTimeout(timer);
+        timer = setTimeout(() => { if (ood.dialogs.has(key) && dlg.subs.has('0.SIZEMOVEENDED')) fire(key, 'WM', 0, 'SIZEMOVEENDED', ''); }, 250);
+      }).observe(client);
+    }
     return dlg.fx + ' ' + dlg.fy + ' ' + Math.round(rect.width) + ' ' + Math.round(rect.height);
   };
 
@@ -169,8 +182,9 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
     dlg.titleEl.addEventListener('pointermove', (e) => {
       if (!drag) return;
       el.style.left = (e.clientX - drag.x) + 'px'; el.style.top = Math.max(0, e.clientY - drag.y) + 'px';
+      if (dlg.subs.has('0.MOVE')) fire(dlg.key, 'WM', 0, 'MOVE', el.offsetLeft + SEP + el.offsetTop);
     });
-    dlg.titleEl.addEventListener('pointerup', () => { drag = null; });
+    dlg.titleEl.addEventListener('pointerup', () => { if (drag && dlg.subs.has('0.SIZEMOVEENDED')) fire(dlg.key, 'WM', 0, 'SIZEMOVEENDED', ''); drag = null; });
     el.addEventListener('pointerdown', () => { if (el.style.zIndex != ood.z && !dlg.modal) el.style.zIndex = ++ood.z; }, true);
     el.addEventListener('contextmenu', (e) => {
       if (!dlg.subs.has('0.CTX')) return;
@@ -820,7 +834,10 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       case 'replaceSel': m.setRangeText(String(a), m.selectionStart, m.selectionEnd, 'end'); c.modified = true; return '1';
       case 'line': { const ls = m.value.split('\n'); return ls[Number(a) - 1] == null ? '' : ls[Number(a) - 1]; }
       case 'cue': m.placeholder = String(a); return '1';
-      case 'tip': (c ? c.el : el).title = String(a); return '1';   // a tool tip: the browser's own
+      case 'tip': (c ? c.el : el).title = String(a); return '1';
+      case 'backdrop': { const url = ood.images.get(String(a)); if (!url) return '0'; const t = c ? c.el : dlg.client;
+        t.style.backgroundImage = 'url("' + url + '")'; t.style.backgroundRepeat = has(String(b), 'TILE') || b === '' ? 'repeat' : 'no-repeat';
+        if (has(String(b), 'STRETCH')) t.style.backgroundSize = '100% 100%'; return '1'; }   // a tool tip: the browser's own
       // list box and combo box; positions zero-based
       case 'add': return String(listInsert(c, -1, String(a)));
       case 'insert': return String(listInsert(c, Number(a), String(b)));

@@ -1,4 +1,4 @@
-# ooDialog for ooRexx/WASM — v0.7.0
+# ooDialog for ooRexx/WASM — v0.8.0
 
 Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: Josep Maria Blasco's
 ooRexx/WASM (`oorexxwasm` 0.2.4, ooRexx 5.3.0) and its `js.cls`.
@@ -47,19 +47,19 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
     python3 tools/oodtest.py --sweep upstream/examples
     python3 tools/oodtest.py --tree upstream/examples tests/t*.rex tests/up/calculator.rex tests/up/oodpbar.rex tests/up/oodStandardRoutines.rex
 
-## State on 2026-11-14 (v0.7.0)
+## State on 2026-11-14 (v0.8.0)
 
-- Natives ported: 428 of 1,184 (36.1%). (The total fell from 1,196 because 12
+- Natives ported: 446 of 1,184 (37.7%). (The total fell from 1,196 because 12
   natives are now plain Rexx in `src/patches.txt`.)
-- Tests: 17 of 17 pass in headless Chromium (`tests/t01`..`t12` with expected
+- Tests: 18 of 18 pass in headless Chromium (`tests/t01`..`t13` with expected
   output, the binary resource hand-off test `tests/res/t07_resdialog_binary`,
   and four unmodified upstream samples: `calculator.rex`,
   `oodpbar.rex`, `oodStandardRoutines.rex`, and the tutorial
   `employee11tab.rex`, a four-page property sheet from an .rc file, in which
   an employee is added and then found on the list page).
 - Sweep of all 140 upstream example programs (`oodtest.py --sweep`, results in
-  `sweep.tsv`): 55 show their dialog, 7 run to the end, 39 stop at a native not
-  ported yet (named in the file), 39 stop on another error. Of the 39, most are
+  `sweep.tsv`): 68 show their dialog, 7 run to the end, 22 stop at a native not
+  ported yet (named in the file), 43 stop on another error. Of the 43, most are
   Error 43 (a routine or `::requires` file not found: `winSystm.cls`, which is
   Windows-only, `::requires` paths written with `\`, component files that are
   not programs); the rest are Error 98 raised by this layer (a ResDialog or
@@ -82,6 +82,8 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
   control~connectEvent; UserControlDialog (a dialog inside its owner, on its
   own thread, placed with setWindowPos); tool tips (the browser's own);
   image lists (kept and counted by the controls; item icons are not drawn);
+  a sizing border (THICKFRAME) with connectResize, connectMove and
+  connectSizeMoveEnded; track bar DRAG and ENDTRACK events;
   data attributes and dlgData. stems; the connectXxxEvent methods of those
   controls; MessageDialog and the routines built on it; InputBox, IntegerBox,
   PasswordBox, MultiInputBox, ListChoice, MultiListChoice, CheckList,
@@ -113,8 +115,9 @@ WASM file system as bytes.
 
 ## Not yet (the sweep's order of need)
 
-Owner-draw, mouse and WM events; drawing the icons of image lists; wizards
-and a modeless property sheet; tool tips; month calendar; scroll bar; tool bar, status bar,
+Owner-draw and the drawing (GDI) methods; the Mouse class; connectActivate,
+connectHelp, connectPosChanged and connectResizing (accepted, not produced);
+drawing the icons of image lists; wizards and a modeless property sheet; tool tips; month calendar; scroll bar; tool bar, status bar,
 re-bar; list-view LvItem/LvFullRow objects and the remaining list-view and
 tree-view events; track bar events; resizing; the folder dialog;
 popup/popupAsChild untested.
