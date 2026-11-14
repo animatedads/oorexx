@@ -63,11 +63,12 @@ return d
   d~setEventCode("btnStart", "CLICKED", -
     'self~running = .true'                                         || "0a"x || -
     'self~btnStart~disable'                                        || "0a"x || -
-    'do i = 1 to 100 while self~running'                           || "0a"x || -
+    'do i = 1 to 100 while self~running & self~isDialogActive'     || "0a"x || -
     '  self~prgWork~setPos(i)'                                     || "0a"x || -
     '  self~lblState~setText("Working:" i"%   pings:" self~clicks)' || "0a"x || -
     '  call SysSleep 0.03'                                         || "0a"x || -
     'end'                                                          || "0a"x || -
+    'if \self~isDialogActive then return  -- closed while working'  || "0a"x || -
     'if self~running then self~lblState~setText("Done.  Pings while working:" self~clicks)' || "0a"x || -
     'else self~lblState~setText("Stopped at" i - 1"%")'            || "0a"x || -
     'self~running = .false'                                        || "0a"x || -
