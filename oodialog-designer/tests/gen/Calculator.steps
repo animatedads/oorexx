@@ -1,0 +1,20 @@
+wait .ood-dlg >> text=Enter
+expect document.querySelector('.ood-dlg input').value ==> 0
+click .ood-dlg button:text-is("1")
+click .ood-dlg button:text-is("2")
+click .ood-dlg button:text-is("Enter")
+click .ood-dlg button:text-is("3")
+click .ood-dlg button:text-is("0")
+click .ood-dlg button:text-is("+")
+sleep 300
+expect document.querySelector('.ood-dlg input').value ==> 42
+click .ood-dlg button:text-is("6")
+click .ood-dlg button:text-is("*")
+sleep 300
+expect document.querySelector('.ood-dlg input').value ==> 252
+click .ood-dlg button:text-is("0")
+click .ood-dlg button:text-is("/")
+sleep 300
+expect document.querySelector('.ood-dlg').innerText.includes('Division by zero') ==> True
+shot calculator_run
+click .ood-dlg button:text-is("Close")

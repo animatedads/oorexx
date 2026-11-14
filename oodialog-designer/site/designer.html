@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ooDialog Designer</title>
+<link rel="stylesheet" href="designer.css">
+</head>
+<body>
+<header id="bar">
+  <strong>ooDialog Designer</strong>
+  <select id="example" title="Start from">
+    <option value="">New dialog</option>
+    <option value="examples/Calculator.rex">Calculator (EDM2 DrDialog review)</option>
+    <option value="examples/Threads.rex">Threads and a timer</option>
+  </select>
+  <button id="btnOpen" title="Open a .rex made with the designer">Open…</button>
+  <button id="btnSave" title="Download the program (it carries its design)">Save .rex</button>
+  <button id="btnProgram" title="Show the ooRexx this design writes">Program</button>
+  <button id="btnRun" class="go" title="Run it with ooDialog on ooRexx/WASM">▶ Run</button>
+  <button id="btnStop" disabled>Stop</button>
+  <input id="file" type="file" accept=".rex,.txt" hidden>
+  <span id="status" role="status">Loading ooRexx…</span>
+</header>
+<main id="work">
+  <aside id="palette" aria-label="Controls"><h2>Controls</h2><div id="kinds"></div>
+    <p class="hint">Drag onto the form, or click to add.</p></aside>
+  <section id="stage">
+    <div id="formWrap"><div id="form" tabindex="0"><div id="formTitle"></div><div id="client"></div></div></div>
+    <div id="tray" aria-label="Non-visual controls"></div>
+  </section>
+  <aside id="side">
+    <h2 id="propTitle">Properties</h2><div id="props"></div>
+    <h2>Variables <span class="hint">(the dialog's attributes)</span></h2><div id="vars"></div>
+  </aside>
+</main>
+<section id="events">
+  <div id="tree" aria-label="Objects and events"></div>
+  <div id="codeSide">
+    <div id="codeHead"><span id="codeTitle">Pick an event or a method</span>
+      <label id="threadBox" hidden>Runs on <select id="thread"><option value="ui">the dialog's thread</option><option value="background">its own thread (background)</option></select></label>
+      <button id="btnInsert" title="Insert an action on a control">Insert…</button>
+    </div>
+    <textarea id="code" spellcheck="false" disabled placeholder="Rexx for this event.  Controls are methods of self: self~lcd~setText(&quot;0&quot;).  Drag a control from the list on the left onto this pane for its actions."></textarea>
+    <pre id="out" aria-label="Program output"></pre>
+  </div>
+</section>
+<div id="menu" hidden></div>
+<div id="programView" hidden><div class="panel"><div class="panelHead"><strong id="programName"></strong>
+  <button id="btnCopy">Copy</button><button id="btnProgramClose">Close</button></div><pre id="programText"></pre></div></div>
+<footer>Architecture: Tom Dyer.  Designer code: Claude (Opus 5.5).  ooDialog/WASM: Claude (Fable 5.2).
+ooRexx/WASM runtime: Josep Maria Blasco.  ooDialog: the ooRexx project (CPL 1.0).</footer>
+<script src="ooRexx.js"></script>
+<script src="designer.js"></script>
+</body></html>
