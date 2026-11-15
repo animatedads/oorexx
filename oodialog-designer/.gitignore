@@ -1,0 +1,25 @@
+# Files produced by the tests and tools/build.rex; source lives in src/,
+# in the Alchemy estate, or in the ooRexx/WASM upstream release.
+/Calculator.rex
+/Contacts.rex
+/Contacts_nls.rex
+/nlsprobe.rex
+/site/*.cls
+/site/CPLv1.0.txt
+/site/LICENSE-Apache-2.0.txt
+/site/ooRexx*.js
+/site/rexx.js
+/site/rexx.wasm
+/site/rexx.data
+/site/js-realm.js
+/site/serve.mjs
+/site/polygon-clipping.umd.min.js
+/site/libraries.js
+/site/libraries.css
+/site/ood/
+/site/plugins/
+/site/catalogue/
+/site/examples/
+/site/rexx-parser/
+/site/database-lab/
+/site/data/

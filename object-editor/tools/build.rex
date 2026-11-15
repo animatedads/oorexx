@@ -32,6 +32,18 @@ call copy designerExamples"/../oodnls.js", "site/oodnls.js"
 call copy designerExamples"/../OodPlugins.cls", "site/OodPlugins.cls"
 call copy designerExamples"/../plugins.js", "site/plugins.js"
 call copy designerExamples"/../plugins.css", "site/plugins.css"
+-- Share the Designer's Database Lab page and its built Alchemy dependencies.
+call copy designerExamples"/../database-lab.js", "site/database-lab.js"
+call copy designerExamples"/../database-lab.css", "site/database-lab.css"
+if stream(designerExamples"/../database-lab/manifest.txt", "c", "query exists") \= "" then do
+  call SysMkDir "site/database-lab"
+  call copy designerExamples"/../database-lab/manifest.txt", "site/database-lab/manifest.txt"
+  call SysFileTree designerExamples"/../database-lab/*.cls", "dbfiles.", "FO"
+  do i = 1 to dbfiles.0
+    basename = dbfiles.i~substr(dbfiles.i~lastPos("/") + 1)
+    call copy dbfiles.i, "site/database-lab/"basename
+  end
+end
 -- every plugin's files, the assist plugin's estate files with them
 plugFrom = designerExamples"/../plugins"
 call SysFileTree plugFrom"/*", "pf.", "FSO"

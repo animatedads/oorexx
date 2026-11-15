@@ -125,6 +125,7 @@
       await st.sess.loadPackage('OodPlugins.cls');         // the optional extras' host
       let chosen = ''; try { chosen = localStorage.getItem('oodDesigner.ui') || ''; } catch (e) { /* storage may be off */ }
       await loadUi(chosen || navigator.language || '');
+      OodDatabaseLabPage.setup(st.rexx);
       await OxLibraries.setup(st.sess);
       await OodPluginsPage.setup(st.sess, { status, rx, onChange: () => { diagnoseSoon(0); askButton(); sourceButton(); } });   // plugins switched on before
       OxGraph.attach({ sess: st.sess, rx, status, setCode, actionsMenu });

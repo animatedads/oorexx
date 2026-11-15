@@ -49,6 +49,7 @@
       await st.sess.loadPackage('OodPlugins.cls');         // the optional extras' host
       let chosen = ''; try { chosen = localStorage.getItem('oodDesigner.ui') || ''; } catch (e) { /* storage may be off */ }
       await loadUi(chosen || navigator.language || '');   // the designer's choice is the editor's too
+      OodDatabaseLabPage.setup(st.rexx);
       await OxLibraries.setup(st.sess);
       await OodPluginsPage.setup(st.sess, { status, rx, onChange: () => { diagnoseSoon(0); askButton(); sourceButton(); } });
       await sourceButton();

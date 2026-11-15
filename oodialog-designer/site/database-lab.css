@@ -1,0 +1,47 @@
+/* Shared Database Lab presentation; Alchemy ooRexx owns all data changes.
+ * Architecture: Tom Dyer. Code: ChatGPT (GPT-6).
+ */
+.db-overlay[hidden] { display: none; }
+.db-overlay {
+  position: fixed; z-index: 1100; inset: 0; background: #101828aa;
+  display: flex; align-items: center; justify-content: center; padding: 14px;
+  font: 14px/1.45 system-ui, sans-serif; color: #202a35;
+}
+.db-panel {
+  box-sizing: border-box; width: min(1140px, 100%); max-height: 94vh;
+  overflow: auto; padding: 20px 24px; border-radius: 12px;
+  background: #f9fbfd; box-shadow: 0 20px 70px #050a1680;
+}
+.db-head { display: flex; align-items: center; justify-content: space-between; }
+.db-head h2 { margin: 0 0 10px; font-size: 22px; }
+.db-panel h3 { margin: 8px 0 10px; font-size: 16px; color: #22395a; }
+.db-panel section { min-width: 0; }
+.db-panel button { cursor: pointer; }
+.db-panel input, .db-panel select, .db-panel textarea {
+  box-sizing: border-box; border: 1px solid #aab8c8; border-radius: 4px;
+  background: white; color: #18293d; font: inherit; padding: 6px;
+}
+.db-panel button { border: 1px solid #718aa9; border-radius: 5px; background: #e6f1ff; color: #1e4267; padding: 6px 9px; }
+.db-panel button:hover { background: #cde5ff; }
+.db-panel button.db-danger { border-color: #b97474; background: #fff2f0; color: #8f2222; }
+.db-grid { display: grid; grid-template-columns: minmax(220px, 0.85fr) minmax(380px, 1.7fr); gap: 20px; }
+.db-grid section { border: 1px solid #cfdae4; padding: 12px; background: white; border-radius: 8px; }
+.db-line { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin: 8px 0; }
+.db-line select, .db-line input { flex: 1; min-width: 100px; }
+.db-scroll { overflow-x: auto; margin-top: 8px; }
+.db-columns, .db-results table { border-collapse: collapse; width: 100%; }
+.db-columns th, .db-columns td, .db-results th, .db-results td { border: 1px solid #ccd8e6; padding: 6px; text-align: left; }
+.db-columns td:first-child input { width: 135px; }
+.db-columns select { width: 110px; }
+.db-columns th, .db-results th { background: #e9f1f9; color: #29415f; }
+.db-panel textarea { width: 100%; min-height: 80px; font: 13px/1.4 ui-monospace, monospace; resize: vertical; }
+.db-results { overflow: auto; max-height: 215px; border: 1px solid #d2dfec; background: white; border-radius: 5px; margin-top: 8px; }
+.db-results p { padding: 6px 10px; margin: 0; }
+.db-foot { font-size: 12px; color: #576d82; }
+#dbNotice { margin-bottom: 10px; color: #24486e; min-height: 1.4em; }
+#dbNotice.bad { color: #ae2530; }
+@media (max-width: 780px) {
+  .db-overlay { align-items: stretch; padding: 4px; }
+  .db-panel { max-height: 100%; border-radius: 4px; padding: 12px; }
+  .db-grid { grid-template-columns: 1fr; }
+}

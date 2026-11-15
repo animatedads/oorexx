@@ -39,6 +39,10 @@ call copy "src/OodPlugins.cls", "site/OodPlugins.cls"
 -- with the estate files they need (tools/plugins.rex, which run_all.rex uses too)
 address system 'rexx tools/plugins.rex . "'estate~strip'" site/plugins'
 if rc \= 0 then raise syntax 93.900 array("build: tools/plugins.rex failed:" rc)
+-- The Database Lab is optional in an older estate, but complete when its
+-- Alchemy package exists; unlike the normal editor it gets its own interpreter.
+address system 'rexx tools/database.rex "'estate~strip'" site/database-lab'
+if rc \= 0 then raise syntax 93.900 array("build: tools/database.rex failed:" rc)
 call copy "src/OodUi.cls", "site/OodUi.cls"
 -- the Rexx Parser: bin/ and its notices, and a manifest of the files
 call SysFileTree rexxParser"/bin/*", "rp.", "FSO"
