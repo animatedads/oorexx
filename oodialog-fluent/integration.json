@@ -1,0 +1,20 @@
+{
+  "schema": "alchemy.autobuild.integration/0.3",
+  "package": {
+    "name": "oorexx_oodialog_fluent",
+    "version": "0.1"
+  },
+  "tests": [
+    {
+      "name": "native-independent-control-contract",
+      "argv": ["sh", "tests/run_tests.sh"],
+      "timeout": 60
+    }
+  ],
+  "publish": {
+    "tree": {
+      "source": ".",
+      "path": "packages/oorexx_oodialog_fluent_v0.1"
+    }
+  }
+}

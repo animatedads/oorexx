@@ -1,0 +1,23 @@
+# Architecture: Tom Dyer. Code: ChatGPT (GPT-6).
+name: ooDialog Fluent contract
+on:
+  push:
+    branches: ["feature/oodialog-fluent-controls-20261115"]
+    paths:
+      - "oodialog-fluent/**"
+      - ".github/workflows/oodialog-fluent-contract.yml"
+  workflow_dispatch:
+jobs:
+  native-independent-contract:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S oodialog-fluent -B build/oodfluent
+      - name: Compile
+        run: cmake --build build/oodfluent --config Release
+      - name: Test
+        run: ctest --test-dir build/oodfluent -C Release --output-on-failure
