@@ -2,7 +2,7 @@
 
 Architecture: Tom Dyer. Code: ChatGPT (GPT-6).
 
-Status: **v0.1 foundation, Windows native BUILD_PASS, no runtime qualification**. No control is yet claimed to render in a real Windows ooDialog process. The C++ model has local and Windows/Linux CI test evidence; the WinUI 3 provider compiles as a native Windows DLL. The ooRexx native package and live dialog integration remain open.
+Status: **v0.2 bridge candidate, prior Windows native BUILD_PASS, no runtime qualification**. No control is yet claimed to render in a real Windows ooDialog process. The C++ model has local and Windows/Linux CI test evidence; the initial WinUI 3 provider compiled as a native Windows DLL. The new ooRexx native package/proxy and Win32 runtime host harness require CI compilation and a real ooDialog demonstration.
 
 ## Objective
 
@@ -22,19 +22,21 @@ The extension is deliberately distinct from:
 | 83-control and pattern inventory | Catalogue and automated validation | Compare every entry with current Microsoft WinUI 3 Gallery |
 | Resource occurrence identity, proxy properties, event routing and lifecycle | Native-independent C++ core and C ABI, executable tests | Bind to ooRexx objects and WinUI host |
 | Windows provider | Windows App SDK 2.6.5 DLL BUILD_PASS (GitHub run 43718942362, 0 warnings/0 errors) for Button, ToggleSwitch, InfoBar and NumberBox | Run inside real ooDialog; focus/keyboard and UI-thread tests |
-| ooDialog integration | API contract | `::requires`-loadable ooRexx classes, compatibility with `UserDialog`/`ResDialog`/`RcDialog` and resource IDs |
+| ooDialog integration | `rexx/OodFluent.cls` proxy and native package added, not yet run in ooDialog | Test `::requires`-loading, native package linking, `UserDialog`/`ResDialog`/`RcDialog` message pump and UI thread compatibility |
 | Full coverage | Classification for stable, optional and unsupported controls | Each control must pass functional and visual Windows tests |
 
 `catalogue/controls.tsv` is a **target coverage catalogue, not an implementation claim**. Availability `stable` means Microsoft's API is available in the Windows App SDK stable channel, *not* that this project has implemented it. Experimental entries remain gated off by default. Existing Win32-compatible controls can retain their old ooDialog object behavior with a Fluent alternative selected explicitly.
 
-## API direction (requires the native package)
+## API preview (bridge candidate, not yet ooDialog-qualified)
 
 ```rexx
-/* Illustrative contract; not executable until native + ooRexx binding ships. */
-host = .OodFluentHost~attach(self)
-mode = host~newToggleSwitch(2401, 'Night mode', .true)
+/* Inside an ooDialog instance; catalogue location must be supplied. */
+host = .OodFluentHost~attach(self, 'C:\\catalogue\\controls.tsv')
+mode = host~newToggleSwitch(2401, 'Night mode')
+mode~setOn(.true)
 mode~connectEvent('toggled', 'onNightModeChanged')
-bar = host~newInfoBar(2402, 'Saved', 'success')
+bar = host~newInfoBar(2402, 'Saved')
+host~dispatchPending  /* call from the dialog UI event pump, not a busy loop */
 ```
 
 `attach` must preserve `self` as the existing ooDialog object. Each new proxy holds an ooDialog resource ID and a unique occurrence UID; repeated legacy `IDC_STATIC` IDs remain distinguishable. `getText`, `setText`, `show`, `hide`, `enable`, `disable`, `setFocus`, value/selection methods and `connectEvent` follow upstream ooDialog conventions. New methods are additive; existing `newButton` etc. remain unchanged. All property/event types require validation against the catalogue and each native WinUI API.

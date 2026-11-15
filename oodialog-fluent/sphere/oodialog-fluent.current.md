@@ -10,11 +10,14 @@ Project lane: `oodialog_fluent_controls` (Rasen Falcon). Source: `animatedads/oo
 - Native-independent C++17 model preserving resource ID plus occurrence UID, strongly checked control properties and handlers, deterministic event queue and removal.
 - C ABI `oodf_*` for the future native ooRexx binding and Windows XAML Island DLL. Buffer-too-small does not drop an event.
 - Executable test suite; `sh tests/run_tests.sh`. CMake/CTest and Ubuntu/Windows CI workflow candidates.
+- Windows x64 C++/WinRT native provider DLL **prior BUILD_PASS** (GitHub CI run 43719132986), with HWND-hosted WinUI 3 island and four control creation paths.
+- **New unqualified bridge candidate**: `windows/OodFluentRexx.cpp` exports the ooRexx `RexxGetPackage` routine table from the provider DLL; `rexx/OodFluent.cls` provides `.OodFluentHost` and `.OodFluentControl` compatible proxies. Native functions accept ooDialog's 0x-prefixed HWND and tokenised session/occurrence identities. The owner UI thread explicitly drains events into dialog methods.
+- **New runtime probe**: `windows/OodFluentSmoke.cpp` creates a real Win32 HWND, XAML island, four controls, changes properties and tears them down. Windows CI attempts it as a separately recorded probe; headless CI limitations must not become a false PASS.
 
 ## What does not exist
 
-- Windows x64 native C++/WinRT DLL **BUILD_PASS** (GitHub CI run 43718942362, 0 warnings / 0 errors), with an HWND-hosted WinUI 3 island and creation paths for four actual Windows controls at `windows/OodFluentIsland.cpp`. It has not been exercised inside a running ooDialog process.
-- No `.OodFluentHost` Rexx classes or native ooRexx package registration.
+- No Windows desktop **runtime PASS** for the island inside a running ooDialog process; no demonstrated visual or callback behavior.
+- New Rexx/WinUI bridge package has **not yet completed Windows CI compilation or a live loading test**. It is a candidate, not a released component.
 - No Windows `UserDialog`, `ResDialog`, `RcDialog` runtime parity qualification.
 - No claim of native control coverage, 100% migration or deployed release.
 
@@ -24,4 +27,4 @@ Read `docs/WINDOWS_HOST_CONTRACT.md`, `windows/README.md` and the upstream `Dial
 
 Old ooDialog runs unchanged; Linux/Qt6, browser/WASM and Wire follow their own authority boundaries. The Designer may import this catalogue after its owner agrees the extension seam; preserving resource ID, UID and event names is mandatory. Experimental WinUI controls must be gated.
 
-Evidence: v0.1 core tests LOCAL_PASS 88/88, GitHub Windows+Ubuntu core test PASS; Windows DLL BUILD_PASS. Until a Windows desktop run with ooRexx handlers and user-visible events passes, visual readiness is **NOT QUALIFIED**.
+Evidence: core tests LOCAL_PASS 88/88, GitHub Windows+Ubuntu core test PASS; previous Windows DLL BUILD_PASS. New package/GUI smoke changes are awaiting CI. Until a Windows desktop run with ooRexx handlers and user-visible events passes, visual readiness is **NOT QUALIFIED**.

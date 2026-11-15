@@ -25,9 +25,28 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Pin official ooRexx native API headers
+        uses: actions/checkout@v4
+        with:
+          repository: ooRexx/ooRexx
+          ref: c12e988dc3708846592e20b48350bcdef5b19c60
+          path: vendor/oorexx-api
+          sparse-checkout: |
+            api
       - uses: microsoft/setup-msbuild@v2
       - name: Compile native WinUI 3 provider
         run: msbuild oodialog-fluent/windows/OodFluentWindows.vcxproj -restore -p:Configuration=Release -p:Platform=x64 -m
+      - name: Compile Windows native host exercise
+        run: msbuild oodialog-fluent/windows/OodFluentSmoke.vcxproj -p:Configuration=Release -p:Platform=x64 -m
+      - name: Attempt Windows host runtime exercise
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $binary = "oodialog-fluent/windows/x64/Release"
+          $env:PATH = "$(Resolve-Path $binary);$env:PATH"
+          $catalogue = (Resolve-Path "oodialog-fluent/catalogue/controls.tsv").Path
+          & "$binary/OodFluentSmoke.exe" $catalogue 2>&1 | Tee-Object -FilePath "$binary/runtime-smoke.txt"
+          if ($LASTEXITCODE -ne 0) { throw "Runtime host did not qualify (exit $LASTEXITCODE)" }
       - name: Preserve Windows test candidate
         uses: actions/upload-artifact@v4
         with:
@@ -37,5 +56,8 @@ jobs:
             oodialog-fluent/windows/x64/Release/OodFluentWindows.lib
             oodialog-fluent/windows/x64/Release/OodFluentWindows.pri
             oodialog-fluent/windows/x64/Release/Microsoft.WindowsAppRuntime.Bootstrap.dll
+            oodialog-fluent/rexx/OodFluent.cls
+            oodialog-fluent/windows/x64/Release/OodFluentSmoke.exe
+            oodialog-fluent/windows/x64/Release/runtime-smoke.txt
           if-no-files-found: error
           retention-days: 7

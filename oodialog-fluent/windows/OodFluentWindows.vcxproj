@@ -14,6 +14,7 @@
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSdkBootstrapInitialize>true</WindowsAppSdkBootstrapInitialize>
     <UseWinUI>true</UseWinUI>
+    <OOREXX_API_DIR Condition="'$(OOREXX_API_DIR)'==''">$(ProjectDir)..\..\vendor\oorexx-api\api</OOREXX_API_DIR>
   </PropertyGroup>
   <PropertyGroup Label="NuGet">
     <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
@@ -34,7 +35,7 @@
     <ClCompile>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\include;$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(OOREXX_API_DIR);$(ProjectDir)..\include;$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>OODF_BUILD_DLL;NOMINMAX;_WIN32_WINNT=0x0A00;WINVER=0x0A00;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
@@ -45,6 +46,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="OodFluentIsland.cpp" />
+    <ClCompile Include="OodFluentRexx.cpp" />
     <ClCompile Include="..\src\OodFluentCore.cpp" />
     <ClCompile Include="..\src\OodFluentABI.cpp" />
   </ItemGroup>
