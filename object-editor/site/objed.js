@@ -8,7 +8,7 @@
   'use strict';
   const $ = (id) => document.getElementById(id);
   const D = document;
-  const st = { rexx: null, sess: null, w: null, cls: null, side: 'INSTANCE', cur: null, fileName: '', files: {} };
+  const st = { rexx: null, sess: null, w: null, cls: null, side: 'INSTANCE', cur: null, fileName: '', files: {}, docs: {}, groups: new Map() };
   window.oxEditor = st;
   // the editor's texts: ::RESOURCE strings.<language> of OxUi.cls, through OodNls (oodnls.js)
   const T = window.OodT, NLS = window.OodNlsPage;
@@ -42,7 +42,10 @@
       for (const f of ['ooDialog.cls', 'oodWeb.cls', 'ooShapes.cls']) {
         const r = await fetch('ood/' + f); if (r.ok) files['/home/rexx/' + f] = await r.text();
       }
-      for (const f of ['OodNls.cls', 'OxUi.cls', 'OodUi.cls', 'OodPlugins.cls', 'ObjectEditor.cls', 'OodDesigner.cls', 'LibraryProviders.cls']) files['/home/rexx/' + f] = await (await fetch(f)).text();
+      for (const f of ['OodNls.cls', 'OxUi.cls', 'OodUi.cls', 'OodPlugins.cls', 'ObjectEditor.cls', 'OodDesigner.cls', 'LibraryProviders.cls', 'OxDocs.cls']) files['/home/rexx/' + f] = await (await fetch(f)).text();
+      // Josep Maria Blasco's Rexx Parser, which OxDocs.cls reads ooRexxDoc with (loaded on first use)
+      for (const rel of (await (await fetch('rexx-parser/manifest.txt')).text()).split('\n').map((l) => l.trim()).filter(Boolean))
+        files['/home/rexx/rexx-parser/' + rel] = await (await fetch('rexx-parser/' + rel)).text();
       const rexxPath = await OodPluginsPage.rexxPath();     // where plugins' estate files go, before it starts
       st.sess = await st.rexx.start({ js: { page: true, worker: true }, files, env: rexxPath ? { REXX_PATH: rexxPath } : {} });
       await st.sess.loadPackage('LibraryProviders.cls');   // requires ObjectEditor.cls and OodDesigner.cls
@@ -91,6 +94,7 @@
   /* ---- redraw from reflection -------------------------------------------------- */
   async function refresh() {
     const w = st.w;
+    st.docs = {};                                       // an edit may change them
     const names = String(await rx(() => w.classNames())).split(' ').filter(Boolean);
     if (st.cls && !names.some((n) => n.toLowerCase() === st.cls.toLowerCase())) st.cls = names[0] || null;
     // classes, indented under their superclass where it is in this file
@@ -102,7 +106,8 @@
       const div = D.createElement('div'); div.className = 'cls' + (st.cls === n ? ' sel' : ''); div.dataset.cls = n;
       div.style.paddingLeft = (6 + depthOf(n) * 14) + 'px';
       div.append(n + ' ', Object.assign(D.createElement('small'), { textContent: info[n].isMixin === '1' ? 'mixin' : (info[n].sup ? T('ox.subclassOfX', info[n].sup) : '') }));
-      div.addEventListener('click', async () => { await flushCode(); st.cls = n; st.cur = null; await refresh(); showCode(); });
+      div.addEventListener('click', async () => { await flushCode(); st.cls = n; st.cur = null; $('docBox').hidden = true; await refresh(); showCode(); });
+      docsOfClass(n).then((m) => { const d = Object.values(m).find((x) => x.kind === 'CLASS'); if (d && d.summary) div.title = d.summary; });
       box.appendChild(div);
     }
     await drawHierarchy(); await drawRequires(); await drawClassCard(info[st.cls]); await drawMembers();
@@ -148,16 +153,62 @@
     // the directive words (inherit, public, mixinclass) are ooRexx's, as written in the file
     box.append(t, lab(T('ox.subclassOf'), sup), lab('inherit', mix), lab('public', pub), lab('mixinclass', isMix), apply, del);
   }
+  /* ---- ooRexxDoc: the first sentence as a member's tooltip, the whole text in
+     the doc box when it is clicked (OxDocs, read by the Rexx Parser) */
+  async function docsOfClass(cls) {
+    const key = cls.toLowerCase();
+    if (!(key in st.docs)) {
+      const m = {};
+      for (const l of lines(await rx(() => st.w.docsOf(cls)).catch(() => ''))) {
+        const [kind, name, summary, full] = fieldsOf(l);
+        m[kind + ' ' + name] = { kind, name, summary, text: String(full || '').replace(/\x0b/g, '\n') };
+      }
+      st.docs[key] = m;
+    }
+    return st.docs[key];
+  }
+  async function docFor(cls, name, kind) {
+    const m = await docsOfClass(cls), side = st.side === 'CLASS' ? ' class' : '';
+    const k = kind === 'ATTRIBUTE' ? 'ATTRIBUTE ' + name.toLowerCase().replace(/=$/, '') + side : kind + ' ' + name.toLowerCase() + side;
+    const d = m[k] || (kind === 'ATTRIBUTE' ? m['METHOD ' + name.toLowerCase() + side] : null);
+    return d && (d.summary || d.text) ? d : null;
+  }
+  function showDoc(cls, name, doc) {
+    const box = $('docBox'); box.textContent = '';
+    const h = D.createElement('b'); h.textContent = cls + '~' + (name === '' ? '""' : name === ' ' ? '" "' : name);
+    const p = D.createElement('pre'); p.textContent = doc ? doc.text : T('ox.doc.none');
+    box.append(h, p); box.hidden = false;
+  }
   async function drawMembers() {
     const tb = $('members').querySelector('tbody'); tb.textContent = ''; if (!st.cls) return;
     D.querySelectorAll('#sideTabs button').forEach((b) => b.classList.toggle('cur', b.dataset.side === st.side));
     const text = await rx(() => st.w.members(st.cls, st.side, $('showInherited').checked ? 1 : 0));
-    for (const l of lines(text)) {
-      const [name, kind, vis, guard, abstract, definedIn, own] = fieldsOf(l);
+    // inherited members under the class that defines them; Object's and
+    // Class's closed at first, so the class's own members stand out
+    const rows = lines(text).map(fieldsOf);
+    const counts = {};
+    for (const r of rows) if (r[6] !== '1') counts[r[5]] = (counts[r[5]] || 0) + 1;
+    let group = null;
+    for (const [name, kind, vis, guard, abstract, definedIn, own] of rows) {
+      if (own !== '1' && definedIn !== group) {
+        group = definedIn;
+        const g = definedIn.toLowerCase(), open = st.groups.has(g) ? st.groups.get(g) : !['object', 'class'].includes(g);
+        const hr = D.createElement('tr'); hr.className = 'grp'; hr.dataset.grp = definedIn;
+        const c = D.createElement('td'); c.colSpan = 7; c.textContent = (open ? '▾ ' : '▸ ') + T('ox.inheritedFrom', definedIn, counts[definedIn]);
+        c.title = T(open ? 'ox.group.close.tip' : 'ox.group.open.tip');
+        hr.addEventListener('click', () => { st.groups.set(g, !open); drawMembers(); });
+        hr.appendChild(c); tb.appendChild(hr);
+      }
+      if (own !== '1' && !(st.groups.has(group.toLowerCase()) ? st.groups.get(group.toLowerCase()) : !['object', 'class'].includes(group.toLowerCase()))) continue;
       const tr = D.createElement('tr'); tr.className = own === '1' ? 'own' : 'inh'; tr.dataset.member = name;
       if (st.cur && st.cur.name.toLowerCase() === name.toLowerCase() && own === '1') tr.classList.add('cur');
       const td = (x) => { const c = D.createElement('td'); if (x instanceof Node) c.appendChild(x); else c.textContent = x; tr.appendChild(c); return c; };
-      const nm = td(/^[A-Za-z0-9_!?.]+=?$/.test(name) ? name : '"' + name + '"'); nm.className = 'nm';
+      // operators' names in quotes; the two that look empty say what they are
+      const shown = /^[A-Za-z0-9_!?.]+=?$/.test(name) ? name : '"' + name + '"' + (name === '' ? ' ' + T('ox.op.abuttal') : name === ' ' ? ' ' + T('ox.op.blank') : '');
+      const nm = td(shown); nm.className = 'nm';
+      const doc = await docFor(definedIn, name, kind);
+      if (doc) { nm.title = doc.summary || T('ox.doc.noSummary'); nm.classList.add('hasdoc'); }
+      nm.addEventListener('click', () => showDoc(definedIn, name, doc));
       td(kind.toLowerCase());                    // method, attribute, constant: ooRexx's own words
       if (own === '1' && kind !== 'CONSTANT') {
         const sel = (vals, v, cls) => { const s = D.createElement('select'); s.className = cls; vals.forEach((x) => s.add(new Option(x, x, false, x === v))); return s; };

@@ -38,6 +38,9 @@ def drop_kind(pg, label, x, y):
 def set_prop(pg, prop, value):
     i = pg.locator(f'#props [data-prop="{prop}"]'); i.fill(str(value)); i.press('Enter'); settle(pg)
 def pick_event(pg, ctl, ev):
+    # the tree starts closed: open the control first if its events are hidden
+    if not pg.locator(f'#tree [data-ev="{ctl}.{ev}"]').count():
+        pg.click(f'#tree [data-toggle="{ctl}"]'); settle(pg, 200)
     pg.click(f'#tree [data-ev="{ctl}.{ev}"]'); settle(pg)
 def type_code(pg, code):
     pg.fill('#code', code); pg.click('#formTitle'); settle(pg, 700)
@@ -363,7 +366,7 @@ def sc_languages(pg):
     # the design in German
     pg.select_option('#lang', 'de'); settle(pg, 900)
     expect('title in German', pg.inner_text('#formTitle'), 'Kontakte')
-    expect('tabs in German', pg.inner_text('#client .dz[data-name="tabMain"]').split(), ['Personen', 'Notizen'])
+    expect('tabs in German', pg.inner_text('#client .dz[data-name="tabMain"] > div:first-child').split(), ['Personen', 'Notizen'])
     expect('menu bar in German (View has no German yet: English)', pg.inner_text('#formMenu').split(), ['Personen', 'View'])
     expect('too long in German: marked', pg.locator('#client .dz.overflow[data-name="btnClose"]').count(), 1)
     expect_in('and named in the status', 'btnClose', status(pg))
@@ -648,7 +651,37 @@ def sc_bound(pg):
     expect_in('  the added address', 'address: Great Western Road / Glasgow', out)
     expect('  the removed one is gone', 'Augasse' in out, False)
 
-SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views, 'gadgets': sc_gadgets, 'libraries': sc_libraries, 'graph': sc_graph, 'trace': sc_trace, 'languages': sc_languages, 'ui_de': sc_ui_de, 'plugins': sc_plugins, 'assist': sc_assist, 'source': sc_source, 'bound': sc_bound}
+def sc_overview(pg):
+    """Overview (Rony's bird's-eye view): the event tree starts closed with a
+    count of coded events per control; controls with code carry a mark on
+    the form; "With code only" filters; "All code" shows every piece in form
+    order, and a heading opens that piece."""
+    ready(pg); open_example(pg, 'examples/Calculator.rex')
+    expect('the tree starts closed: no events of b7 shown', pg.locator('#tree [data-ev="b7.CLICKED"]').count(), 0)
+    expect('  b7 shows one coded event', pg.locator('#tree .obj:has([data-ctl="b7"]) .cnt').inner_text(), '1 ●')
+    expect('  the form is open (it is selected)', pg.locator('#tree [data-ev="form.INIT"]').count(), 1)
+    expect('b7 has a code mark on the form', pg.locator('#client .dz[data-name="b7"] .dz-code').inner_text(), '1')
+    expect('  lcd has none', pg.locator('#client .dz[data-name="lcd"] .dz-code').count(), 0)
+    pg.click('#client .dz[data-name="bAdd"] .dz-code'); settle(pg, 300)
+    expect('a mark opens its control in the tree', pg.locator('#tree [data-ev="bAdd.CLICKED"]').count(), 1)
+    pg.click('#tOpenAll'); settle(pg, 300)
+    expect('Open all shows every control\'s events', pg.locator('#tree [data-ev="b9.CLICKED"]').count(), 1)
+    pg.check('#tCodedOnly'); settle(pg, 300)
+    expect('With code only hides lcd', pg.locator('#tree .name[data-ctl="lcd"]').count(), 0)
+    pg.uncheck('#tCodedOnly'); pg.click('#tCloseAll'); settle(pg, 300)
+    pg.click('#tAllCode'); settle(pg, 600)
+    heads = pg.locator('#allCode h3').all_inner_texts()
+    expect('All code: one heading a piece, form first', heads[0].startswith('form · INIT'), True)
+    expect('  every event and method there', len(heads), pg.evaluate('oodDesigner.snap.events.length + oodDesigner.snap.methods.length'))
+    expect('  the code itself', 'self~digit(7)' in pg.inner_text('#allCode'), True)
+    expect('  methods last', ' '.join(heads[-1].split()), ' '.join(pg.evaluate("OodT('code.method', oodDesigner.snap.methods.slice(-1)[0])").split()))
+    pg.screenshot(path=str(SHOTS / 'overview_allcode.png'))
+    pg.click('#allCode h3[data-piece="bEnter.CLICKED"]'); settle(pg, 600)
+    expect('a heading opens that piece', pg.input_value('#code'), 'self~enter')
+    expect('  and the code pane is back', pg.locator('#allCode').is_hidden(), True)
+
+
+SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views, 'gadgets': sc_gadgets, 'libraries': sc_libraries, 'graph': sc_graph, 'trace': sc_trace, 'languages': sc_languages, 'ui_de': sc_ui_de, 'plugins': sc_plugins, 'assist': sc_assist, 'source': sc_source, 'bound': sc_bound, 'overview': sc_overview}
 def main():
     names = sys.argv[1:] or list(SCENARIOS)
     srv = subprocess.Popen(['node', str(SITE / 'serve.mjs'), str(SITE), '--port', str(PORT)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

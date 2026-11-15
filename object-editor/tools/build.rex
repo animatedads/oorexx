@@ -5,7 +5,8 @@
    Run in the object editor's directory.  Writes site/: the runtime, the
    page's model (ObjectEditor.cls), ood/ (ooDialog/WASM, so a ::requires
    "ooDialog.cls" loads), and examples/ (Person.cls, and the ooDialog
-   Designer's Calculator.rex), LibraryProviders.cls with OodDesigner.cls
+   Designer's Calculator.rex), OxDocs.cls with the Rexx Parser (from the
+   designer's site), LibraryProviders.cls with OodDesigner.cls
    (whose design-line reader it shares) and catalogue/alchemy.idx.                                              */
 parse arg runtime oodDist designerExamples
 if designerExamples == "" then do
@@ -22,8 +23,21 @@ do f over .array~of("ooDialog.cls", "oodWeb.cls", "ooShapes.cls")
 end
 call copy "src/ObjectEditor.cls", "site/ObjectEditor.cls"
 call copy "src/LibraryProviders.cls", "site/LibraryProviders.cls"
+call SysMkDir "site/rexx-parser"
 call copy designerExamples"/../../src/OodDesigner.cls", "site/OodDesigner.cls"
 call copy "src/OxUi.cls", "site/OxUi.cls"
+call copy "src/OxDocs.cls", "site/OxDocs.cls"
+-- Josep Maria Blasco's Rexx Parser, as the designer's site has it (OxDocs reads ooRexxDoc with it)
+parserFrom = designerExamples"/../rexx-parser"
+call copy parserFrom"/manifest.txt", "site/rexx-parser/manifest.txt"
+call copy parserFrom"/LICENSE", "site/rexx-parser/LICENSE"
+call copy parserFrom"/NOTICE", "site/rexx-parser/NOTICE"
+do rel over .stream~new(parserFrom"/manifest.txt")~arrayIn
+  rel = rel~strip
+  if rel == "" then iterate
+  call makeDirs "site/rexx-parser/"rel~left(max(rel~lastPos("/") - 1, 0))
+  call copy parserFrom"/"rel, "site/rexx-parser/"rel
+end
 -- from the ooDialog Designer: its texts and the language support, shared
 call copy designerExamples"/../../src/OodNls.cls", "site/OodNls.cls"
 call copy designerExamples"/../../src/OodUi.cls", "site/OodUi.cls"

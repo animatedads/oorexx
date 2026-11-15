@@ -23,6 +23,8 @@
     page: {},                                   // tab strip name -> the page shown while designing
     lang: '',                                   // the language the design is shown and run in ('' = base)
     view: null,                                 // the snapshot as drawn: texts in st.lang
+    open: new Set(),                            // controls opened in the event tree (lower case); closed at first
+    codedOnly: false,                           // the tree shows only controls and events with code
   };
   window.oodDesigner = st;                      // for tests
 
@@ -239,6 +241,7 @@
         chip.textContent = c.type === 'TIMER' ? '⏱ ' + c.name + ' (' + c.interval + ' s)'
           : '☰ ' + c.name + ': ' + plainText(c.popup) + ' › ' + (c.text === '-' ? '———' : plainText(c.text));
         chip.dataset.name = c.name;
+        codeMark(chip, c.name);
         chip.addEventListener('click', () => select(c.name));
         $('tray').appendChild(chip); continue;
       }
@@ -338,6 +341,7 @@
       default: body.textContent = c.type;
     }
     el.appendChild(body);
+    codeMark(el, c.name);
     for (const h of ['se', 'e', 's']) { const k = D.createElement('div'); k.className = 'h ' + h; k.dataset.h = h; el.appendChild(k); }
     el.addEventListener('pointerdown', (e) => startDrag(e, c, el));
     return el;
@@ -348,8 +352,17 @@
   }
 
   /* ---- selection, move and resize --------------------------------------- */
+  // DrDialog's overview: a control with code carries a mark with the count;
+  // a click on it opens the control's events in the tree
+  function codeMark(el, name) {
+    const k = codedCount(name); if (!k) return;
+    const m = D.createElement('span'); m.className = 'dz-code'; m.textContent = k; m.title = T('tree.count.tip', k);
+    m.addEventListener('pointerdown', (e) => e.stopPropagation());
+    m.addEventListener('click', (e) => { e.stopPropagation(); openInTree(name); select(name); });
+    el.appendChild(m);
+  }
   async function select(name) {
-    st.sel = name;
+    st.sel = name; st.shut = '';
     drawForm(); drawProps(); drawTree();
   }
   function startDrag(e, c, el) {
@@ -577,29 +590,60 @@
     },
   }));
 
-  /* ---- the event tree (VisPro's events view) -------------------------------- */
+  /* ---- the event tree (VisPro's events view) --------------------------------
+     Closed at first (a bird's-eye view): each control shows how many of its
+     events have code; open one to see its events.  The selected control, and
+     the one whose code is shown, are open. */
+  function codedCount(name) {
+    let k = 0;
+    for (const e of st.snap.events) if (e.control.toLowerCase() === name.toLowerCase()) k++;
+    return k;
+  }
+  function openInTree(name) { st.open.add(name.toLowerCase()); }
   function drawTree() {
     const box = $('tree'); box.textContent = '';
+    const bar = D.createElement('div'); bar.className = 'treeBar';
+    const mk = (id, key, fn) => { const b = D.createElement('button'); b.id = id; b.textContent = T(key); b.title = T(key + '.tip'); b.addEventListener('click', fn); bar.appendChild(b); return b; };
+    mk('tOpenAll', 'tree.openAll', () => { st.open.add('form'); for (const c of st.snap.controls) st.open.add(c.name.toLowerCase()); drawTree(); });
+    mk('tCloseAll', 'tree.closeAll', () => { st.open.clear(); drawTree(); });
+    const lab = D.createElement('label'); lab.title = T('tree.codedOnly.tip');
+    const cb = Object.assign(D.createElement('input'), { type: 'checkbox', id: 'tCodedOnly', checked: st.codedOnly });
+    cb.addEventListener('change', () => { st.codedOnly = cb.checked; drawTree(); });
+    lab.append(cb, ' ' + T('tree.codedOnly')); bar.appendChild(lab);
+    mk('tAllCode', 'tree.allCode', () => showAllCode());
+    box.appendChild(bar);
     const has = {};
     for (const e of st.snap.events) has[(e.control + '.' + e.event).toUpperCase()] = e.thread;
     const obj = (name, type, evs) => {
-      const o = D.createElement('div'); o.className = 'obj';
+      const k = codedCount(name);
+      if (st.codedOnly && !k) return;
+      const lc = name.toLowerCase();
+      const open = st.open.has(lc) || (st.shut !== lc && (st.sel.toLowerCase() === lc ||
+        (st.cur && st.cur.type === 'event' && st.cur.ctl.toLowerCase() === lc)));
+      const o = D.createElement('div'); o.className = 'obj' + (open ? ' open' : '');
+      const tg = D.createElement('span'); tg.className = 'tog'; tg.dataset.toggle = name;
+      tg.textContent = evs.length ? (open ? '▾' : '▸') : ' ';
+      tg.title = T(open ? 'tree.close.tip' : 'tree.open.tip');
+      if (evs.length) tg.addEventListener('click', () => { if (open) { st.open.delete(lc); st.shut = lc; } else { st.open.add(lc); st.shut = ''; } drawTree(); });
+      o.appendChild(tg);
       const n = D.createElement('span'); n.className = 'name' + (st.sel === name ? ' sel' : ''); n.textContent = name;
       n.draggable = true; n.dataset.ctl = name;
       n.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/x-ood-ctl', name); e.dataTransfer.effectAllowed = 'copy'; });
       n.addEventListener('click', () => select(name));
       const t = D.createElement('span'); t.className = 'type'; t.textContent = type; n.appendChild(t);
       o.appendChild(n);
+      if (k) { const c = D.createElement('span'); c.className = 'cnt'; c.textContent = k + ' ●'; c.title = T('tree.count.tip', k); o.appendChild(c); }
       const row = D.createElement('div'); row.className = 'evs';
       for (const ev of evs) {
         const b = D.createElement('span'); const th = has[(name + '.' + ev).toUpperCase()];
+        if (st.codedOnly && !th) continue;
         b.className = 'ev' + (th ? ' has' : '') + (th === 'background' ? ' bg' : '') +
           (st.cur && st.cur.type === 'event' && st.cur.ctl.toLowerCase() === name.toLowerCase() && st.cur.ev === ev ? ' cur' : '');
         b.textContent = ev; b.dataset.ev = name + '.' + ev;
         b.addEventListener('click', () => { st.cur = { type: 'event', ctl: name, ev }; select(name); showCode(); });
         row.appendChild(b);
       }
-      if (evs.length) o.appendChild(row);
+      if (evs.length && open) o.appendChild(row);
       box.appendChild(o);
     };
     obj('form', st.snap.form.name, st.formEvents.filter((ev) => ev !== 'SAVED' || st.snap.binding));   // SAVED: after a bound dialog's commit
@@ -649,6 +693,38 @@
     await OxGraph.show(code.value);
     diagnoseSoon(0); askButton();
     traceShowStep();
+  }
+  /* ---- all the code in one place: every event and method, to read straight
+     through; a heading opens that piece in the code pane */
+  async function showAllCode() {
+    await flushCode();
+    const text = String(await rx(() => st.d.allCode()).catch(() => ''));
+    const box = $('allCode'); box.textContent = '';
+    const head = D.createElement('div'); head.className = 'acHead';
+    const title = D.createElement('b'); title.textContent = T('allCode.title', st.snap.form.name);
+    const close = D.createElement('button'); close.id = 'acClose'; close.textContent = T('allCode.close');
+    close.addEventListener('click', () => { box.hidden = true; $('codeBody').hidden = false; });
+    head.append(title, close); box.appendChild(head);
+    let pre = null, pieces = 0;
+    for (const line of text.split('\n')) {
+      if (line.startsWith('@@\t')) {
+        const [, kind, ctl, ev, method, thread] = line.split('\t'); pieces++;
+        const h = D.createElement('h3'); h.className = 'acPiece'; h.dataset.piece = kind === 'EVENT' ? ctl + '.' + ev : ev;
+        h.textContent = kind === 'EVENT' ? ctl + ' · ' + ev + '  →  ' + method + (thread === 'background' ? '  ⇉' : '') : T('code.method', ev);
+        h.title = T('allCode.open.tip');
+        h.addEventListener('click', () => {
+          st.cur = kind === 'EVENT' ? { type: 'event', ctl, ev } : { type: 'method', name: ev };
+          if (kind === 'EVENT') openInTree(ctl);
+          box.hidden = true; $('codeBody').hidden = false;
+          if (kind === 'EVENT') select(ctl); else drawTree();
+          showCode();
+        });
+        pre = D.createElement('pre'); box.append(h, pre); continue;
+      }
+      if (pre) pre.textContent += (pre.textContent ? '\n' : '') + line;
+    }
+    if (!pieces) { const p = D.createElement('p'); p.textContent = T('allCode.none'); box.appendChild(p); }
+    $('codeBody').hidden = true; box.hidden = false;
   }
   function methodName(ctl, ev) {
     if (ctl === 'form' && ev === 'OK') return 'ok';

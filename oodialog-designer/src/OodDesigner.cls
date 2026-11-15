@@ -21,11 +21,11 @@
 
 ::class OodModule public mixinclass Object
 ::method module_version class
-  return "0.10.0"
+  return "0.11.0"
 ::method module_lastChanged class
   return "2026-11-15"
 ::method module_version
-  return "0.10.0"
+  return "0.11.0"
 ::method module_lastChanged
   return "2026-11-15"
 
@@ -833,6 +833,32 @@
   end
   e["CODE"] = code
   return 0
+
+-- All the code the user wrote, in the order of the form: the form's events,
+-- each control's (in its catalogue order), then the form's methods.  Each
+-- piece starts with a heading line: "@@" TAB kind (EVENT or METHOD) TAB
+-- control TAB event (or method name) TAB generated method TAB thread; the
+-- code follows as it is.  The page shows it to read straight through.
+::method allCode
+  expose events methods controls
+  out = .array~new
+  names = .array~of("form")
+  do c over controls
+    names~append(c~name)
+  end
+  do n over names
+    do ev over self~eventNames(n)~makeArray(" ")
+      e = events~at(self~eventKey(n, ev))
+      if e == .nil then iterate
+      out~append("@@" || "09"x || "EVENT" || "09"x || n || "09"x || ev || "09"x || self~methodName(n, ev) || "09"x || e["THREAD"])
+      out~append(e["CODE"])
+    end
+  end
+  do m over methods
+    out~append("@@" || "09"x || "METHOD" || "09"x || "form" || "09"x || m["NAME"] || "09"x || m["NAME"] || "09"x || "")
+    out~append(m["CODE"])
+  end
+  return out~makeString("L", "0a"x)
 
 ::method getEventCode
   expose events

@@ -47,6 +47,10 @@ h2{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#56606b;ma
 #members tr.cur td{background:#e4edf7}
 #members td.nm{font-family:ui-monospace,Menlo,Consolas,monospace}
 #members select{padding:0 2px}
+#members tr.grp td{background:#f1f4f7;color:#3d4a57;font-size:11px;font-weight:600;cursor:pointer;padding:3px 6px}
+#members td.nm.hasdoc{text-decoration:underline dotted #8aa4c2}
+#docBox{margin:6px 0;padding:6px 8px;border:1px solid #d3d9e0;border-left:3px solid #2f6fb3;background:#fbfcfd;font-size:12px}
+#docBox pre{margin:4px 0 0;white-space:pre-wrap;font:12px/1.4 system-ui,sans-serif}
 #members button{padding:0 6px}
 #editor{display:grid;grid-template-rows:auto 1fr auto;height:280px;background:#fff;border-top:1px solid #c3cbd4}
 #edHead{display:flex;gap:12px;padding:5px 10px;border-bottom:1px solid #e1e6eb;align-items:center}

@@ -6,7 +6,11 @@
 ::method print
   say self~string
 
+/** A person, with a name and the year they were born.  Notes about them
+ *  are kept private.
+ */
 ::class Person public
+--- The person's name, as written.
 ::attribute name
 ::attribute born
 ::attribute notes private
@@ -17,7 +21,10 @@
   use strict arg name, born = ""
   notes = .array~new
 
--- age in whole years, "" when born is not known
+/**
+ * Age in whole years.  "" when the year of birth is not known.
+ * @return the age, or ""
+ */
 ::method age
   expose born
   if born == "" then return ""

@@ -12,10 +12,11 @@
 /* a replacement of exact ranges of the source, so comments and the rest of   */
 /* the lines stay as they were; then the code is parsed again.                */
 /*                                                                            */
-/* For a trace run, probeLines gives the code with a call before every        */
+/* For a trace run, probeCode gives the code with a probe before every        */
 /* statement that sits in a body (not before a THEN or ELSE's single          */
-/* instruction, where a call would change what runs): oodTraceStep is told    */
-/* the method, the node and the variables, and passes them to the page.       */
+/* instruction, where it would change what runs), on that statement's own    */
+/* line, so line numbers stay.  The probe is a message, not a CALL: a CALL    */
+/* sets SIGL and drops RESULT; .OodTraceProbe~step answers RESULT as it was.  */
 /*----------------------------------------------------------------------------*/
 
 /* The graph of one method body. */
@@ -417,8 +418,9 @@ parseFailed:
 
 /* ---- the trace run ------------------------------------------------------------ */
 
--- The code with "call oodTraceStep where, node, .context~variables;" before
--- each statement in a body (top level, DO, LOOP, OTHERWISE).  Not before
+-- The code with ".OodTraceProbe~step(where, node, thread, .context~variables);"
+-- before each statement in a body (top level, DO, LOOP, OTHERWISE), on the
+-- statement's own line.  Not before
 -- EXPOSE (it must come first), nor before a THEN, ELSE or WHEN's single
 -- instruction (the call would become that instruction).
 ::method probeCode
@@ -430,7 +432,7 @@ parseFailed:
     n = nodes[id]
     if \self~isBody(n["PARENT"], n["SLOT"]) then iterate
     if n["KIND"] == "expose" then iterate
-    probe = "call oodTraceStep" oodRx(where)"," id"," oodRx(thread)", .context~variables; "
+    probe = ".OodTraceProbe~step("oodRx(where)"," id"," oodRx(thread)", .context~variables); "
     edits~append(.array~of(n["L1"], n["C1"], n["L1"], n["C1"], probe))
   end
   if edits~items = 0 then return code
@@ -447,7 +449,9 @@ parseFailed:
 ::method extraLines
   t = .array~new
   t~append("-- the trace run's probe: each step, its variables, to the page")
-  t~append("::routine oodTraceStep public")
+  t~append("::class OodTraceProbe public")
+  t~append("::method step class")
+  t~append("  -- a message, not a CALL: SIGL stays; RESULT is answered as it was")
   t~append("  use arg where, node, thread, vars")
   t~append("  text = """"")
   t~append("  do n over vars~allIndexes~sort")
@@ -458,6 +462,7 @@ parseFailed:
   t~append("    text = text || n""="" || s || ""09""x")
   t~append("  end")
   t~append("  .js~page~js.invokeStrict(""oodTrace"", where, node, thread, text)")
+  t~append("  if vars~hasIndex(""RESULT"") then return vars[""RESULT""]")
   t~append("  return")
   t~append("")
   return t

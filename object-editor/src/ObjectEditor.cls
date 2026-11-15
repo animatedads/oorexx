@@ -23,13 +23,13 @@
 
 ::class OxModule public mixinclass Object
 ::method module_version class
-  return "0.2.0"
+  return "0.3.0"
 ::method module_lastChanged class
-  return "2026-11-14"
+  return "2026-11-15"
 ::method module_version
-  return "0.2.0"
+  return "0.3.0"
 ::method module_lastChanged
-  return "2026-11-14"
+  return "2026-11-15"
 
 
 /* One directive and the lines under it, or the prolog before the first one. */
@@ -307,6 +307,18 @@ editRefused:
   if c == .nil then raise syntax 93.900 array(oxT("ox.err.unknownClass", name))
   if \c~isA(.Class) then raise syntax 93.900 array(oxT("ox.err.notClass", name))
   return c
+
+-- The ooRexxDoc of a class and its members (OxDocs~docsOf), "" when its
+-- package has no source.  OxDocs.cls, with the Rexx Parser, is loaded the
+-- first time docs are asked for, not with the editor.
+::method docsOf
+  expose oxDocs source pkg
+  use strict arg name
+  if \var("OXDOCS") then oxDocs = .nil
+  if oxDocs == .nil then oxDocs = .context~package~loadPackage("OxDocs.cls")~findClass("OxDocs")~new
+  c = self~classObject(name)
+  if c~package == pkg then return oxDocs~docsOf(c, source~lines)   -- as written, prolog too
+  return oxDocs~docsOf(c)
 
 -- name, super, mixins, ismixin, public, abstract, package (tab separated)
 ::method classInfo

@@ -78,23 +78,49 @@ p = .OodGraph~new(code)~probeCode("on_b1_clicked")
 pg = .OodGraph~new(p)
 call check "probed code parses", pg~error == ""
 call check "no probe before EXPOSE", p~left(18) == "expose sharedScope"
-call check "probe before a top-level statement", p~pos('call oodTraceStep "on_b1_clicked", 2, "ui", .context~variables; use arg id') > 0
-call check "probe inside a DO", p~pos('call oodTraceStep "on_b1_clicked", 11, "ui", .context~variables; call SysSleep') > 0
-call check "no probe before a THEN's single instruction", p~pos('then call oodTraceStep') = 0
+call check "probe before a top-level statement", p~pos('.OodTraceProbe~step("on_b1_clicked", 2, "ui", .context~variables); use arg id') > 0
+call check "probe inside a DO", p~pos('.OodTraceProbe~step("on_b1_clicked", 11, "ui", .context~variables); call SysSleep') > 0
+call check "no probe before a THEN's single instruction", p~pos('then .OodTraceProbe') = 0
 -- a whole program with probes, from a design
 d = .calcDesign~build
 d~setEventThread("bEnter", "CLICKED", "background")
 t = d~generate(.OodTraceFilter~new)
-call check "traced program: probes in events", t~pos('call oodTraceStep "on_b7_clicked", 1, "ui", .context~variables; self~digit(7)') > 0
+call check "traced program: probes in events", t~pos('.OodTraceProbe~step("on_b7_clicked", 1, "ui", .context~variables); self~digit(7)') > 0
 call check "traced program: probes in form methods", t~pos('"operate", 1, "caller"') > 0
 call check "traced program: background events marked", t~pos('"on_bEnter_clicked", 1, "background"') > 0
-call check "traced program: the probe routine", t~pos("::routine oodTraceStep public") > 0
-call check "a saved program has no probes", d~generate~pos("oodTraceStep") = 0
+call check "traced program: the probe routine", t~pos("::class OodTraceProbe public") > 0
+call check "a saved program has no probes", d~generate~pos("OodTraceProbe") = 0
+n = d~generate
+call check "traced program: every method on the line it has untraced", -
+  lineOf(t, "::method operate") = lineOf(n, "::method operate") & lineOf(t, "::method on_bEnter_clicked") = lineOf(n, "::method on_bEnter_clicked") & -
+  lineOf(t, "::resource oodDesign") - lineOf(n, "::resource oodDesign") = .OodTraceFilter~new~extraLines~items
+call check "a traced run sees the SIGL and RESULT an untraced run sees", probedRunKeeps()
 call check "a bad parse is reported", .OodGraph~new("if then")~error \== ""
 
 say "t02_graph:" checks - fails "of" checks "checks passed"
 if fails > 0 then return 1
 return 0
+
+lineOf: procedure
+  use arg text, needle
+  return text~left(text~pos(needle))~countStr("0a"x) + 1
+
+-- the same code run untraced and traced (the page call taken out): SIGL after
+-- a condition, and RESULT after a CALL, must be the same
+probedRunKeeps: procedure
+  nl = "0a"x
+  code = 'signal on syntax name t' || nl || 'y = 1 + "a"' || nl || 't:' || nl || 's = sigl' || nl || -
+         'call twelve' || nl || 'return s result' || nl || 'twelve: return 12'
+  -- both as a routine of a package, so their lines are numbered alike
+  plain = .Package~new("plain", ("::routine plain public" || nl || code)~makeArray(nl))~findRoutine("PLAIN")~call
+  probe = .OodGraph~new(code)~probeCode("m")
+  extra = .OodTraceFilter~new~extraLines~makeString("L", nl)
+  extra = extra~changeStr('.js~page~js.invokeStrict("oodTrace", where, node, thread, text)', 'nop')
+  pkg = .Package~new("probed", ("::routine probed public" || nl || probe || nl || extra)~makeArray(nl))
+  traced = pkg~findRoutine("PROBED")~call
+  if plain \== "3 12" then say "  (untraced gave" plain")"
+  if traced \== plain then say "  (traced gave" traced")"
+  return plain == "3 12" & traced == plain & probe~pos("OodTraceProbe") > 0
 
 kinds: procedure
   use arg kGraph

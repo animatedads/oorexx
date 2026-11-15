@@ -93,7 +93,12 @@ call check "plain words: variables and keywords", wordpos("text", labels(w~compl
 pw = .OxWorkspace~new("Prog.rex", 'say "MAIN CODE RAN"; .local~oxRan = 1' || "0a"x || "::class Thing public" || "0a"x)
 call check "the prolog is not run when examining", .local~hasIndex("OXRAN") == .false & pw~classNames == "Thing"
 
-call check "module_version", .OxWorkspace~module_version == "0.2.0" & w~module_version == "0.2.0"
+d = w~docsOf("Person")
+call check "ooRexxDoc read by the Rexx Parser: the class's, from the prolog", d~pos("CLASS" || "09"x || "person" || "09"x || "A person, with a name and the year they were born.") > 0
+call check "  a member's summary and its tags", d~pos("METHOD" || "09"x || "age" || "09"x || "Age in whole years.") > 0 & d~pos("@return the age") > 0
+call check "  a --- doc-comment", d~pos("ATTRIBUTE" || "09"x || "name" || "09"x || "The person's name, as written.") > 0
+call check "  none for a class with no source", w~docsOf("Object") == ""
+call check "module_version", .OxWorkspace~module_version == "0.3.0" & w~module_version == "0.3.0"
 say "t01_object:" checks - fails "of" checks "checks passed"
 if fails > 0 then return 1
 return 0

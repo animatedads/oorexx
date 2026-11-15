@@ -46,8 +46,12 @@ def sc_reflect(pg):
     expect_in('hierarchy shows the mixin', 'Employee + Printable', pg.inner_text('#hierarchy'))
     expect('own members', member_rows(pg), ['salary', 'describe'])
     pg.check('#showInherited'); settle(pg, 900)
+    expect('inherited grouped by class; Object closed', [r.inner_text().split(' (')[0][2:] for r in pg.locator('#members tr.grp').all()][-1].endswith('Object'), True)
+    expect('  Object\'s members hidden while closed', 'objectname' in member_rows(pg), False)
+    pg.click('#members tr.grp[data-grp="Object"]'); settle(pg, 700)
     rows = member_rows(pg)
     expect('inherited in lookup order: mixin, then superclass', (rows.index('print') < rows.index('name') < rows.index('objectname')), True)
+    expect_in('the empty-looking operators say what they are', '"" (abuttal)', pg.inner_text('#members'))
     expect('private attribute shown private', row(pg, 'notes').locator('td').nth(2).inner_text(), 'private')
     pg.click('#sideTabs button[data-side="CLASS"]'); settle(pg, 700)
     expect_in('class side: Person\'s fromJson inherited', 'fromJson', member_rows(pg))
@@ -240,7 +244,20 @@ def sc_ssc(pg):
     finally:
         mock.terminate()
 
-SCENARIOS = {'reflect': sc_reflect, 'edit': sc_edit, 'requires': sc_requires, 'complete': sc_complete, 'oodialog': sc_oodialog, 'libraries': sc_libraries, 'ui_de': sc_ui_de, 'plugins': sc_plugins, 'assist': sc_assist, 'ssc': sc_ssc}
+def sc_docs(pg):
+    """ooRexxDoc (Rony's suggestion): a documented member shows its first
+    sentence as a tooltip and its whole text when clicked; the class too."""
+    ready(pg); pick_class(pg, 'Person'); settle(pg, 1500)
+    nm = row(pg, 'age').locator('td.nm')
+    expect('age: its first sentence as the tooltip', nm.get_attribute('title'), 'Age in whole years.')
+    expect('name (a --- doc-comment) too', row(pg, 'name').locator('td.nm').get_attribute('title'), "The person's name, as written.")
+    expect('the class\'s own tooltip', pg.locator('#classes .cls[data-cls="Person"]').get_attribute('title'), 'A person, with a name and the year they were born.')
+    nm.click(); settle(pg, 500)
+    expect_in('a click shows the whole text, its tags too', '@return the age, or ""', pg.inner_text('#docBox'))
+    expect('an undocumented member has no tooltip', row(pg, 'addNote').locator('td.nm').get_attribute('title'), None)
+    pg.screenshot(path=str(SHOTS / 'docs.png'))
+
+SCENARIOS = {'reflect': sc_reflect, 'edit': sc_edit, 'requires': sc_requires, 'complete': sc_complete, 'oodialog': sc_oodialog, 'libraries': sc_libraries, 'ui_de': sc_ui_de, 'plugins': sc_plugins, 'assist': sc_assist, 'ssc': sc_ssc, 'docs': sc_docs}
 def main():
     names = sys.argv[1:] or list(SCENARIOS)
     SHOTS.mkdir(exist_ok=True)

@@ -1,4 +1,4 @@
-# ooRexx Object Editor — v0.2.0
+# ooRexx Object Editor — v0.3.0
 
 The shared **Database Lab…** panel is also available here (described under
 the ooDialog Designer's Database Lab section). It runs the canonical Alchemy
@@ -38,6 +38,24 @@ numbers stay right.
 
 The text is kept as directive segments only so that an edit changes the
 line it means to and leaves comments and blank lines as they were.
+
+**Inherited members (v0.3, after Josep Maria Blasco's suggestion)** are
+grouped under the class that defines them; Object's and Class's groups start
+closed, so the class's own members stand out. Object's two operators whose
+names look empty are labelled: `""` (abuttal) and `" "` (blank
+concatenation).
+
+**ooRexxDoc (v0.3, after Rony G. Flatscher's suggestion):** a documented
+class or member shows its first sentence as a tooltip (rest the mouse on its
+name), and a click shows the whole text, tags included, under the members.
+`src/OxDocs.cls` reads the doc-comments (a block comment starting `/**`, or
+lines starting `---`) with Josep Maria Blasco's Rexx Parser, option
+`DocComments All`, which splits each into its summary, description and tags.
+A doc-comment belongs to the directive right after it. The parser is loaded
+the first time docs are asked for, not with the editor. The file's own text
+is read as written (its prolog is blanked only for loading), so a class's
+doc-comment before its first directive is found. Built-in classes have no
+source and so no docs.
 
 ## Editing
 
@@ -104,7 +122,8 @@ the ooDialog Designer:
 
 | File | Role |
 |---|---|
-| `src/ObjectEditor.cls` | OxSource (directive segments), OxWorkspace (load, reflection, edits, completion) |
+| `src/ObjectEditor.cls` | OxSource (directive segments), OxWorkspace (load, reflection, edits, completion, docsOf) |
+| `src/OxDocs.cls` | ooRexxDoc of a class and its members, read by the Rexx Parser (copied from the designer's site by the build) |
 | `site/objed.html`, `.css`, `.js` | the page: classes, hierarchy, `::requires`, class card, members, method pane with completion |
 | `examples/Person.cls` | Printable (mixin), Person, Employee (subclass of Person, inherits Printable), `::requires "json.cls"` |
 | `tools/build.rex` | puts the site together (runtime, ooDialog/WASM, examples) |
@@ -122,18 +141,23 @@ the ooDialog Designer:
 Then open `http://localhost:8080/objed.html`.
 
     cd examples
-    REXX_PATH=../src rexx ../tests/t01_object.rex Person.cls
+    REXX_PATH=../src:DESIGNER/src:PARSER_PARENT rexx ../tests/t01_object.rex Person.cls
     cd ..
     python3 tools/oxtest.py
 
-## State (2026-11-15)
+## State (2026-11-15, v0.3.0)
 
-- `t01_object.rex`: 53 of 53 checks pass under ooRexx/WASM in Node. They
+- `t01_object.rex`: 57 of 57 checks pass under ooRexx/WASM in Node. They
   cover the reflection results, lookup order, both sides, the edits and
-  their reloads, the refusals, completion in every context above, and the
-  prolog not being run.
-- `oxtest.py`: 10 of 10 scenarios pass in headless Chromium (7 to 10:
-  ui_de, plugins, assist, ssc):
+  their reloads, the refusals, completion in every context above, the
+  prolog not being run, and (v0.3) ooRexxDoc: a class's from the prolog, a
+  member's summary and tags, a `---` doc-comment, none for a built-in class.
+- `oxtest.py`: 11 of 11 scenarios pass in headless Chromium (7 to 11:
+  ui_de, plugins, assist, ssc, docs). **reflect** now also checks the
+  groups (Object closed, its members hidden until opened) and the operator
+  labels; **docs** checks the tooltips of a `/**` and a `---` member and of
+  the class, the whole text with its tags on a click, and no tooltip for an
+  undocumented member:
   1. **reflect:** classes, hierarchy with mixin, own and inherited members,
      the class side.
   2. **edit:** add an attribute, make a method private, a refused class, a
@@ -180,6 +204,9 @@ order, a library's methods).
   cannot be found by reflection, so `self~lcd~` offers nothing.
 - `::annotate`, `::routine` editing and `::options` are shown in the source
   only.
+- Writing ooRexxDoc: a code-assistance "Document" task that proposes a
+  doc-comment for a member, applied before its directive, is next. The
+  Libraries panel does not show docs yet.
 - Renaming a member does not rewrite its callers.
 - The Alchemy index is made by hand with `libindex.rex`. Publishing it from
   the estate itself (written by Autobuild on each merge) would keep it
