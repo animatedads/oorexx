@@ -42,7 +42,9 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>Microsoft.WindowsAppRuntime.Bootstrap.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <!-- When auto-bootstrap is off, the Foundation targets no longer add
+           its import library automatically. Resolve it from pinned NuGet. -->
+      <AdditionalDependencies>$(NuGetPackageRoot)microsoft.windowsappsdk.foundation\2.6.5\lib\native\$(Platform)\Microsoft.WindowsAppRuntime.Bootstrap.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
