@@ -1,7 +1,7 @@
 /* BostonCrabPlugin.cls -- an optional extra for the ooDialog Designer and the
    ooRexx Object Editor: Boston Crab's ooRexx pitfall checks (P1 to P4) on the
    code being written, with the fix for P1 and P2.  The checks are Boston
-   Crab's own class, RexxPitfallChecker (oorexx_slam_bostoncrab v0.23,
+   Crab's own class, RexxPitfallChecker (oorexx_slam_bostoncrab v0.24,
    tests/PitfallChecker.cls), not a copy of them.
    Architecture: Tom Dyer.  Code: Claude (Opus 5.5).  German: Claude (Opus 5.5). */
 

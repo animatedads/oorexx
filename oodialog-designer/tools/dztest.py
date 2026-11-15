@@ -3,7 +3,7 @@
 Architecture: Tom Dyer.  Code: Claude (Opus 5.5).
 
 usage: python3 tools/dztest.py [scenario ...]     (after rexx tools/build.rex)
-Scenarios: hand, calculator, threads, refuse, saveopen, views, gadgets, libraries, graph, trace, languages, ui_de, plugins (default: all).
+Scenarios: hand, calculator, threads, refuse, saveopen, views, gadgets, libraries, graph, trace, languages, ui_de, plugins, assist, source (default: all).
 Python is used here only because this tool drives a browser (Playwright);
 the designer's model, generator and reader are ooRexx (src/OodDesigner.cls)
 and are tested without a browser by tests/t01_model.rex.  Progress is logged
@@ -14,6 +14,8 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 SITE = ROOT / 'site'
 SHOTS = ROOT / 'shots'
 PORT = 8032
+GHMOCK = 8978                # tests/fixtures/github_mock_server.mjs, for the source scenario
+MOCK = 8974                 # tests/fixtures/assist_mock_server.mjs, for the assist scenario
 def log(*a): print('dztest:', *a, flush=True)
 
 class Fail(Exception): pass
@@ -459,7 +461,130 @@ def sc_plugins(pg):
     pg.uncheck('#pp-bostoncrab'); settle(pg, 1200); pg.click('#ppClose'); settle(pg, 900)
     expect('switched off: nothing shown', pg.is_visible('#diag'), False)
 
-SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views, 'gadgets': sc_gadgets, 'libraries': sc_libraries, 'graph': sc_graph, 'trace': sc_trace, 'languages': sc_languages, 'ui_de': sc_ui_de, 'plugins': sc_plugins}
+def sc_assist(pg):
+    """Assist: the code assistance plugin switched on, its key given in its
+    settings (never shown again, never saved), Ask... on an event: a proposal
+    that passes, seen as a diff and as graphs, is applied; one with a Boston
+    Crab pitfall cannot be; German."""
+    mock = subprocess.Popen(['node', str(ROOT / 'tests' / 'fixtures' / 'assist_mock_server.mjs'), str(MOCK)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(0.8)
+    try:
+        ready(pg); pg.evaluate("localStorage.removeItem('oodDesigner.plugins')"); ready(pg)
+        expect('no Ask... until a plugin gives code assistance', pg.is_visible('#btnAsk'), False)
+        pg.click('#btnPlugins'); pg.wait_for_selector('#plugPanel:not([hidden])'); settle(pg, 600)
+        expect_in('the catalogue lists code assistance', 'Code assistance (Anthropic, OpenAI)', pg.inner_text('#ppList'))
+        pg.check('#pp-assist'); pg.wait_for_selector('[data-plugin=assist] [data-setting="anthropic.key"]', timeout=60000); settle(pg, 400)
+        expect('the provider is a choice', pg.eval_on_selector('[data-plugin=assist] [data-setting=provider]', 'e => e.tagName + ":" + e.value'), 'SELECT:anthropic')
+        u = pg.locator('[data-plugin=assist] [data-setting="anthropic.url"]'); u.fill(f'http://127.0.0.1:{MOCK}'); u.press('Tab'); settle(pg, 900)
+        k = pg.locator('[data-plugin=assist] [data-setting="anthropic.key"]'); k.fill('FAKE-ANTHROPIC-KEY-51'); k.press('Tab'); settle(pg, 900)
+        k = pg.locator('[data-plugin=assist] [data-setting="anthropic.key"]')
+        expect('the key field is empty again', k.input_value(), '')
+        expect_in('and says a key is set', '(set', k.get_attribute('placeholder'))
+        expect('the key is nowhere in the page', 'FAKE-ANTHROPIC-KEY-51' in pg.content(), False)
+        expect('nor in its storage', 'FAKE-ANTHROPIC' in pg.evaluate('JSON.stringify(Object.assign({}, localStorage))'), False)
+        pg.screenshot(path=str(SHOTS / 'assist_settings.png'))
+        pg.click('#ppClose')
+        drop_kind(pg, 'Push button', 40, 30)
+        pick_event(pg, 'btn1', 'CLICKED')
+        pg.fill('#code', 'say 1'); pg.click('#formTitle'); settle(pg, 900)
+        expect('Ask... is there', pg.is_visible('#btnAsk'), True)
+        pg.click('#btnAsk'); pg.wait_for_selector('#askPanel:not([hidden])')
+        expect_in('it says which code', 'on_btn1_clicked', pg.inner_text('#akWhat'))
+        pg.fill('#akTask', 'GOOD: add up 1 to 10 and show it'); pg.click('#akGo')
+        pg.wait_for_function("document.getElementById('askPanel').dataset.status !== ''", timeout=60000); settle(pg, 300)
+        expect('a proposal that passes', pg.get_attribute('#askPanel', 'data-status'), 'ok')
+        expect_in('with its model and cost', 'claude-haiku-5-5', pg.inner_text('#akInfo')); expect_in('  cost', '$', pg.inner_text('#akInfo'))
+        expect('the old line marked gone', pg.locator('#akOld .ak-del').count(), 1)
+        expect('the new lines marked new', pg.locator('#akNew .ak-add').count(), 6)
+        expect_in('  among them', 'total = total + i', pg.inner_text('#akNew'))
+        expect('Apply can be pressed', pg.is_enabled('#akApply'), True)
+        pg.screenshot(path=str(SHOTS / 'assist_proposal.png'))
+        pg.click('[data-akview=graph]')
+        pg.wait_for_function("document.getElementById('askPanel').dataset.graphReady === '1'", timeout=30000)
+        expect('the proposal as a graph: its loop', pg.locator('#akNew .gb.k-loop, #akNew .gb.k-do').count(), 1)
+        expect('  every block of it new', pg.locator('#akNew .gb.ak-add').count(), pg.locator('#akNew .gb').count())
+        expect('the code now as a graph: one SAY, gone', pg.locator('#akOld .gb.ak-del').count(), 1)
+        pg.screenshot(path=str(SHOTS / 'assist_graph.png'))
+        pg.click('[data-akview=code]'); settle(pg, 300)
+        pg.click('#akApply'); settle(pg, 1200)
+        expect('applied: the code is the proposal', 'total = total + i' in pg.input_value('#code'), True)
+        expect_in('and the program has it', 'total = total + i', program_text(pg))
+        pg.click('#btnAsk'); pg.wait_for_selector('#askPanel:not([hidden])')
+        pg.fill('#akTask', 'TRAP'); pg.click('#akGo')
+        pg.wait_for_function("document.getElementById('askPanel').dataset.status !== ''", timeout=60000); settle(pg, 300)
+        expect('a proposal with a pitfall', pg.get_attribute('#askPanel', 'data-status'), 'refused')
+        expect_in('the reason shown', 'Boston Crab: P1 on line 2', pg.inner_text('#akNotes'))
+        expect('Apply cannot be pressed', pg.is_enabled('#akApply'), False)
+        pg.screenshot(path=str(SHOTS / 'assist_refused.png'))
+        pg.click('#akClose')
+        pg.select_option('#uiLang', 'de'); settle(pg, 1500)
+        pg.click('#btnAsk'); pg.wait_for_selector('#askPanel:not([hidden])')
+        expect_in('the panel in German', 'Um einen Vorschlag bitten', pg.inner_text('#askPanel'))
+        pg.fill('#akTask', 'TRAP'); pg.click('#akGo')
+        pg.wait_for_function("document.getElementById('askPanel').dataset.status !== ''", timeout=60000); settle(pg, 300)
+        expect_in('its reasons in German', 'in Zeile 2', pg.inner_text('#akNotes'))
+        pg.click('#akClose'); pg.select_option('#uiLang', 'en'); settle(pg, 1200)
+    finally:
+        mock.terminate()
+
+def sc_source(pg):
+    """Source: the git plugin over GitHub's API (a stand-in), from the Source
+    panel: the design committed as a new file, changed and committed again
+    (the changes shown first), its history, the first version opened back;
+    a commit after someone else's is refused."""
+    mock = subprocess.Popen(['node', str(ROOT / 'tests' / 'fixtures' / 'github_mock_server.mjs'), str(GHMOCK)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(0.8)
+    def setting(key, value):
+        f = pg.locator(f'[data-plugin=git] [data-setting="{key}"]'); f.fill(value); f.press('Tab'); settle(pg, 700)
+    try:
+        ready(pg); pg.evaluate("localStorage.removeItem('oodDesigner.plugins')"); ready(pg)
+        expect('no Repository... until a plugin does source control', pg.is_visible('#btnScm'), False)
+        pg.click('#btnPlugins'); pg.wait_for_selector('#plugPanel:not([hidden])'); settle(pg, 600)
+        pg.check('#pp-git'); pg.wait_for_selector('[data-plugin=git] [data-setting="token"]', timeout=60000); settle(pg, 300)
+        setting('repo', 'owner/demo'); setting('folder', 'designs'); setting('api', f'http://127.0.0.1:{GHMOCK}'); setting('token', 'FAKE-GITHUB-TOKEN-73')
+        expect('the token is nowhere in the page', 'FAKE-GITHUB-TOKEN-73' in pg.content(), False)
+        pg.click('#ppClose')
+        expect('Repository... is there', pg.is_visible('#btnScm'), True)
+        drop_kind(pg, 'Push button', 40, 30)
+        pg.click('#btnScm'); pg.wait_for_selector('#srcPanel:not([hidden])'); settle(pg, 1500)
+        expect_in('the folder listed', 'designs/Hello.rex', pg.inner_text('#scFiles'))
+        pg.fill('#scPath', 'designs/MyDialog.rex'); pg.click('#scCheck'); settle(pg, 600)
+        expect('a new file', pg.get_attribute('#scState', 'data-state'), 'NEW')
+        pg.fill('#scMsg', 'A dialog with a button'); pg.click('#scCommit')
+        pg.wait_for_function("document.getElementById('srcPanel').dataset.committed", timeout=30000); settle(pg, 600)
+        expect_in('committed', 'Committed', pg.inner_text('#scNotes'))
+        expect('now current', pg.get_attribute('#scState', 'data-state'), 'CURRENT')
+        pg.click('#scClose')
+        pg.click('#formTitle'); settle(pg); set_prop(pg, 'title', 'Greetings')
+        pg.click('#btnScm'); pg.wait_for_selector('#srcPanel:not([hidden])'); settle(pg, 1500)
+        expect_in('the change shown, as it will be committed', 'Greetings', pg.inner_text('#scDiff .ak-add'))
+        pg.screenshot(path=str(SHOTS / 'source_changes.png'))
+        pg.evaluate("document.getElementById('srcPanel').dataset.committed = ''")
+        pg.fill('#scMsg', 'Title: Greetings'); pg.click('#scCommit')
+        pg.wait_for_function("document.getElementById('srcPanel').dataset.committed", timeout=30000); settle(pg, 900)
+        expect('committed again', pg.get_attribute('#srcPanel', 'data-committed'), 'ok')
+        expect('the history: two commits', pg.locator('#scHistory li').count(), 2)
+        expect_in('  newest first', 'Title: Greetings', pg.inner_text('#scHistory li >> nth=0'))
+        pg.click('#scHistory li >> nth=1 >> button'); settle(pg, 900)
+        expect('the first version shown', 'Greetings' in pg.inner_text('#scVerText'), False)
+        pg.screenshot(path=str(SHOTS / 'source_history.png'))
+        pg.click('#scVerOpen'); settle(pg, 1500); pg.click('#scClose')
+        pg.click('#formTitle'); settle(pg)
+        expect('opened back: the title as it was', pg.input_value('#props [data-prop="title"]'), 'My Dialog')
+        pg.click('#btnScm'); pg.wait_for_selector('#srcPanel:not([hidden])'); settle(pg, 1500)
+        pg.evaluate(f"fetch('http://127.0.0.1:{GHMOCK}/move?path=designs/MyDialog.rex')"); settle(pg, 500)
+        pg.click('#scCheck'); settle(pg, 900)
+        expect('someone else committed: moved', pg.get_attribute('#scState', 'data-state'), 'MOVED')
+        pg.evaluate("document.getElementById('srcPanel').dataset.committed = ''")
+        pg.fill('#scMsg', 'Over theirs'); pg.click('#scCommit')
+        pg.wait_for_function("document.getElementById('srcPanel').dataset.committed", timeout=30000); settle(pg, 300)
+        expect('refused', pg.get_attribute('#srcPanel', 'data-committed'), 'refused')
+        expect_in('  saying why', 'moved on', pg.inner_text('#scNotes'))
+        pg.click('#scClose')
+    finally:
+        mock.terminate()
+
+SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views, 'gadgets': sc_gadgets, 'libraries': sc_libraries, 'graph': sc_graph, 'trace': sc_trace, 'languages': sc_languages, 'ui_de': sc_ui_de, 'plugins': sc_plugins, 'assist': sc_assist, 'source': sc_source}
 def main():
     names = sys.argv[1:] or list(SCENARIOS)
     srv = subprocess.Popen(['node', str(SITE / 'serve.mjs'), str(SITE), '--port', str(PORT)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

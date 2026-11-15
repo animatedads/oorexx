@@ -7,10 +7,13 @@ Scenarios: reflect, edit, requires, complete, oodialog, libraries (default: all)
 Python only drives the browser (Playwright); what the editor finds and does
 is ooRexx (src/ObjectEditor.cls), tested without a browser by
 tests/t01_object.rex.  Each step is logged."""
-import subprocess, sys, time, pathlib
+import os, subprocess, sys, time, pathlib
 from playwright.sync_api import sync_playwright
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SITE, SHOTS, PORT = ROOT / 'site', ROOT / 'shots', 8042
+DESIGNER = pathlib.Path(os.environ.get('OOD_DESIGNER', ROOT.parent / 'oodialog-designer'))   # the designer's tests/fixtures/assist_mock_server.mjs
+MOCK = 8975
+SSCMOCK = 8979
 def log(*a): print('oxtest:', *a, flush=True)
 class Fail(Exception): pass
 def expect(what, got, want):
@@ -175,7 +178,69 @@ def sc_plugins(pg):
     pg.click('#btnPlugins'); pg.wait_for_selector('#plugPanel:not([hidden])'); settle(pg, 600)
     pg.uncheck('#pp-bostoncrab'); settle(pg, 1200); pg.click('#ppClose')
 
-SCENARIOS = {'reflect': sc_reflect, 'edit': sc_edit, 'requires': sc_requires, 'complete': sc_complete, 'oodialog': sc_oodialog, 'libraries': sc_libraries, 'ui_de': sc_ui_de, 'plugins': sc_plugins}
+def sc_assist(pg):
+    """Ask... in the Object Editor: the code assistance plugin on, a key and the stand-in's address given; a proposal for a method that passes is applied and compiles; one that does not compile cannot be applied."""
+    mock = subprocess.Popen(['node', str(DESIGNER / 'tests' / 'fixtures' / 'assist_mock_server.mjs'), str(MOCK)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(0.8)
+    try:
+        ready(pg); pg.evaluate("localStorage.removeItem('oodDesigner.plugins')"); ready(pg)
+        pg.click('#btnPlugins'); pg.wait_for_selector('#plugPanel:not([hidden])'); settle(pg, 600)
+        pg.check('#pp-assist'); pg.wait_for_selector('[data-plugin=assist] [data-setting="anthropic.key"]', timeout=60000)
+        u = pg.locator('[data-plugin=assist] [data-setting="anthropic.url"]'); u.fill(f'http://127.0.0.1:{MOCK}'); u.press('Tab'); settle(pg, 900)
+        k = pg.locator('[data-plugin=assist] [data-setting="anthropic.key"]'); k.fill('FAKE-ANTHROPIC-KEY-51'); k.press('Tab'); settle(pg, 900)
+        pg.click('#ppClose')
+        open_method(pg, 'Employee', 'describe')
+        expect('Ask... is there', pg.is_visible('#btnAsk'), True)
+        pg.click('#btnAsk'); pg.wait_for_selector('#askPanel:not([hidden])')
+        expect_in('it names the method', 'describe', pg.inner_text('#akWhat'))
+        pg.fill('#akTask', 'BROKEN'); pg.click('#akGo')
+        pg.wait_for_function("document.getElementById('askPanel').dataset.status !== ''", timeout=60000)
+        expect('a proposal that does not compile', pg.get_attribute('#askPanel', 'data-status'), 'refused')
+        expect('cannot be applied', pg.is_enabled('#akApply'), False)
+        pg.fill('#akTask', 'PROSE'); pg.click('#akGo')
+        pg.wait_for_function("document.getElementById('akInfo').textContent.indexOf('passes') >= 0", timeout=60000)
+        expect('one that passes', pg.get_attribute('#askPanel', 'data-status'), 'ok')
+        pg.screenshot(path=str(SHOTS / 'assist_objed.png'))
+        pg.click('#akApply'); settle(pg, 1500)
+        expect('applied', pg.input_value('#code'), 'say "prose"')
+        expect('and the method compiles', pg.inner_text('#edState'), 'compiles')
+    finally:
+        mock.terminate()
+
+def sc_ssc(pg):
+    """Semantic Source Control in the Object Editor (a stand-in store): the class file opened from the store, a method changed, the commit proposed as one method's new edition for review."""
+    mock = subprocess.Popen(['node', str(DESIGNER / 'tests' / 'fixtures' / 'ssc_mock_server.mjs'), str(SSCMOCK)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(0.8)
+    def setting(key, value):
+        f = pg.locator(f'[data-plugin=ssc] [data-setting="{key}"]'); f.fill(value); f.press('Tab'); settle(pg, 700)
+    try:
+        ready(pg); pg.evaluate("localStorage.removeItem('oodDesigner.plugins')"); ready(pg)
+        pg.click('#btnPlugins'); pg.wait_for_selector('#plugPanel:not([hidden])'); settle(pg, 600)
+        pg.check('#pp-ssc'); pg.wait_for_selector('[data-plugin=ssc] [data-setting="session"]', timeout=60000)
+        setting('endpoint', f'http://127.0.0.1:{SSCMOCK}/mcp'); setting('root', 'oorexx://demo/Greeter'); setting('session', 'FAKE-SSC-SESSION-84')
+        pg.click('#ppClose')
+        pg.click('#btnScm'); pg.wait_for_selector('#srcPanel:not([hidden])'); settle(pg, 1500)
+        expect_in('the store\'s file listed', 'src/Greeter.cls', pg.inner_text('#scFiles'))
+        pg.click('#scFiles li[data-path="src/Greeter.cls"] button'); settle(pg, 2000)
+        expect('current', pg.get_attribute('#scState', 'data-state'), 'CURRENT')
+        pg.click('#scClose')
+        open_method(pg, 'Greeter', 'greet')
+        body = pg.input_value('#code')
+        pg.fill('#code', body.replace('return "Hello," name', 'return "Hello," name || "!"')); pg.locator('#code').blur(); settle(pg, 1800)
+        expect('it compiles', pg.inner_text('#edState'), 'compiles')
+        pg.click('#btnScm'); pg.wait_for_selector('#srcPanel:not([hidden])'); settle(pg, 1200)
+        expect_in('the change shown', '|| "!"', pg.inner_text('#scDiff .ak-add'))
+        pg.fill('#scMsg', 'An exclamation'); pg.click('#scCommit')
+        pg.wait_for_function("document.getElementById('srcPanel').dataset.committed", timeout=30000); settle(pg, 600)
+        expect('proposed', pg.get_attribute('#srcPanel', 'data-committed'), 'ok')
+        expect_in('  as one method\'s edition', 'method Greeter~greet: proposed as ssr_', pg.inner_text('#scNotes'))
+        expect_in('  for review', 'nothing is accepted until it is reviewed', pg.inner_text('#scNotes'))
+        expect('  history: the unit', pg.locator('#scHistory li').count(), 1)
+        pg.screenshot(path=str(SHOTS / 'ssc_proposed.png'))
+    finally:
+        mock.terminate()
+
+SCENARIOS = {'reflect': sc_reflect, 'edit': sc_edit, 'requires': sc_requires, 'complete': sc_complete, 'oodialog': sc_oodialog, 'libraries': sc_libraries, 'ui_de': sc_ui_de, 'plugins': sc_plugins, 'assist': sc_assist, 'ssc': sc_ssc}
 def main():
     names = sys.argv[1:] or list(SCENARIOS)
     SHOTS.mkdir(exist_ok=True)
@@ -190,7 +255,7 @@ def main():
                 log('RUN', n, '--', SCENARIOS[n].__doc__)
                 try: SCENARIOS[n](pg); log('PASS', n)
                 except Exception as e:
-                    log('FAIL', n, '::', ' | '.join(str(e).splitlines()[:6])[:900]); failed.append(n)
+                    log('FAIL', n, '::', ' | '.join(str(e).splitlines()[:30])[:3000]); failed.append(n)
                     try: log('  status:', status(pg)); pg.screenshot(path=str(SHOTS / (n + '_fail.png')))
                     except Exception: pass
                 pg.close()

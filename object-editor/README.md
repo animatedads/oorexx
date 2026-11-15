@@ -91,17 +91,6 @@ the ooDialog Designer:
   `rexx tools/libindex.rex ~/alchemy packages/ alchemy catalogue/alchemy.idx`.
   The one here lists 242 libraries from alchemy at 183da160.
 
-## The editor's language
-
-Every text of the editor and of the Libraries panel is in `src/OxUi.cls`,
-`::RESOURCE strings.en` and `strings.de`, read by `OodNls` (`OodNls.cls`,
-from the ooDialog Designer, which is also what the designer's generated
-programs use). The editor's and the providers' refusals go through
-`oxT(key, ...)`. The page reads the table once through `oodnls.js` (shared
-with the designer); the 🌐 chooser picks the language, kept with the
-designer's choice, and the browser's language is the default. The German is
-Claude's (Opus 5.5) and wants a German speaker's reading.
-
 ## Files
 
 | File | Role |
@@ -116,7 +105,7 @@ Claude's (Opus 5.5) and wants a German speaker's reading.
 | `site/libraries.js`, `.css` | the Libraries panel, shared with the designer |
 | `catalogue/alchemy.idx`, `tools/libindex.rex` | the Alchemy index and the tool that writes it |
 | `tests/t02_libraries.rex` | providers, install, goodies and use, without a browser (fetches from raw.githubusercontent.com) |
-| `src/OxUi.cls` | the editor's and the Libraries panel's texts, English and German |
+| the designer's `OodPlugins.cls`, `plugins/`, `site/plugins.js`, `.css` | the plugins, shared with the ooDialog Designer and copied in by the build: Boston Crab's findings and fixes, **Ask…** (code assistance through the estate's AI providers and Secret Broker; a proposal shown as a diff, applied only when it compiles and passes Boston Crab) and **Repository…** (git over GitHub's API, or Semantic Source Control, which proposes each changed method as its own edition for review). The designer's README describes them. |
 
     rexx tools/build.rex RUNTIME_DIR OODIALOG_WASM_DIST DESIGNER_EXAMPLES_DIR
     node site/serve.mjs site --port 8080
@@ -134,7 +123,8 @@ Then open `http://localhost:8080/objed.html`.
   cover the reflection results, lookup order, both sides, the edits and
   their reloads, the refusals, completion in every context above, and the
   prolog not being run.
-- `oxtest.py`: 8 of 8 scenarios pass in headless Chromium:
+- `oxtest.py`: 10 of 10 scenarios pass in headless Chromium (7 to 10:
+  ui_de, plugins, assist, ssc):
   1. **reflect:** classes, hierarchy with mixin, own and inherited members,
      the class side.
   2. **edit:** add an attribute, make a method private, a refused class, a
@@ -155,16 +145,14 @@ Then open `http://localhost:8080/objed.html`.
 - `oxtest.py` scenario 6, **libraries:** Alchemy is connected and
   `oorexx_logging` found, installed and examined, then used. The
   `::requires` lands in the file, and `.LogSer` and `log~serv` complete.
-- `oxtest.py` scenario 7, **ui_de:** the editor in German: the bar, a
-  column, a refusal from `ObjectEditor.cls` in German, the Libraries panel;
-  then English again.
-- `oxtest.py` scenario 8, **plugins:** the designer's plugin host
-  (`OodPlugins.cls`, `plugins.js`) in the editor: Boston Crab on, a P2 trap
-  typed into a method found and fixed, the method compiling again.
-- The refusal checks of t01 and t02 demand Error 93.900 with the editor's
-  message (before, any error passed).
-- Pitfall lint (Boston Crab `rexx_pitfalls.rex`): clean on the code; in
-  `OxUi.cls` it reads words of the `::RESOURCE` text as names.
+- `oxtest.py` **assist:** Ask… on a method against a stand-in provider: a
+  proposal that does not compile cannot be applied; one that passes is
+  applied and the method compiles. **ssc:** the class file opened from a
+  stand-in Semantic Source Control store, a method changed in the editor,
+  the commit proposed as that method's new edition, for review. (The
+  stand-ins are the designer's `tests/fixtures/`; `OOD_DESIGNER` names the
+  designer's folder if it is not `../oodialog-designer`.)
+- Pitfall lint (Boston Crab `rexx_pitfalls.rex`): clean.
 
 ## Relation to `oorexx_source_editor` (estate, ChatGPT's lane)
 

@@ -11,3 +11,36 @@ plugin bostoncrab
   title.de = Boston Crab: ooRexx-Fallen
   summary.en = Boston Crab's checks for the ooRexx traps that have cost runs (P1-P4), on the code as it is written, with the fix where one is certain.
   summary.de = Die Prüfungen von Boston Crab auf die ooRexx-Fallen, die schon Läufe gekostet haben (P1-P4), am Code beim Schreiben, mit der Abhilfe, wo eine sicher ist.
+
+plugin assist
+  class = AssistPlugin
+  main = assist/AssistPlugin.cls
+  files = @assist/files.txt
+  paths = common estate/alchemy_objects_v0.8/src estate/oorexx_crypto_v0.1/src estate/oorexx_secret_broker_v0.2/src estate/oorexx_ai_access_v0.6/src estate/oorexx_ai_provider_anthropic_v0.5/src estate/oorexx_ai_provider_openai_compat_v0.6/src
+  provides = assist
+  title.en = Code assistance (Anthropic, OpenAI)
+  title.de = Codehilfe (Anthropic, OpenAI)
+  summary.en = Proposals for the code from a language model, through the estate's AI providers and Secret Broker.  It never changes the code itself: a proposal is shown with its cost, and can be applied only when it compiles and passes Boston Crab.  Your API key stays in this page's memory: never saved, never shown again.
+  summary.de = Vorschläge für den Code von einem Sprachmodell, über die KI-Anbieter und den Secret Broker des Bestands.  Es ändert den Code nie selbst: ein Vorschlag wird mit seinen Kosten gezeigt und kann nur übernommen werden, wenn er übersetzt und Boston Crab besteht.  Ihr API-Schlüssel bleibt im Speicher dieser Seite: nie gespeichert, nie wieder gezeigt.
+
+plugin git
+  class = GitPlugin
+  main = git/GitPlugin.cls
+  files = @git/files.txt
+  paths = common estate/alchemy_objects_v0.8/src estate/oorexx_crypto_v0.1/src estate/oorexx_secret_broker_v0.2/src estate/oorexx_ai_access_v0.6/src estate/oorexx_ai_provider_anthropic_v0.5/src estate/oorexx_ai_provider_openai_compat_v0.6/src
+  provides = scm
+  title.en = Git source control (GitHub, git)
+  title.de = Versionsverwaltung mit Git (GitHub, git)
+  summary.en = The program or class file in a git repository: open it from a branch, see whether the branch moved on, commit with a message, see its history and any earlier version.  Through GitHub's API from this page (your token stays in this page's memory: never saved, never shown again), or through git in a working copy outside a browser.
+  summary.de = Die Programm- oder Klassendatei in einem Git-Repository: aus einem Zweig öffnen, sehen, ob sich der Zweig weiterbewegt hat, mit einer Nachricht committen, ihre Geschichte und jede frühere Fassung sehen.  Über die API von GitHub aus dieser Seite (Ihr Token bleibt im Speicher dieser Seite: nie gespeichert, nie wieder gezeigt) oder über git in einer Arbeitskopie außerhalb eines Browsers.
+
+plugin ssc
+  class = SscPlugin
+  main = ssc/SscPlugin.cls
+  files = @ssc/files.txt
+  paths = common estate/alchemy_objects_v0.8/src estate/oorexx_crypto_v0.1/src estate/oorexx_secret_broker_v0.2/src estate/oorexx_ai_access_v0.6/src estate/oorexx_ai_provider_anthropic_v0.5/src estate/oorexx_ai_provider_openai_compat_v0.6/src
+  provides = scm
+  title.en = Semantic Source Control (SSC)
+  title.de = Semantische Versionsverwaltung (SSC)
+  summary.en = The file from a Semantic Source Control store, as the store holds it: objects with their own revisions.  A commit proposes a new edition of each class, method or routine you changed, against the revision you opened, for review; a stale base is the store's to settle on a conflict branch.  Your session token (from the signed-challenge authenticator) stays in this page's memory: never saved, never shown again.
+  summary.de = Die Datei aus einem Speicher der semantischen Versionsverwaltung, wie der Speicher sie hält: Objekte mit eigenen Revisionen.  Ein Commit schlägt für jede geänderte Klasse, Methode oder Routine eine neue Fassung vor, auf der geöffneten Revision, zur Prüfung; eine veraltete Basis klärt der Speicher in einem Konfliktzweig.  Ihr Sitzungs-Token (vom Authentifikator mit signierter Herausforderung) bleibt im Speicher dieser Seite: nie gespeichert, nie wieder gezeigt.

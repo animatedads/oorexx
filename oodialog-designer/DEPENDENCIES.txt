@@ -1,4 +1,4 @@
-ooDialog Designer v0.7 -- dependencies
+ooDialog Designer v0.8 -- dependencies
 Architecture: Tom Dyer.  Code: Claude (Opus 5.5).
 
 Model, generator, graph and language support (src/, the Autobuild tests):
@@ -17,5 +17,16 @@ The page (site/) and its browser tests (tools/dztest.py), not run by Autobuild:
   (object-editor/ of animatedads/oorexx, branch oodialog-designer: the
   Libraries panel), Python Playwright with Chromium; tools/build.rex
   assembles site/.
+
+The plugins (plugins/, optional, none loaded until switched on):
+- Boston Crab and code assistance: oorexx_slam_bostoncrab v0.24
+  (tests/PitfallChecker.cls)
+- code assistance, git and ssc: oorexx_secret_broker v0.2 (with
+  alchemy_objects v0.8 and oorexx_crypto v0.1); code assistance also
+  oorexx_ai_access v0.6, oorexx_ai_provider_anthropic v0.5 (its fetch
+  client) and oorexx_ai_provider_openai_compat v0.6 (its fetch transport)
+- ooRexx/WASM's fetch.cls and json.cls for every call out; git's cli way
+  needs git and ooRexx outside a browser
+- their tests (t07-t09) need node for the stand-in servers in tests/fixtures/
 
 tests/wincheck.rex needs Windows ooDialog: sent to CODEX-PC (REQ-00003595).

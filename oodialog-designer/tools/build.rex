@@ -1,20 +1,24 @@
 /* build.rex -- put the ooDialog Designer site together.
    Architecture: Tom Dyer.  Code: Claude (Opus 5.5).
 
-   usage: rexx tools/build.rex RUNTIME_DIR OODIALOG_DIST_DIR OBJECT_EDITOR_DIR REXX_PARSER_DIR BOSTONCRAB_DIR
+   usage: rexx tools/build.rex RUNTIME_DIR OODIALOG_DIST_DIR OBJECT_EDITOR_DIR REXX_PARSER_DIR ESTATE_PACKAGES_DIR
      RUNTIME_DIR        Josep Maria Blasco's oorexxwasm-web release, unpacked
      OODIALOG_DIST_DIR  ooDialog/WASM's dist/ (ooDialog.cls, oodWeb.cls, ooShapes.cls)
      OBJECT_EDITOR_DIR  the Object Editor (its reflection, library providers, Libraries panel)
      REXX_PARSER_DIR    Josep Maria Blasco's Rexx Parser (its bin/ is copied, with a
                         manifest the page reads to put it in the session)
-     BOSTONCRAB_DIR     Boston Crab (oorexx_slam_bostoncrab v0.23 or later): its
-                        tests/PitfallChecker.cls goes with the Boston Crab plugin
+     ESTATE_PACKAGES_DIR  the Alchemy estate's packages/ (or a folder of links to
+                        them): Boston Crab v0.24 (PitfallChecker.cls) for the Boston
+                        Crab and assist plugins, and for the assist plugin the AI
+                        stack: alchemy_objects v0.8, crypto v0.1, secret_broker v0.2,
+                        ai_access v0.6, ai_provider_anthropic v0.5,
+                        ai_provider_openai_compat v0.6, laid out as in the estate
    Run in the designer's directory.  Writes site/: the page, the runtime,
    OodDesigner.cls, ood/ (ooDialog/WASM) and examples/ (made by
    tests/calculator.rex, threads.rex, views.rex and gadgets.rex through OodDesign). */
-parse arg runtime oodDist objEd rexxParser bostonCrab
-if bostonCrab == "" then do
-  say "usage: rexx tools/build.rex RUNTIME_DIR OODIALOG_DIST_DIR OBJECT_EDITOR_DIR REXX_PARSER_DIR BOSTONCRAB_DIR"
+parse arg runtime oodDist objEd rexxParser estate
+if estate == "" then do
+  say "usage: rexx tools/build.rex RUNTIME_DIR OODIALOG_DIST_DIR OBJECT_EDITOR_DIR REXX_PARSER_DIR ESTATE_PACKAGES_DIR"
   return 1
 end
 sep = "/"
@@ -31,12 +35,10 @@ call copy "src" || sep || "OodDesigner.cls", "site" || sep || "OodDesigner.cls"
 call copy "src/OodGraph.cls", "site/OodGraph.cls"
 call copy "src/OodNls.cls", "site/OodNls.cls"
 call copy "src/OodPlugins.cls", "site/OodPlugins.cls"
--- the plugins: optional extras, each in its folder, listed in index.txt
-call SysMkDir "site/plugins"
-call SysMkDir "site/plugins/bostoncrab"
-call copy "plugins/index.txt", "site/plugins/index.txt"
-call copy "plugins/bostoncrab/BostonCrabPlugin.cls", "site/plugins/bostoncrab/BostonCrabPlugin.cls"
-call copy bostonCrab~strip"/tests/PitfallChecker.cls", "site/plugins/bostoncrab/PitfallChecker.cls"
+-- the plugins: optional extras, each in its folder, listed in index.txt,
+-- with the estate files they need (tools/plugins.rex, which run_all.rex uses too)
+address system 'rexx tools/plugins.rex . "'estate~strip'" site/plugins'
+if rc \= 0 then raise syntax 93.900 array("build: tools/plugins.rex failed:" rc)
 call copy "src/OodUi.cls", "site/OodUi.cls"
 -- the Rexx Parser: bin/ and its notices, and a manifest of the files
 call SysFileTree rexxParser"/bin/*", "rp.", "FSO"

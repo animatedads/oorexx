@@ -8,7 +8,9 @@
 
    OxGraph.attach({ sess, rx, setCode(code), status, actionsMenu(name, x, y, then) })
    OxGraph.show(code)       redraw from the code
-   OxGraph.highlight(node)  light a block (a trace step)               */
+   OxGraph.highlight(node)  light a block (a trace step)
+   await OxGraph.preview(code, box)   the code as a graph in box, to read only
+                            (the Ask panel's proposal): '' or the parse error */
 (function () {
   'use strict';
   const D = document;
@@ -208,5 +210,42 @@
       if (best) { const b = D.querySelector('#graph .gb[data-id="' + best.id + '"]'); if (b) b.classList.add('flag'); }
     }
   }
-  window.OxGraph = { attach, show, highlight, relabel, flagLines, nodes: () => nodes };
+  // a read-only graph of some code, in its own box: no drops, no edits
+  async function preview(code, box) {
+    box.textContent = '';
+    if (!cfg) return 'no session';
+    if (!String(code).trim()) return '';
+    let gg;
+    try { gg = await cfg.rx(() => cfg.sess.eval('use arg c; return .OodGraph~new(c)', code)); } catch (e) { return String(e && e.message || e); }
+    const err = String(await cfg.rx(() => gg.error()));
+    if (err) { box.appendChild(el('div', 'gperr', T('graph.noParse', err))); return err; }
+    const ns = [null];
+    for (const l of lines(await cfg.rx(() => gg.nodeLines()))) {
+      const [id, parent, slot, kind, l1, c1, l2, c2, label] = l.split('\t');
+      ns.push({ id: +id, parent: +parent, slot, kind, l1: +l1, l2: +l2, label });
+    }
+    const kidsOf = (parent, slot) => ns.filter((n) => n && n.parent === parent && n.slot === slot);
+    const slotEl = (parent, slot) => { const d = el('div', 'gslot'); for (const n of kidsOf(parent, slot)) d.appendChild(nodeEl(n)); return d; };
+    function nodeEl(n) {
+      const b = el('div', 'gb k-' + n.kind); b.title = explain(n.kind) || n.kind; b.dataset.l1 = n.l1; b.dataset.l2 = n.l2;
+      const head = el('div', 'gh'); head.append(el('span', 'gk', n.kind === 'assign' ? '=' : kindName(n.kind)), el('span', 'gl', n.label));
+      b.appendChild(head);
+      if (n.kind === 'if') {
+        const lanes = el('div', 'glanes');
+        const t = el('div', 'glane'); t.append(el('div', 'glt', 'then'), slotEl(n.id, 'then')); lanes.appendChild(t);
+        if (kidsOf(n.id, 'else').length) { const e2 = el('div', 'glane'); e2.append(el('div', 'glt', 'else'), slotEl(n.id, 'else')); lanes.appendChild(e2); }
+        b.appendChild(lanes);
+      } else if (n.kind === 'select') { b.append(slotEl(n.id, 'when'), slotEl(n.id, 'otherwise')); }
+      else if (n.kind === 'when') b.appendChild(slotEl(n.id, 'then'));
+      else if (['do', 'loop', 'otherwise'].includes(n.kind)) {
+        b.appendChild(slotEl(n.id, 'body'));
+        if (n.kind !== 'otherwise') b.appendChild(el('div', 'gend', 'end'));
+      }
+      return b;
+    }
+    box.appendChild(slotEl(0, 'body'));
+    return '';
+  }
+
+  window.OxGraph = { attach, show, highlight, relabel, flagLines, preview, nodes: () => nodes };
 })();

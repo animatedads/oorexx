@@ -32,11 +32,15 @@ call copy designerExamples"/../oodnls.js", "site/oodnls.js"
 call copy designerExamples"/../OodPlugins.cls", "site/OodPlugins.cls"
 call copy designerExamples"/../plugins.js", "site/plugins.js"
 call copy designerExamples"/../plugins.css", "site/plugins.css"
-call SysMkDir "site/plugins"
-call SysMkDir "site/plugins/bostoncrab"
-do f over .array~of("index.txt", "bostoncrab/BostonCrabPlugin.cls", "bostoncrab/PitfallChecker.cls")
-  call copy designerExamples"/../plugins/"f, "site/plugins/"f
+-- every plugin's files, the assist plugin's estate files with them
+plugFrom = designerExamples"/../plugins"
+call SysFileTree plugFrom"/*", "pf.", "FSO"
+do i = 1 to pf.0
+  rel = pf.i~substr(pf.i~pos("/plugins/") + 9)
+  call makeDirs "site/plugins/"rel~left(max(rel~lastPos("/") - 1, 0))
+  call copy pf.i, "site/plugins/"rel
 end
+say "build: plugins," pf.0 "files"
 call SysMkDir "site/catalogue"
 call copy "catalogue/alchemy.idx", "site/catalogue/alchemy.idx"
 call SysMkDir "site/examples"
@@ -44,6 +48,16 @@ call copy "examples/Person.cls", "site/examples/Person.cls"
 call copy designerExamples"/Calculator.rex", "site/examples/Calculator.rex"
 say "build: done"
 return 0
+
+makeDirs: procedure
+  use arg mdPath
+  mdSoFar = ""
+  do mdPart over mdPath~makeArray("/")
+    if mdSoFar == "" then mdSoFar = mdPart
+    else mdSoFar = mdSoFar"/"mdPart
+    call SysMkDir mdSoFar
+  end
+  return
 
 copy: procedure
   use arg cpFrom, cpTo

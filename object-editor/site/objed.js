@@ -43,13 +43,15 @@
         const r = await fetch('ood/' + f); if (r.ok) files['/home/rexx/' + f] = await r.text();
       }
       for (const f of ['OodNls.cls', 'OxUi.cls', 'OodUi.cls', 'OodPlugins.cls', 'ObjectEditor.cls', 'OodDesigner.cls', 'LibraryProviders.cls']) files['/home/rexx/' + f] = await (await fetch(f)).text();
-      st.sess = await st.rexx.start({ js: { page: true, worker: true }, files });
+      const rexxPath = await OodPluginsPage.rexxPath();     // where plugins' estate files go, before it starts
+      st.sess = await st.rexx.start({ js: { page: true, worker: true }, files, env: rexxPath ? { REXX_PATH: rexxPath } : {} });
       await st.sess.loadPackage('LibraryProviders.cls');   // requires ObjectEditor.cls and OodDesigner.cls
       await st.sess.loadPackage('OodPlugins.cls');         // the optional extras' host
       let chosen = ''; try { chosen = localStorage.getItem('oodDesigner.ui') || ''; } catch (e) { /* storage may be off */ }
       await loadUi(chosen || navigator.language || '');   // the designer's choice is the editor's too
       await OxLibraries.setup(st.sess);
-      await OodPluginsPage.setup(st.sess, { status, rx, onChange: () => diagnoseSoon(0) });
+      await OodPluginsPage.setup(st.sess, { status, rx, onChange: () => { diagnoseSoon(0); askButton(); sourceButton(); } });
+      await sourceButton();
       const first = $('example').value;
       if (first) await openUrl(first); else await openText('MyObject.cls', '');
       st.ready = true;                                  // (tests wait for st.ready)
@@ -216,11 +218,11 @@
   let dirty = false, timer = null;
   async function showCode() {
     const c = $('code');
-    if (!st.cur) { $('edTitle').textContent = T('ox.pickMethod'); c.value = ''; c.disabled = true; $('edState').textContent = ''; return; }
+    if (!st.cur) { $('edTitle').textContent = T('ox.pickMethod'); c.value = ''; c.disabled = true; $('edState').textContent = ''; askButton(); return; }
     $('edTitle').textContent = st.cls + (st.side === 'CLASS' ? ' class' : '') + ' ~' + st.cur.name;
     c.value = String(await rx(() => st.w.getBody(st.cls, st.cur.name, st.side)).catch(() => ''));
     c.disabled = false; dirty = false; state('', '');
-    diagnoseSoon(0);
+    diagnoseSoon(0); askButton();
   }
   function state(text, cls) { $('edState').textContent = text; $('edState').className = cls; }
   async function flushCode() {
@@ -347,6 +349,28 @@
     });
   }
   st.diagnoseNow = diagnoseNow;
+
+  // Repository…: shown when a source control plugin is on; the file is the class file
+  async function sourceButton() { $('btnScm').hidden = !(await OodPluginsPage.scmIds()).length; }
+  $('btnScm').addEventListener('click', () => OodPluginsPage.source({
+    name: () => st.fileName,
+    text: async () => { await flushCode(); return String(await rx(() => st.w.text())); },
+    open: async (name, text) => { await flushCode(); return openText(name, text); } }));
+
+  // Ask…: shown when a code assistance plugin is on and a method is open
+  async function askButton() { $('btnAsk').hidden = !st.cur || !(await OodPluginsPage.assistIds()).length; }
+  $('btnAsk').addEventListener('click', async () => {
+    if (!st.cur) return;
+    await flushCode();
+    const cls = st.cls, cur = st.cur, side = st.side;
+    const own = String(await rx(() => st.w.members(cls, side, 0)).catch(() => ''))
+      .split('\n').filter(Boolean).map((l) => l.split('\t')).map((f) => f[0] + ' (' + f[1].toLowerCase() + ')');
+    const context = () => ['An ooRexx class ' + cls + ', in ' + st.fileName + '.',
+      'Its ' + (side === 'CLASS' ? 'class' : 'instance') + ' members: ' + (own.join(', ') || '(none)'),
+      'The code is the ' + (side === 'CLASS' ? 'class ' : '') + 'method ' + cur.name + ' of ' + cls + '.'].join('\n');
+    OodPluginsPage.ask({ title: $('edTitle').textContent, code: () => $('code').value, context,
+      apply: async (text) => { if (st.cur !== cur) return; $('code').value = text; dirty = true; await flushCode(); } });
+  });
   $('code').addEventListener('input', () => diagnoseSoon());
 
   boot();

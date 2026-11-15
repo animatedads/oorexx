@@ -1,4 +1,4 @@
-# ooDialog Designer — v0.7.0
+# ooDialog Designer — v0.8.0
 
 Architecture: Tom Dyer. Code: Claude (Opus 5.5). README written by Claude (Opus 5.5).
 It runs on ooDialog/WASM v0.7.0 (code: Claude (Fable 5.2)) and on Josep Maria
@@ -182,10 +182,48 @@ one `kind` line; a new code-insertion action is one `action` line.
   name. Findings show under the code, with **Fix** where the plugin has
   one, and the graph marks their blocks. The Object Editor has the same
   panel and strip (`site/plugins.js`, shared).
-  First plugin, **Boston Crab** (`plugins/bostoncrab/`): Boston Crab's own
-  ooRexx pitfall checks, `RexxPitfallChecker` (oorexx_slam_bostoncrab v0.23,
-  `tests/PitfallChecker.cls`, copied into the site by the build, not into
-  this source), P1–P4, with the fix for P1 and P2.
+  The plugins:
+  - **Boston Crab** (`plugins/bostoncrab/`): Boston Crab's own ooRexx
+    pitfall checks, `RexxPitfallChecker` (oorexx_slam_bostoncrab v0.24,
+    `tests/PitfallChecker.cls`, copied into the site by the build, not into
+    this source), P1–P4, with the fix for P1 and P2.
+  - **Code assistance** (`plugins/assist/`, provides `assist`): **Ask…**
+    beside the code. Through the estate's own AI providers: Anthropic
+    (`AnthropicFetchMessageClient`, oorexx_ai_provider_anthropic v0.5,
+    Haiku 5.5 unless set) or any OpenAI-compatible endpoint
+    (`OpenAICompatFetchTransport`, openai_compat v0.6). The key is a secret
+    setting, handed to the estate's Secret Broker by
+    `plugins/common/OodBroker.cls` (`OodSecretsProvider`, the session secret
+    provider; a server-brokered provider can take its place behind
+    `SecretProviderBase`), and sent as a header from a variable for one
+    request. It never changes the code: the proposal is shown beside the
+    code, as a line diff or as **Graph** (both sides drawn as blocks by
+    `OxGraph.preview`, changed blocks marked), with its model and cost, and
+    **Apply** is enabled only when it compiles as a method body
+    (`.Method~new`), has no `::` line and passes Boston Crab.
+  - **Git** (`plugins/git/`, provides `scm`): **Repository…**. GitHub's REST
+    API from the page (contents and commits; token as a secret; a commit is
+    sent with the blob it was opened at, so GitHub refuses it if the branch
+    moved on), or the git command in a working copy outside a browser
+    (commit, optional push; git's own credentials).
+  - **Semantic Source Control** (`plugins/ssc/`, provides `scm`):
+    **Repository…** on an SSC store's MCP endpoint (`source.get_package`,
+    `source.objects_in`, `source.history`, `source.propose_edit`; bearer
+    session from `auth.authenticate`, whose challenge your local
+    authenticator signs). A commit cuts the file into its directives and
+    proposes a new edition of each changed class, method, attribute,
+    constant or routine against the revision it was opened at, for review;
+    a stale base is left to the store's conflict branch; a new or removed
+    piece is reported and not sent (`propose_edit` edits existing objects).
+    Tested against a stand-in written to dev29's `MCP_COMMANDS.md` and
+    `SemanticSourceMcpOperations`, not yet against a live store.
+
+  A plugin that calls out names, in `plugins/index.txt`, the estate folders
+  it needs on `REXX_PATH` (`paths =`); the page reads them before ooRexx
+  starts (`OodPluginsPage.rexxPath`), since ooRexx reads `REXX_PATH` only
+  then. The build lays the estate files out under `site/plugins/estate/`
+  as the estate does, following each plugin's `::requires`, and lists them
+  in its `files.txt`.
 - **Program:** shows the ooRexx that will be written. **Save .rex**
   downloads it. **▶ Run** runs it with ooDialog/WASM in the same page.
 
@@ -198,8 +236,16 @@ Needs Node 22 and `npm i oorexxwasm`. The `oorexxwasm-web-0.2.4` release must
 be unpacked somewhere, and ooDialog/WASM's `dist/` must be available. The
 browser tests also need Python Playwright with Chromium.
 
-    rexx tools/build.rex RUNTIME_DIR OODIALOG_WASM_DIST OBJECT_EDITOR_DIR REXX_PARSER_DIR BOSTONCRAB_DIR
+    rexx tools/build.rex RUNTIME_DIR OODIALOG_WASM_DIST OBJECT_EDITOR_DIR REXX_PARSER_DIR ESTATE_PACKAGES_DIR
     node site/serve.mjs site --port 8080
+
+`ESTATE_PACKAGES_DIR` holds the estate packages the plugins use, by their
+folder names: oorexx_slam_bostoncrab_v0.24, alchemy_objects_v0.8,
+oorexx_crypto_v0.1, oorexx_secret_broker_v0.2, oorexx_ai_access_v0.6,
+oorexx_ai_provider_anthropic_v0.5, oorexx_ai_provider_openai_compat_v0.6.
+`tools/make.sh` and `tools/test.sh` run the build and `tests/run_all.rex`
+with one machine's paths: a shell line only because `REXX_PATH` must be set
+before ooRexx starts.
 
 Then open `http://localhost:8080/designer.html`.
 
@@ -214,9 +260,15 @@ All the ooRexx tests, each in its own process, with a running log (how
 Alchemy Autobuild runs them; `vendor/` holds the Rexx Parser in the
 `packages/oorexx_oodialog_designer_v0.7` copy):
 
-    REXX_PATH=src:tests:vendor rexx tests/run_all.rex .
+    REXX_PATH=src:tests:vendor ESTATE_PACKAGES=ALCHEMY/packages rexx tests/run_all.rex .
 
-## State (2026-11-15, v0.7.0)
+With `ESTATE_PACKAGES` set, `run_all.rex` lays the plugins out with the
+estate files they use (`tools/plugins.rex`) for t06–t09; without it, it uses
+a built `site/plugins`, or skips them and says so. t07–t09 start their own
+stand-in servers with node; under native ooRexx (no ADDRESS FETCH) their
+network checks say SKIP, and t08's git-command checks still run.
+
+## State (2026-11-15, v0.8.0)
 
 - `tests/t01_model.rex`: 69 of 69 checks pass under ooRexx/WASM in Node. They
   cover generation, a byte-identical round trip through the `::RESOURCE`,
@@ -250,13 +302,32 @@ Alchemy Autobuild runs them; `vendor/` holds the Rexx Parser in the
   rule and fix, the fixes, a fix that no longer applies, messages and the
   catalogue in German, secrets held and only their names shown, switching
   off. `REXX_PATH` needs Boston Crab's `tests/` for `PitfallChecker.cls`.
+- `tests/t07_assist.rex`: 31 of 31 checks pass, against a stand-in for both
+  providers (`tests/fixtures/assist_mock_server.mjs`, started and stopped by
+  the test): no key, no proposal; the key shown only as "(set)", its name
+  only in the store; Anthropic and OpenAI proposals with model and cost;
+  a P1 pitfall, a body that does not compile and a `::` line refused; prose
+  with no code block; the key sent as `x-api-key` and as a bearer, never
+  with the other provider's request; a wrong key; German notes.
+- `tests/t08_git.rex`: 31 of 31 checks pass: GitHub's API against a stand-in
+  (`github_mock_server.mjs`): list, open, status, commit, a commit from a
+  blob the branch moved past refused, a new file, a message that is a
+  number sent as text, history and an earlier version, the bearer and API
+  version; and the git command on a repository made by the test (quotes in
+  the message, nothing to commit, a moved branch, German).
+- `tests/t09_ssc.rex`: 24 of 24 checks pass against a store stand-in
+  (`ssc_mock_server.mjs`): no endpoint, no object, no session; the package
+  and its source unit; one changed method proposed, a second edit built on
+  the first; a new and a removed method reported and not sent; the unit
+  moved on; a stale base answered with the store's conflict branch; history
+  and an earlier revision; the bearer and `Mcp-Name` on each call; German.
 - `tests/t05_fresh.rex`: the model used with nothing set up, as a program
   outside the page uses it: the first refusal comes in German under
   `LANG=de_DE.UTF-8`. (It found an `::attribute` never set answering its own
   name, not `.nil`. The refusal checks of t01–t03 now also demand Error
   93.900 with the designer's message; before, any error passed. With the
   bug put back they fail 19 times.)
-- `tools/dztest.py`: 13 of 13 scenarios pass in headless Chromium:
+- `tools/dztest.py`: 15 of 15 scenarios pass in headless Chromium:
   1. **hand:** a dialog built with the mouse (drop, rename, styles,
      variable, drag-an-action, move and resize), then run. The event code sees
      the variable and the field, and INIT's text survives `execute`.
@@ -301,6 +372,15 @@ Alchemy Autobuild runs them; `vendor/` holds the Rexx Parser in the
      typed into an event is found, its graph block flagged, fixed with Fix
      and saved; still on after a reload (a P2 found); the message in
      German; switched off.
+  14. **assist:** code assistance switched on, the stand-in's address and a
+     key given (the key nowhere in the page or its storage afterwards);
+     **Ask…** on an event: a proposal that passes, as a line diff and as
+     graphs, applied to the event and the program; a pitfall proposal that
+     cannot be applied; the panel and its reasons in German.
+  15. **source:** the git plugin over a GitHub stand-in: the design committed
+     as a new file, changed (the change shown) and committed again, its
+     history, the first version opened back; a commit after someone else's
+     refused.
 - `tests/gen/Calculator.rex`, `Contacts.rex` and `Gadgets.rex` (generated)
   also pass the ooDialog/WASM harness, `oodtest.py`, with their `.steps`
   files.
@@ -318,10 +398,8 @@ Alchemy Autobuild runs them; `vendor/` holds the Rexx Parser in the
   `executeAsync` failures that makes 24 of 31.
 - Not yet run on Windows: the Windows-1252 conversion assumes the ANSI
   ooDialog of the 4.2 line; the ContactsDE checks confirm it or not.
-- Pitfall lint (Boston Crab `rexx_pitfalls.rex`): clean on the code. It
-  reports three P3 "names differing only in case" in `OodUi.cls` that are
-  words of the `::RESOURCE` text ("Edit"/"EDIT", "Leave"/"LEAVE"): the lint
-  reads resource text as code.
+- Pitfall lint (Boston Crab v0.24 `rexx_pitfalls.rex`): clean on the code,
+  the plugins and the tests.
 - Not yet run on Windows ooDialog. The generated code uses only documented
   upstream API (`createXxx`, `connectXxxEvent`, `newXxx`, `setData`/`getData`,
   `isDialogActive`, `start`, `SysSleep`, `UserMenuBar`, `insertColumn`,

@@ -249,6 +249,14 @@
   main = oodAt2(e, "MAIN")
   files = oodAt2(e, "FILES")
   if files == "" then files = main
+  -- files = @list.txt: the files are listed in that file, one a line
+  if files~left(1) == "@" then do
+    list = ""
+    do l over self~readText(files~substr(2))~changeStr("0d0a"x, "0a"x)~makeArray("0a"x)
+      if l~strip \== "" then list = list l~strip
+    end
+    files = list~strip
+  end
   if base~left(4)~caselessEquals("http") then do
     -- over http(s): its files written beside each other, then loaded
     local = "/home/rexx/plugins"
@@ -323,6 +331,56 @@
     out~append(f~asLine)
   end
   return out~makeString("L", "0a"x)
+
+-- a proposal from an assist plugin: lines "STATUS ok|refused|failed", "MODEL m",
+-- "COST c", "NOTE text" (any number), then a line "CODE" and the code
+::method assist
+  use strict arg id, task, code, context = ""
+  p = self~plugin(id)
+  if p~provides~wordpos("assist") = 0 then raise syntax 93.900 array(oodT("plug.err.notAssist", id))
+  r = p~propose(task, code, context)
+  out = .array~new
+  out~append("STATUS" r["STATUS"])
+  out~append("MODEL" r["MODEL"])
+  out~append("COST" r["COST"])
+  do n over r["NOTES"]
+    out~append("NOTE" n)
+  end
+  out~append("CODE")
+  out~append(r["CODE"])
+  return out~makeString("L", "0a"x)
+
+-- source control, from a plugin that provides scm.  op: LIST (path TAB note
+-- lines), OPEN path (REF line, TEXT line, the text), STATUS path ref (STATE
+-- line, NOTE lines), COMMIT path text message ref (ref: as opened, "" for a
+-- new file; STATUS, REF, NOTE lines),
+-- HISTORY path (ref TAB date TAB who TAB message lines), AT path ref (the
+-- text).  What fails is refused, 93.900, with the plugin's reason.
+::method scm
+  use strict arg id, op, a1 = "", a2 = "", a3 = "", a4 = ""
+  p = self~plugin(id)
+  if p~provides~wordpos("scm") = 0 then raise syntax 93.900 array(oodT("plug.err.notScm", id))
+  select
+    when op~caselessEquals("LIST") then return p~scmList
+    when op~caselessEquals("OPEN") then return p~scmOpen(a1)
+    when op~caselessEquals("STATUS") then return p~scmStatus(a1, a2)
+    when op~caselessEquals("COMMIT") then return p~scmCommit(a1, a2, a3, a4)
+    when op~caselessEquals("HISTORY") then return p~scmHistory(a1)
+    when op~caselessEquals("AT") then return p~scmAt(a1, a2)
+    otherwise raise syntax 93.900 array(oodT("plug.err.scmOp", op))
+  end
+
+-- the ids of the enabled plugins that provide a word ("assist", "scm")
+::method enabledFor
+  expose order loaded
+  use strict arg word
+  out = ""
+  do id over order
+    p = loaded[id~upper]
+    if p == .nil then iterate
+    if p~provides~wordpos(word) > 0 then out = out id
+  end
+  return out~strip
 
 -- the text with one finding of one plugin fixed
 ::method fix

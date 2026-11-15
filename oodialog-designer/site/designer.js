@@ -117,15 +117,17 @@
       // Josep Maria Blasco's Rexx Parser, which OodGraph.cls parses event code with
       for (const rel of (await (await fetch('rexx-parser/manifest.txt')).text()).split('\n').map((l) => l.trim()).filter(Boolean))
         files['/home/rexx/rexx-parser/' + rel] = await (await fetch('rexx-parser/' + rel)).text();
-      st.sess = await st.rexx.start({ js: { page: true, worker: true }, files });
+      const rexxPath = await OodPluginsPage.rexxPath();     // where plugins' estate files go, before it starts
+      st.sess = await st.rexx.start({ js: { page: true, worker: true }, files, env: rexxPath ? { REXX_PATH: rexxPath } : {} });
       await st.sess.loadPackage('LibraryProviders.cls');   // with OodDesigner.cls and ObjectEditor.cls
       await st.sess.loadPackage('OodGraph.cls');           // with the Rexx Parser
       await st.sess.loadPackage('OodPlugins.cls');         // the optional extras' host
       let chosen = ''; try { chosen = localStorage.getItem('oodDesigner.ui') || ''; } catch (e) { /* storage may be off */ }
       await loadUi(chosen || navigator.language || '');
       await OxLibraries.setup(st.sess);
-      await OodPluginsPage.setup(st.sess, { status, rx, onChange: () => diagnoseSoon(0) });   // plugins switched on before
+      await OodPluginsPage.setup(st.sess, { status, rx, onChange: () => { diagnoseSoon(0); askButton(); sourceButton(); } });   // plugins switched on before
       OxGraph.attach({ sess: st.sess, rx, status, setCode, actionsMenu });
+      await sourceButton();
       await loadCatalog();
       await newDesign();
       status(T('st.ready')); st.ready = true;             // (tests wait for st.ready)
@@ -617,7 +619,7 @@
   async function showCode() {
     await flushCode();
     const code = $('code');
-    if (!st.cur) { $('codeTitle').textContent = T('code.pick'); code.value = ''; code.disabled = true; $('threadBox').hidden = true; OxGraph.show(''); return; }
+    if (!st.cur) { $('codeTitle').textContent = T('code.pick'); code.value = ''; code.disabled = true; $('threadBox').hidden = true; OxGraph.show(''); askButton(); return; }
     if (st.cur.type === 'event') {
       const { ctl, ev } = st.cur;
       const args = String(await rx(() => st.d.eventArgs(ctl, ev)).catch(() => ''));
@@ -634,7 +636,7 @@
     }
     code.disabled = false; codeDirty = false;
     await OxGraph.show(code.value);
-    diagnoseSoon(0);
+    diagnoseSoon(0); askButton();
     traceShowStep();
   }
   function methodName(ctl, ev) {
@@ -911,6 +913,34 @@
     OxGraph.flagLines(found.map((f) => f.line));
   }
   st.diagnoseNow = diagnoseNow;
+
+  // Repository…: shown when a source control plugin is on; the file is the program
+  async function sourceButton() { $('btnScm').hidden = !(await OodPluginsPage.scmIds()).length; }
+  $('btnScm').addEventListener('click', () => OodPluginsPage.source({
+    name: () => st.snap.form.name + '.rex', text: program, open: (name, text) => openSource(text, name) }));
+  st.sourceButton = sourceButton;
+
+  // Ask…: shown when a code assistance plugin is on and there is code to ask about
+  async function askButton() { $('btnAsk').hidden = !st.cur || !(await OodPluginsPage.assistIds()).length; }
+  $('btnAsk').addEventListener('click', async () => {
+    if (!st.cur) return;
+    await flushCode();
+    OodPluginsPage.ask({ title: $('codeTitle').textContent, code: () => $('code').value, context: assistContext,
+      apply: async (text) => { await setCode(text); } });
+  });
+  // what the model is told the code is in: the dialog, its controls, the method
+  function assistContext() {
+    const f = st.snap.form, cur = st.cur, out = [];
+    out.push('An ooDialog UserDialog ' + (f.name || '') + (f.title ? ', titled "' + plainText(f.title) + '"' : '') + '.');
+    out.push('Its controls, each a method of self (self~name):');
+    for (const c of st.snap.controls) out.push('  ' + c.name + ' (' + c.type + ')' + (c.text ? ' "' + plainText(c.text) + '"' : ''));
+    if (st.snap.vars.length) out.push('Its object variables: ' + st.snap.vars.map((v) => v.name).join(' '));
+    if (st.snap.methods.length) out.push('Its other methods: ' + st.snap.methods.join(' '));
+    if (cur.type === 'event') out.push('The code is the method ' + methodName(cur.ctl, cur.ev) + ', run on ' + cur.ev + ' of ' + cur.ctl + '.');
+    else out.push('The code is the method ' + cur.name + '.');
+    out.push('UI texts go through self~nls("key"), when the design has strings: ' + (st.snap.strings.join(' ') || '(none)'));
+    return out.join('\n');
+  }
   $('code').addEventListener('input', () => diagnoseSoon());
 
   /* ---- the designer's own language --------------------------------------------- */

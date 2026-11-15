@@ -18,6 +18,7 @@
   <button id="btnSave" title="Download the file" data-nls="ox.save" data-nls-title="ox.save.tip">Save</button>
   <button id="btnSource" title="Show the whole file" data-nls="ox.source" data-nls-title="ox.source.tip">Source</button>
   <button id="btnPlugins" data-nls="plug.btn" data-nls-title="plug.btn.tip">Plugins…</button>
+  <button id="btnScm" hidden data-nls="scm.btn" data-nls-title="scm.btn.tip">Repository…</button>
   <button id="btnLibraries" title="Connect to a source of ooRexx libraries and use one" data-nls="ox.libraries" data-nls-title="ox.libraries.tip">Libraries…</button>
   <label id="uiLangBox" title="The editor's own language" data-nls-title="ox.lang.tip"><span aria-hidden="true">🌐</span> <select id="uiLang"></select></label>
   <span id="status" role="status">Loading ooRexx…</span>
@@ -48,7 +49,7 @@
   </section>
 </main>
 <section id="editor">
-  <div id="edHead"><span id="edTitle" data-nls="ox.pickMethod">Pick a method</span><span id="edState"></span></div>
+  <div id="edHead"><span id="edTitle" data-nls="ox.pickMethod">Pick a method</span><span id="edState"></span><button id="btnAsk" hidden data-nls="ask.btn" data-nls-title="ask.btn.tip">Ask…</button></div>
   <textarea id="code" spellcheck="false" disabled data-nls-placeholder="ox.code.placeholder" placeholder="The method's body.  ~ after self, .Name, a variable or a string lists what it answers; . lists the classes; Ctrl+Space anywhere."></textarea>
   <div id="diag" hidden role="status"></div>
 </section>

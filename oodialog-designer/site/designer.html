@@ -22,6 +22,7 @@
   <button id="btnProgram" data-nls="btn.program" data-nls-title="btn.program.tip" title="Show the ooRexx this design writes">Program</button>
   <button id="btnLibraries" data-nls="btn.libraries" data-nls-title="btn.libraries.tip" title="Connect to a source of ooRexx libraries and use one">Libraries…</button>
   <button id="btnPlugins" data-nls="plug.btn" data-nls-title="plug.btn.tip">Plugins…</button>
+  <button id="btnScm" hidden data-nls="scm.btn" data-nls-title="scm.btn.tip">Repository…</button>
   <button id="btnStrings" data-nls="btn.strings" data-nls-title="btn.strings.tip" title="The texts in each language: ::RESOURCE strings.&lt;language&gt;">Strings…</button>
   <label id="langBox" hidden data-nls-title="lang.tip" title="Show the design, and run it, in this language"><span data-nls="lang.label">Language</span> <select id="lang"></select></label>
   <button id="btnTrace" data-nls="btn.trace" data-nls-title="btn.trace.tip" title="Run it, recording each step of the event code with its variables">▶ Trace</button>
@@ -51,6 +52,7 @@
     <div id="codeHead"><span id="codeTitle" data-nls="code.pick">Pick an event or a method</span>
       <label id="threadBox" hidden><span data-nls="thread.label">Runs on</span> <select id="thread"><option value="ui" data-nls="thread.ui">the dialog's thread</option><option value="background" data-nls="thread.bg">its own thread (background)</option></select></label>
       <button id="btnInsert" data-nls="btn.insert" data-nls-title="btn.insert.tip" title="Insert an action on a control">Insert…</button>
+      <button id="btnAsk" hidden data-nls="ask.btn" data-nls-title="ask.btn.tip">Ask…</button>
       <span id="views" role="group" aria-label="Show the code as" data-nls-aria="view.aria">
         <button data-view="code" data-nls="view.code">Code</button><button data-view="graph" data-nls="view.graph">Graph</button><button data-view="both" class="on" data-nls="view.both">Both</button></span>
     </div>
