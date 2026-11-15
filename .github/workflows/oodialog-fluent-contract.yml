@@ -112,7 +112,10 @@ jobs:
           $archive = Join-Path $env:RUNNER_TEMP 'oorexx-5.2.0-portable.zip'
           $unpack = Join-Path $env:RUNNER_TEMP 'oorexx-portable'
           Write-Output 'REXX_PROBE_STAGE=DOWNLOAD_PORTABLE_5_2'
-          Invoke-WebRequest -Uri $url -OutFile $archive -MaximumRedirection 10 -TimeoutSec 100
+          # SourceForge documents command-line retrieval with curl -L;
+          # the PowerShell WebRequest user agent receives HTML on this runner.
+          & curl.exe --fail --location --retry 2 --max-time 100 --output $archive $url
+          if ($LASTEXITCODE -ne 0) { throw "SourceForge curl download failed ($LASTEXITCODE)" }
           $bytes = [IO.File]::ReadAllBytes($archive)
           $signature = [Convert]::ToHexString($bytes[0..([Math]::Min(3, $bytes.Length - 1))])
           Write-Output "REXX_DOWNLOAD_BYTES=$($bytes.Length) SIGNATURE=$signature"
