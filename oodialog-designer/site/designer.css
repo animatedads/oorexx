@@ -11,7 +11,15 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#56606b;ma
 .hint{font-size:11px;color:#6b7580;text-transform:none;letter-spacing:0}
 #bar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:6px 10px;background:#1f3f66;color:#fff}
 #bar strong{margin-right:8px}
-#status{margin-left:auto;font-size:12px;opacity:.95;max-width:48ch;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* the language beside the name, where it stays however many buttons come
+   (it used to be pushed down alone by a new button or a longer German
+   label); the status on its own line below the buttons */
+#bar > button{padding:3px 7px}
+#bar{gap:4px}
+#example{max-width:170px}
+#bar strong{order:-2}
+#uiLangBox{order:-1;margin-right:6px}
+#status{order:99;flex-basis:100%;text-align:right;font-size:12px;opacity:.95;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #status.err{color:#ffd0d0}
 #work{display:grid;grid-template-columns:150px 1fr 270px;gap:0;flex:1;min-height:340px}
 #palette,#side{background:#f7f9fb;padding:4px 10px;overflow:auto;border-right:1px solid #d3d9e0}
