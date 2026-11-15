@@ -75,10 +75,11 @@ int wmain(int argc, wchar_t **argv) {
     const bool infoOnly = wcscmp(mode, L"info") == 0;
     const bool numberOnly = wcscmp(mode, L"number") == 0;
     const bool noNumber = wcscmp(mode, L"no-number") == 0;
-    if (!(all || empty || buttonOnly || toggleOnly || infoOnly || numberOnly || noNumber)) return 2;
+    const bool guard = wcscmp(mode, L"guard") == 0;
+    if (!(all || empty || buttonOnly || toggleOnly || infoOnly || numberOnly || noNumber || guard)) return 2;
     fprintf(stderr, "STAGE MODE_%s\n", all ? "all" : empty ? "empty" :
             buttonOnly ? "button" : toggleOnly ? "toggle" : infoOnly ? "info" :
-            numberOnly ? "number" : "no-number");
+            numberOnly ? "number" : noNumber ? "no-number" : "guard");
     fflush(stderr);
     const bool wantButton = all || buttonOnly || noNumber;
     const bool wantToggle = all || toggleOnly || noNumber;
@@ -130,6 +131,16 @@ int wmain(int argc, wchar_t **argv) {
                         wcscmp(preUnload, L"unload-pump") == 0;
     stage("CREATE_CONTROLS_BEGIN");
     if (FAILED(result = oodf_win_move(host, 4, 4, 600, 400))) goto cleanup;
+    if (guard) {
+        uint64_t denied = 0;
+        const HRESULT infoDenied = oodf_win_add(host, 4103, L"InfoBar", L"Blocked", &denied);
+        const HRESULT numberDenied = oodf_win_add(host, 4104, L"NumberBox", L"Blocked", &denied);
+        if (infoDenied != E_NOTIMPL || numberDenied != E_NOTIMPL || denied != 0) {
+            result = E_UNEXPECTED;
+            goto cleanup;
+        }
+        stage("UNQUALIFIED_CONTROLS_BLOCKED");
+    }
     if (wantButton) {
         if (FAILED(result = oodf_win_add_authored(host, 4101, L"Button", L"Hello ooRexx", 71001, &button))) goto cleanup;
         if (button != 71001) { result = E_UNEXPECTED; goto cleanup; }

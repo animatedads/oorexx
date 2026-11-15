@@ -1,10 +1,10 @@
 # Windows native provider and ooRexx bridge — qualification candidate
 
-Architecture: Tom Dyer. Code: ChatGPT (GPT-6). Status: **prior Windows DLL BUILD_PASS; new ooRexx bridge pending Windows CI; runtime not yet qualified**.
+Architecture: Tom Dyer. Code: ChatGPT (GPT-6). Status: **Windows DLL and native ooRexx bridge BUILD_PASS; limited native HWND runtime PASS; real ooDialog runtime pending**.
 
 `OodFluentIsland.cpp` is a native C++/WinRT DLL candidate targeting Microsoft Windows App SDK **2.6.5 stable**. It provides an HWND-hosted `DesktopWindowXamlSource`, creates genuine WinUI 3 `Button`, `ToggleSwitch`, `InfoBar` and `NumberBox` controls, and forwards their input to the native-independent `OodfSession` event queue. No Rexx handler runs inside a WinUI callback.
 
-Windows CI run [43719132986](https://github.com/animatedads/oorexx/actions/runs/43719132986) built the earlier x64 DLL with 0 warnings and 0 errors. The current increment adds `OodFluentRexx.cpp`, `rexx/OodFluent.cls`, and `OodFluentSmoke.cpp`; those additions have not yet qualified as a live ooDialog integration. Resource loading/geometry parity, keyboard focus handoff, UI Automation verification, and per-control complete properties remain open. An MSBuild compile is evidence of source compatibility only, not functional or visual qualification.
+Windows CI [43724613822](https://github.com/animatedads/oorexx/actions/runs/43724613822) built the x64 DLL, native ooRexx package and HWND smoke exercise. The independent C++ model passed on both Windows and Ubuntu. A Win32 HWND plus XAML island and `Button` and `ToggleSwitch` each opened, applied properties, pumped native messages and closed with process exit 0. Both `InfoBar` and `NumberBox` can be created and updated with a diagnostic opt-in, but each independently crashes when `DesktopWindowXamlSource.Close()` executes. **Both are rejected with `E_NOTIMPL` by default** while this is unresolved; set `OODF_ALLOW_UNQUALIFIED_NATIVE=1` only in isolated crash probes. These additions have not yet qualified as a live ooDialog integration. Resource loading/geometry parity, keyboard focus handoff, UI Automation verification, and per-control complete properties remain open.
 
 ## Build
 
@@ -29,7 +29,8 @@ fluent~move(8, 8, 480, 260)
 /* Optional third argument is an authored occurrence UID from the Designer. */
 save = fluent~newButton(1001, 'Save', 71001)
 save~connectEvent('click', 'onFluentSave')
-status = fluent~newInfoBar(1002, 'Ready')
+mode = fluent~newToggleSwitch(1002, 'Dark mode')
+mode~setOn(.true)
 /* Called periodically from the ooDialog UI-thread's event dispatch: */
 fluent~dispatchPending
 /* In the dialog teardown method, on the same thread: */
@@ -42,7 +43,7 @@ This is an **explicit-pump preview**, not automatic ooDialog `WM_NOTIFY` routing
 
 `OodFluentSmoke.exe` can attempt a real HWND + island lifecycle in an interactive desktop session and return a nonzero exit code on failure. GitHub hosted Windows runners may lack a usable interactive desktop; CI deliberately records the runtime result separately from compilation and preserves its diagnostic log. A green workflow alone **does not prove** a live ooDialog run.
 
-CI run 43722647566 first demonstrated executable entry, `OodfSession` opening, a real HWND and entry to `oodf_win_open`. The provider returned `0x80670016` during runtime bootstrap (a Windows App Runtime/DDLM package resolution error), rather than hanging before `main`. CI now attempts to install Microsoft's signed, version-matched Windows App Runtime 2.6.5 x64 installer on the *ephemeral Windows runner* before probing the island. A successful CI installation is not a user-machine deployment claim; UI/event parity still requires a real ooDialog process.
+CI run 43722647566 first demonstrated executable entry, `OodfSession` opening, a real HWND and entry to `oodf_win_open`. The provider returned `0x80670016` until the Microsoft-signed Windows App Runtime 2.6.5 x64 installer was applied to the ephemeral runner. That install now succeeds. CI run 43724613822 isolated the remaining crash: `empty`, `button`, `toggle` exit 0; `info`, `number`, `no-number`, `all` exit `0xC0000005` during island close. Retaining the complex controls through `Close()` or clearing focus and closing InfoBar first does not resolve it. A Windows minidump analysed with Microsoft's installed `cdb.exe` shows a null pointer inside `Microsoft_UI_Xaml!Microsoft::WRL::ComPtr<IContentIsland>::As<IContentIslandExperimental>`, reached from `DirectUI::XamlIsland::Close+0x195` and `DesktopWindowXamlSource::Close+0x102`. CI run [43725003804](https://github.com/animatedads/oorexx/actions/runs/43725003804) shows explicitly removing the complex templated controls before closing, with or without another 40 message-pump cycles, also fails. This is a reproducible native Windows App SDK shutdown fault in this host setup, not proof of any particular root cause in the Microsoft runtime. The provider now blocks these two known-crashing paths by default. A successful CI installation or HWND smoke is not a user-machine deployment or ooDialog event-parity claim.
 
 ## API and responsibility
 
@@ -52,7 +53,7 @@ The API currently supports only a tiny, explicitly checked property subset. It d
 
 ### Gates still open
 
-- Windows CI native DLL build success.
+- Windows CI native DLL build success (achieved); complex-control shutdown safety (open).
 - Real Windows desktop `UserDialog` host attaches, shows all four controls, routes events to Rexx and exits without leaks. The smoke harness is native Win32, not an ooDialog process.
 - Focus bridge (`Tab`, Shift+Tab, accelerators), scaling/DPI, resize, recreation and modal lifecycle.
 - Dispatcher queue shutdown ownership and COM apartment teardown for repeated multi-dialog use.

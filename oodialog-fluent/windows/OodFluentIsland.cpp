@@ -213,6 +213,16 @@ static HRESULT oodf_win_add_impl(OodfWinHost *host, int64_t resourceId,
         const auto label = winrt::hstring(caption);
         if (type != "Button" && type != "ToggleSwitch" &&
             type != "InfoBar" && type != "NumberBox") winrt::throw_hresult(E_NOTIMPL);
+        // Both complex templates currently trigger an access violation in
+        // Windows App SDK 2.6.5 during DesktopWindowXamlSource.Close, even
+        // after removal and dispatcher settling (CI run 43725003804).
+        // Do not expose known-crashing paths to ordinary ooDialog callers.
+        if (type == "InfoBar" || type == "NumberBox") {
+            char optIn[2]{};
+            if (GetEnvironmentVariableA("OODF_ALLOW_UNQUALIFIED_NATIVE", optIn,
+                                       sizeof(optIn)) != 1 || optIn[0] != '1')
+                winrt::throw_hresult(E_NOTIMPL);
+        }
         uint64_t id = 0;
         auto created = authored ? oodf_create_authored(host->model, resourceId, type.c_str(), authoredUid, &id)
                                : oodf_create(host->model, resourceId, type.c_str(), &id);

@@ -40,7 +40,6 @@ jobs:
         run: msbuild oodialog-fluent/windows/OodFluentSmoke.vcxproj -p:Configuration=Release -p:Platform=x64 -m
       - name: Install pinned Microsoft Windows App Runtime on ephemeral runner
         shell: pwsh
-        continue-on-error: true
         timeout-minutes: 3
         run: |
           $installer = Join-Path $env:RUNNER_TEMP "WindowsAppRuntimeInstall-2.6.5-x64.exe"
@@ -52,26 +51,27 @@ jobs:
           $process = Start-Process -FilePath $installer -ArgumentList '--quiet' -PassThru -Wait
           Write-Output "Windows App SDK 2.6.5 runtime installer exit=$($process.ExitCode)"
           if ($process.ExitCode -ne 0) { throw "Windows App Runtime prerequisite installation failed" }
-      - name: Attempt Windows host runtime exercise
+      - name: Qualify supported HWND controls and probe unsafe templates
         shell: pwsh
         timeout-minutes: 2
-        continue-on-error: true
         run: |
           $binary = "oodialog-fluent/windows/x64/Release"
           $env:PATH = "$(Resolve-Path $binary);$env:PATH"
           $env:OODF_LIFECYCLE_TRACE = "1"
           $catalogue = (Resolve-Path "oodialog-fluent/catalogue/controls.tsv").Path
           $results = @()
-          $failureCount = 0
+          $supportedFailures = 0
+          $diagnosticFailures = 0
+          # Exhaustive teardown experiments are preserved in run 43725003804.
+          # Keep recurring CI bounded: four supported modes, three regressions.
           $cases = @('empty:baseline', 'button:baseline', 'toggle:baseline',
-                     'info:baseline', 'number:baseline', 'no-number:baseline', 'all:baseline',
-                     'info:retain', 'number:retain', 'all:retain',
-                     'info:quiesce', 'number:quiesce', 'all:quiesce',
-                     'info:unload', 'number:unload', 'all:unload',
-                     'info:unload-pump', 'number:unload-pump', 'all:unload-pump')
+                     'guard:default', 'info:baseline', 'number:baseline', 'all:baseline')
           foreach ($case in $cases) {
             $mode, $experiment = $case.Split(':')
+            $supported = $mode -in @('empty', 'button', 'toggle', 'guard')
             $env:OODF_SMOKE_MODE = $mode
+            if ($mode -eq 'guard') { $env:OODF_ALLOW_UNQUALIFIED_NATIVE = '0' }
+            else { $env:OODF_ALLOW_UNQUALIFIED_NATIVE = '1' }
             if ($experiment -in @('retain', 'quiesce')) { $env:OODF_CLOSE_EXPERIMENT = $experiment }
             else { $env:OODF_CLOSE_EXPERIMENT = 'baseline' }
             $env:OODF_PREUNLOAD = $experiment
@@ -82,18 +82,21 @@ jobs:
             if (-not $process.WaitForExit(30000)) {
               Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
               $results += "MODE $case RUNTIME_TIMEOUT after 30 seconds"
-              $failureCount++
+              if ($supported) { $supportedFailures++ } else { $diagnosticFailures++ }
               continue
             }
             $process.Refresh()
             $results += "MODE $case exit=$($process.ExitCode)"
             $results += (Get-Content $stdout -Raw)
             $results += (Get-Content $stderr -Raw)
-            if ($process.ExitCode -ne 0) { $failureCount++ }
+            if ($process.ExitCode -ne 0) {
+              if ($supported) { $supportedFailures++ } else { $diagnosticFailures++ }
+            }
           }
           $results | Set-Content "$binary/runtime-smoke.txt"
           $results | ForEach-Object { Write-Output $_ }
-          if ($failureCount -ne 0) { throw "$failureCount Windows runtime mode(s) not qualified" }
+          Write-Output "SUPPORTED_RUNTIME_FAILURES=$supportedFailures DIAGNOSTIC_UNQUALIFIED_FAILURES=$diagnosticFailures"
+          if ($supportedFailures -ne 0) { throw "$supportedFailures supported Windows runtime case(s) failed" }
       - name: Inspect Windows crash dump with installed debugger
         if: always()
         continue-on-error: true

@@ -2,7 +2,7 @@
 
 Architecture: Tom Dyer. Code: ChatGPT (GPT-6).
 
-Status: **v0.2 bridge candidate, prior Windows native BUILD_PASS, no runtime qualification**. No control is yet claimed to render in a real Windows ooDialog process. The C++ model has local and Windows/Linux CI test evidence; the initial WinUI 3 provider compiled as a native Windows DLL. The new ooRexx native package/proxy and Win32 runtime host harness require CI compilation and a real ooDialog demonstration.
+Status: **v0.2 bridge candidate, Windows native BUILD_PASS and limited HWND runtime PASS, no ooDialog runtime qualification**. The C++ model passes on Windows/Linux, and the WinUI 3 provider and native ooRexx package compile on Windows. The separate native HWND smoke closes cleanly with an empty island, Button, or ToggleSwitch. InfoBar and NumberBox each trigger a WinUI 3 access violation when closing the island; a full hosted ooDialog program has not been run.
 
 ## Objective
 
@@ -21,7 +21,7 @@ The extension is deliberately distinct from:
 | --- | --- | --- |
 | 83-control and pattern inventory | Catalogue and automated validation | Compare every entry with current Microsoft WinUI 3 Gallery |
 | Resource occurrence identity, proxy properties, event routing and lifecycle | Native-independent C++ core and C ABI, executable tests | Bind to ooRexx objects and WinUI host |
-| Windows provider | Windows App SDK 2.6.5 DLL BUILD_PASS (GitHub run 43718942362, 0 warnings/0 errors) for Button, ToggleSwitch, InfoBar and NumberBox | Run inside real ooDialog; focus/keyboard and UI-thread tests |
+| Windows provider | Windows App SDK 2.6.5 DLL/ooRexx native-package BUILD_PASS; HWND runtime PASS for empty/`Button`/`ToggleSwitch` cases ([run 43724613822](https://github.com/animatedads/oorexx/actions/runs/43724613822)) | Fix `InfoBar`/`NumberBox` island shutdown crash, then run inside real ooDialog; focus/keyboard and UI-thread tests |
 | ooDialog integration | `rexx/OodFluent.cls` proxy and native package added, not yet run in ooDialog | Test `::requires`-loading, native package linking, `UserDialog`/`ResDialog`/`RcDialog` message pump and UI thread compatibility |
 | Full coverage | Classification for stable, optional and unsupported controls | Each control must pass functional and visual Windows tests |
 
@@ -35,13 +35,15 @@ host = .OodFluentHost~attach(self, 'C:\\catalogue\\controls.tsv')
 mode = host~newToggleSwitch(2401, 'Night mode')
 mode~setOn(.true)
 mode~connectEvent('toggled', 'onNightModeChanged')
-bar = host~newInfoBar(2402, 'Saved')
+save = host~newButton(2402, 'Save')
 host~dispatchPending  /* call from the dialog UI event pump, not a busy loop */
 ```
 
 `attach` must preserve `self` as the existing ooDialog object. Each new proxy holds an ooDialog resource ID and a unique occurrence UID; repeated legacy `IDC_STATIC` IDs remain distinguishable. Resource-authored UIDs can be passed as the optional third argument of the four `new*` methods (the fourth for `newControl`), preserving identity across renderer implementations and reopens. Automatic UIDs remain session-local; every UID is single-use within one native session. The proxies are prefixed `.OodFluent*`, do not inherit legacy `DialogControl`, and their event method is isolated from the legacy ooDialog event vocabulary. `getText`, `show`, `hide`, `enable`, `disable`, `setFocus` and richer value/selection methods are **planned**, not implemented; the preview exposes `setText`, `setValue`, `setOn`, `setOpen` and `connectEvent`. New methods are additive; legacy `newButton` etc. remain unchanged. All property/event types require validation against the catalogue and each native WinUI API.
 
 The real native provider will queue events on the UI thread and deliver them through ooDialog's own message/dispatch mechanism; it must not invoke Rexx arbitrarily from a XAML callback. The dialog must keep its message pump and source of behavioral truth. Add/update/remove operations are addressed by occurrence UID; callback envelopes include resource ID, UID, event, and value.
+
+The Windows CI runtime gate requires successful installation of the Microsoft-signed runtime and a clean exit for the empty island, `Button`, `ToggleSwitch` and the unsafe-control refusal check. Separate **diagnostic** modes opt into the two unqualified control types and record crashes without failing this limited supported-set gate. Thus a green workflow badge qualifies only the named safe modes, **not the entire catalogue**. The run-specific log and short-lived crash dump identify `Microsoft_UI_Xaml!DirectUI::XamlIsland::Close` dereferencing a null internal `IContentIsland` interface for `InfoBar` and `NumberBox`; retaining children, clearing focus, pre-unloading them, and settling the dispatcher do not fix it. **The Windows provider refuses both unsafe controls with `E_NOTIMPL` by default**; `OODF_ALLOW_UNQUALIFIED_NATIVE=1` is for diagnostics only, not a release setting. See `windows/README.md` for the qualification boundary.
 
 ## Tests
 
