@@ -33,6 +33,7 @@ do f over .array~of("ooDialog.cls", "oodWeb.cls", "ooShapes.cls")
 end
 call copy "src" || sep || "OodDesigner.cls", "site" || sep || "OodDesigner.cls"
 call copy "src/OodGraph.cls", "site/OodGraph.cls"
+call copy "src/OodBoundGraph.cls", "site/OodBoundGraph.cls"
 call copy "src/OodNls.cls", "site/OodNls.cls"
 call copy "src/OodPlugins.cls", "site/OodPlugins.cls"
 -- the plugins: optional extras, each in its folder, listed in index.txt,

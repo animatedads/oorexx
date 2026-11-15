@@ -681,7 +681,40 @@ def sc_overview(pg):
     expect('  and the code pane is back', pg.locator('#allCode').is_hidden(), True)
 
 
-SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views, 'gadgets': sc_gadgets, 'libraries': sc_libraries, 'graph': sc_graph, 'trace': sc_trace, 'languages': sc_languages, 'ui_de': sc_ui_de, 'plugins': sc_plugins, 'assist': sc_assist, 'source': sc_source, 'bound': sc_bound, 'overview': sc_overview}
+def sc_labgraph(pg):
+    """Database Lab graph (ChatGPT's, merged): the People tables made by SQL in
+    the lab, drawn as boxes with their foreign keys and the link table as a
+    junction; a box selects its table. For the bound People design the
+    designer fills the object lines from ObjectStore~graphLines (Claude's
+    OodBoundGraph.cls), and the graph outlines the Person object; text typed
+    there by the user is kept."""
+    ready(pg); open_example(pg, 'examples/People.rex')
+    pg.click('#btnDatabaseLab'); pg.wait_for_selector('#dbNew', state='visible', timeout=60000); settle(pg, 1500)
+    pg.fill('#dbNew', 'ent'); pg.click('#dbCreate'); settle(pg, 2500)
+    ddl = [l for l in (ROOT / 'data/ent.sql').read_text().splitlines() if l.startswith('CREATE TABLE')]
+    for sql in ddl:
+        pg.fill('#dbSql', sql); pg.click('#dbRun'); settle(pg, 1500)
+    expect('the six tables made in the lab', sorted(pg.evaluate("[...document.querySelectorAll('#dbTables option')].map(o => o.value).filter(Boolean)")),
+           sorted(['com', 'per', 'per_ext', 'addr', 'per_addr', 'note']))
+    pg.wait_for_function('window.oodObjectLines !== undefined', timeout=60000)
+    lines = pg.input_value('#dbObjectLines')
+    expect_in('the bound design\'s object lines filled in', 'OBJECT\tPERSON\tENT.per', lines)
+    expect_in('  with its link part', 'PART\tPERSON\taddresses\tLINK\tENT.addr\tENT.per_addr\tSHARED', lines)
+    pg.click('#dbTabGraph'); settle(pg, 2500)
+    expect('tables drawn as boxes', pg.locator('#dbGraph .db-graph-table').count(), 5)
+    expect('per_addr drawn as a junction', pg.locator('#dbGraph .db-graph-junction[data-table="per_addr"]').count(), 1)
+    expect('the Person object outlined', pg.locator('#dbGraph .db-graph-objects > *').count() > 0, True)
+    expect_in('foreign keys drawn with ON DELETE', pg.evaluate("OodT('db.graphDelete')"), pg.inner_text('#dbGraph'))
+    pg.screenshot(path=str(SHOTS / 'lab_graph.png'))
+    pg.locator('#dbGraph').screenshot(path=str(SHOTS / 'lab_graph_svg.png'))
+    pg.click('#dbGraph .db-graph-table[data-table="addr"]'); settle(pg, 1200)
+    expect('a box selects its table', pg.input_value('#dbTables'), 'addr')
+    pg.fill('#dbObjectLines', 'OBJECT\tMINE\tENT.com'); pg.click('#dbClose'); settle(pg, 300)
+    pg.click('#btnDatabaseLab'); settle(pg, 3000)
+    expect('text the user typed is kept', pg.input_value('#dbObjectLines'), 'OBJECT\tMINE\tENT.com')
+
+
+SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views, 'gadgets': sc_gadgets, 'libraries': sc_libraries, 'graph': sc_graph, 'trace': sc_trace, 'languages': sc_languages, 'ui_de': sc_ui_de, 'plugins': sc_plugins, 'assist': sc_assist, 'source': sc_source, 'bound': sc_bound, 'overview': sc_overview, 'labgraph': sc_labgraph}
 def main():
     names = sys.argv[1:] or list(SCENARIOS)
     srv = subprocess.Popen(['node', str(SITE / 'serve.mjs'), str(SITE), '--port', str(PORT)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

@@ -128,6 +128,7 @@
       let chosen = ''; try { chosen = localStorage.getItem('oodDesigner.ui') || ''; } catch (e) { /* storage may be off */ }
       await loadUi(chosen || navigator.language || '');
       OodDatabaseLabPage.setup(st.rexx);
+      $('btnDatabaseLab')?.addEventListener('click', () => { fillObjectLines().catch((e) => status(errText(e), true)); });
       await OxLibraries.setup(st.sess);
       await OodPluginsPage.setup(st.sess, { status, rx, onChange: () => { diagnoseSoon(0); askButton(); sourceButton(); } });   // plugins switched on before
       OxGraph.attach({ sess: st.sess, rx, status, setCode, actionsMenu });
@@ -884,6 +885,27 @@
   // a bound design's run: the object layer (MappedObjects, NoSQLServer) and the
   // example databases and classes, as tools/data.rex laid them out in data/.
   // Each run starts from them: what a run commits lasts as long as the run.
+  /* ---- the Database Lab's graph (ChatGPT's) and a bound design: its mapped
+     object's OBJECT and PART lines (ObjectStore~graphLines) are put in the
+     graph's object lines, worked out by OodBoundGraph.cls in a session of
+     their own with the design's data files (this session does not load the
+     mapped objects).  Text the user typed there is kept. */
+  let autoLines = '';
+  async function fillObjectLines() {
+    const ta = $('dbObjectLines'), b = st.snap && st.snap.binding;
+    if (!ta || !b || !b.object || !b.file) return;
+    if (ta.value.trim() && ta.value !== autoLines) return;
+    const files = Object.assign({}, await dataFiles(), { '/home/rexx/OodBoundGraph.cls': await (await fetch('OodBoundGraph.cls')).text() });
+    const s = await st.rexx.start({ files });
+    try {
+      await s.loadPackage('OodBoundGraph.cls');
+      const text = String(await s.eval('use arg f, c, d; return oodBoundGraph(f, c, d)', b.file, b.object, b.databases || ''));
+      if (ta.value.trim() && ta.value !== autoLines) return;     // typed into meanwhile
+      autoLines = text; ta.value = text;
+      window.oodObjectLines = text;                               // (tests)
+      if ($('dbGraphPanel') && !$('dbGraphPanel').hidden) $('dbGraphRefresh').click();
+    } finally { s.stop(); }
+  }
   async function dataFiles() {
     if (!st.dataFiles) {
       const r = await fetch('data/files.txt');

@@ -1,4 +1,4 @@
-ooDialog Designer v0.11 -- dependencies
+ooDialog Designer v0.12 -- dependencies
 Architecture: Tom Dyer.  Code: Claude (Opus 5.5).
 
 Model, generator, graph and language support (src/, the Autobuild tests):
@@ -34,5 +34,12 @@ oorexx_mapped_objects v0.1 (MappedObjects.cls) and what it requires:
 nosqlserver_v0.92-dev1 (NoSQLServer.cls), alchemy_objects v0.8 (AlchemyObject,
 AlchemySecurity, AlchemyLockedMethod, AlchemyEvidence) and oorexx_crypto v0.1
 (crypto.cls). tools/data.rex lays them out for the page (site/data).
+
+The Database Lab (ChatGPT's): oorexx_oodialog_database_lab v0.1.2 (its
+graphLines for the Database graph; v0.1 still accepted by tools/database.rex)
+with nosqlserver_v0.92-dev1, alchemy_objects v0.8 and oorexx_crypto v0.1.
+The object lines of a bound design (src/OodBoundGraph.cls) use the same
+oorexx_mapped_objects v0.1 closure as a bound run. tests/database_lab_dom.cjs
+needs jsdom 27 (npm install --no-save jsdom@27).
 
 tests/wincheck.rex needs Windows ooDialog: sent to CODEX-PC (REQ-00003595).

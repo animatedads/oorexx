@@ -1,4 +1,4 @@
-# ooDialog Designer — v0.11.0
+# ooDialog Designer — v0.12.0
 
 Architecture: Tom Dyer. Code: Claude (Opus 5.5). README written by Claude (Opus 5.5).
 It runs on ooDialog/WASM v0.7.0 (code: Claude (Fable 5.2)) and on Josep Maria
@@ -50,6 +50,20 @@ existing `nosqlserver_v0.92-dev1`, `alchemy_objects_v0.8` and
 from the Designer's built site. Without the Alchemy package, other editor
 functions still build and the Database Lab panel reports that it was not
 installed. No SQL business logic is duplicated in JS.
+
+**Database graph (v0.12; graph by ChatGPT, branch
+feature/oodialog-database-graph-v2-20261115, 183d8ac, merged here):** the
+lab's *Database graph* tab draws the open database from the NoSQLServer
+catalogue (`OodDatabaseLab~graphLines`, Database Lab v0.1.2): tables as
+boxes with their columns, PK and UNIQUE marked; foreign keys as arrows
+labelled with their ON DELETE action; a link table of two foreign keys as a
+small junction; a box selects its table for the schema editor. With
+`ObjectStore~graphLines` in its object lines, mapped objects are drawn
+around their tables. For a **bound design** the designer fills those lines
+itself (Claude, `src/OodBoundGraph.cls`): it maps the form's object class
+over the form's databases in a session of its own, with the design's data
+files, and puts the OBJECT and PART lines there; text the user typed there
+is kept.
 
 The current `oodialog-wasm` branch is at v0.13.1; the Designer's earlier
 v0.8 qualification was against v0.7.0. This new lab is independent of the
@@ -369,7 +383,7 @@ a built `site/plugins`, or skips them and says so. t07–t09 start their own
 stand-in servers with node; under native ooRexx (no ADDRESS FETCH) their
 network checks say SKIP, and t08's git-command checks still run.
 
-## State (2026-11-15, v0.11.0)
+## State (2026-11-15, v0.12.0)
 
 - `tests/t01_model.rex`: 69 of 69 checks pass under ooRexx/WASM in Node. They
   cover generation, a byte-identical round trip through the `::RESOURCE`,
@@ -451,7 +465,7 @@ network checks say SKIP, and t08's git-command checks still run.
     button naming no bound list, no SINGLESEL, Add without row fields);
   - an unbound design written as before;
   - German.
-- `tools/dztest.py`: 17 of 17 scenarios pass in headless Chromium:
+- `tools/dztest.py`: 18 of 18 scenarios pass in headless Chromium:
   1. **hand:** a dialog built with the mouse (drop, rename, styles,
      variable, drag-an-action, move and resize), then run. The event code sees
      the variable and the field, and INIT's text survives `execute`.
@@ -521,6 +535,13 @@ network checks say SKIP, and t08's git-command checks still run.
       control's count of coded events; the marks on the form, and one that
       opens its control; Open all; With code only; All code with one heading
       a piece in form order, and a heading that opens its piece.
+  18. **labgraph (v0.12):** the People tables made by SQL in the Database
+      Lab; the bound People design's object lines filled in (OBJECT PERSON,
+      its LINK part); five boxes and per_addr as a junction; the Person
+      object outlined; ON DELETE labels; a box selects its table; text the
+      user typed in the object lines kept.
+- `tests/database_lab_dom.cjs` (ChatGPT): 24 interaction checks pass
+  (`npm install --no-save jsdom@27` first).
 - `tests/gen/Calculator.rex`, `Contacts.rex` and `Gadgets.rex` (generated)
   also pass the ooDialog/WASM harness, `oodtest.py`, with their `.steps`
   files.
@@ -557,6 +578,9 @@ network checks say SKIP, and t08's git-command checks still run.
   - a date picker cannot be bound yet.
 
 - Overview: the code in All code is read-only (edit a piece by opening it).
+- Database graph: labels can overlap where edges cross (an EXT label over
+  an ON DELETE label; a part's label under the junction box; the PERSON
+  outline's title under the ADDRESS outline). Reported to ChatGPT's lane.
 - Object Editor: a "Document" task for code assistance (an ooRexxDoc
   comment proposed for a member, applied before its directive) and doc
   tooltips in the Libraries panel are next; CATCH/FINALLY blocks wait for a
