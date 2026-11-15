@@ -183,9 +183,12 @@ decade views, no colours.
 
 ## Documentation for other tasks
 
-The sphere `oodialog-wasm` (in `sphere/`, and published to the estate's
-spheres) holds what another task needs: the renderer contract, the seams, the
-differences from Windows, the harness, how to port a native, and the lessons.
+The sphere `oodialog-wasm` (in `sphere/`) holds what another task needs: the
+renderer contract, the seams, the differences from Windows, the harness, how to
+port a native, and the lessons. Its articles are data in
+`sphere-src/articles.py`; `tools/oodsphere.py` builds, checks and packages the
+sphere with the estate's Sphere Editor after each release. It is not yet in the
+estate's sphere list: that needs a push to `animatedads/alchemy`.
 
 ## In-place editing in a list-view
 
