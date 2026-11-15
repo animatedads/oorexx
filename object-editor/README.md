@@ -1,5 +1,14 @@
 # ooRexx Object Editor — v0.2.0
 
+The shared **Database Lab…** panel is also available here (described under
+the ooDialog Designer's Database Lab section). It runs the canonical Alchemy
+`OodDatabaseLab.cls`/NoSQLServer model in its own ooRexx/WASM session; it does
+not load NoSQLServer into the Object Editor's reflection session. Build the
+Designer with the Alchemy package first, then build the Object Editor from the
+Designer's `site/examples` directory so that the Lab's staged sources are
+copied along with the shared UI. Its FILE-engine data is disposable and
+does not provide SQLite/WAL or populated-table schema migration in WASM.
+
 Architecture: Tom Dyer. Code: Claude (Opus 5.5). README written by Claude (Opus 5.5).
 Runs on Josep Maria Blasco's ooRexx/WASM 0.2.4, in the browser and in Node.
 

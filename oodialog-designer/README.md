@@ -1,4 +1,4 @@
-# ooDialog Designer — v0.8.0
+# ooDialog Designer — v0.8.0 + Database Lab test integration
 
 Architecture: Tom Dyer. Code: Claude (Opus 5.5). README written by Claude (Opus 5.5).
 It runs on ooDialog/WASM v0.7.0 (code: Claude (Fable 5.2)) and on Josep Maria
@@ -15,6 +15,42 @@ Until now, the route to an ooDialog layout was a separate resource editor
 such as ResEdit, which produces `.rc` and `.h` files (*ooDialog User Guide*,
 chapters 4–5). Those files then depended on that editor's version and its
 quirks. This designer needs no resource editor and no resource files.
+
+## Database Lab (Alchemy test component)
+
+Both the Designer and Object Editor now have **Database Lab…** beside
+**Libraries…**. The lab is a separate ooRexx/WASM session: the editor's own
+reflection and source-compilation package is unaffected by NoSQLServer's
+public class names. Its browser page is a view; the Alchemy package
+`oorexx_oodialog_database_lab_v0.1/src/OodDatabaseLab.cls` owns decisions.
+
+In that deliberately disposable lab you can create and reopen a named
+file-backed NoSQLServer database, create typed tables with primary and unique
+columns, inspect/edit an empty table's schema, list and preview rows, and
+execute Alchemy NoSQLServer `INSERT`, `UPDATE`, `DELETE`, and `SELECT` (or one
+supported SQL statement) with status, error, affected-row count and a bounded
+result grid. Dropping a table and replacing an empty definition require
+confirmation. Populated-table schema replacement is refused: NoSQLServer does
+not yet support `ALTER TABLE` or a qualified migration API.
+
+The test data is session-local, discarded on editor reload. No production
+connection, native SQLite library or remote credentials are used. The
+browser's writable SQLite backend is *not* faked: this works through the
+Alchemy `FileDatabaseEngine`, `NoSQLServerSQL` and their own dependencies.
+
+Build with `ESTATE_PACKAGES_DIR` containing the new Alchemy package and the
+existing `nosqlserver_v0.92-dev1`, `alchemy_objects_v0.8` and
+`oorexx_crypto_v0.1` dependencies. `tools/build.rex` invokes
+`tools/database.rex`, which stages a flat versioned source closure into
+`site/database-lab/` plus a manifest. The Object Editor's build copies it
+from the Designer's built site. Without the Alchemy package, other editor
+functions still build and the Database Lab panel reports that it was not
+installed. No SQL business logic is duplicated in JS.
+
+The current `oodialog-wasm` branch is at v0.13.1; the Designer's earlier
+v0.8 qualification was against v0.7.0. This new lab is independent of the
+ooDialog native-function port, but cross-branch browser regression remains a
+separate qualification requirement.
 
 ## What it writes
 

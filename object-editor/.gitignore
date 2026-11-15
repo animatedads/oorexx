@@ -1,0 +1,23 @@
+# tools/build.rex copies these from the runtime, Designer and Alchemy.
+/site/*.cls
+/site/CPLv1.0.txt
+/site/LICENSE-Apache-2.0.txt
+/site/ooRexx*.js
+/site/rexx.js
+/site/rexx.wasm
+/site/rexx.data
+/site/js-realm.js
+/site/serve.mjs
+/site/polygon-clipping.umd.min.js
+/site/libraries.js
+/site/libraries.css
+/site/oodnls.js
+/site/plugins.js
+/site/plugins.css
+/site/database-lab.js
+/site/database-lab.css
+/site/ood/
+/site/plugins/
+/site/catalogue/
+/site/examples/
+/site/database-lab/
