@@ -70,20 +70,25 @@
   return self~backend~list
 ::method scmOpen
   use strict arg path
-  return self~backend~open(self~checked(path))
+  path = self~checked(path)                -- the path first: no backend for a bad one
+  return self~backend~open(path)
 ::method scmStatus
   use strict arg path, ref
-  return self~backend~status(self~checked(path), ref)
+  path = self~checked(path)
+  return self~backend~status(path, ref)
 ::method scmCommit
   use strict arg path, text, message, ref
   if message~strip == "" then return "STATUS refused" || "0a"x || "REF" ref || "0a"x || "NOTE" self~nls("err.noMessage")
-  return self~backend~commit(self~checked(path), text, message, ref)
+  path = self~checked(path)
+  return self~backend~commit(path, text, message, ref)
 ::method scmHistory
   use strict arg path
-  return self~backend~history(self~checked(path))
+  path = self~checked(path)
+  return self~backend~history(path)
 ::method scmAt
   use strict arg path, ref
-  return self~backend~at(self~checked(path), ref)
+  path = self~checked(path)
+  return self~backend~at(path, ref)
 
 -- a path in the repository: no "..", no leading /, the folder's if it names none
 ::method checked
@@ -104,10 +109,7 @@
   expose plugin
   use strict arg plugin
   if plugin~setting("repo")~pos("/") = 0 then plugin~refuse("err.noRepo")
-  if \.local~hasIndex("OODFETCHLOADED") then do
-    .context~package~loadPackage("fetch.cls")
-    .local~oodFetchLoaded = .true
-  end
+  if \oodFetchLoaded() then plugin~refuse("err.noFetch")
 
 ::method base private
   expose plugin
@@ -339,6 +341,16 @@ noGit:
   return self~show(ref, path)
 
 
+-- ADDRESS FETCH loaded (ooRexx/WASM's fetch.cls); .false where there is none
+::routine oodFetchLoaded
+  if .local~hasIndex("OODFETCHLOADED") then return .true
+  signal on syntax name none
+  .context~package~loadPackage("fetch.cls")
+  .local~oodFetchLoaded = .true
+  return .true
+none:
+  return .false
+
 -- a URL's path or query part: %, blank, #, ?, & and + escaped
 ::routine enc
   use strict arg s
@@ -370,6 +382,7 @@ err.noRepo = Give the repository as owner/name in the git plugin's settings.
 err.noPath = No file named.
 err.badPath = %1 is not a path in the repository.
 err.network = No answer from %1 (the network, or the address).
+err.noFetch = No ADDRESS FETCH here: the github way needs ooRexx/WASM (in the page, or in Node); outside it, use the cli way.
 err.http = GitHub answered %1: %2
 err.noFile = %1 is not on branch %2.
 err.moved = The branch moved on since the file was opened; open it again (GitHub: %1).
@@ -401,6 +414,7 @@ err.noRepo = Das Repository als Besitzer/Name in den Einstellungen des git-Plugi
 err.noPath = Keine Datei genannt.
 err.badPath = %1 ist kein Pfad im Repository.
 err.network = Keine Antwort von %1 (das Netz oder die Adresse).
+err.noFetch = Hier gibt es kein ADDRESS FETCH: der github-Weg braucht ooRexx/WASM (in der Seite oder in Node); außerhalb davon den cli-Weg nehmen.
 err.http = GitHub antwortete %1: %2
 err.noFile = %1 ist nicht im Zweig %2.
 err.moved = Der Zweig hat sich seit dem Öffnen der Datei weiterbewegt; sie erneut öffnen (GitHub: %1).

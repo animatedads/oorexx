@@ -32,7 +32,10 @@ call refuses "scm from a plugin that has none", "host~enable('bostoncrab'); host
 
 -- GitHub's API
 if fetchHere() then call gitHubWithMock
-else say "t08_git: SKIP the GitHub checks (no ADDRESS FETCH: native ooRexx)"
+else do
+  say "t08_git: SKIP the GitHub checks (no ADDRESS FETCH: native ooRexx)"
+  call refusesWith "the github way with no ADDRESS FETCH: said plainly", "host~setSetting('git', 'backend', 'github'); host~scm('git', 'LIST')", "No ADDRESS FETCH"
+end
 
 -- the git command
 address system "git --version > /dev/null 2>&1"

@@ -27,6 +27,7 @@ call check "the session is a secret setting", host~settingLines("ssc")~pos("sess
 call refusesWith "no store named", "host~scm('ssc', 'LIST')", "MCP address"
 if \fetchHere() then do
   say "t09_ssc: SKIP the store checks (no ADDRESS FETCH: native ooRexx)"
+  call refusesWith "no ADDRESS FETCH: said plainly", "host~setSetting('ssc', 'endpoint', 'http://127.0.0.1:1/mcp'); host~setSetting('ssc', 'root', 'x'); host~scm('ssc', 'LIST')", "No ADDRESS FETCH"
   say "t09_ssc:" checks - fails "of" checks "checks passed"
   return fails
 end

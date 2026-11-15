@@ -85,10 +85,7 @@
   use strict arg name, args
   endpoint = self~setting("endpoint")~strip
   if endpoint == "" then self~refuse("err.noEndpoint")
-  if \.local~hasIndex("OODFETCHLOADED") then do
-    .context~package~loadPackage("fetch.cls")
-    .local~oodFetchLoaded = .true
-  end
+  if \sscFetchLoaded() then self~refuse("err.noFetch")
   rpcId = rpcId + 1
   params = .directory~new
   params["name"] = .JsonString~new(name)
@@ -425,6 +422,16 @@ notJson:
   end
   return .nil
 
+-- ADDRESS FETCH loaded (ooRexx/WASM's fetch.cls); .false where there is none
+::routine sscFetchLoaded
+  if .local~hasIndex("OODFETCHLOADED") then return .true
+  signal on syntax name none
+  .context~package~loadPackage("fetch.cls")
+  .local~oodFetchLoaded = .true
+  return .true
+none:
+  return .false
+
 -- a JSON true (1, "1", "true", json.cls's JSONBoolean true)
 ::routine sscTrue
   use strict arg v
@@ -455,6 +462,7 @@ set.session = Session token (from auth.authenticate: your local authenticator si
 err.noEndpoint = Give the store's MCP address in the SSC plugin's settings.
 err.noRoot = Give the object to open in the SSC plugin's settings.
 err.network = No answer from %1 (the network, or the address).
+err.noFetch = No ADDRESS FETCH here: the store is reached from ooRexx/WASM (in the page, or in Node).
 err.auth = The store refused the session (%1): %2.  Sign a new challenge and give the new token.
 err.http = The store answered %1: %2
 err.reply = The store's answer to %1 could not be read.
@@ -483,6 +491,7 @@ set.session = Sitzungs-Token (von auth.authenticate: Ihr lokaler Authentifikator
 err.noEndpoint = Die MCP-Adresse des Speichers in den Einstellungen des SSC-Plugins angeben.
 err.noRoot = Das zu öffnende Objekt in den Einstellungen des SSC-Plugins angeben.
 err.network = Keine Antwort von %1 (das Netz oder die Adresse).
+err.noFetch = Hier gibt es kein ADDRESS FETCH: der Speicher wird aus ooRexx/WASM erreicht (in der Seite oder in Node).
 err.auth = Der Speicher wies die Sitzung zurück (%1): %2.  Eine neue Herausforderung signieren und das neue Token angeben.
 err.http = Der Speicher antwortete %1: %2
 err.reply = Die Antwort des Speichers auf %1 ist nicht lesbar.
