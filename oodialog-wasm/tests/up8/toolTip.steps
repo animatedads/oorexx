@@ -1,0 +1,38 @@
+wait .ood-dlg
+sleep 500
+expect !!document.querySelector('.ood-tip') && !document.querySelector('.ood-tip').hidden ==> False
+mouse move .ood-dlg .ood-client @ 20 20
+sleep 900
+expect document.querySelector('.ood-tip').hidden ==> False
+expect document.querySelector('.ood-tip').textContent ==> Over main dialog, top left quadrant
+expect (() => { const t = document.querySelector('.ood-tip').getBoundingClientRect(), c = document.querySelector('.ood-dlg .ood-client').getBoundingClientRect(); return Math.abs(t.left - c.left) <= 1 && Math.abs(t.top - c.top) <= 1; })() ==> True
+mouse move .ood-dlg .ood-client @ 300 20
+sleep 900
+expect document.querySelector('.ood-tip').textContent ==> Over main dialog, top right quadrant
+mouse move .ood-dlg .ood-client @ 300 170
+sleep 900
+expect document.querySelector('.ood-tip').textContent ==> Over main dialog, bottom right quadrant
+mouse move .ood-dlg >> text=Test @ 10 8
+sleep 900
+expect document.querySelector('.ood-tip').textContent ==> Press Test to execute a ToolTip test
+mouse move .ood-dlg button.ood-def @ 10 8
+sleep 900
+expect document.querySelector('.ood-tip b').textContent ==> Important Message
+shot toolTip_balloon
+expect document.querySelector('.ood-tip div').textContent.split('\n').length ==> 4
+mouse move .ood-dlg >> text=Cancel @ 10 8
+sleep 900
+expect document.querySelector('.ood-tip').textContent ==> Press Cancel to end the dialog
+expect document.querySelector('.ood-tip').style.maxWidth !== '' ==> True
+mouse down .ood-dlg >> text=Cancel @ 10 8
+expect document.querySelector('.ood-tip').hidden ==> True
+mouse up .ood-dlg .ood-client @ 20 20
+click .ood-dlg >> text=Test
+sleep 500
+click .ood-dlg >> text=Test
+sleep 500
+expect (window.oodOut.join('').match(/Tool info  text:[^\n]*/g) || []).map(x => x.slice(17).trim()).join('|') ==> Over main dialog, top left quadrant|Over main dialog, top right quadrant|Over main dialog, bottom left quadrant|Over main dialog, bottom right quadrant
+expect (window.oodOut.join('').match(/Tool info  id:[^\n]*/g) || []).map(x => x.slice(15).trim()).join(' ') ==> 774 775 776 777
+expect (window.oodOut.join('').match(/Time for (autopop|initial|reshow): \d+/g) || []).join('|') ==> Time for autopop: 5000|Time for autopop: 5000|Time for initial: 500|Time for reshow: 100
+expect (window.oodOut.join('').match(/(native function \w+|Error \d+\.\d+[^\n]*)/g) || []).length ==> 0
+click .ood-dlg button.ood-def

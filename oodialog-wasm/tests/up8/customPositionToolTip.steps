@@ -1,0 +1,16 @@
+wait .ood-dlg
+sleep 500
+mouse move .ood-dlg >> text=George @ 5 5
+sleep 900
+expect document.querySelector('.ood-tip').hidden ==> False
+shot customPositionToolTip
+expect document.querySelector('.ood-tip').textContent.split('\n').join('/') ==> George was famous once./He is unknown to my/niece.
+expect (() => { const t = document.querySelector('.ood-tip').getBoundingClientRect(), r = [...document.querySelectorAll('.ood-tvrow')].find(x => x.textContent.trim() === 'George').getBoundingClientRect(); return Math.abs(t.left - (r.right + 5)) <= 2 && Math.abs(t.top - r.top) <= 2; })() ==> True
+mouse move .ood-dlg >> text=Ringo @ 5 5
+sleep 900
+expect document.querySelector('.ood-tip').textContent ==> Ringo has a LOT of money.
+mouse move .ood-dlg .ood-title @ 20 5
+sleep 300
+expect document.querySelector('.ood-tip').hidden ==> True
+expect (window.oodOut.join('').match(/(native function \w+|Error \d+\.\d+[^\n]*)/g) || []).length ==> 0
+click .ood-dlg button.ood-def

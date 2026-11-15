@@ -1,3 +1,9 @@
 wait .ood-lv >> text=Chocolate
-expect document.querySelector('.ood-dlg button.ood-def').title ==> Closes the dialog
+expect document.querySelector('.ood-dlg button.ood-def').title === '' ==> True
+mouse move .ood-dlg button.ood-def @ 10 8
+sleep 900
+expect document.querySelector('.ood-tip').hidden ==> False
+expect document.querySelector('.ood-tip').textContent ==> Closes the dialog
 click .ood-dlg >> text=Close
+sleep 300
+expect document.querySelector('.ood-tip').hidden ==> True

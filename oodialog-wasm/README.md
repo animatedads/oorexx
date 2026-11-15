@@ -1,4 +1,4 @@
-# ooDialog for ooRexx/WASM — v0.17.0
+# ooDialog for ooRexx/WASM — v0.18.0
 
 Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: Josep Maria Blasco's
 ooRexx/WASM (`oorexxwasm` 0.2.4, ooRexx 5.3.0) and its `js.cls`.
@@ -48,11 +48,13 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
     python3 tools/oodtest.py --poke upstream/examples 0 24
     python3 tools/oodtest.py --tree upstream/examples tests/t*.rex tests/up/calculator.rex tests/up/oodpbar.rex tests/up/oodStandardRoutines.rex
 
-## State on 2026-11-15 (v0.17.0)
+## State on 2026-11-15 (v0.18.0)
 
-- Natives ported: 643 of 1,181 (54.4%). (The total fell from 1,196 because 12
+- Natives ported: 686 of 1,182 (58.0%); 12 of the 43 added in v0.18.0 accept
+  their call and do nothing (see "Tool tips"). (The total was given as 1,181
+  in v0.16.0 and v0.17.0; `dist/natives.txt` has 1,182 lines. It fell from 1,196 because 12
   natives are now plain Rexx in `src/patches.txt`.)
-- Tests: 42 of 42 pass in headless Chromium (`tests/t01`..`t17` with expected
+- Tests: 45 of 45 pass in headless Chromium (`tests/t01`..`t17` with expected
   output, the binary resource hand-off test `tests/res/t07_resdialog_binary`,
   four unmodified upstream samples: `calculator.rex`,
   `oodpbar.rex`, `oodStandardRoutines.rex`, and the tutorial
@@ -73,8 +75,8 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
   tutorial's `drawing3.rex` and `drawing5.rex`; and the three
   programs written by ooDialog Designer v0.3.0, in `tests/designer`).
 - Sweep of all 140 upstream example programs (`oodtest.py --sweep`, results in
-  `sweep.tsv`), each run from its own directory: 76 show their dialog, 7 run to
-  the end, 9 show only a message box, 7 stop at a native not ported yet, 10
+  `sweep.tsv`), each run from its own directory: 79 show their dialog, 7 run to
+  the end, 9 show only a message box, 5 stop at a native not ported yet, 9
   stop on an error (8 need a reader of binary resources, which is another
   task's work; `oovideo.rex` is broken upstream), 24 are components: parts of
   the user guide's Order Manager, which name their files from the program's
@@ -122,7 +124,7 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
   watermark images are not drawn; tabbed sheets: pages made when
   first shown, killActive, apply, queryCancel, setCurSel, getResult);
   control~connectEvent; UserControlDialog (a dialog inside its owner, on its
-  own thread, placed with setWindowPos); tool tips (the browser's own);
+  own thread, placed with setWindowPos); tool tips (see "Tool tips");
   image lists (kept and counted by the controls; item icons are not drawn);
   a sizing border (THICKFRAME) with connectResize, connectMove and
   connectSizeMoveEnded; track bar DRAG and ENDTRACK events; data attributes of
@@ -171,6 +173,38 @@ Until v0.17.0 this class was not ported at all: its examples showed their
 dialog, which the sweep counted, but the dialog could not be resized by its
 rules. Resizing with DlgAreaU and connectResize (`tests/t13_resize`) is a
 different mechanism and worked before.
+
+## Tool tips
+
+A ToolTip is drawn by the page as one floating box. It is not the browser's
+`title` text, so the program decides the text, the delay, the width and the
+place. Ported from oodToolTip.cpp: createToolTip; addTool, addToolRect,
+addToolEx, delTool; a tool that is a whole window or a rectangle of one; text
+that is fixed, or asked each time (omitted, empty or TEXTCALLBACK) with the
+NEEDTEXT event; the SHOW and POP events with connectToolTipEvent; setTitle,
+setMaxTipWidth, setDelayTime / getDelayTime, activate, pop; enumTools,
+getToolCount, getToolInfo, getCurrentToolInfo, hitTestInfo, updateTipText;
+the ToolInfo class; manageAtypicalTool with RELAY, NORELAY, NEEDTEXT, SHOW and
+POP; a tip placed by the program with setWindowPos from its SHOW method;
+getToolTips of a tree-view, with the tree-view's GETINFOTIP event. For these
+the tree-view got hitTestInfo and getItemRect.
+
+Three upstream examples run unchanged as tests (`tests/up8`): `toolTip.rex`,
+`customPositionToolTip.rex`, `manageControlTool.rex`. The tests move the
+pointer and check the tip's text and place.
+
+Differences from Windows:
+- Only the INITIAL delay is used. A tip stays until the pointer leaves its
+  tool; AUTOPOP and RESHOW are kept and answered but do not act.
+- The balloon style, the title's icon, margins, colours and the window theme
+  are accepted and not drawn. Tracking tool tips (trackActivate,
+  trackPosition), popUp and update are accepted and do nothing. LINKCLICK is
+  never sent.
+- RELAY is sent for pointer moves only, with the message name `mouseMove`.
+- getToolTips of a list-view answers a ToolTip that never shows.
+- The dropped list of a combo box belongs to the browser and is not a window.
+  getComboBoxInfo is not ported, so `comboBoxToolTip.rex` stops there.
+- A touch screen has no resting pointer: tips do not appear on a phone.
 
 ## Month calendar
 
@@ -269,8 +303,8 @@ WASM file system as bytes.
 ## Not yet (the sweep's order of need)
 
 Tool bar, status
-bar, re-bar; custom draw; ResizingAdmin's pagedTab; real tool tips (ToolInfo,
-manageAtypicalTool, getToolTips); connectActivate,
+bar, re-bar; custom draw; ResizingAdmin's pagedTab; the parts of a combo box
+as windows (getComboBoxInfo); connectActivate,
 connectHelp, connectPosChanged and connectResizing (accepted, not produced);
 drawing the icons of image lists; a modeless property sheet; wizard header and
 watermark images; list-view LvItem/LvFullRow objects and the remaining

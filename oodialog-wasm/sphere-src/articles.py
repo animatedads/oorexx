@@ -1,8 +1,8 @@
 # Articles of the oodialog-wasm sphere. Architecture: Tom Dyer. Written by Claude (Fable 5.2).
 # Each article: id, title, summary, section, topics, and lists of plain sentences.
 S = "oodialog-wasm"
-VERSION = "0.2"            # the sphere's version; raise it for a material change
-PORT = "0.17.0"             # the version of the port the articles were checked against
+VERSION = "0.3"            # the sphere's version; raise it for a material change
+PORT = "0.18.0"             # the version of the port the articles were checked against
 REPO = "animatedads/oorexx, branch oodialog-wasm, directory oodialog-wasm/"
 
 def art(id, title, summary, section, topics, **lists):
@@ -87,9 +87,12 @@ art("ref.oodialog-wasm.renderer-contract",
         "lv.* list-view, tv.* tree-view, tab.* tab control, ud.* up-down, dtp.* date-time picker, mc.* month calendar.",
         "gdi: drawing on a window. op(key, id, \"gdi\", verb, values, style). Verbs: line rect arc angleArc pixel getPixel fillRect clear extent text flood image scroll size ownerDraw.",
         "mouseSub and mouse: the Mouse class. mouse verbs: capture release getCapture state cursor.",
+        "tip.*: tool tips, since v0.18.0. The id is the tool tip's ID, not a control's: route tip.* before looking the id up as a control. tip.add takes one JSON text {key, host, rect, text}: host is a control's id or 0 for the dialog; rect is null (the whole window) or [l, t, r, b] in that window's client area; text null means the text is asked from the program. Others: tip.del(key), tip.text(key, text; one separator character means asked), tip.relay(hostId, 1|0), tip.count, tip.delay(ms), tip.maxWidth(px), tip.title(text), tip.active(1|0), tip.events(words), tip.show(text), tip.pos(x, y in screen pixels), tip.pop, tip.shown (toolKey, separator, text; empty if no tip), tip.tree(treeViewId).",
+        "The renderer decides when a tip is due: the pointer rests on a tool for the delay. Fixed text: show the box, then send TT SHOW if tip.events names SHOW. Asked text: send TT NEEDTEXT; the program answers with tip.show. An empty text shows nothing. tip.pop ends the tip; if the pointer is still on the tool, the tip is due again after the delay. A tree-view named by tip.tree asks the text of the item under the pointer with NOTIFY GETINFOTIP (extra: the item); the answer is tip.show on tool tip ID 60000 + the tree-view's id.",
+        "The op named tip (the element's title) is gone since v0.18.0. tv.hit(x, y) answers \"item LOCATION\"; tv.rect(item, textOnly) answers \"l t r b\" in the tree-view's client area.",
     ],
     events=[
-        "The renderer sends (key, kind, id, code, extra). Kinds: CMD (WM_COMMAND), NOTIFY (a named control notification), MSGBOX (a message box was answered), CTX (context menu), KEY (a connected key), WM (a window message: RESIZE, SIZEMOVEENDED, MOVE, and RASIZEENDED when a ResizingAdmin dialog with wantSizeEnded stops being sized), MOUSE (a Mouse class event), GC (RETURN, ESCAPE, TAB or loss of focus in a control placed on another control).",
+        "The renderer sends (key, kind, id, code, extra). Kinds: CMD (WM_COMMAND), NOTIFY (a named control notification), MSGBOX (a message box was answered), CTX (context menu), KEY (a connected key), TT (a tool tip: id is the tool tip's ID, code is SHOW, POP, NEEDTEXT or RELAY, extra is the tool's key; for RELAY the key, x and y joined by the separator), WM (a window message: RESIZE, SIZEMOVEENDED, MOVE, and RASIZEENDED when a ResizingAdmin dialog with wantSizeEnded stops being sized), MOUSE (a Mouse class event), GC (RETURN, ESCAPE, TAB or loss of focus in a control placed on another control).",
         "Events are queued. Rexx takes them one at a time with .js~nextEvent. The renderer must never call into Rexx directly.",
     ],
     invariants=[
@@ -137,7 +140,8 @@ art("ops.oodialog-wasm.differences",
         "There are no printers. A printer root in BrowseForFolder is ignored.",
         "The month calendar shows one month and selects one day.",
         "ResizingAdmin: pagedTab is accepted and does nothing, so the pages of a tab control are not resized with their dialog. A dialog made larger than the browser window is not scaled down again.",
-        "Tool tips are the browser's own (the title of the element). ToolInfo, manageAtypicalTool, getToolTips and the tool tip events are not ported.",
+        "Tool tips are drawn by the page since v0.18.0. Only the INITIAL delay acts: a tip stays until the pointer leaves its tool. Balloon style, icon, margins, colours and tracking tool tips are accepted and not shown. LINKCLICK is never sent. RELAY is sent for pointer moves only. A touch screen shows no tips.",
+        "The dropped list of a combo box belongs to the browser and is not a window. getComboBoxInfo is not ported.",
         "A list box entry cannot show a tab character. With tab stops set, the entry is shown filled out to each stop; its text stays as the program gave it.",
         "A dialog larger than the browser window is scaled down to fit.",
         "Events the port accepts but never produces print one line: \"... is connected but is not produced yet\". The program goes on.",
@@ -203,10 +207,10 @@ art("ref.oodialog-wasm.state",
     "This article is a snapshot. The current figures are always in README.md of the project, with the version they were measured on; sweep.tsv and poke.tsv hold the per-example results.",
     "reference", ["state", "coverage", "not-done"],
     snapshot=[
-        "Version 0.17.0, 15 November 2026.",
-        "Natives ported: 643 of 1,181.",
-        "Tests: 42 of 42 pass in headless Chromium. 29 of them are upstream examples or the designer's programs, run unchanged.",
-        "Sweep of the 140 upstream examples: 76 show their dialog, 7 run to the end, 9 show only a message box, 7 stop at a native not ported, 10 stop on an error (8 of them wait for a reader of binary resources), 24 are components, 7 are outside ooDialog.",
+        "Version 0.18.0, 15 November 2026.",
+        "Natives ported: 686 of 1,182. 12 of the 43 added in v0.18.0 accept their call and do nothing.",
+        "Tests: 45 of 45 pass in headless Chromium. 32 of them are upstream examples or the designer's programs, run unchanged.",
+        "Sweep of the 140 upstream examples: 79 show their dialog, 7 run to the end, 9 show only a message box, 5 stop at a native not ported, 9 stop on an error (8 of them wait for a reader of binary resources), 24 are components, 7 are outside ooDialog.",
         "Probe at v0.16.0, 81 examples: 66 clean, 10 connect an event that is not produced, 5 with a problem, none of them in the port's own code.",
         "\"shows\" in the sweep means a dialog appeared. It does not mean every feature of the example works. Only an example that is a test (with steps and assertions) is known to work.",
     ],
@@ -216,11 +220,12 @@ art("ref.oodialog-wasm.state",
         "Menus: menu bars and popup menus, from scripts and through the resource provider.",
         "Resizing: ResizingAdmin (pin definitions, size limits, wantSizeEnded) since v0.17.0; DlgAreaU with connectResize since v0.9.",
         "Drawing, bitmap buttons and animation, the Mouse class, in-place editing in a list-view (edit, drop-down list, editable combo box), list box tab stops, fonts.",
+        "Tool tips since v0.18.0: tools that are windows or rectangles, fixed and asked text, NEEDTEXT SHOW POP RELAY, ToolInfo, manageAtypicalTool, a tree-view's getToolTips with GETINFOTIP.",
         "File dialogs and shell dialogs over the WASM machine's file system.",
     ],
     not_done=[
         "Tool bar, status bar, re-bar; custom draw; scroll bars as controls.",
-        "Real tool tips: ToolInfo, manageAtypicalTool, getToolTips, the tool tip events. A tool tip today is the element's title.",
+        "getComboBoxInfo (the parts of a combo box as windows); tracking tool tips.",
         "ResizingAdmin's pagedTab; ControlDlgInfo and the tab owner dialogs.",
         "connectActivate, connectHelp, connectPosChanged, connectResizing (accepted, not produced).",
         "Image-list icons are not drawn; ResourceImage needs images from a binary resource.",
@@ -266,6 +271,8 @@ EVIDENCE = [
     ("ref.oodialog-wasm.renderer-contract", "src/oodialog-web.js", "  const SEP = ", 1, "The separator character is hex 1F."),
     ("ref.oodialog-wasm.renderer-contract", "src/oodialog-web.js", "  function gdi(dlg", 5, "The gdi verbs and the style fields."),
     ("ref.oodialog-wasm.renderer-contract", "src/oodialog-web.js", "  function raLayout(dlg)", 25, "The ResizingAdmin arithmetic."),
+    ("ref.oodialog-wasm.renderer-contract", "src/oodialog-web.js", "  /* ---- Tool tips ----", 14, "The tool tip operations and events."),
+    ("ops.oodialog-wasm.differences", "README.md", "## Tool tips", 30, "What tool tips do and where they differ from Windows."),
     ("ref.oodialog-wasm.seams", "src/oodWeb.cls", "::attribute resourceProvider unguarded", 1, "The resourceProvider attribute; the shapes are in the comment above it."),
     ("ref.oodialog-wasm.seams", "src/oodWeb.cls", "::method windows unguarded", 10, ".oodn~windows answers the live dialogs, oldest first."),
     ("ref.oodialog-wasm.seams", "site/oodfiles.js", "// oodfiles.js", 17, "windowsNames(files) and its rules."),

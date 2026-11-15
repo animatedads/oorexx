@@ -14,8 +14,8 @@ controls/PaidHolidays.rex	shows
 controls/ToolBar/customizeToolBar.rex	native:TBB_INIT
 controls/ToolBar/toolBar.rex	error:Error 98.900 ooDialog/WASM: a dialog from a resource file needs a reader of binary Windows resources; set .ood
 controls/ToolTip/comboBoxToolTip.rex	native:CB_GETCOMBOBOXINFO
-controls/ToolTip/customPositionToolTip.rex	native:GENERIC_GETTOOLTIPS
-controls/ToolTip/manageControlTool.rex	native:TI_INIT
+controls/ToolTip/customPositionToolTip.rex	shows
+controls/ToolTip/manageControlTool.rex	shows
 controls/ToolTip/toolTip.rex	shows
 controls/TreeView/treeViewCustomDraw.rex	message:The required data file /home/rexx/controls/TreeView/rc\treeViewCustomDraw.bmp does not exi
 controls/fiscalReports.rex	shows
@@ -57,7 +57,7 @@ propertySheet.tabControls/PropertySheetDemo.rex	shows
 propertySheet.tabControls/TabDemo.rex	error:Error 98.900 ooDialog/WASM: a dialog from a resource file needs a reader of binary Windows resources; set .ood
 propertySheet.tabControls/TabOwnerDemo.rex	native:CDI_INIT
 propertySheet.tabControls/UserTabDemo.rex	shows
-propertySheet.tabControls/oodListViews.rex	error:Error 97.1 Object "The NIL object" does not understand message "ADDNEWATTRIBUTE".
+propertySheet.tabControls/oodListViews.rex	shows +error
 propertySheet.tabControls/ticketWizard.rex	shows
 resizableDialogs/DialogAreaU/dlgAreaUDemo.rex	shows
 resizableDialogs/DialogAreaU/dlgAreaUDemoThree.rex	shows

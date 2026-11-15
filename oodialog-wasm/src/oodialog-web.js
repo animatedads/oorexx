@@ -45,6 +45,8 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
 .ood-frame{pointer-events:none}
 .ood-todo{border:1px dashed #a33;color:#a33;font-size:.85em;overflow:hidden;padding:2px}
 .ood-u{text-decoration:underline}
+.ood-tip{position:fixed;z-index:100000;background:#fff;color:#333;border:1px solid #767676;border-radius:3px;padding:3px 7px;font:12px 'Segoe UI',Tahoma,sans-serif;box-shadow:2px 2px 4px rgba(0,0,0,.25);pointer-events:none}
+.ood-tip b{display:block;margin-bottom:2px}
 .ood-mc{background:#fff;border:1px solid #7a7a7a;box-sizing:border-box;padding:4px 6px;cursor:default;outline:none;user-select:none;overflow:hidden}
 .ood-mc-head{display:flex;align-items:center;justify-content:space-between;padding:2px 0 4px}
 .ood-mc-head button{border:0;background:none;font:inherit;font-size:15px;line-height:1;padding:0 6px;cursor:pointer}
@@ -307,6 +309,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
 
   ood.destroy = function (key) {
     const dlg = ood.dialogs.get(Number(key)); if (!dlg) return '0';
+    if (tipBox.dlg === dlg) tipHide(true);
     dlg.el.remove(); if (dlg.back) dlg.back.remove();
     ood.dialogs.delete(Number(key));
     if (dlg.prevFocus && dlg.prevFocus.isConnected) dlg.prevFocus.focus();   // as Windows activates the owner again
@@ -1136,6 +1139,118 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
     return '';
   }
 
+  /* ---- Tool tips ----
+     A ToolTip is not a control of the page: it is a set of tools kept by its dialog under the
+     tool tip's ID, and one floating box.  A tool is a control, a rectangle of a window, or a
+     whole window; its text is fixed, or asked from the program each time (text null).
+       op(key, ttId, 'tip.add', JSON {key, host, rect|null, text|null})
+     The page decides when a tip is due (the pointer rests on a tool).  Then:
+       fixed text:  the box is shown, and ('TT', ttId, 'SHOW', toolKey) is sent
+       asked text:  ('TT', ttId, 'NEEDTEXT', toolKey) is sent; the program answers tip.show
+     ('TT', ttId, 'POP', toolKey) is sent when the box goes.  For a tool the program manages
+     itself, ('TT', ttId, 'RELAY', toolKey + SEP + x + SEP + y) is sent for each pointer move over a
+     window named by op(key, ttId, 'tip.relay', hostId, '1').  tip.pop ends the tip; if the
+     pointer is still on the tool, the tip is due again after the delay.
+     A tree-view asks for the text of the item under the pointer with its GETINFOTIP notification. */
+  const tipBox = { el: null, dlg: null, tt: null, tool: null, shown: false, x: 0, y: 0 };
+  function tipEl() {
+    if (!tipBox.el) { tipBox.el = D.createElement('div'); tipBox.el.className = 'ood-tip'; tipBox.el.hidden = true; D.body.appendChild(tipBox.el); }
+    return tipBox.el;
+  }
+  function tipSet(dlg, ttId) {
+    dlg.tips = dlg.tips || new Map();
+    if (!dlg.tips.has(ttId)) dlg.tips.set(ttId, { id: ttId, tools: [], delay: 500, maxWidth: 0, title: '', active: true, events: '', hosts: new Set(), relayHosts: new Set(), rearm: null, rearmHost: -1 });
+    return dlg.tips.get(ttId);
+  }
+  function tipHide(silent) {
+    if (tipBox.shown) {
+      tipBox.shown = false; tipEl().hidden = true;
+      if (!silent && tipBox.tt && tipBox.tt.events.includes('POP') && ood.dialogs.has(tipBox.dlg.key)) fire(tipBox.dlg.key, 'TT', tipBox.tt.id, 'POP', tipBox.tool ? tipBox.tool.key : '');
+    }
+    tipBox.tool = null;
+  }
+  function tipDisplay(dlg, tt, tool, text) {
+    if (text === '' || !tt.active) return;
+    const el = tipEl(); el.textContent = '';
+    if (tt.title) { const b = D.createElement('b'); b.textContent = tt.title; el.appendChild(b); }
+    const body = D.createElement('div'); body.textContent = text; el.appendChild(body);
+    el.style.maxWidth = tt.maxWidth > 0 ? tt.maxWidth + 'px' : '';
+    el.style.whiteSpace = tt.maxWidth > 0 || text.includes('\n') ? 'pre-wrap' : 'nowrap';
+    el.hidden = false;
+    el.style.left = Math.min(tipBox.x + 12, W.innerWidth - el.offsetWidth - 4) + 'px';
+    el.style.top = Math.min(tipBox.y + 20, W.innerHeight - el.offsetHeight - 4) + 'px';
+    tipBox.shown = true; tipBox.dlg = dlg; tipBox.tt = tt; tipBox.tool = tool;
+    if (tt.events.includes('SHOW')) fire(dlg.key, 'TT', tt.id, 'SHOW', tool ? tool.key : '');
+  }
+  function tipDue(dlg, tt, tool) {
+    tipBox.dlg = dlg; tipBox.tt = tt; tipBox.tool = tool;
+    if (tool.text !== null) tipDisplay(dlg, tt, tool, tool.text);
+    else fire(dlg.key, 'TT', tt.id, 'NEEDTEXT', tool.key);
+  }
+  function tipHost(dlg, tt, hostId) {                         // watch one window (a control, or 0 the dialog) for this tool tip
+    if (tt.hosts.has(hostId)) return;
+    tt.hosts.add(hostId);
+    const hc = hostId ? dlg.ctrls.get(hostId) : null, host = hc ? hc.el : dlg.client;
+    if (!host) return;
+    let current = null, timer = 0;                             // (each window has its own timer: a tip of another window is not this one's to end)
+    const arm = (tool) => { clearTimeout(timer); timer = setTimeout(() => { timer = 0; if (ood.dialogs.has(dlg.key) && current === tool) tipDue(dlg, tt, tool); }, tt.delay); };
+    const leave = () => { clearTimeout(timer); timer = 0; if (current && tipBox.tool === current) tipHide(); current = null; if (tt.rearm && tt.rearmHost === hostId) tt.rearm = null; };
+    host.addEventListener('pointermove', (e) => {
+      const r = host.getBoundingClientRect(), x = e.clientX - r.left - host.clientLeft, y = e.clientY - r.top - host.clientTop;
+      if (!hostId && e.target !== host && e.target.closest('.ood-c')) { leave(); return; }   // over a control: not the dialog's own area
+      tipBox.x = e.clientX; tipBox.y = e.clientY;
+      const tool = tt.tools.find((t) => t.host === hostId && (!t.rect || (x >= t.rect[0] && x < t.rect[2] && y >= t.rect[1] && y < t.rect[3]))) || null;
+      if (tool && (tool.relay || tt.relayHosts.has(hostId))) fire(dlg.key, 'TT', tt.id, 'RELAY', tool.key + SEP + Math.round(x) + SEP + Math.round(y));
+      if (tool === current) return;
+      leave(); current = tool;
+      if (tool && tt.active) { arm(tool); tt.rearm = () => { if (current === tool && tt.active) arm(tool); }; tt.rearmHost = hostId; }   // (pop, with the pointer still on the tool: the tip comes again)
+    });
+    host.addEventListener('pointerleave', leave);
+    host.addEventListener('pointerdown', () => { clearTimeout(timer); timer = 0; if (current && tipBox.tool === current) tipHide(); });
+  }
+  function tipTree(dlg, c) {                                   // a tree-view's own tips: the text of an item is asked with GETINFOTIP
+    if (c.infoTips) return;
+    c.infoTips = true;
+    const tt = tipSet(dlg, 60000 + c.id);
+    let current = '', timer = 0;
+    const tool = { key: 'tv' + c.id, host: c.id, rect: null, text: null };
+    const leave = () => { clearTimeout(timer); timer = 0; if (tipBox.tool === tool) tipHide(); current = ''; };
+    c.el.addEventListener('pointermove', (e) => {
+      const row = e.target.closest ? e.target.closest('.ood-tvrow') : null, h = row ? row.dataset.h : '';
+      tipBox.x = e.clientX; tipBox.y = e.clientY;
+      if (h === current) return;
+      leave(); current = h;
+      if (!h || !dlg.subs.has(c.id + '.GETINFOTIP')) return;
+      timer = setTimeout(() => { timer = 0; if (!ood.dialogs.has(dlg.key) || current !== h) return;
+        tipBox.dlg = dlg; tipBox.tt = tt; tipBox.tool = tool;
+        note(dlg, c, 'GETINFOTIP', h); }, tt.delay);
+    });
+    c.el.addEventListener('pointerleave', leave);
+    c.el.addEventListener('pointerdown', leave);
+  }
+  function tipOp(dlg, ttId, name, a, b) {
+    const tt = tipSet(dlg, ttId);
+    switch (name) {
+      case 'add': { const t = JSON.parse(String(a)); tt.tools = tt.tools.filter((x) => x.key !== t.key); tt.tools.push(t); tipHost(dlg, tt, t.host);
+        const hc = t.host ? dlg.ctrls.get(t.host) : null; if (hc) hc.el.removeAttribute('title'); return '1'; }
+      case 'del': tt.tools = tt.tools.filter((x) => x.key !== String(a)); return '1';
+      case 'text': { const t = tt.tools.find((x) => x.key === String(a)); if (!t) return '0'; t.text = b === SEP ? null : String(b); return '1'; }
+      case 'relay': if (b === '1') tt.relayHosts.add(Number(a)); else tt.relayHosts.delete(Number(a)); return '1';   // the pointer's moves over this window go to the program
+      case 'count': return String(tt.tools.length);
+      case 'delay': tt.delay = Math.max(0, Number(a) || 0); return '1';
+      case 'maxWidth': { const old = tt.maxWidth; tt.maxWidth = Number(a) || 0; return String(old || -1); }
+      case 'title': tt.title = String(a); return '1';
+      case 'active': tt.active = (a === '1'); if (!tt.active && tipBox.tt === tt) tipHide(); return '1';
+      case 'events': tt.events = String(a); return '1';
+      case 'show': if (tipBox.tt === tt && tipBox.tool) tipDisplay(dlg, tt, tipBox.tool, String(a)); return '1';   // the answer to NEEDTEXT or GETINFOTIP
+      case 'pos': { const el = tipEl(); el.style.left = Number(a) + 'px'; el.style.top = Number(b) + 'px'; return '1'; }
+      case 'pop': if (tipBox.tt === tt) tipHide(); if (tt.rearm) tt.rearm(); return '1';
+      case 'shown': return tipBox.shown && tipBox.tt === tt ? (tipBox.tool ? tipBox.tool.key : '') + SEP + tipEl().textContent : '';
+      case 'tree': { const c = dlg.ctrls.get(Number(a)); if (!c) return '0'; tipTree(dlg, c); return '1'; }
+    }
+    return '';
+  }
+
   /* ---- The mouse ----
      mouseSub connects one Windows mouse event of a dialog (id 0) or a control.  The event
      goes to Rexx as ('MOUSE', id, NAME, "state x y delta"): state is the words of
@@ -1209,6 +1324,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
   ood.op = function (key, id, name, a, b, c2) {
     const dlg = ood.dialogs.get(Number(key)); if (!dlg) return '';
     id = Number(id);
+    if (name.startsWith('tip.')) return tipOp(dlg, id, name.slice(4), a, b);   // (a tool tip's ID is not a control's)
     const c = id === 0 ? null : dlg.ctrls.get(id);
     if (id !== 0 && !c) return name === 'exists' ? '0' : '';
     const el = c ? c.el : dlg.el, m = c ? c.main : dlg.el;
@@ -1289,7 +1405,6 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       case 'replaceSel': m.setRangeText(String(a), m.selectionStart, m.selectionEnd, 'end'); c.modified = true; return '1';
       case 'line': { const ls = m.value.split('\n'); return ls[Number(a) - 1] == null ? '' : ls[Number(a) - 1]; }
       case 'cue': m.placeholder = String(a); return '1';
-      case 'tip': (c ? c.el : el).title = String(a); return '1';
       case 'backdrop': { const url = ood.images.get(String(a)); if (!url) return '0'; const t = c ? c.el : dlg.client;
         t.style.backgroundImage = 'url("' + url + '")'; t.style.backgroundRepeat = has(String(b), 'TILE') || b === '' ? 'repeat' : 'no-repeat';
         if (has(String(b), 'STRETCH')) t.style.backgroundSize = '100% 100%'; return '1'; }   // a tool tip: the browser's own
@@ -1406,6 +1521,18 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
     const h = Number(a), nd = c.nodes.get(h);
     const sibs = (x) => (x.parent ? c.nodes.get(x.parent).kids : c.roots);
     switch (name) {
+      case 'hit': {                                            // what is at a point of the client area: "handle LOCATION"
+        const o = c.el.getBoundingClientRect(), t = D.elementFromPoint(o.left + c.el.clientLeft + Number(a), o.top + c.el.clientTop + Number(b));
+        const row = t && c.el.contains(t) ? t.closest('.ood-tvrow') : null;
+        if (!row) return '0 NOWHERE';
+        const where = t.classList.contains('ood-tvtw') ? 'ONBUTTON' : t === row ? (o.left + Number(a) < row.firstElementChild.getBoundingClientRect().left ? 'ONINDENT' : 'ONRIGHT') : 'ONITEM ONLABEL';
+        return row.dataset.h + ' ' + where; }
+      case 'rect': {                                           // the row of an item, or only its text, in the client area: "l t r b"
+        const row = c.el.querySelector('.ood-tvrow[data-h="' + h + '"]'); if (!row) return '';
+        const part = b === '1' ? row.lastElementChild : row;
+        const o = c.el.getBoundingClientRect(), q = part.getBoundingClientRect();
+        const l = Math.round(q.left - o.left - c.el.clientLeft), t = Math.round(q.top - o.top - c.el.clientTop);
+        return l + ' ' + t + ' ' + (l + Math.round(q.width)) + ' ' + (t + Math.round(q.height)); }
       case 'ins': {
         const [text, opts] = String(c2).split(SEP); const parent = c.nodes.get(h);
         const id = ++c.nextH, list = parent ? parent.kids : c.roots;

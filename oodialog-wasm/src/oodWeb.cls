@@ -24,9 +24,9 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.17.0"
+  return "0.18.0"
 ::method module_lastChanged class
-  return "2026-11-14"
+  return "2026-11-15"
 ::attribute key unguarded
 ::attribute rexxSelf unguarded
 ::attribute library unguarded
@@ -102,9 +102,9 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.17.0"
+  return "0.18.0"
 ::method module_lastChanged class
-  return "2026-11-14"
+  return "2026-11-15"
 ::attribute rexxSelf unguarded
 ::attribute isBar unguarded
 ::attribute wID unguarded
@@ -131,9 +131,9 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.17.0"
+  return "0.18.0"
 ::method module_lastChanged class
-  return "2026-11-14"
+  return "2026-11-15"
 ::attribute dlg unguarded             -- its dialog's OodDlg
 ::attribute id unguarded
 ::attribute kind unguarded
@@ -149,9 +149,9 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.17.0"
+  return "0.18.0"
 ::method module_lastChanged class
-  return "2026-11-14"
+  return "2026-11-15"
 ::method module_version unguarded
   return self~class~module_version
 ::method module_lastChanged unguarded
@@ -285,6 +285,7 @@
     when kind == "WM" then self~wmEvent(key, code, extra)
     when kind == "MOUSE" then self~mouseEvent(key, id, code, extra)
     when kind == "GC" then self~grandChildEvent(key, id, code)
+    when kind == "TT" then self~ttEvent(key, id, code, extra)
     otherwise nop
   end
 
@@ -1537,6 +1538,11 @@ noPackage:
 /* setWindowPos(hwndBehind, rect | point, size | x, y, cx, cy, opts): pixels in the parent's client area. */
 ::method wb_setWindowPos unguarded
   use arg self_, msg, a
+  if self_~oodPeer~isA(.OodCtl) then if self_~oodPeer~kind == "TOOLTIP" then do    -- a tip is placed in screen pixels
+    if a[2]~isA(.String) then self~ctlOp(self_~oodPeer~dlg, self_~oodPeer~id, "tip.pos", a[2], a[3])
+    else self~ctlOp(self_~oodPeer~dlg, self_~oodPeer~id, "tip.pos", a[2]~x, a[2]~y)
+    return .true
+  end
   opts = ""
   nums = .array~new
   do i = 2 to a~size
@@ -2086,7 +2092,7 @@ noPackage:
   return self~connectNotify(self_, a, map)
 ::method en_connectTreeViewEvent unguarded
   use arg self_, msg, a
-  return self~connectNotify(self_, a, "SELCHANGED SELCHANGED EXPANDED EXPANDED EXPANDING EXPANDING")
+  return self~connectNotify(self_, a, "SELCHANGED SELCHANGED EXPANDED EXPANDED EXPANDING EXPANDING GETINFOTIP GETINFOTIP")
 ::method en_connectTabEvent unguarded
   use arg self_, msg, a
   return self~connectNotify(self_, a, "SELCHANGE SELCHANGE SELCHANGING SELCHANGING")
@@ -2122,6 +2128,13 @@ noPackage:
           old = self~tvHandle(parts[1])
           new = self~tvHandle(parts[2])
           args = .array~of(id, old, self~itemData(d, id, parts[1]), new, self~itemData(d, id, parts[2]), parts[3], ctl, event)
+        end
+        else if event == "GETINFOTIP" then do    -- (id, item, text, maxLen, userData): the answer is the tip's text
+          text = self~invokeResult(dlg, entry[3], .array~of(id, self~tvHandle(parts[1]), "", 1023, self~itemData(d, id, parts[1])))
+          if text == .nil then text = ""
+          if \text~isA(.String) then text = text~string
+          self~ctlOp(d, 60000 + id, "tip.show", text~left(min(text~length, 1023)))
+          iterate
         end
         else args = .array~of(id, self~tvHandle(parts[1]), parts[2], "", ctl, event)
       end
@@ -2635,26 +2648,480 @@ noPackage:
   cached = self_~oodPeer~controls[self~resolveId(self_, a[1]) "TOOLTIP"]
   if cached == .nil then return .nil
   return cached
-::method tt_addTool unguarded      -- addTool(control, text)
+/* A ToolTip is not a control of the page.  Its tools are kept here, by the tool tip's ID,
+   in the dialog's store: "TT" id -> a table of tool key -> directory (tool, id, text,
+   flags, rect, userData).  A tool is a whole window (key "w" hostId) or a rectangle of a
+   window (key "r" hostId "." toolId).  The page decides when a tip is due and sends
+   TT events (ttEvent); see the comment "Tool tips" in oodialog-web.js. */
+::method ttTools unguarded         -- the tool table of a ToolTip object
+  use arg self_
+  p = self_~oodPeer
+  tools = p~dlg~store["TT" p~id]
+  if tools == .nil then do
+    tools = .table~new
+    p~dlg~store["TT" p~id] = tools
+    p~dlg~store["TTOBJ" p~id] = self_
+  end
+  return tools
+::method ttHostId unguarded        -- the page's ID of a window object: 0 for a dialog
+  use arg window
+  peer = window~oodPeer
+  if peer~isA(.OodCtl) then return peer~id
+  return 0
+::method ttJson unguarded          -- a text as a JSON string
+  use arg text
+  text = text~changeStr("\", "\\")~changeStr('"', '\"')~changeStr("0d0a"x, "\n")~changeStr("0a"x, "\n")~changeStr("0d"x, "")~changeStr("09"x, "\t")
+  return '"'text'"'
+::method ttAdd unguarded           -- keep a tool and tell the page
+  use arg self_, key, entry
+  p = self_~oodPeer
+  tools = self~ttTools(self_)
+  if tools~hasIndex(key) then entry~seq = tools[key]~seq
+  else do
+    seq = p~dlg~store["TTSEQ" p~id]
+    if seq == .nil then seq = 0
+    p~dlg~store["TTSEQ" p~id] = seq + 1
+    entry~seq = seq + 1
+  end
+  tools[key] = entry
+  json = '{"key":"'key'","host":'self~ttHostId(entry~tool)',"rect":'
+  if entry~rect == .nil then json = json"null"
+  else json = json"["entry~rect~left","entry~rect~top","entry~rect~right","entry~rect~bottom"]"
+  json = json',"text":'
+  if entry~text == .nil then json = json"null}"
+  else json = json || self~ttJson(entry~text)"}"
+  self~ctlOpWhenLive(p~dlg, p~id, "tip.add", json)
+  self~ttSendEvents(self_)
+  return .true
+::method ttEntry unguarded
+  use arg tool, id, text, flags, rect, userData
+  entry = .directory~new
+  entry~tool = tool
+  entry~id = id                    -- .nil: the tool is the window itself
+  entry~text = text                -- .nil: asked from the program each time
+  entry~flags = flags
+  entry~rect = rect
+  entry~userData = userData
+  return entry
+::method ttTextArg unguarded       -- a text argument: omitted, empty or TEXTCALLBACK is "ask the program", as upstream
+  use arg a, i
+  if \a~hasIndex(i) then return .nil
+  if a[i] == "" | a[i]~upper == "TEXTCALLBACK" then return .nil
+  return a[i]
+::method tt_addTool unguarded      -- addTool(window, text, flags, userData)
+  use arg self_, msg, a
+  tool = a[1]
+  if \tool~hasMethod("oodPeer") then return .false
+  userData = .nil
+  if a~hasIndex(4) then userData = a[4]
+  return self~ttAdd(self_, "w"self~ttHostId(tool), self~ttEntry(tool, .nil, self~ttTextArg(a, 2), self~opt(a, 3), .nil, userData))
+::method tt_addToolRect unguarded  -- addToolRect(window, id, rect, text, flags, userData)
+  use arg self_, msg, a
+  tool = a[1]
+  if \tool~hasMethod("oodPeer") then return .false
+  id = self~resolveId(self_~oodPeer~dlg~rexxSelf, a[2])
+  userData = .nil
+  if a~hasIndex(6) then userData = a[6]
+  return self~ttAdd(self_, "r"self~ttHostId(tool)"."id, self~ttEntry(tool, id, self~ttTextArg(a, 4), self~opt(a, 5), a[3], userData))
+::method tt_addToolEx unguarded    -- addToolEx(toolInfo)
+  use arg self_, msg, a
+  info = a[1]~oodPeer
+  if info~id == .nil then key = "w"self~ttHostId(info~tool)
+  else key = "r"self~ttHostId(info~tool)"."info~id
+  return self~ttAdd(self_, key, self~ttEntry(info~tool, info~id, info~text, info~flags, info~rect, info~userData))
+::method tt_delTool unguarded      -- delTool(window, id)
+  use arg self_, msg, a
+  if a~hasIndex(2) then key = "r"self~ttHostId(a[1])"."self~resolveId(self_~oodPeer~dlg~rexxSelf, a[2])
+  else key = "w"self~ttHostId(a[1])
+  self~ttTools(self_)~remove(key)
+  self~ctlOpWhenLive(self_~oodPeer~dlg, self_~oodPeer~id, "tip.del", key)
+  return 0
+::method tt_getToolCount unguarded
+  use arg self_
+  return self~ttTools(self_)~items
+::method ttInfoOf unguarded        -- a tool as a ToolInfo object
+  use arg entry
+  return self~classOf("ToolInfo")~new(entry~tool, entry~id, entry~text, entry~flags, entry~rect, entry~userData)
+::method tt_enumTools unguarded    -- enumTools(index): the tool at that index (from 1, in the order added) as a ToolInfo; .nil past the end
+  use arg self_, msg, a
+  index = 1
+  if a~hasIndex(1) then index = a[1]
+  if index < 1 then raise syntax 93.907 array(1, 1, 4294967295, index)
+  found = 0
+  do entry over self~ttTools(self_)~allItems
+    if entry~seq > 0 then found += 1
+  end
+  if index > found then return .nil
+  seqs = .array~new
+  do entry over self~ttTools(self_)~allItems
+    seqs~append(entry~seq)
+  end
+  wanted = seqs~sortWith(.NumericComparator~new)[index]
+  do entry over self~ttTools(self_)~allItems
+    if entry~seq == wanted then return self~ttInfoOf(entry)
+  end
+  return .nil
+/* hitTestInfo(toolInfo, point | x, y): is a tool of the ToolInfo's window at that point of
+   its client area?  If so the ToolInfo is filled with that tool. */
+::method tt_hitTestInfo unguarded
+  use arg self_, msg, a
+  info = a[1]~oodPeer
+  if a[2]~isA(.String) then parse value a[2] a[3] with x y .
+  else do
+    x = a[2]~x
+    y = a[2]~y
+  end
+  host = self~ttHostId(info~tool)
+  hit = .nil
+  do entry over self~ttTools(self_)~allItems
+    if self~ttHostId(entry~tool) \== host then iterate
+    if entry~rect == .nil then do
+      if x < 0 | y < 0 then iterate
+      size = self~classOf("Size")~new
+      if entry~tool~hasMethod("getRealSize") then size = entry~tool~getRealSize
+      if size~width > 0 then if x >= size~width | y >= size~height then iterate
+      if hit == .nil then hit = entry
+    end
+    else if x >= entry~rect~left & x < entry~rect~right & y >= entry~rect~top & y < entry~rect~bottom then hit = entry
+  end
+  if hit == .nil then return .false
+  info~id = hit~id
+  info~text = hit~text
+  info~flags = hit~flags
+  info~rect = hit~rect
+  info~userData = hit~userData
+  return .true
+::method tt_getToolInfo unguarded  -- getToolInfo(window, id)
+  use arg self_, msg, a
+  if a~hasIndex(2) then key = "r"self~ttHostId(a[1])"."self~resolveId(self_~oodPeer~dlg~rexxSelf, a[2])
+  else key = "w"self~ttHostId(a[1])
+  entry = self~ttTools(self_)[key]
+  if entry == .nil then return .nil
+  return self~ttInfoOf(entry)
+::method tt_updateTipText unguarded    -- updateTipText(toolInfo): the tool's text is the ToolInfo's text
+  use arg self_, msg, a
+  info = a[1]~oodPeer
+  if info~id == .nil then key = "w"self~ttHostId(info~tool)
+  else key = "r"self~ttHostId(info~tool)"."info~id
+  entry = self~ttTools(self_)[key]
+  if entry == .nil then return 0
+  entry~text = info~text
+  if entry~text == .nil then self~ctlOpWhenLive(self_~oodPeer~dlg, self_~oodPeer~id, "tip.text", key, self~sep)
+  else self~ctlOpWhenLive(self_~oodPeer~dlg, self_~oodPeer~id, "tip.text", key, entry~text)
+  return 0
+::method tt_setToolInfo unguarded
+  forward message "tt_updateTipText"
+::method tt_setTitle unguarded     -- setTitle(title, icon)
+  use arg self_, msg, a
+  self~ctlOpWhenLive(self_~oodPeer~dlg, self_~oodPeer~id, "tip.title", self~opt(a, 1))
+  self_~oodPeer~dlg~store["TTTITLE" self_~oodPeer~id] = self~opt(a, 1)
+  return .true
+::method tt_getTitle unguarded
+  use arg self_
+  title = self_~oodPeer~dlg~store["TTTITLE" self_~oodPeer~id]
+  info = .directory~new
+  info~icon = "NONE"
+  info~title = ""
+  if title \== .nil then info~title = title
+  return info
+::method tt_activate unguarded     -- activate(.true | .false)
+  use arg self_, msg, a
+  on = .true
+  if a~hasIndex(1) then on = (a[1] == .true)
+  self~ctlOpWhenLive(self_~oodPeer~dlg, self_~oodPeer~id, "tip.active", on)
+  return 0
+::method tt_setMaxTipWidth unguarded   -- setMaxTipWidth(pixels): the width before; -1 for none
   use arg self_, msg, a
   p = self_~oodPeer
-  count = p~dlg~store[p~id "tools"]
-  if count == .nil then count = 0
-  p~dlg~store[p~id "tools"] = count + 1
-  tool = a[1]~oodPeer
-  if tool~isA(.OodDlg) then self~ctlOpWhenLive(tool, 0, "tip", self~opt(a, 2))
-  else self~ctlOpWhenLive(tool~dlg, tool~id, "tip", self~opt(a, 2))
-  return .true
-::method tt_addToolRect unguarded
-  return .true
-::method tt_setTitle unguarded
-  return .true
-::method tt_activate unguarded
+  old = p~dlg~store["TTWIDTH" p~id]
+  if old == .nil then old = -1
+  p~dlg~store["TTWIDTH" p~id] = a[1]
+  self~ctlOpWhenLive(p~dlg, p~id, "tip.maxWidth", a[1])
+  return old
+::method tt_getMaxTipWidth unguarded
+  use arg self_
+  old = self_~oodPeer~dlg~store["TTWIDTH" self_~oodPeer~id]
+  if old == .nil then return -1
+  return old
+::method ttDelays unguarded        -- AUTOPOP INITIAL RESHOW in milliseconds
+  use arg self_
+  p = self_~oodPeer
+  delays = p~dlg~store["TTDELAY" p~id]
+  if delays == .nil then do
+    delays = .directory~new
+    delays~autopop = 5000
+    delays~initial = 500
+    delays~reshow = 100
+    p~dlg~store["TTDELAY" p~id] = delays
+  end
+  return delays
+::method tt_getDelayTime unguarded -- getDelayTime(AUTOPOP | INITIAL | RESHOW)
+  use arg self_, msg, a
+  which = self~opt(a, 1)~upper
+  if which == "" then which = "AUTOPOP"
+  time = self~ttDelays(self_)[which]
+  if time == .nil then raise syntax 93.900 array('the delay "'which'" is not AUTOPOP, INITIAL or RESHOW')
+  return time
+::method tt_setDelayTime unguarded -- setDelayTime(which, milliseconds): AUTOMATIC sets all three from one time
+  use arg self_, msg, a
+  which = self~opt(a, 1)~upper
+  if which == "" then which = "AUTOPOP"
+  time = -1
+  if a~hasIndex(2) then time = a[2]
+  delays = self~ttDelays(self_)
+  if which == "AUTOMATIC" then do
+    if time < 0 then time = 500
+    delays~initial = time
+    delays~autopop = time * 10
+    delays~reshow = time % 5
+  end
+  else do
+    if \delays~hasIndex(which) then raise syntax 93.900 array('the delay "'which'" is not AUTOPOP, INITIAL, RESHOW or AUTOMATIC')
+    if time < 0 then time = .directory~of(("AUTOPOP", 5000), ("INITIAL", 500), ("RESHOW", 100))[which]
+    delays[which] = time
+  end
+  self~ctlOpWhenLive(self_~oodPeer~dlg, self_~oodPeer~id, "tip.delay", delays~initial)
   return 0
-::method tt_setMaxTipWidth unguarded
-  return -1
-::method tt_setDelayTime unguarded
+::method tt_pop unguarded          -- pop: the tip goes
+  use arg self_
+  self~ctlOpWhenLive(self_~oodPeer~dlg, self_~oodPeer~id, "tip.pop")
   return 0
+::method tt_popUp unguarded
+  return 0
+::method tt_update unguarded
+  return 0
+::method tt_hasCurrentTool unguarded
+  use arg self_
+  p = self_~oodPeer
+  if \p~dlg~live then return .false
+  return (self~ctlOp(p~dlg, p~id, "tip.shown") \== "")
+::method tt_getCurrentTool unguarded   -- getCurrentToolInfo: the tool whose tip is shown; .nil if none
+  use arg self_
+  p = self_~oodPeer
+  if \p~dlg~live then return .nil
+  parse value self~ctlOp(p~dlg, p~id, "tip.shown") with key (self~sep) .
+  if key == "" then return .nil
+  entry = self~ttTools(self_)[key]
+  if entry == .nil then return .nil
+  return self~ttInfoOf(entry)
+::method tt_getText unguarded      -- getText(toolInfo): the tool's text goes into the ToolInfo
+  use arg self_, msg, a
+  info = a[1]~oodPeer
+  if info~id == .nil then key = "w"self~ttHostId(info~tool)
+  else key = "r"self~ttHostId(info~tool)"."info~id
+  entry = self~ttTools(self_)[key]
+  if entry == .nil then return 0
+  info~text = entry~text
+  return 0
+::method tt_trackActivate unguarded
+  return 0
+::method tt_trackPosition unguarded
+  return 0
+::method tt_setWindowTheme unguarded
+  return 0
+::method tt_setMargin unguarded
+  return 0
+::method tt_setTipBkColor unguarded
+  return 0
+::method tt_setTipTextColor unguarded
+  return 0
+/* manageAtypicalTool(window, events, methods): the events of this tool go to methods of the
+   dialog instead of the usual ones.  Events: RELAY NORELAY NEEDTEXT SHOW POP LINKCLICK. */
+::method tt_manageAtypicalTool unguarded
+  use arg self_, msg, a
+  p = self_~oodPeer
+  tool = a[1]
+  host = self~ttHostId(tool)
+  has = .false                       -- (the events of every tool of this window are managed)
+  do entry over self~ttTools(self_)~allItems
+    if self~ttHostId(entry~tool) == host then has = .true
+  end
+  if \has then self~ttAdd(self_, "w"host, self~ttEntry(tool, .nil, .nil, "", .nil, .nil))
+  managed = .directory~new
+  names = .directory~new
+  names~relay = "onRelay"
+  names~needText = "onNeedText"
+  names~show = "onShow"
+  names~pop = "onPop"
+  names~linkClick = "onLinkClick"
+  relay = .true
+  if a~hasIndex(2) then do i = 1 to a[2]~items
+    event = a[2][i]~upper
+    if event == "NORELAY" then do
+      relay = .false
+      iterate
+    end
+    if \names~hasIndex(event) then raise syntax 93.900 array('manageAtypicalTool: "'a[2][i]'" is not RELAY, NORELAY, NEEDTEXT, SHOW, POP or LINKCLICK')
+    method = names[event]
+    if a~hasIndex(3) then if a[3]~hasIndex(i) then if a[3][i] \== "" then method = a[3][i]
+    managed[event] = method
+  end
+  if relay then if \managed~hasIndex("RELAY") then managed~relay = "onRelay"
+  p~dlg~store["TTAT" p~id host] = managed
+  self~ctlOpWhenLive(p~dlg, p~id, "tip.relay", host, relay)
+  self~ttSendEvents(self_)
+  return .true
+::method ttSendEvents unguarded    -- tell the page which of SHOW and POP somebody wants
+  use arg self_
+  p = self_~oodPeer
+  wanted = ""
+  do name over p~dlg~store~allIndexes
+    if \name~isA(.String) then iterate
+    if name~word(2) \== p~id then iterate
+    if name~word(1) == "TTEV" then wanted = wanted name~word(3)
+    if name~word(1) == "TTAT" then do event over p~dlg~store[name]~allIndexes
+      wanted = wanted event
+    end
+  end
+  self~ctlOpWhenLive(p~dlg, p~id, "tip.events", wanted~strip)
+::method en_connectToolTipEvent unguarded  -- connectToolTipEvent(id, event, method, willReply)
+  use arg self_, msg, a
+  d = self_~oodPeer
+  id = self~resolveId(self_, a[1])
+  if id < 1 then return .false
+  event = self~opt(a, 2)~upper
+  names = "LINKCLICK onLinkClick NEEDTEXT onNeedText POP onPop SHOW onShow"
+  at = names~wordPos(event)
+  if at == 0 then raise syntax 93.900 array('connectToolTipEvent: "'a[2]'" is not LinkClick, NeedText, Pop or Show')
+  method = names~word(at + 1)
+  if a~hasIndex(3) then if a[3] \== "" then method = a[3]
+  d~store["TTEV" id event] = method
+  tip = d~store["TTOBJ" id]
+  if tip \== .nil then self~ttSendEvents(tip)
+  return .true
+::method ttEvent unguarded         -- an event of the page's tool tips
+  use arg key, ttId, event, extra
+  d = self~dialogOf(key)
+  if d == .nil then return
+  tip = d~store["TTOBJ" ttId]
+  if tip == .nil then return
+  parse var extra toolKey (self~sep) x (self~sep) y
+  entry = self~ttTools(tip)[toolKey]
+  if entry == .nil then return
+  managed = d~store["TTAT" ttId self~ttHostId(entry~tool)]
+  method = .nil
+  atypical = .false
+  if managed \== .nil then if managed~hasIndex(event) then do
+    method = managed[event]
+    atypical = .true
+  end
+  if method == .nil then method = d~store["TTEV" ttId event]
+  toolId = entry~tool                -- (a whole window is its own ID)
+  if entry~id \== .nil then toolId = entry~id
+  dlg = d~rexxSelf
+  select
+    when event == "NEEDTEXT" then do
+      if method == .nil then return
+      info = .directory~new
+      info~text = ""
+      info~userData = entry~userData
+      info~flags = entry~flags
+      if atypical then self~invoke(dlg, method, .array~of(tip, entry~tool, info, entry~userData, entry~flags))
+      else self~invoke(dlg, method, .array~of(toolId, tip, info))
+      text = info~text
+      if text == .nil then text = ""
+      self~ctlOp(d, ttId, "tip.show", text)
+    end
+    when event == "RELAY" then do
+      if method == .nil then return
+      self~invoke(dlg, method, .array~of(tip, self~classOf("Point")~new(x, y), "mouseMove", entry~tool))
+    end
+    otherwise                         -- SHOW, POP
+      if method == .nil then return
+      if atypical then self~invoke(dlg, method, .array~of(tip, entry~tool, toolId))
+      else self~invoke(dlg, method, .array~of(toolId, tip))
+  end
+/* getToolTips of a tree-view or list-view: the control's own tool tip.  For a tree-view
+   the page asks the text of the item under the pointer with the GETINFOTIP notification. */
+::method generic_getToolTips unguarded
+  use arg self_
+  p = self_~oodPeer
+  d = p~dlg
+  ttId = 60000 + p~id
+  cached = d~controls[ttId "TOOLTIP"]
+  if cached \== .nil then return cached
+  tip = self~classOf("ToolTip")~new(d~rexxSelf, ttId, .OodCtl~new(d, ttId, "TOOLTIP"))
+  d~controls[ttId "TOOLTIP"] = tip
+  self~ttTools(tip)["tv"p~id] = self~ttEntry(self_, .nil, .nil, "", .nil, .nil)
+  self~ttTools(tip)["w"p~id] = self~ttTools(tip)["tv"p~id]
+  if d~kinds[p~id]~word(1) == "TREEVIEW" then self~ctlOpWhenLive(d, ttId, "tip.tree", p~id)
+  return tip
+::method generic_setToolTips unguarded
+  return .nil
+
+/* ToolInfo: the description of one tool.  .ToolInfo~new(window, id, text, flags, rect, userData, resource) */
+::method ti_init unguarded
+  use arg self_, msg, a
+  info = .directory~new
+  info~tool = a[1]
+  info~id = .nil
+  if a~hasIndex(2) then info~id = self~resolveId(self~ttDialogOf(a[1]), a[2])
+  info~text = self~ttTextArg(a, 3)
+  info~flags = self~opt(a, 4)
+  info~rect = .nil
+  if a~hasIndex(5) then info~rect = a[5]
+  info~userData = .nil
+  if a~hasIndex(6) then info~userData = a[6]
+  info~resource = .nil
+  if a~hasIndex(7) then info~resource = a[7]
+  self_~oodPeer = info
+  return 0
+::method ttDialogOf unguarded      -- the dialog object of a window object
+  use arg window
+  peer = window~oodPeer
+  if peer~isA(.OodCtl) then return peer~dlg~rexxSelf
+  return window
+::method ti_forID_cls unguarded
+  use arg self_, msg, a
+  if a~hasIndex(2) then return self_~new(a[1], a[2])
+  return self_~new(a[1])
+::method ti_forHitTest_cls unguarded
+  use arg self_, msg, a
+  return self_~new(a[1])
+::method ti_unInit unguarded
+  return 0
+::method ti_hitTestHelper unguarded
+  return 0
+::method ti_flags unguarded
+  use arg self_
+  return self_~oodPeer~flags
+::method ti_setFlags unguarded
+  use arg self_, msg, a
+  self_~oodPeer~flags = a[1]
+::method ti_rect unguarded
+  use arg self_
+  rect = self_~oodPeer~rect
+  if rect == .nil then return self~classOf("Rect")~new
+  return rect
+::method ti_setRect unguarded
+  use arg self_, msg, a
+  self_~oodPeer~rect = a[1]
+::method ti_resource unguarded
+  use arg self_
+  return self_~oodPeer~resource
+::method ti_rexxHwnd unguarded
+  use arg self_
+  return self_~oodPeer~tool
+::method ti_rexxID unguarded       -- the tool's ID; for a whole window, the window object
+  use arg self_
+  if self_~oodPeer~id == .nil then return self_~oodPeer~tool
+  return self_~oodPeer~id
+::method ti_text unguarded
+  use arg self_
+  text = self_~oodPeer~text
+  if text == .nil then return ""
+  return text
+::method ti_setText unguarded
+  use arg self_, msg, a
+  self_~oodPeer~text = self~ttTextArg(a, 1)
+::method ti_setTextMemoryIsAllocated unguarded
+  return
+::method ti_userData unguarded
+  use arg self_
+  return self_~oodPeer~userData
+::method ti_setUserData unguarded
+  use arg self_, msg, a
+  self_~oodPeer~userData = a[1]
 
 /*---- fonts and colours ------------------------------------------------------------------*/
 ::method newFont                   -- a font "handle": the name, the point size, and B I U for the style
@@ -3770,11 +4237,6 @@ noPackage:
   return 0
 ::method ud_getAcceleration unguarded
   return .array~new
-::method tt_getToolCount unguarded
-  use arg self_
-  count = self_~oodPeer~dlg~store[self_~oodPeer~id "tools"]
-  if count == .nil then return 0
-  return count
 ::method cb_setFullColor unguarded
   use arg self_, msg, a
   self~op(self_, "color", self~colorOf(self~argOr(a, 1)), self~colorOf(self~argOr(a, 2)))
@@ -3829,8 +4291,6 @@ noPackage:
   forward message "lb_addDirectory"
 ::method dtp_setRange unguarded
   return 0
-::method tt_getDelayTime unguarded
-  return 500
 ::method bc_setStyle unguarded
   return ""
 ::method dlgext_setBitmapPosition unguarded -- setBitmapPosition(id, x, y | point): where the button's bitmap is drawn
@@ -3963,9 +4423,6 @@ noPackage:
 ::method en_connectMonthCalendarEvent unguarded
   use arg self_, msg, a
   return self~connectNotify(self_, a, "GETDAYSTATE GETDAYSTATE SELCHANGE SELCHANGE SELECT SELECT")
-::method en_connectToolTipEvent unguarded
-  use arg self_, msg, a
-  return self~notProduced("tool tip", a)
 ::method en_connectToolBarEvent unguarded
   use arg self_, msg, a
   return self~notProduced("tool bar", a)
@@ -4684,6 +5141,29 @@ noPackage:
   entry = d~store["GC" id]
   if entry == .nil then return
   self~invoke(d~rexxSelf, entry[1], .array~of(id, what, entry[2]))
+::method tv_getItemRect unguarded      -- getItemRect(item, rect, textOnly): the item's row in the tree-view's client area
+  use arg self_, msg, a
+  textOnly = 0
+  if a~hasIndex(3) then textOnly = (a[3] == .true)
+  parse value self~op(self_, "tv.rect", self~tvItem(a, 1), textOnly) with left top right bottom .
+  if left == "" then return .false       -- (the item is not shown)
+  a[2]~left = left
+  a[2]~top = top
+  a[2]~right = right
+  a[2]~bottom = bottom
+  return .true
+::method tv_hitTestInfo unguarded      -- hitTestInfo(point | x, y): a directory with HITEM and LOCATION
+  use arg self_, msg, a
+  if a[1]~isA(.String) then parse value a[1] a[2] with x y .
+  else do
+    x = a[1]~x
+    y = a[1]~y
+  end
+  parse value self~op(self_, "tv.hit", x, y) with h location
+  info = .directory~new
+  info~hItem = self~tvHandle(h)
+  info~location = location~strip
+  return info
 ::method lv_getItemRect unguarded      -- getItemRect(index, part): a .Rect in the list-view's client area
   use arg self_, msg, a
   parse value self~op(self_, "lv.rect", a[1], "") with left top right bottom .
