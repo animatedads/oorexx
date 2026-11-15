@@ -1,4 +1,4 @@
-/* ContactsDE.rex -- an ooDialog program made with the ooDialog Designer 0.6.0
+/* ContactsDE.rex -- an ooDialog program made with the ooDialog Designer 0.7.0
    Design: the ::RESOURCE oodDesign at the end.  The designer writes this
    whole file; what you type is the body of each event method.
    ooDialog Designer -- architecture: Tom Dyer; code: Claude (Opus 5.5). */
@@ -15,7 +15,7 @@ return dlg~execute("SHOWTOP")
 
 ::method init
   forward class (super) continue
-  self~nlsUse(self~class~nlsChosen)
+  self~nlsUse(self~class~nlsChosen, "en")
   self~create(0, 0, 220, 146, self~nls("form.title"), "CENTER")
   self~txtNotes_data = "Notes go here."
 
@@ -85,42 +85,48 @@ return dlg~execute("SHOWTOP")
   if page = 2 then self~txtNotes~show
   else self~txtNotes~hide
 
--- Language support: texts are in ::RESOURCE strings.<language> at the end
--- (key = text).  self~nls(key, a1, a2, ...) gives a key's text with %1,
--- %2, ... replaced by a1, a2, ...; a key a language lacks takes "en"'s.
 ::attribute nlsChosen class      -- the program's argument: rexx ContactsDE.rex de
+-- Language support (OodNls.cls of the ooDialog Designer): texts are in
+-- ::RESOURCE strings.<language> at the end (key = text).  self~nls(key, a1, a2, ...)
+-- gives a key's text with %1, %2, ... replaced by a1, a2, ...; a key a language
+-- lacks takes "en"'s.
 ::attribute nlsLanguage get
 
 ::method nlsUse unguarded
   expose nlsTable nlsLanguage
-  use strict arg lang = ""
+  use strict arg lang = "", base = "en", tables = (.resources)
   if lang == .nil then lang = ""
   if lang == "" then do var over .array~of("LC_ALL", "LC_MESSAGES", "LANG")
-    lang = value(var, , "ENVIRONMENT")   -- C and POSIX name no language
+    lang = value(var, , "ENVIRONMENT")
     if lang \== "", lang~upper \== "C", lang~upper \== "POSIX" then leave
     lang = ""
   end
-  parse var lang lang "." .               -- de_DE.UTF-8: de_DE
-  lang = lang~changeStr("-", "_")          -- de-AT: de_AT
-  if .resources[("STRINGS."lang)~upper] == .nil then lang = lang~left(2)   -- de_AT: else de
-  if .resources[("STRINGS."lang)~upper] == .nil then lang = "en"
+  parse var lang lang "." .                    -- de_DE.UTF-8: de_DE
+  lang = lang~changeStr("-", "_")               -- de-AT: de_AT
+  if tables["STRINGS."lang~upper] == .nil then lang = lang~left(2)
+  if tables["STRINGS."lang~upper] == .nil then lang = base
   nlsLanguage = lang
   nlsTable = .directory~new
   parse source os .
-  tables = .array~of("en")
-  if lang \== "en" then tables~append(lang)
-  do table over tables
-    do line over .resources[("STRINGS."table)~upper]
+  order = .array~of(base)
+  if lang \== base then order~append(lang)
+  do table over order
+    lines = tables["STRINGS."table~upper]
+    if lines == .nil then iterate
+    do line over lines
       parse var line key "=" text
       key = key~strip
       if key == "" | key~left(2) == "--" then iterate
       text = text~strip("L")
-      if text == "", table \== "en" then iterate   -- untranslated: the base's
+      if text == "", table \== base then iterate   -- untranslated: the base's
       -- ooDialog on Windows takes ANSI text: the file is UTF-8
       if os~caselessPos("Windows") = 1 then text = nlsAnsi(text)
       nlsTable[key~upper] = text
     end
   end
+  return lang
+
+-- A key's text; %1, %2, ... take the arguments after the key.
 
 ::method nls unguarded
   expose nlsTable
@@ -147,6 +153,10 @@ return dlg~execute("SHOWTOP")
     end
   end
   return out || text~substr(i)
+
+-- Every key's text, key TAB text, keys as the table has them (upper case):
+-- for a page that shows the texts.  (Not copied into programs.)  It is here
+-- because only OodNls's own methods see its object variables.
 
 ::method on_tabMain_selchange unguarded
   self~lblInfo~setText("Page:" self~tabMain~selected)
@@ -186,7 +196,10 @@ return dlg~execute("SHOWTOP")
     c = s~subchar(i)
     b = c~c2d
     select
-      when b < 128 then do; out = out || c; i = i + 1; end
+      when b < 128 then do
+        out = out || c
+        i = i + 1
+      end
       when b = 194 | b = 195 then do   -- C2 xx, C3 xx: U+0080 to U+00FF
         out = out || d2c(s~subchar(i + 1)~c2d + 64 * (b - 194))
         i = i + 2
@@ -230,7 +243,7 @@ mnuGrid.text = &Gitterlinien
 msg.count = %1 Personen
 ::END
 ::resource oodDesign
-designer version=0.6.0
+designer version=0.7.0
 form name=ContactsDE title=Contacts w=220 h=146 style=CENTER
 languages list="en de"
 control type=TAB name=tabMain id=100 x=8 y=6 w=204 h=14 tabs=People|Notes opts=""

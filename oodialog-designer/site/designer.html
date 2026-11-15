@@ -7,89 +7,89 @@
 </head>
 <body>
 <header id="bar">
-  <strong>ooDialog Designer</strong>
-  <select id="example" title="Start from">
-    <option value="">New dialog</option>
-    <option value="examples/Calculator.rex">Calculator (EDM2 DrDialog review)</option>
-    <option value="examples/Threads.rex">Threads and a timer</option>
-    <option value="examples/Contacts.rex">Tabs, list view and menu</option>
-    <option value="examples/Gadgets.rex">Tree view, track bar, date picker</option>
-    <option value="examples/ContactsDE.rex">Contacts in English and German (Strings…)</option>
+  <strong data-nls="ui.name">ooDialog Designer</strong>
+  <select id="example" data-nls-title="ex.tip" title="Start from">
+    <option value="" data-nls="ex.new">New dialog</option>
+    <option value="examples/Calculator.rex" data-nls="ex.calculator">Calculator (EDM2 DrDialog review)</option>
+    <option value="examples/Threads.rex" data-nls="ex.threads">Threads and a timer</option>
+    <option value="examples/Contacts.rex" data-nls="ex.contacts">Tabs, list view and menu</option>
+    <option value="examples/Gadgets.rex" data-nls="ex.gadgets">Tree view, track bar, date picker</option>
+    <option value="examples/ContactsDE.rex" data-nls="ex.contactsDE">Contacts in English and German (Strings…)</option>
   </select>
-  <button id="btnOpen" title="Open a .rex made with the designer">Open…</button>
-  <button id="btnSave" title="Download the program (it carries its design)">Save .rex</button>
-  <button id="btnProgram" title="Show the ooRexx this design writes">Program</button>
-  <button id="btnLibraries" title="Connect to a source of ooRexx libraries and use one">Libraries…</button>
-  <button id="btnStrings" title="The texts in each language: ::RESOURCE strings.&lt;language&gt;">Strings…</button>
-  <label id="langBox" hidden title="Show the design, and run it, in this language">Language <select id="lang"></select></label>
-  <button id="btnTrace" title="Run it, recording each step of the event code with its variables">▶ Trace</button>
-  <button id="btnRun" class="go" title="Run it with ooDialog on ooRexx/WASM">▶ Run</button>
-  <button id="btnStop" disabled>Stop</button>
+  <button id="btnOpen" data-nls="btn.open" data-nls-title="btn.open.tip" title="Open a .rex made with the designer">Open…</button>
+  <button id="btnSave" data-nls="btn.save" data-nls-title="btn.save.tip" title="Download the program (it carries its design)">Save .rex</button>
+  <button id="btnProgram" data-nls="btn.program" data-nls-title="btn.program.tip" title="Show the ooRexx this design writes">Program</button>
+  <button id="btnLibraries" data-nls="btn.libraries" data-nls-title="btn.libraries.tip" title="Connect to a source of ooRexx libraries and use one">Libraries…</button>
+  <button id="btnStrings" data-nls="btn.strings" data-nls-title="btn.strings.tip" title="The texts in each language: ::RESOURCE strings.&lt;language&gt;">Strings…</button>
+  <label id="langBox" hidden data-nls-title="lang.tip" title="Show the design, and run it, in this language"><span data-nls="lang.label">Language</span> <select id="lang"></select></label>
+  <button id="btnTrace" data-nls="btn.trace" data-nls-title="btn.trace.tip" title="Run it, recording each step of the event code with its variables">▶ Trace</button>
+  <button id="btnRun" class="go" data-nls="btn.run" data-nls-title="btn.run.tip" title="Run it with ooDialog on ooRexx/WASM">▶ Run</button>
+  <button id="btnStop" disabled data-nls="btn.stop">Stop</button>
+  <label id="uiLangBox" data-nls-title="ui.lang.tip" title="The designer's own language"><span aria-hidden="true">🌐</span> <select id="uiLang"></select></label>
   <input id="file" type="file" accept=".rex,.txt" hidden>
   <span id="status" role="status">Loading ooRexx…</span>
 </header>
 <main id="work">
-  <aside id="palette" aria-label="Controls"><h2>Controls</h2><div id="kinds"></div>
-    <p class="hint">Drag onto the form, or click to add.</p></aside>
+  <aside id="palette" aria-label="Controls" data-nls-aria="palette.title"><h2 data-nls="palette.title">Controls</h2><div id="kinds"></div>
+    <p class="hint" data-nls="palette.hint">Drag onto the form, or click to add.</p></aside>
   <section id="stage">
     <div id="formWrap"><div id="form" tabindex="0"><div id="formTitle"></div><div id="client"></div></div></div>
-    <div id="tray" aria-label="Non-visual controls"></div>
+    <div id="tray" aria-label="Non-visual controls" data-nls-aria="tray.aria"></div>
   </section>
   <aside id="side">
-    <h2 id="propTitle">Properties</h2><div id="props"></div>
-    <h2>Variables <span class="hint">(the dialog's attributes)</span></h2><div id="vars"></div>
-    <h2>Libraries <span class="hint">(::requires)</span></h2><div id="reqs"></div>
-    <h2>Shared scope <span class="hint">(expose sharedScope)</span></h2><div id="shared"></div>
+    <h2 id="propTitle" data-nls="side.properties">Properties</h2><div id="props"></div>
+    <h2><span data-nls="side.variables">Variables</span> <span class="hint" data-nls="side.variables.hint">(the dialog's attributes)</span></h2><div id="vars"></div>
+    <h2><span data-nls="side.libraries">Libraries</span> <span class="hint">(::requires)</span></h2><div id="reqs"></div>
+    <h2><span data-nls="side.shared">Shared scope</span> <span class="hint">(expose sharedScope)</span></h2><div id="shared"></div>
   </aside>
 </main>
 <section id="events">
-  <div id="tree" aria-label="Objects and events"></div>
+  <div id="tree" aria-label="Objects and events" data-nls-aria="tree.aria"></div>
   <div id="codeSide">
-    <div id="codeHead"><span id="codeTitle">Pick an event or a method</span>
-      <label id="threadBox" hidden>Runs on <select id="thread"><option value="ui">the dialog's thread</option><option value="background">its own thread (background)</option></select></label>
-      <button id="btnInsert" title="Insert an action on a control">Insert…</button>
-      <span id="views" role="group" aria-label="Show the code as">
-        <button data-view="code">Code</button><button data-view="graph">Graph</button><button data-view="both" class="on">Both</button></span>
+    <div id="codeHead"><span id="codeTitle" data-nls="code.pick">Pick an event or a method</span>
+      <label id="threadBox" hidden><span data-nls="thread.label">Runs on</span> <select id="thread"><option value="ui" data-nls="thread.ui">the dialog's thread</option><option value="background" data-nls="thread.bg">its own thread (background)</option></select></label>
+      <button id="btnInsert" data-nls="btn.insert" data-nls-title="btn.insert.tip" title="Insert an action on a control">Insert…</button>
+      <span id="views" role="group" aria-label="Show the code as" data-nls-aria="view.aria">
+        <button data-view="code" data-nls="view.code">Code</button><button data-view="graph" data-nls="view.graph">Graph</button><button data-view="both" class="on" data-nls="view.both">Both</button></span>
     </div>
     <div id="traceBar" hidden>
-      <button id="tPrev" title="Previous step">◀</button>
-      <input id="tStep" type="range" min="0" max="0" value="0" aria-label="Trace step">
-      <button id="tNext" title="Next step">▶</button>
+      <button id="tPrev" title="Previous step" data-nls-title="trace.prev">◀</button>
+      <input id="tStep" type="range" min="0" max="0" value="0" aria-label="Trace step" data-nls-aria="trace.step">
+      <button id="tNext" title="Next step" data-nls-title="trace.next">▶</button>
       <span id="tWhere"></span>
-      <button id="tClose" title="Leave the trace">Close trace</button>
-      <table id="tVars"><thead><tr><th>Variable</th><th>Value</th></tr></thead><tbody></tbody></table>
+      <button id="tClose" title="Leave the trace" data-nls="trace.close" data-nls-title="trace.close.tip">Close trace</button>
+      <table id="tVars"><thead><tr><th data-nls="trace.variable">Variable</th><th data-nls="trace.value">Value</th></tr></thead><tbody></tbody></table>
     </div>
     <div id="codeBody" class="both">
-    <textarea id="code" spellcheck="false" disabled placeholder="Rexx for this event.  Controls are methods of self: self~lcd~setText(&quot;0&quot;).  Drag a control from the list on the left onto this pane for its actions."></textarea>
+    <textarea id="code" spellcheck="false" disabled data-nls-placeholder="code.placeholder" placeholder="Rexx for this event.  Controls are methods of self: self~lcd~setText(&quot;0&quot;).  Drag a control from the list on the left onto this pane for its actions."></textarea>
     <div id="graphSide">
-      <div id="gPalette" aria-label="Blocks to drag into the graph"></div>
-      <div id="gTools"><button id="gWrap" title="A THEN or ELSE holds one instruction: wrap it in DO...END to hold more" disabled>Wrap in do…end</button>
-        <button id="gDelete" disabled>Delete</button> <span id="gExplain"></span></div>
+      <div id="gPalette" aria-label="Blocks to drag into the graph" data-nls-aria="graph.palette.aria"></div>
+      <div id="gTools"><button id="gWrap" title="A THEN or ELSE holds one instruction: wrap it in DO...END to hold more" data-nls="graph.wrap" data-nls-title="graph.wrap.tip" disabled>Wrap in do…end</button>
+        <button id="gDelete" disabled data-nls="graph.delete">Delete</button> <span id="gExplain"></span></div>
       <div id="gError" hidden></div>
-      <div id="graph" aria-label="The event code as blocks"></div>
+      <div id="graph" aria-label="The event code as blocks" data-nls-aria="graph.aria"></div>
     </div>
     </div>
-    <pre id="out" aria-label="Program output"></pre>
+    <pre id="out" aria-label="Program output" data-nls-aria="out.aria"></pre>
   </div>
 </section>
 <div id="menu" hidden></div>
 <div id="stringsView" hidden><div class="panel wide">
-  <div class="panelHead"><strong>Strings</strong> <span class="hint">each language is a <code>::RESOURCE strings.&lt;language&gt;</code> in the program, <code>key = text</code></span>
-    <button id="sClose">Close</button></div>
-  <div id="sOff" class="sbar">The texts are written into the program as they are.  To translate them, give the language they are in:
-    <input id="sBase" value="en" size="6" aria-label="Base language"> <button id="sOn">Make translatable</button></div>
+  <div class="panelHead"><strong data-nls="strings.title">Strings</strong> <span class="hint" data-nls-rich="strings.head">each language is a `::RESOURCE strings.<language>` in the program, `key = text`</span>
+    <button id="sClose" data-nls="btn.close">Close</button></div>
+  <div id="sOff" class="sbar"><span data-nls="strings.off">The texts are written into the program as they are.  To translate them, give the language they are in:</span>
+    <input id="sBase" value="en" size="6" aria-label="Base language" data-nls-aria="strings.base.aria"> <button id="sOn" data-nls="strings.on">Make translatable</button></div>
   <div id="sOn2" class="sbar" hidden>
-    <span>Add a language <input id="sNewLang" placeholder="de" size="6" aria-label="New language"> <button id="sAddLang">Add</button></span>
-    <span>New event string <input id="sNewKey" placeholder="msg.saved" size="14" aria-label="Key"> <input id="sNewText" placeholder="Saved %1 records" size="24" aria-label="Base text"> <button id="sAddKey">Add</button></span>
+    <span><span data-nls="strings.addLang">Add a language</span> <input id="sNewLang" placeholder="de" size="6" aria-label="New language" data-nls-aria="strings.newLang.aria"> <button id="sAddLang" data-nls="btn.add">Add</button></span>
+    <span><span data-nls="strings.newString">New event string</span> <input id="sNewKey" placeholder="msg.saved" size="14" aria-label="Key" data-nls-aria="strings.key"> <input id="sNewText" placeholder="Saved %1 records" size="24" aria-label="Base text" data-nls-placeholder="strings.newText.example" data-nls-aria="strings.baseText"> <button id="sAddKey" data-nls="btn.add">Add</button></span>
   </div>
   <div id="sTableWrap"><table id="sTable"></table></div>
-  <p class="hint" id="sHint">Edit a text in place.  An empty cell in a translation uses the base language's text.  In event code: <code>self~nls("key", value1, value2)</code>; %1, %2 in the text take the values.  ⇩ gives a translator the language as a plain <code>key = text</code> file; ⇧ reads it back.</p>
+  <p class="hint" id="sHint" data-nls-rich="strings.hint">Edit a text in place.  An empty cell in a translation uses the base language's text.  In event code: `self~nls("key", value1, value2)`; %1, %2 in the text take the values.  ⇩ gives a translator the language as a plain `key = text` file; ⇧ reads it back.</p>
   <input id="sFile" type="file" accept=".txt" hidden>
 </div></div>
 <div id="programView" hidden><div class="panel"><div class="panelHead"><strong id="programName"></strong>
-  <button id="btnCopy">Copy</button><button id="btnProgramClose">Close</button></div><pre id="programText"></pre></div></div>
-<footer>Architecture: Tom Dyer.  Designer code: Claude (Opus 5.5).  ooDialog/WASM: Claude (Fable 5.2).
-ooRexx/WASM runtime and the Rexx Parser (graph view): Josep Maria Blasco.  ooDialog: the ooRexx project (CPL 1.0).</footer>
+  <button id="btnCopy" data-nls="btn.copy">Copy</button><button id="btnProgramClose" data-nls="btn.close">Close</button></div><pre id="programText"></pre></div></div>
+<footer data-nls="ui.footer">Architecture: Tom Dyer.  Designer code: Claude (Opus 5.5).  ooDialog/WASM: Claude (Fable 5.2).  ooRexx/WASM runtime and the Rexx Parser (graph view): Josep Maria Blasco.  ooDialog: the ooRexx project (CPL 1.0).</footer>
 <script src="ooRexx.js"></script>
 <script src="libraries.js"></script>
 <script src="graph.js"></script>

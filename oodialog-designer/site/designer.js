@@ -26,6 +26,54 @@
   };
   window.oodDesigner = st;                      // for tests
 
+  /* ---- the designer's own texts: ::RESOURCE strings.<language> of OodUi.cls,
+     loaded by OodNls (the same code the programs it writes use).  The page
+     asks the session once for the table in the chosen language; T(key, ...)
+     reads it.  %n: one pass, as OodNls~nls (this is its port to the page,
+     where a text must be had at once, not after a round trip). */
+  const ui = { table: {}, lang: '' };
+  function T(key, ...args) {
+    const text = ui.table[String(key).toUpperCase()];
+    if (text === undefined) return '<' + key + '>';
+    if (!args.length) return text;
+    let out = '', i = 0;
+    for (;;) {
+      const p = text.indexOf('%', i); if (p < 0) break;
+      const m = /^[0-9]*/.exec(text.slice(p + 1))[0], k = Number(m);
+      if (m && k > 0 && k <= args.length) { out += text.slice(i, p) + String(args[k - 1]); i = p + 1 + m.length; }
+      else { out += text.slice(i, p + 1); i = p + 1; }
+    }
+    return out + text.slice(i);
+  }
+  window.OodT = T;
+  // a text with `code` in it, as code elements (no markup from the table)
+  function setRich(el, text) {
+    el.textContent = '';
+    text.split('`').forEach((part, i) => el.append(i % 2 ? Object.assign(D.createElement('code'), { textContent: part }) : part));
+  }
+  function applyStatic() {
+    D.querySelectorAll('[data-nls]').forEach((e) => { e.textContent = T(e.dataset.nls); });
+    D.querySelectorAll('[data-nls-title]').forEach((e) => { e.title = T(e.dataset.nlsTitle); });
+    D.querySelectorAll('[data-nls-placeholder]').forEach((e) => { e.placeholder = T(e.dataset.nlsPlaceholder); });
+    D.querySelectorAll('[data-nls-aria]').forEach((e) => { e.setAttribute('aria-label', T(e.dataset.nlsAria)); });
+    D.querySelectorAll('[data-nls-rich]').forEach((e) => setRich(e, T(e.dataset.nlsRich)));
+    D.documentElement.lang = ui.lang;
+    D.title = T('ui.name');
+  }
+  // the designer's language: the one chosen before, else the browser's
+  async function loadUi(lang) {
+    ui.lang = String(await st.sess.eval('use arg l; return .OodUi~use(l)', lang));
+    ui.table = {};
+    for (const line of String(await st.sess.eval('return .OodUi~tableLines')).split('\n')) {
+      const t = line.indexOf('\t'); if (t > 0) ui.table[line.slice(0, t)] = line.slice(t + 1);
+    }
+    const sel = $('uiLang'); sel.textContent = '';
+    for (const l of String(await st.sess.eval('return .OodUi~languages')).split(' ').filter(Boolean))
+      sel.appendChild(Object.assign(D.createElement('option'), { value: l, textContent: l }));
+    sel.value = ui.lang;
+    applyStatic();
+  }
+
   /* ---- status ------------------------------------------------------------ */
   function status(text, isErr) {
     $('status').textContent = text;
@@ -35,7 +83,13 @@
   function errText(e) {
     let m = (e && (e.message || e.toString())) || String(e);
     const k = m.search(/Error 93\.900:\s*/);
-    if (k >= 0) m = m.slice(k).replace(/Error 93\.900:\s*/, '');
+    if (k >= 0) {
+      // a refusal: ooRexx says "Incorrect call to method. (<the designer's message>.)";
+      // the designer's message is what the user needs, in the designer's language
+      m = m.slice(k).replace(/Error 93\.900:\s*/, '').split('\n')[0];
+      const r = /^[^(]*\((.*)\.\)$/.exec(m);
+      return r ? r[1] : m;
+    }
     return m.split('\n')[0];
   }
   // Every call to Rexx goes through here: one at a time, errors to the status line.
@@ -92,19 +146,21 @@
       measure();
       st.rexx = await ooRexx.load();
       const files = {};
-      for (const f of ['OodDesigner.cls', 'OodGraph.cls', 'ObjectEditor.cls', 'LibraryProviders.cls']) files['/home/rexx/' + f] = await (await fetch(f)).text();
+      for (const f of ['OodNls.cls', 'OodUi.cls', 'OodDesigner.cls', 'OodGraph.cls', 'ObjectEditor.cls', 'LibraryProviders.cls']) files['/home/rexx/' + f] = await (await fetch(f)).text();
       // Josep Maria Blasco's Rexx Parser, which OodGraph.cls parses event code with
       for (const rel of (await (await fetch('rexx-parser/manifest.txt')).text()).split('\n').map((l) => l.trim()).filter(Boolean))
         files['/home/rexx/rexx-parser/' + rel] = await (await fetch('rexx-parser/' + rel)).text();
       st.sess = await st.rexx.start({ js: { page: true, worker: true }, files });
       await st.sess.loadPackage('LibraryProviders.cls');   // with OodDesigner.cls and ObjectEditor.cls
       await st.sess.loadPackage('OodGraph.cls');           // with the Rexx Parser
+      let chosen = ''; try { chosen = localStorage.getItem('oodDesigner.ui') || ''; } catch (e) { /* storage may be off */ }
+      await loadUi(chosen || navigator.language || '');
       await OxLibraries.setup(st.sess);
       OxGraph.attach({ sess: st.sess, rx, status, setCode, actionsMenu });
       await loadCatalog();
       await newDesign();
-      status('Ready.  Drag a control onto the form.');
-    } catch (e) { status('Could not start: ' + errText(e), true); console.error(e); }
+      status(T('st.ready')); st.ready = true;             // (tests wait for st.ready)
+    } catch (e) { status((ui.table['ST.NOSTART'] ? T('st.noStart') : 'Could not start:') + ' ' + errText(e), true); console.error(e); }
   }
   async function loadCatalog() {
     const text = await st.sess.eval('return .OodCatalog~catalogText');
@@ -116,13 +172,14 @@
     }
     const box = $('kinds'); box.textContent = '';
     for (const t of st.order) {
-      const div = D.createElement('div'); div.textContent = st.kinds[t].label; div.draggable = true;
+      const div = D.createElement('div'); div.textContent = kindLabel(t); div.draggable = true;
       div.dataset.kind = t; div.title = t;
       div.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/x-ood-kind', t); e.dataTransfer.effectAllowed = 'copy'; });
       div.addEventListener('click', () => addAt(t, null, null));
       box.appendChild(div);
     }
   }
+  const kindLabel = (t) => ui.table['KIND.' + t] || st.kinds[t].label;
   async function newDesign(design) {
     st.d = design || await rx(() => st.sess.eval('return .OodDesign~new("MyDialog")'));
     st.sel = 'form'; st.cur = null;
@@ -159,7 +216,7 @@
     const langs = st.snap.languages;
     if (!langs.includes(st.lang) || st.lang === base()) st.lang = '';
     const sel = $('lang'); sel.textContent = '';
-    for (const l of langs) sel.appendChild(Object.assign(D.createElement('option'), { value: l, textContent: l + (l === base() ? ' (base)' : '') }));
+    for (const l of langs) sel.appendChild(Object.assign(D.createElement('option'), { value: l, textContent: l === base() ? T('lang.base', l) : l }));
     sel.value = st.lang || base(); $('langBox').hidden = langs.length < 2;
     st.view = st.snap;
     if (!st.lang) return;
@@ -183,7 +240,7 @@
       const body = el.firstChild; if (!body) return;
       const over = body.scrollWidth > body.clientWidth + 1;
       el.classList.toggle('overflow', over);
-      if (over) { long.push(el.dataset.name); el.title = el.dataset.name + ': the text is too long for the control in ' + (st.lang || base() || 'this language'); }
+      if (over) { long.push(el.dataset.name); el.title = T('lang.tooLong.tip', el.dataset.name, st.lang || base()); }
     });
     return long;
   }
@@ -191,8 +248,8 @@
     st.lang = $('lang').value === base() ? '' : $('lang').value;
     await refresh();
     const long = markOverflow();
-    status((st.lang ? 'Shown in ' + st.lang + '; ▶ Run runs in it too.' : 'Shown in the base language, ' + base() + '.') +
-      (long.length ? '  Too long here: ' + long.join(', ') + '.' : ''), long.length > 0);
+    status((st.lang ? T('lang.shown', st.lang) : T('lang.shownBase', base())) +
+      (long.length ? '  ' + T('lang.tooLong', long.join(', ')) : ''), long.length > 0);
   });
   function drawForm() {
     const f = st.view.form, client = $('client');
@@ -283,7 +340,7 @@
         String(c.tabs || '').split('|').forEach((t, i) => {
           const b = D.createElement('span'); b.textContent = plainText(t); b.dataset.page = String(i + 1);
           if (String(i + 1) === cur) b.className = 'cur';
-          b.title = 'Show page ' + (i + 1) + ' while designing';
+          b.title = T('tab.showPage', i + 1);
           body.appendChild(b);
         });
         break; }
@@ -347,7 +404,7 @@
       if (!moved) {
         if (c.type === 'TAB' && e.target.dataset.page) {
           st.page[c.name.toLowerCase()] = e.target.dataset.page; drawForm();
-          status(c.name + ': designing page ' + e.target.dataset.page + '.  A control\'s "page" property puts it on a page.');
+          status(T('tab.designing', c.name, e.target.dataset.page));
         }
         return;
       }
@@ -374,7 +431,7 @@
     const name = st.sel; if (name === 'form') return;
     await rx(() => st.d.removeControl(name)).catch(() => {});
     if (st.cur && st.cur.ctl === name) { st.cur = null; showCode(); }
-    st.sel = 'form'; await refresh(); status('Removed ' + name + ' and its events.');
+    st.sel = 'form'; await refresh(); status(T('st.removed', name));
   }
 
   /* ---- adding: drop from the palette, or click it ------------------------ */
@@ -391,7 +448,7 @@
     const name = await rx(() => st.d.addControl(type, x, y)).catch(() => null);
     if (!name) return;
     st.sel = String(name); await refresh();
-    status('Added ' + name + '.  Rename it in Properties; its events are in the list below.');
+    status(T('st.added', name));
   }
 
   /* ---- properties ---------------------------------------------------------- */
@@ -399,51 +456,51 @@
     const box = $('props'); box.textContent = '';
     const name = st.sel;
     if (name === 'form') {
-      $('propTitle').textContent = 'Form';
+      $('propTitle').textContent = T('prop.form');
       const f = st.snap.form;
       for (const k of ['name', 'title', 'w', 'h']) box.appendChild(propInput('form', k, f[k]));
       return;
     }
     const c = findCtl(name); if (!c) return;
     const kind = st.kinds[c.type];
-    $('propTitle').textContent = c.name + ' — ' + kind.label;
+    $('propTitle').textContent = c.name + ' — ' + kindLabel(c.type);
     const keys = ['name'].concat(kind.nonvisual === '1' ? [] : ['x', 'y', 'w', 'h']).concat(String(kind.props || '').split(/\s+/).filter(Boolean));
     const tabs = st.snap.controls.filter((o) => o.type === 'TAB');
     if (kind.nonvisual !== '1' && c.type !== 'TAB' && tabs.length) keys.push('page');
     for (const k of keys) {
-      if (k === 'opts') box.appendChild(optsInput(c, kind, 'opts', kind.opts, 'styles'));
-      else if (k === 'exstyles') box.appendChild(optsInput(c, kind, 'exstyles', kind.exopts, 'extended'));
+      if (k === 'opts') box.appendChild(optsInput(c, kind, 'opts', kind.opts, T('prop.opts')));
+      else if (k === 'exstyles') box.appendChild(optsInput(c, kind, 'exstyles', kind.exopts, T('prop.exstyles')));
       else if (k === 'page') {
-        const vals = [''], labels = ['— (always shown)'];
+        const vals = [''], labels = [T('prop.page.always')];
         for (const t of tabs) String(t.tabs || '').split('|').forEach((p, i) => { vals.push(t.name + ':' + (i + 1)); labels.push(t.name + ' › ' + plainText(p)); });
         box.appendChild(selectInput(c.name, k, c.page, vals, labels));
       }
-      else if (k === 'role') box.appendChild(selectInput(c.name, k, c[k], ['', 'OK', 'CANCEL'], ['—', 'OK (IDOK, default)', 'Cancel (IDCANCEL)']));
+      else if (k === 'role') box.appendChild(selectInput(c.name, k, c[k], ['', 'OK', 'CANCEL'], ['—', T('prop.role.ok'), T('prop.role.cancel')]));
       else if (['checked', 'enabled', 'groupstart', 'grayed'].includes(k)) box.appendChild(checkInput(c.name, k, c[k]));
       else box.appendChild(propInput(c.name, k, c[k]));
     }
-    const del = D.createElement('button'); del.textContent = 'Remove ' + c.name; del.style.marginTop = '8px';
+    const del = D.createElement('button'); del.textContent = T('prop.remove', c.name); del.style.marginTop = '8px';
     del.addEventListener('click', removeSelected); box.appendChild(del);
     const id = D.createElement('div'); id.className = 'ro hint'; id.textContent = 'id ' + c.id + (c.role ? ' → ID' + c.role : ''); box.appendChild(id);
   }
-  const LABELS = { w: 'width', h: 'height', items: 'items (a|b|c)', groupstart: 'starts group', interval: 'interval (s)',
-    columns: 'columns (Title:width|…)', nodes: 'nodes (a|.child|..grandchild)', rows: 'rows (a;b|c;d)', tabs: 'tabs (a|b)', popup: 'menu', text: 'text' };
+  // a property's label: prop.<name> in the table, else the name itself
+  const propLabel = (key) => ui.table['PROP.' + key.toUpperCase()] || key;
   function propInput(name, key, value) {
-    const l = D.createElement('label'); l.append(LABELS[key] || key);
+    const l = D.createElement('label'); l.append(propLabel(key));
     const i = D.createElement('input'); i.type = 'text'; i.value = value == null ? '' : value; i.dataset.prop = key;
     i.addEventListener('change', () => setProp(name, key, i.value));
     i.addEventListener('keydown', (e) => { if (e.key === 'Enter') i.blur(); });
     l.appendChild(i); return l;
   }
   function selectInput(name, key, value, vals, labels) {
-    const l = D.createElement('label'); l.append(key);
+    const l = D.createElement('label'); l.append(propLabel(key));
     const s = D.createElement('select'); s.dataset.prop = key;
     vals.forEach((v, i) => s.add(new Option(labels[i], v, false, v === (value || ''))));
     s.addEventListener('change', () => setProp(name, key, s.value));
     l.appendChild(s); return l;
   }
   function checkInput(name, key, value) {
-    const l = D.createElement('label'); l.append(LABELS[key] || key);
+    const l = D.createElement('label'); l.append(propLabel(key));
     const i = D.createElement('input'); i.type = 'checkbox'; i.checked = value === '1'; i.dataset.prop = key;
     i.addEventListener('change', () => setProp(name, key, i.checked ? '1' : '0'));
     const w = D.createElement('span'); w.appendChild(i); l.appendChild(w); return l;
@@ -478,16 +535,16 @@
     for (const v of st.snap.vars) {
       const row = D.createElement('div'); row.className = 'row';
       const n = D.createElement('input'); n.value = v.name; n.readOnly = true; n.title = 'self~' + v.name;
-      const val = D.createElement('input'); val.value = v.value; val.placeholder = '""'; val.title = 'First value: a Rexx expression';
+      const val = D.createElement('input'); val.value = v.value; val.placeholder = '""'; val.title = T('var.value.tip');
       val.addEventListener('change', async () => { await rx(() => st.d.setVar(v.name, val.value)).catch(() => {}); await refresh(); });
-      const x = D.createElement('button'); x.textContent = '✕'; x.title = 'Remove';
+      const x = D.createElement('button'); x.textContent = '✕'; x.title = T('btn.remove');
       x.addEventListener('click', async () => { await rx(() => st.d.removeVar(v.name)); await refresh(); });
       row.append(n, val, x); box.appendChild(row);
     }
     const row = D.createElement('div'); row.className = 'row';
-    const n = D.createElement('input'); n.placeholder = 'new variable'; n.id = 'newVarName';
-    const val = D.createElement('input'); val.placeholder = 'first value'; val.id = 'newVarValue';
-    const add = D.createElement('button'); add.textContent = '+'; add.title = 'Add the variable'; add.id = 'btnAddVar';
+    const n = D.createElement('input'); n.placeholder = T('var.new'); n.id = 'newVarName';
+    const val = D.createElement('input'); val.placeholder = T('var.first'); val.id = 'newVarValue';
+    const add = D.createElement('button'); add.textContent = '+'; add.title = T('var.add.tip'); add.id = 'btnAddVar';
     add.addEventListener('click', async () => {
       if (!n.value.trim()) return;
       const ok = await rx(() => st.d.setVar(n.value.trim(), val.value)).then(() => true, () => false);
@@ -502,29 +559,29 @@
     for (const r of st.snap.requires) {
       const row = D.createElement('div'); row.className = 'row';
       const n = Object.assign(D.createElement('input'), { value: r, readOnly: true });
-      const x = Object.assign(D.createElement('button'), { textContent: '✕', title: 'Remove' });
+      const x = Object.assign(D.createElement('button'), { textContent: '✕', title: T('btn.remove') });
       x.addEventListener('click', async () => { await rx(() => st.d.removeRequire(r)); await refresh(); });
       row.style.gridTemplateColumns = '1fr 24px'; row.append(n, x); rb.appendChild(row);
     }
-    if (!st.snap.requires.length) rb.appendChild(Object.assign(D.createElement('div'), { className: 'hint', textContent: 'Libraries… to add one.' }));
+    if (!st.snap.requires.length) rb.appendChild(Object.assign(D.createElement('div'), { className: 'hint', textContent: T('lib.none') }));
     const sb = $('shared'); sb.textContent = '';
     for (const e of st.snap.shared) {
       const row = D.createElement('div'); row.className = 'row';
       const n = Object.assign(D.createElement('input'), { value: e.name, readOnly: true, title: 'sharedScope["' + e.name + '"]' });
-      const v = Object.assign(D.createElement('input'), { value: e.value, title: 'Made once, in init: a Rexx expression' });
+      const v = Object.assign(D.createElement('input'), { value: e.value, title: T('shared.value.tip') });
       v.addEventListener('change', async () => { await rx(() => st.d.setShared(e.name, v.value)).catch(() => {}); await refresh(); });
-      const x = Object.assign(D.createElement('button'), { textContent: '✕', title: 'Remove' });
+      const x = Object.assign(D.createElement('button'), { textContent: '✕', title: T('btn.remove') });
       x.addEventListener('click', async () => { await rx(() => st.d.removeShared(e.name)); await refresh(); });
       row.append(n, v, x); sb.appendChild(row);
     }
     const row = D.createElement('div'); row.className = 'row';
-    const n = Object.assign(D.createElement('input'), { placeholder: 'name', id: 'newSharedName' });
+    const n = Object.assign(D.createElement('input'), { placeholder: T('shared.name'), id: 'newSharedName' });
     const v = Object.assign(D.createElement('input'), { placeholder: '.Class~new(...)', id: 'newSharedValue' });
-    const add = Object.assign(D.createElement('button'), { textContent: '+', id: 'btnAddShared', title: 'Add to the shared scope' });
+    const add = Object.assign(D.createElement('button'), { textContent: '+', id: 'btnAddShared', title: T('shared.add.tip') });
     add.addEventListener('click', async () => {
       if (!n.value.trim()) return;
       if (await rx(() => st.d.setShared(n.value.trim(), v.value)).then(() => true, () => false)) {
-        await refresh(); status('In any event: expose sharedScope, then sharedScope["' + n.value.trim() + '"].');
+        await refresh(); status(T('shared.added', n.value.trim()));
       }
     });
     row.append(n, v, add); sb.appendChild(row);
@@ -534,7 +591,7 @@
     onUse: async (req) => {
       await rx(() => st.d.addRequire(req)); await refresh();
       D.getElementById('libPanel').hidden = true;
-      status('::requires "' + req + '" added.  Put what you make of it in the shared scope; events reach it with expose sharedScope.');
+      status(T('lib.added', req));
     },
   }));
 
@@ -567,7 +624,7 @@
     for (const c of st.snap.controls) obj(c.name, c.type, c.role ? [] : String(st.kinds[c.type].events || '').split(/\s+/).filter(Boolean));
     // the form's methods: DrDialog's global procedures
     const o = D.createElement('div'); o.className = 'obj';
-    const n = D.createElement('span'); n.className = 'name'; n.textContent = 'methods'; n.style.cursor = 'default';
+    const n = D.createElement('span'); n.className = 'name'; n.textContent = T('tree.methods'); n.style.cursor = 'default';
     const t = D.createElement('span'); t.className = 'type'; t.textContent = 'self~name(...)'; n.appendChild(t); o.appendChild(n);
     const row = D.createElement('div'); row.className = 'evs';
     for (const m of st.snap.methods) {
@@ -578,8 +635,8 @@
     }
     o.appendChild(row);
     const nm = D.createElement('div'); nm.className = 'newm';
-    const inp = D.createElement('input'); inp.placeholder = 'new method name'; inp.id = 'newMethodName';
-    const add = D.createElement('button'); add.textContent = 'Add'; add.id = 'btnAddMethod';
+    const inp = D.createElement('input'); inp.placeholder = T('tree.newMethod'); inp.id = 'newMethodName';
+    const add = D.createElement('button'); add.textContent = T('btn.add'); add.id = 'btnAddMethod';
     const go = () => { const v = inp.value.trim(); if (!v) return; st.cur = { type: 'method', name: v, fresh: true }; drawTree(); showCode(); };
     add.addEventListener('click', go); inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
     nm.append(inp, add); o.appendChild(nm);
@@ -591,7 +648,7 @@
   async function showCode() {
     await flushCode();
     const code = $('code');
-    if (!st.cur) { $('codeTitle').textContent = 'Pick an event or a method'; code.value = ''; code.disabled = true; $('threadBox').hidden = true; OxGraph.show(''); return; }
+    if (!st.cur) { $('codeTitle').textContent = T('code.pick'); code.value = ''; code.disabled = true; $('threadBox').hidden = true; OxGraph.show(''); return; }
     if (st.cur.type === 'event') {
       const { ctl, ev } = st.cur;
       const args = String(await rx(() => st.d.eventArgs(ctl, ev)).catch(() => ''));
@@ -602,7 +659,7 @@
       const canBg = ctl !== 'form' && findCtl(ctl) && findCtl(ctl).type !== 'TIMER';
       $('threadBox').hidden = !canBg; $('thread').value = th === 'background' ? 'background' : 'ui';
     } else {
-      $('codeTitle').textContent = 'method ' + st.cur.name + '  →  self~' + st.cur.name + '(...)';
+      $('codeTitle').textContent = T('code.method', st.cur.name);
       code.value = st.cur.fresh ? 'use strict arg \n' : String(await rx(() => st.d.getMethod(st.cur.name)).catch(() => ''));
       $('threadBox').hidden = true;
     }
@@ -644,9 +701,7 @@
     const { ctl, ev } = st.cur;
     await rx(() => st.d.setEventThread(ctl, ev, $('thread').value)).catch(() => {});
     await refresh();
-    status($('thread').value === 'background'
-      ? ctl + ' ' + ev + ' now replies at once and runs on its own thread: the dialog keeps answering.'
-      : ctl + ' ' + ev + ' runs on the dialog\'s thread.');
+    status($('thread').value === 'background' ? T('thread.nowBg', ctl, ev) : T('thread.nowUi', ctl, ev));
   });
   function insertText(s) {
     const c = $('code'); const a = c.selectionStart, b = c.selectionEnd;
@@ -675,7 +730,7 @@
     for (const line of text.split('\n').filter(Boolean)) {
       const [label, code] = line.split('\t');
       const it = D.createElement('div'); it.dataset.action = label;
-      it.append(label, Object.assign(D.createElement('small'), { textContent: code }));
+      it.append(ui.table['ACTION.' + label.toUpperCase()] || label, Object.assign(D.createElement('small'), { textContent: code }));
       it.addEventListener('click', () => { menu.hidden = true; then(code); });
       menu.appendChild(it);
     }
@@ -689,9 +744,9 @@
   }
   // The same without dragging: pick the control, then the action
   $('btnInsert').addEventListener('click', (e) => {
-    if ($('code').disabled) { status('Pick an event or a method first.'); return; }
+    if ($('code').disabled) { status(T('code.pickFirst')); return; }
     const menu = $('menu'); menu.textContent = '';
-    const h = D.createElement('div'); h.className = 'mh'; h.textContent = 'Insert an action on…'; menu.appendChild(h);
+    const h = D.createElement('div'); h.className = 'mh'; h.textContent = T('insert.head'); menu.appendChild(h);
     for (const n of ['form'].concat(st.snap.controls.map((c) => c.name))) {
       const it = D.createElement('div'); it.textContent = n; it.dataset.ctl = n;
       it.addEventListener('click', (ev) => { ev.stopPropagation(); actionsMenu(n, e.clientX, e.clientY); });
@@ -707,12 +762,12 @@
     $('programName').textContent = st.snap.form.name + '.rex'; $('programText').textContent = src; $('programView').hidden = false;
   });
   $('btnProgramClose').addEventListener('click', () => { $('programView').hidden = true; });
-  $('btnCopy').addEventListener('click', () => navigator.clipboard && navigator.clipboard.writeText($('programText').textContent).then(() => status('Copied.')));
+  $('btnCopy').addEventListener('click', () => navigator.clipboard && navigator.clipboard.writeText($('programText').textContent).then(() => status(T('st.copied'))));
   $('btnSave').addEventListener('click', async () => {
     const src = await program().catch(() => null); if (src === null) return;
     const a = D.createElement('a'); a.href = URL.createObjectURL(new Blob([src], { type: 'text/plain' }));
     a.download = st.snap.form.name + '.rex'; D.body.appendChild(a); a.click(); a.remove();
-    status('Saved ' + a.download + ': the program, with its design inside.');
+    status(T('st.saved', a.download));
   });
   $('btnOpen').addEventListener('click', () => $('file').click());
   $('file').addEventListener('change', async () => {
@@ -724,13 +779,13 @@
     const d = await rx(() => st.sess.eval('use arg t; return .OodDesign~fromSource(t)', text)).catch(() => null);
     if (!d) return false;
     await newDesign(d);
-    status('Opened ' + label + '.');
+    status(T('st.opened', label));
     return true;
   }
   st.openSource = openSource;
   $('example').addEventListener('change', async () => {
     const v = $('example').value;
-    if (!v) { await flushCode(); await newDesign(); status('New dialog.'); return; }
+    if (!v) { await flushCode(); await newDesign(); status(T('st.new')); return; }
     const text = await (await fetch(v)).text();
     await openSource(text, v.replace(/.*\//, ''));
   });
@@ -744,7 +799,7 @@
   /* ---- run it: ooDialog on ooRexx/WASM, in this page ------------------------- */
   $('btnRun').addEventListener('click', async () => {
     const src = await program().catch(() => null); if (src === null) return;
-    await runProgram(src, 'Running');
+    await runProgram(src, 'st.running');
   });
   async function runProgram(src, verb) {
     const name = st.snap.form.name + '.rex';
@@ -756,13 +811,13 @@
       }
       const files = Object.assign({}, st.oodFiles, await OxLibraries.installedFiles(st.sess), { ['/home/rexx/' + name]: src });
       const add = (t) => { $('out').textContent += t; $('out').scrollTop = $('out').scrollHeight; };
-      status(verb + ' ' + name + '…');
+      status(T(verb, name));
       st.run = st.rexx.run({ args: st.lang ? [name, st.lang] : [name], files, js: { page: true, worker: true }, onOut: add, onErr: add });
       window.oodDone = null; $('btnStop').disabled = false;
       const r = await st.run.done;
       window.oodDone = { rc: r.rc };
-      status(name + ' ended, rc ' + r.rc + '.');
-    } catch (e) { status('Run failed: ' + errText(e), true); }
+      status(T('st.ended', name, r.rc));
+    } catch (e) { status(T('st.runFailed', errText(e)), true); }
     D.querySelectorAll('.ood-dlg,.ood-back,.ood-menu').forEach((el) => el.remove());
     $('btnRun').disabled = false; $('btnTrace').disabled = false; $('btnStop').disabled = true; st.run = null;
   }
@@ -780,49 +835,49 @@
     const table = D.createElement('table'); table.id = 'sTable';
     const langs = rows.shift().split('\t').slice(1);
     const head = table.createTHead().insertRow();
-    head.appendChild(Object.assign(D.createElement('th'), { textContent: 'Key' }));
+    head.appendChild(Object.assign(D.createElement('th'), { textContent: T('strings.key') }));
     const missing = langs.map(() => 0);
     const body = table.createTBody();
     for (const row of rows) {
       const f = row.split('\t'); const key = f[0], owner = f[f.length - 1];
       const tr = body.insertRow(); tr.dataset.key = key;
       const k = tr.insertCell(); k.className = 'key'; k.textContent = key;
-      k.appendChild(Object.assign(D.createElement('small'), { textContent: owner === 'event' ? 'event code' : owner }));
+      k.appendChild(Object.assign(D.createElement('small'), { textContent: owner === 'event' ? T('strings.event') : owner }));
       langs.forEach((lang, i) => {
         const td = tr.insertCell(); const inp = D.createElement('input');
-        inp.value = f[i + 1]; inp.dataset.lang = lang; inp.setAttribute('aria-label', key + ' in ' + lang);
+        inp.value = f[i + 1]; inp.dataset.lang = lang; inp.setAttribute('aria-label', T('strings.cell.aria', key, lang));
         if (i > 0 && !f[i + 1]) { td.className = 'missing'; inp.placeholder = f[1]; missing[i]++; }
         inp.addEventListener('change', async () => {
           const ok = await rx(() => st.d.setString(lang, key, inp.value)).then(() => true, () => false);
-          if (ok) { await refresh(); await drawStrings(); markOverflow(); status(key + ' in ' + lang + (inp.value ? ' set.' : ': none; the base text is used.')); }
+          if (ok) { await refresh(); await drawStrings(); markOverflow(); status(inp.value ? T('strings.set', key, lang) : T('strings.cleared', key, lang)); }
         });
         td.appendChild(inp);
       });
       const act = tr.insertCell(); act.className = 'act';
       if (owner === 'event') {
-        const use = Object.assign(D.createElement('button'), { textContent: '↵ code', title: 'Put self~nls("' + key + '") into the code at the caret' });
+        const use = Object.assign(D.createElement('button'), { textContent: T('strings.use'), title: T('strings.use.tip', key) });
         use.addEventListener('click', () => {
-          if ($('code').disabled) { status('Pick an event or a method first.'); return; }
+          if ($('code').disabled) { status(T('code.pickFirst')); return; }
           $('stringsView').hidden = true; insertText('self~nls("' + key + '")'); $('code').focus();
         });
-        const del = Object.assign(D.createElement('button'), { textContent: '×', title: 'Remove ' + key });
+        const del = Object.assign(D.createElement('button'), { textContent: '×', title: T('strings.remove.tip', key) });
         del.addEventListener('click', async () => { await rx(() => st.d.removeString(key)).catch(() => {}); await refresh(); await drawStrings(); });
         act.append(use, del);
       }
     }
     langs.forEach((lang, i) => {
       const th = D.createElement('th'); th.dataset.lang = lang;
-      th.append(lang, Object.assign(D.createElement('small'), { textContent: i === 0 ? ' base' : missing[i] ? '  ' + missing[i] + ' to do' : '  complete' }));
+      th.append(lang, Object.assign(D.createElement('small'), { textContent: ' ' + (i === 0 ? T('strings.base') : missing[i] ? T('strings.todo', missing[i]) : T('strings.complete')) }));
       if (i > 0) {
-        const ex = Object.assign(D.createElement('button'), { textContent: '⇩', title: 'Download ' + lang + ' as key = text, for a translator' });
+        const ex = Object.assign(D.createElement('button'), { textContent: '⇩', title: T('strings.export.tip', lang) });
         ex.addEventListener('click', () => exportLang(lang));
-        const im = Object.assign(D.createElement('button'), { textContent: '⇧', title: 'Read a translator\'s ' + lang + ' file back' });
+        const im = Object.assign(D.createElement('button'), { textContent: '⇧', title: T('strings.import.tip', lang) });
         im.addEventListener('click', () => { st.importLang = lang; $('sFile').click(); });
-        const rm = Object.assign(D.createElement('button'), { textContent: '×', title: 'Take ' + lang + ' out (its texts go)' });
+        const rm = Object.assign(D.createElement('button'), { textContent: '×', title: T('strings.drop.tip', lang) });
         rm.addEventListener('click', async () => {
-          if (rm.textContent === '×') { rm.textContent = 'Take ' + lang + ' out?'; return; }   // a second click: its texts go
+          if (rm.textContent === '×') { rm.textContent = T('strings.drop.ask', lang); return; }   // a second click: its texts go
           await rx(() => st.d.setLanguages(langs.filter((l) => l !== lang).join(' '))).catch(() => {});
-          await refresh(); await drawStrings(); status(lang + ' taken out.');
+          await refresh(); await drawStrings(); status(T('strings.dropped', lang));
         });
         th.append(ex, im, rm);
       }
@@ -835,7 +890,7 @@
     const text = String(await rx(() => st.d.exportLanguage(lang)));
     const a = D.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
     a.download = st.snap.form.name + '.' + lang + '.txt'; D.body.appendChild(a); a.click(); a.remove();
-    status('Saved ' + a.download + ': give it to the translator; ⇧ reads it back.');
+    status(T('strings.exported', a.download));
   }
   $('sFile').addEventListener('change', async () => {
     const f = $('sFile').files[0]; if (!f) return; $('sFile').value = '';
@@ -849,18 +904,36 @@
   $('sClose').addEventListener('click', () => { $('stringsView').hidden = true; });
   $('sOn').addEventListener('click', async () => {
     const ok = await rx(() => st.d.setLanguages($('sBase').value.trim())).then(() => true, () => false);
-    if (ok) { await refresh(); await drawStrings(); status('Translatable: the texts go into ::RESOURCE strings.' + base() + '; add a language.'); }
+    if (ok) { await refresh(); await drawStrings(); status(T('strings.made', base())); }
   });
   $('sAddLang').addEventListener('click', async () => {
     const lang = $('sNewLang').value.trim(); if (!lang) return;
     const ok = await rx(() => st.d.addLanguage(lang)).then(() => true, () => false);
-    if (ok) { $('sNewLang').value = ''; await refresh(); await drawStrings(); status('Added ' + lang + ': fill in its column, or ⇩ give it to a translator.'); }
+    if (ok) { $('sNewLang').value = ''; await refresh(); await drawStrings(); status(T('strings.langAdded', lang)); }
   });
   $('sAddKey').addEventListener('click', async () => {
     const key = $('sNewKey').value.trim(), text = $('sNewText').value;
     const ok = await rx(() => st.d.addString(key, text)).then(() => true, () => false);
-    if (ok) { $('sNewKey').value = ''; $('sNewText').value = ''; await refresh(); await drawStrings(); status('Added ' + key + ': in event code, self~nls("' + key + '").'); }
+    if (ok) { $('sNewKey').value = ''; $('sNewText').value = ''; await refresh(); await drawStrings(); status(T('strings.keyAdded', key)); }
   });
+
+  /* ---- the designer's own language --------------------------------------------- */
+  $('uiLang').addEventListener('change', async () => {
+    await flushCode();
+    try { localStorage.setItem('oodDesigner.ui', $('uiLang').value); } catch (e) { /* storage may be off */ }
+    await rx(() => loadUi($('uiLang').value));
+    await relabel();
+    status(T('ui.lang.now', ui.lang));
+  });
+  // everything drawn from the table again: the palette, panels, tree, code title
+  async function relabel() {
+    D.querySelectorAll('#kinds div').forEach((d) => { d.textContent = kindLabel(d.dataset.kind); });
+    OxGraph.relabel();
+    await refresh();
+    const was = $('code').value; await showCode(); if (!st.cur) $('code').value = was;
+    if (!$('stringsView').hidden) await drawStrings();
+    if (trace.on) traceShowStep();
+  }
 
   /* ---- Code | Graph | Both ------------------------------------------------- */
   D.querySelectorAll('#views button').forEach((b) => b.addEventListener('click', () => {
@@ -879,7 +952,7 @@
     trace.steps.push(step);
     $('tStep').max = trace.steps.length - 1;
     if (trace.follow) { $('tStep').value = trace.steps.length - 1; traceGo(trace.steps.length - 1); }
-    else $('tWhere').textContent = 'step ' + (trace.at + 1) + ' of ' + trace.steps.length;
+    else $('tWhere').textContent = T('trace.stepOf', trace.at + 1, trace.steps.length);
   };
   // the method a step is in -> where it is in the tree
   function traceTarget(where) {
@@ -900,9 +973,9 @@
   function traceShowStep() {
     if (!trace.on) return;
     const step = trace.steps[trace.at];
-    if (!step) { $('tWhere').textContent = trace.steps.length ? '' : 'waiting for the first step…'; return; }
-    $('tWhere').textContent = 'step ' + (trace.at + 1) + ' of ' + trace.steps.length + ':  ' + step.where +
-      ', block ' + step.node + (step.thread === 'background' ? '  (its own thread)' : step.thread === 'caller' ? '' : '  (the dialog\'s thread)');
+    if (!step) { $('tWhere').textContent = trace.steps.length ? '' : T('trace.waiting'); return; }
+    $('tWhere').textContent = T('trace.step', trace.at + 1, trace.steps.length, step.where, step.node) +
+      (step.thread === 'background' ? '  ' + T('trace.ownThread') : step.thread === 'caller' ? '' : '  ' + T('trace.uiThread'));
     // only highlight when the code shown is the code that was traced
     if (sameCur(traceTarget(step.where), st.cur) && !codeDirty) OxGraph.highlight(step.node);
     const before = {}; const prev = trace.steps[trace.at - 1];
@@ -925,7 +998,7 @@
     trace.on = true; trace.steps = []; trace.at = -1; trace.follow = true;
     $('tStep').max = 0; $('tStep').value = 0; $('traceBar').hidden = false; traceShowStep();
     if ($('codeBody').className === 'code') D.querySelector('#views [data-view="both"]').click();
-    st.runProgram(src, 'Tracing');
+    st.runProgram(src, 'st.tracing');
   });
 
   boot();

@@ -27,6 +27,8 @@ do f over .array~of("ooDialog.cls", "oodWeb.cls", "ooShapes.cls")
 end
 call copy "src" || sep || "OodDesigner.cls", "site" || sep || "OodDesigner.cls"
 call copy "src/OodGraph.cls", "site/OodGraph.cls"
+call copy "src/OodNls.cls", "site/OodNls.cls"
+call copy "src/OodUi.cls", "site/OodUi.cls"
 -- the Rexx Parser: bin/ and its notices, and a manifest of the files
 call SysFileTree rexxParser"/bin/*", "rp.", "FSO"
 manifest = .array~new

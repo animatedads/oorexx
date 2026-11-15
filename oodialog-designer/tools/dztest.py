@@ -3,7 +3,7 @@
 Architecture: Tom Dyer.  Code: Claude (Opus 5.5).
 
 usage: python3 tools/dztest.py [scenario ...]     (after rexx tools/build.rex)
-Scenarios: hand, calculator, threads, refuse, saveopen, views, gadgets, libraries, graph, trace, languages (default: all).
+Scenarios: hand, calculator, threads, refuse, saveopen, views, gadgets, libraries, graph, trace, languages, ui_de (default: all).
 Python is used here only because this tool drives a browser (Playwright);
 the designer's model, generator and reader are ooRexx (src/OodDesigner.cls)
 and are tested without a browser by tests/t01_model.rex.  Progress is logged
@@ -26,7 +26,7 @@ def expect_in(what, part, whole):
 
 def ready(pg):
     pg.goto(f'http://localhost:{PORT}/designer.html')
-    pg.wait_for_function("document.getElementById('status').textContent.startsWith('Ready')", timeout=60000)
+    pg.wait_for_function("window.oodDesigner && window.oodDesigner.ready === true", timeout=60000)   # in any language
 def snap(pg):
     return pg.evaluate('window.oodDesigner.snap')
 def status(pg): return pg.inner_text('#status')
@@ -386,7 +386,43 @@ def sc_languages(pg):
     expect('reopened with its languages', snap(pg)['languages'], ['en', 'de'])
     expect('round trip byte-identical', program_text(pg), src)
 
-SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views, 'gadgets': sc_gadgets, 'libraries': sc_libraries, 'graph': sc_graph, 'trace': sc_trace, 'languages': sc_languages}
+def sc_ui_de(pg):
+    """The designer itself in German, from its ::RESOURCE strings.de: the bar,
+    palette, properties, events, graph, a refusal from the Rexx model, the
+    Strings panel; kept over a reload; then back to English."""
+    ready(pg)
+    pg.select_option('#uiLang', 'de'); settle(pg, 900)
+    expect_in('it says so', 'Der Designer spricht jetzt de', status(pg))
+    expect('the bar', [pg.inner_text('#btnOpen'), pg.inner_text('#btnRun'), pg.inner_text('#btnStrings')], ['Öffnen…', '▶ Ausführen', 'Texte…'])
+    expect('the palette', pg.inner_text('#kinds div >> nth=0'), 'Schaltfläche')
+    expect('the page language', pg.evaluate('document.documentElement.lang'), 'de')
+    pg.click('#kinds div >> nth=0'); settle(pg, 700)
+    expect_in('a status with %1', 'btn1 hinzugefügt', status(pg))
+    expect_in('the properties title: the control kind', 'Schaltfläche', pg.inner_text('#propTitle'))
+    expect_in('a property label', 'Breite', pg.inner_text('#props'))
+    # the Rexx model refuses in German
+    i = pg.locator('#props [data-prop="name"]'); i.fill('1abc'); i.press('Enter'); settle(pg, 700)
+    expect('a refusal from OodDesigner.cls, in German', status(pg), 'Der Name 1abc muss mit einem Buchstaben oder _ beginnen')
+    # an action menu, the graph
+    pick_event(pg, 'btn1', 'CLICKED')
+    pg.drag_and_drop('#tree .name[data-ctl="btn1"]', '#code'); pg.wait_for_selector('#menu:not([hidden])')
+    expect_in('actions in German', 'Text setzen', pg.inner_text('#menu'))
+    pg.click('#menu [data-action="Set its text"]'); settle(pg, 900); wait_graph(pg)
+    pg.click('#graph .gb > .gh'); settle(pg)
+    expect_in('the graph explains in German', 'Nachricht: schickt einem Objekt eine Nachricht', pg.inner_text('#gExplain'))
+    expect('the block kind in German', pg.inner_text('#graph .gb .gk'), 'NACHRICHT' if pg.evaluate("getComputedStyle(document.querySelector('#graph .gk')).textTransform") == 'uppercase' else 'Nachricht')
+    pg.click('#btnStrings'); pg.wait_for_selector('#stringsView:not([hidden])')
+    expect('the Strings panel', pg.inner_text('#sOn'), 'Übersetzbar machen')
+    pg.click('#sClose')
+    pg.screenshot(path=str(SHOTS / 'ui_de.png'))
+    # kept over a reload, then back
+    ready(pg)
+    expect('German after a reload', pg.inner_text('#btnOpen'), 'Öffnen…')
+    pg.select_option('#uiLang', 'en'); settle(pg, 900)
+    expect('back in English', pg.inner_text('#btnOpen'), 'Open…')
+    expect('the palette in English', pg.inner_text('#kinds div >> nth=0'), 'Push button')
+
+SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views, 'gadgets': sc_gadgets, 'libraries': sc_libraries, 'graph': sc_graph, 'trace': sc_trace, 'languages': sc_languages, 'ui_de': sc_ui_de}
 def main():
     names = sys.argv[1:] or list(SCENARIOS)
     srv = subprocess.Popen(['node', str(SITE / 'serve.mjs'), str(SITE), '--port', str(PORT)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

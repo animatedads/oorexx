@@ -1,4 +1,4 @@
-# ooDialog Designer — v0.6.0
+# ooDialog Designer — v0.7.0
 
 Architecture: Tom Dyer. Code: Claude (Opus 5.5). README written by Claude (Opus 5.5).
 It runs on ooDialog/WASM v0.7.0 (code: Claude (Fable 5.2)) and on Josep Maria
@@ -151,6 +151,26 @@ one `kind` line; a new code-insertion action is one `action` line.
   French, Spanish, ...; a character it lacks becomes `?`). ooDialog/WASM takes
   UTF-8 as it is. Without languages the program is written as before, with
   literal texts.
+- **The designer's own language (🌐):** every text the designer shows is in
+  `src/OodUi.cls` as `::RESOURCE strings.en` and `strings.de`. That covers
+  the bar, palette, properties, events, graph explanations, actions,
+  Strings panel, trace, status lines and the model's refusals (`oodT(key,
+  ...)` in `OodDesigner.cls` and `OodGraph.cls`). They are read by
+  **`OodNls`** (`src/OodNls.cls`), which is also what every program the
+  designer writes uses: the generator copies `OodNls`'s `nlsUse` and `nls`
+  into the program from their own source (`Method~source`), so a program
+  still needs no file but its own. Inherited, `.resources` would be
+  `OodNls.cls`'s own, so the designer passes `OodUi`'s tables; in a program
+  the copy's default, `.resources`, is the program's. The page reads the
+  table in the chosen language once (`.OodUi~tableLines`); its `T(key, ...)`
+  is `nls`'s one-pass `%n`, ported to JavaScript because a page text is needed
+  at once, not after a round trip. The language: the one chosen before (kept
+  in the browser), else the browser's (`de-DE` → `de`), else English. A
+  refusal shows the designer's own message, not ooRexx's "Incorrect call to
+  method" around it. Another language is a `::RESOURCE strings.<language>`
+  added to `OodUi.cls`; `tests/t04_ui.rex` checks it has every key, with the
+  same `%n`. The German is Claude's (Opus 5.5) and wants a German speaker's
+  reading.
 - **Program:** shows the ooRexx that will be written. **Save .rex**
   downloads it. **▶ Run** runs it with ooDialog/WASM in the same page.
 
@@ -175,7 +195,7 @@ Then open `http://localhost:8080/designer.html`.
 Python drives the browser in the second command only; everything the
 designer decides is in ooRexx.
 
-## State (2026-11-15, v0.6.0)
+## State (2026-11-15, v0.7.0)
 
 - `tests/t01_model.rex`: 69 of 69 checks pass under ooRexx/WASM in Node. They
   cover generation, a byte-identical round trip through the `::RESOURCE`,
@@ -199,7 +219,18 @@ designer decides is in ooRexx.
   a key German lacks, `%1`/`%2`, a value holding `%2`, a `%` that is no
   argument, an empty base text, `<key>`, `LC_ALL`/`LC_MESSAGES`/`LANG` with
   `C` passed over, and UTF-8 to Windows-1252 (`ß`, `ö`, `€`, `…`).
-- `tools/dztest.py`: 11 of 11 scenarios pass in headless Chromium:
+- `tests/t04_ui.rex`: 16 of 16 checks pass. de has every key of en (327),
+  no other, with the same `%n`; every key the page and graph use is in the
+  table (the files are read); every control kind and all 38 actions have
+  their label; `de-DE` gives German, `fr` English; refusals from the model
+  and from the graph come in the language chosen.
+- `tests/t05_fresh.rex`: the model used with nothing set up, as a program
+  outside the page uses it: the first refusal comes in German under
+  `LANG=de_DE.UTF-8`. (It found an `::attribute` never set answering its own
+  name, not `.nil`. The refusal checks of t01–t03 now also demand Error
+  93.900 with the designer's message; before, any error passed. With the
+  bug put back they fail 19 times.)
+- `tools/dztest.py`: 12 of 12 scenarios pass in headless Chromium:
   1. **hand:** a dialog built with the mouse (drop, rename, styles,
      variable, drag-an-action, move and resize), then run. The event code sees
      the variable and the field, and INIT's text survives `execute`.
@@ -236,6 +267,10 @@ designer decides is in ooRexx.
      "Schließen und beenden" marked as too long, then run in German: the
      title, the ß, the menu, "5 Personen". Back to English, then reopened
      from its source with both languages, byte-identical.
+  12. **ui_de:** the designer switched to German: bar, palette, a status with
+     `%1`, the properties, a refusal from `OodDesigner.cls` in German, the
+     action menu, the graph's explanation and block kind, the Strings
+     panel; still German after a reload; then English again.
 - `tests/gen/Calculator.rex`, `Contacts.rex` and `Gadgets.rex` (generated)
   also pass the ooDialog/WASM harness, `oodtest.py`, with their `.steps`
   files.
@@ -253,7 +288,10 @@ designer decides is in ooRexx.
   `executeAsync` failures that makes 24 of 31.
 - Not yet run on Windows: the Windows-1252 conversion assumes the ANSI
   ooDialog of the 4.2 line; the ContactsDE checks confirm it or not.
-- Pitfall lint (Boston Crab `rexx_pitfalls.rex`): clean on all ooRexx here.
+- Pitfall lint (Boston Crab `rexx_pitfalls.rex`): clean on the code. It
+  reports three P3 "names differing only in case" in `OodUi.cls` that are
+  words of the `::RESOURCE` text ("Edit"/"EDIT", "Leave"/"LEAVE"): the lint
+  reads resource text as code.
 - Not yet run on Windows ooDialog. The generated code uses only documented
   upstream API (`createXxx`, `connectXxxEvent`, `newXxx`, `setData`/`getData`,
   `isDialogActive`, `start`, `SysSleep`, `UserMenuBar`, `insertColumn`,
@@ -267,6 +305,10 @@ designer decides is in ooRexx.
   hidden; the tab strip is a strip, with its controls placed beside it, not
   over it (Windows draws controls over a tab control in z-order).
 - Undo, copy and paste, and alignment tools.
+- The designer's language: the Libraries panel (`libraries.js`, shared with
+  the Object Editor) and the Object Editor are still English only; a new
+  dialog's title and a new control's text ("My Dialog", "Button") are
+  English.
 - Languages: tree nodes and list-view rows are data and are not translated;
   the language is chosen when the dialog is made, not switched while it
   runs; Windows text beyond Windows-1252 (Cyrillic, Greek, CJK) needs

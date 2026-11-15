@@ -15,26 +15,12 @@
   const lines = (t) => String(t || '').split('\n').filter((l) => l !== '');
   let cfg = null, g = null, broken = false, nodes = [], selected = 0, lastCode = null;
 
-  // what each kind of block does: shown on the block, for training
-  const EXPLAIN = {
-    if: 'IF: runs THEN when the condition is 1 (true), else ELSE.',
-    do: 'DO ... END: a group of instructions, repeated when it has a loop control (i = 1 to n, x over list, while, until).',
-    loop: 'LOOP ... END: repeats its instructions.',
-    select: 'SELECT: runs the first WHEN whose condition is 1; OTHERWISE when none is.',
-    when: 'WHEN: a condition of a SELECT; its THEN instruction runs when it is 1.',
-    otherwise: 'OTHERWISE: what a SELECT runs when no WHEN is true.',
-    assign: 'Assignment: the variable takes the value of the expression.',
-    message: 'Message: sends a message to an object (self~lcd~setText("0") asks the control to show "0").',
-    say: 'SAY: writes a line to the output.',
-    call: 'CALL: runs a routine or a label.',
-    return: 'RETURN: leaves this method (with a result, if one is given).',
-    expose: 'EXPOSE: makes the object\'s variables (attributes) visible here; it must come first.',
-    use: 'USE ARG: names the arguments the method was sent.',
-    nop: 'NOP: does nothing.',
-    leave: 'LEAVE: ends the loop.',
-    iterate: 'ITERATE: goes on to the loop\'s next turn.',
-    reply: 'REPLY: the caller carries on; this method goes on on its own thread.',
-  };
+  // what each kind of block does, for training: graph.explain.<kind> in the
+  // designer's string table (OodUi.cls), in the designer's language
+  const T = (key, ...a) => window.OodT(key, ...a);
+  const has = (key) => !T(key).startsWith('<');
+  const explain = (kind) => has('graph.explain.' + kind) ? T('graph.explain.' + kind) : '';
+  const kindName = (kind) => has('graph.kind.' + kind) ? T('graph.kind.' + kind) : kind;
   const PALETTE = [
     ['say', 'say "text"'], ['assign', 'name = value'], ['if', 'if condition then do\n  nop\nend'],
     ['if … else', 'if condition then do\n  nop\nend\nelse do\n  nop\nend'], ['do … to', 'do i = 1 to 10\n  nop\nend'],
@@ -66,7 +52,7 @@
     catch (e) { return; }
     if (code !== lastCode) return;                   // a newer redraw is on its way
     const err = String(await cfg.rx(() => gg.error()));
-    if (err) { g = null; broken = true; D.getElementById('gError').textContent = 'The code does not parse, so the graph is not changed: ' + err; D.getElementById('gError').hidden = false; box.classList.add('stale'); box.dataset.ready = '1'; return; }
+    if (err) { g = null; broken = true; D.getElementById('gError').textContent = T('graph.noParse', err); D.getElementById('gError').hidden = false; box.classList.add('stale'); box.dataset.ready = '1'; return; }
     D.getElementById('gError').hidden = true; box.classList.remove('stale');
     g = gg; broken = false;
     nodes = [null];
@@ -94,8 +80,8 @@
     return s;
   }
   function renderNode(n) {
-    const b = el('div', 'gb k-' + n.kind); b.dataset.id = n.id; b.draggable = true; b.title = EXPLAIN[n.kind] || n.kind;
-    const head = el('div', 'gh'); head.append(el('span', 'gk', n.kind === 'assign' ? '=' : n.kind), el('span', 'gl', n.label));
+    const b = el('div', 'gb k-' + n.kind); b.dataset.id = n.id; b.draggable = true; b.title = explain(n.kind) || n.kind;
+    const head = el('div', 'gh'); head.append(el('span', 'gk', n.kind === 'assign' ? '=' : kindName(n.kind)), el('span', 'gl', n.label));
     b.appendChild(head);
     b.addEventListener('dragstart', (e) => { e.stopPropagation(); e.dataTransfer.setData('text/x-ood-block', String(n.id)); e.dataTransfer.effectAllowed = 'move'; });
     b.addEventListener('click', (e) => { e.stopPropagation(); select(n.id, true); });
@@ -117,7 +103,7 @@
     return b;
   }
   function dropZone(parent, slot, index, empty) {
-    const z = el('div', 'gdrop' + (empty ? ' empty' : ''), empty ? 'drop a block here' : '');
+    const z = el('div', 'gdrop' + (empty ? ' empty' : ''), empty ? T('graph.dropHere') : '');
     z.dataset.parent = parent; z.dataset.slot = slot; z.dataset.index = index;
     z.addEventListener('dragover', (e) => {
       const t = e.dataTransfer.types;
@@ -127,15 +113,15 @@
     z.addEventListener('drop', async (e) => {
       e.preventDefault(); z.classList.remove('over');
       const id = e.dataTransfer.getData('text/x-ood-block'), text = e.dataTransfer.getData('text/x-ood-new'), ctl = e.dataTransfer.getData('text/x-ood-ctl');
-      if (id) await edit((gr) => gr.moveCode(+id, parent, slot, index), 'Moved.');
-      else if (text) await edit((gr) => gr.insertCode(parent, slot, index, text), 'Inserted.  Double-click it to change it.');
-      else if (ctl) cfg.actionsMenu(ctl, e.clientX, e.clientY, (code) => edit((gr) => gr.insertCode(parent, slot, index, code), 'Inserted an action on ' + ctl + '.'));
+      if (id) await edit((gr) => gr.moveCode(+id, parent, slot, index), 'graph.moved');
+      else if (text) await edit((gr) => gr.insertCode(parent, slot, index, text), 'graph.inserted');
+      else if (ctl) cfg.actionsMenu(ctl, e.clientX, e.clientY, (code) => edit((gr) => gr.insertCode(parent, slot, index, code), 'graph.insertedAction', ctl));
     });
     return z;
   }
   // an edit: OodGraph answers the new code; it becomes the event's code
-  async function edit(fn, done) {
-    if (broken) { cfg.status('Mend the code first: the graph is drawn from code that parses.', true); return; }
+  async function edit(fn, done, ...doneArgs) {
+    if (broken) { cfg.status(T('graph.mendFirst'), true); return; }
     let code;
     if (!g) {                                        // no code yet: an insert is the code
       code = null;
@@ -146,7 +132,7 @@
       catch (e) { return; }                          // cfg.rx put the refusal on the status line
     }
     await cfg.setCode(code);
-    cfg.status(done);
+    cfg.status(T(done, ...doneArgs));
   }
 
   function select(id, toCode) {
@@ -165,7 +151,7 @@
     D.getElementById('gDelete').disabled = !n;
     D.getElementById('gWrap').disabled = !n || !['then', 'else'].includes(n.slot) || n.kind === 'do';
     const ex = D.getElementById('gExplain');
-    ex.textContent = n ? (EXPLAIN[n.kind] || '') : 'Click a block to select it and its code; double-click to change it; drag it to move it.';
+    ex.textContent = n ? explain(n.kind) : T('graph.howTo');
     ex.title = ex.textContent;                       // one line, so the graph never moves under the pointer
   }
   function mark(id) {
@@ -188,7 +174,7 @@
     const input = el('input', 'gedit'); input.value = n.label;
     head.replaceChildren(input); input.focus(); input.select();
     const done = async (save) => {
-      if (save && input.value.trim() && input.value !== n.label) await edit((gr) => gr.replaceCode(n.id, input.value), 'Changed.');
+      if (save && input.value.trim() && input.value !== n.label) await edit((gr) => gr.replaceCode(n.id, input.value), 'graph.changed');
       else render();
     };
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') done(true); if (e.key === 'Escape') done(false); });
@@ -201,12 +187,14 @@
   }
 
   function wire() {
-    D.getElementById('gDelete').addEventListener('click', () => { if (selected) edit((gr) => gr.deleteCode(selected), 'Deleted.'); });
-    D.getElementById('gWrap').addEventListener('click', () => { if (selected) edit((gr) => gr.wrapCode(selected), 'Wrapped in do...end: it takes more than one instruction now.'); });
+    D.getElementById('gDelete').addEventListener('click', () => { if (selected) edit((gr) => gr.deleteCode(selected), 'graph.deleted'); });
+    D.getElementById('gWrap').addEventListener('click', () => { if (selected) edit((gr) => gr.wrapCode(selected), 'graph.wrapped'); });
     D.getElementById('code').addEventListener('click', fromCaret);
     D.getElementById('code').addEventListener('keyup', fromCaret);
   }
   D.addEventListener('DOMContentLoaded', wire);
   if (D.readyState !== 'loading') wire();
-  window.OxGraph = { attach, show, highlight, nodes: () => nodes };
+  // the designer's language changed: draw the blocks and tools again
+  function relabel() { toolsFor(selected ? nodes[selected] : 0); if (lastCode !== null) show(lastCode); }
+  window.OxGraph = { attach, show, highlight, relabel, nodes: () => nodes };
 })();

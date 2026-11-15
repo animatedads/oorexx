@@ -1,0 +1,727 @@
+/* OodUi.cls -- the ooDialog Designer's own texts, in every language it has:
+   ::RESOURCE strings.<language>, key = text, read by OodNls (OodNls.cls), the
+   same language support the designer writes into the programs it makes.
+   Architecture: Tom Dyer.  Code: Claude (Opus 5.5).  German: Claude (Opus 5.5),
+   to be checked by a German speaker.
+
+   .OodUi~use(lang)       the designer's language ("" or de-DE, de_AT, fr...);
+                          answers the one used (no table: en)
+   .OodUi~text(key, ...)  a text; %1, %2, ... take the arguments
+   oodT(key, ...)         the same, as a routine, for the designer's messages
+   .OodUi~tableLines      key TAB text per line, for the page
+   .OodUi~languages       the languages the designer has, the base first
+
+   A language is added by adding a ::RESOURCE strings.<language> here with the
+   keys of strings.en; a key it lacks shows in English. */
+
+::requires "OodNls.cls"
+
+::class OodUi public inherit OodNls
+
+::attribute current class
+
+::method use class
+  use strict arg lang = ""
+  ui = self~new
+  used = ui~nlsUse(lang, "en", .resources)   -- this package's tables
+  self~current = ui
+  return used
+
+::method text class
+  use strict arg key, ...
+  if \self~current~isA(.OodUi) then self~use   -- (an attribute never set is its own name)
+  forward to (self~current) message "NLS"
+
+::method tableLines class
+  if \self~current~isA(.OodUi) then self~use   -- (an attribute never set is its own name)
+  return self~current~nlsTableLines
+
+::method languages class
+  out = "en"
+  do name over .resources~allIndexes~sort
+    if name~left(8) == "STRINGS.", name \== "STRINGS.EN" then out = out name~substr(9)~lower
+  end
+  return out
+
+::routine oodT public
+  use strict arg key, ...
+  return .OodUi~sendWith("TEXT", arg(1, "A"))
+
+::resource strings.en
+-- the page
+ui.name = ooDialog Designer
+ui.footer = Architecture: Tom Dyer.  Designer code: Claude (Opus 5.5).  ooDialog/WASM: Claude (Fable 5.2).  ooRexx/WASM runtime and the Rexx Parser (graph view): Josep Maria Blasco.  ooDialog: the ooRexx project (CPL 1.0).
+ui.lang.tip = The designer's own language
+ui.lang.now = The designer speaks %1 now.
+ex.tip = Start from
+ex.new = New dialog
+ex.calculator = Calculator (EDM2 DrDialog review)
+ex.threads = Threads and a timer
+ex.contacts = Tabs, list view and menu
+ex.gadgets = Tree view, track bar, date picker
+ex.contactsDE = Contacts in English and German (Strings…)
+btn.open = Open…
+btn.open.tip = Open a .rex made with the designer
+btn.save = Save .rex
+btn.save.tip = Download the program (it carries its design)
+btn.program = Program
+btn.program.tip = Show the ooRexx this design writes
+btn.libraries = Libraries…
+btn.libraries.tip = Connect to a source of ooRexx libraries and use one
+btn.strings = Strings…
+btn.strings.tip = The texts in each language: ::RESOURCE strings.<language>
+btn.trace = ▶ Trace
+btn.trace.tip = Run it, recording each step of the event code with its variables
+btn.run = ▶ Run
+btn.run.tip = Run it with ooDialog on ooRexx/WASM
+btn.stop = Stop
+btn.insert = Insert…
+btn.insert.tip = Insert an action on a control
+btn.add = Add
+btn.close = Close
+btn.copy = Copy
+btn.remove = Remove
+lang.label = Language
+lang.tip = Show the design, and run it, in this language
+lang.base = %1 (base)
+lang.shown = Shown in %1; ▶ Run runs in it too.
+lang.shownBase = Shown in the base language, %1.
+lang.tooLong = Too long here: %1.
+lang.tooLong.tip = %1: the text is too long for the control in %2
+palette.title = Controls
+palette.hint = Drag onto the form, or click to add.
+tray.aria = Non-visual controls
+side.properties = Properties
+side.variables = Variables
+side.variables.hint = (the dialog's attributes)
+side.libraries = Libraries
+side.shared = Shared scope
+tree.aria = Objects and events
+tree.methods = methods
+tree.newMethod = new method name
+code.pick = Pick an event or a method
+code.pickFirst = Pick an event or a method first.
+code.method = method %1  →  self~%1(...)
+code.placeholder = Rexx for this event.  Controls are methods of self: self~lcd~setText("0").  Drag a control from the list on the left onto this pane for its actions.
+thread.label = Runs on
+thread.ui = the dialog's thread
+thread.bg = its own thread (background)
+thread.nowBg = %1 %2 now replies at once and runs on its own thread: the dialog keeps answering.
+thread.nowUi = %1 %2 runs on the dialog's thread.
+insert.head = Insert an action on…
+view.aria = Show the code as
+view.code = Code
+view.graph = Graph
+view.both = Both
+out.aria = Program output
+-- status
+st.ready = Ready.  Drag a control onto the form.
+st.noStart = Could not start:
+st.added = Added %1.  Rename it in Properties; its events are in the list below.
+st.removed = Removed %1 and its events.
+st.copied = Copied.
+st.saved = Saved %1: the program, with its design inside.
+st.opened = Opened %1.
+st.new = New dialog.
+st.running = Running %1…
+st.tracing = Tracing %1…
+st.ended = %1 ended, rc %2.
+st.runFailed = Run failed: %1
+tab.showPage = Show page %1 while designing
+tab.designing = %1: designing page %2.  A control's "page" property puts it on a page.
+-- properties
+prop.form = Form
+prop.remove = Remove %1
+prop.opts = styles
+prop.exstyles = extended
+prop.page.always = — (always shown)
+prop.role.ok = OK (IDOK, default)
+prop.role.cancel = Cancel (IDCANCEL)
+prop.name = name
+prop.title = title
+prop.text = text
+prop.x = x
+prop.y = y
+prop.w = width
+prop.h = height
+prop.items = items (a|b|c)
+prop.groupstart = starts group
+prop.interval = interval (s)
+prop.columns = columns (Title:width|…)
+prop.nodes = nodes (a|.child|..grandchild)
+prop.rows = rows (a;b|c;d)
+prop.tabs = tabs (a|b)
+prop.popup = menu
+prop.role = role
+prop.page = page
+prop.checked = checked
+prop.enabled = enabled
+prop.grayed = grayed
+prop.min = min
+prop.max = max
+prop.pos = position
+var.new = new variable
+var.first = first value
+var.value.tip = First value: a Rexx expression
+var.add.tip = Add the variable
+lib.none = Libraries… to add one.
+lib.added = ::requires "%1" added.  Put what you make of it in the shared scope; events reach it with expose sharedScope.
+shared.name = name
+shared.value.tip = Made once, in init: a Rexx expression
+shared.add.tip = Add to the shared scope
+shared.added = In any event: expose sharedScope, then sharedScope["%1"].
+-- the controls
+kind.PUSHBUTTON = Push button
+kind.STATIC = Text
+kind.EDIT = Entry field
+kind.CHECKBOX = Check box
+kind.RADIOBUTTON = Radio button
+kind.GROUPBOX = Group box
+kind.LISTBOX = List box
+kind.COMBOBOX = Combo box
+kind.PROGRESSBAR = Progress bar
+kind.LISTVIEW = List view
+kind.TAB = Tab strip
+kind.TREEVIEW = Tree view
+kind.TRACKBAR = Track bar
+kind.DATETIME = Date picker
+kind.MENUITEM = Menu item
+kind.TIMER = Timer thread
+-- actions: the label of each action the catalogue offers
+action.Set its text = Set its text
+action.Get its text = Get its text
+action.Disable it = Disable it
+action.Enable it = Enable it
+action.Hide it = Hide it
+action.Show it = Show it
+action.Give it the focus = Give it the focus
+action.Add an item = Add an item
+action.The selected item = The selected item
+action.Remove all items = Remove all items
+action.Count the items = Count the items
+action.Is it checked? = Is it checked?
+action.Check it = Check it
+action.Uncheck it = Uncheck it
+action.Set the position = Set the position
+action.Set the range = Set the range
+action.Add a row = Add a row
+action.Text of a cell = Text of a cell
+action.The selected row = The selected row
+action.Count the rows = Count the rows
+action.Remove all rows = Remove all rows
+action.The selected tab's number (1 for the first) = The selected tab's number (1 for the first)
+action.Its selected tab's text = Its selected tab's text
+action.The selected node's text = The selected node's text
+action.Add a top node = Add a top node
+action.Add a child to the last node = Add a child to the last node
+action.Remove all nodes = Remove all nodes
+action.Its position = Its position
+action.Set its position = Set its position
+action.Its date and time = Its date and time
+action.Set it to now = Set it to now
+action.Gray it = Gray it
+action.Start the timer = Start the timer
+action.Stop the timer = Stop the timer
+action.Close the dialog (OK) = Close the dialog (OK)
+action.Show a message = Show a message
+action.Run a method on a new thread = Run a method on a new thread
+action.Set the title = Set the title
+-- the trace
+trace.prev = Previous step
+trace.next = Next step
+trace.step = step %1 of %2:  %3, block %4
+trace.stepOf = step %1 of %2
+trace.waiting = waiting for the first step…
+trace.ownThread = (its own thread)
+trace.uiThread = (the dialog's thread)
+trace.close = Close trace
+trace.close.tip = Leave the trace
+trace.variable = Variable
+trace.value = Value
+-- the graph
+graph.aria = The event code as blocks
+graph.palette.aria = Blocks to drag into the graph
+graph.wrap = Wrap in do…end
+graph.wrap.tip = A THEN or ELSE holds one instruction: wrap it in DO...END to hold more
+graph.delete = Delete
+graph.dropHere = drop a block here
+graph.howTo = Click a block to select it and its code; double-click to change it; drag it to move it.
+graph.noParse = The code does not parse, so the graph is not changed: %1
+graph.mendFirst = Mend the code first: the graph is drawn from code that parses.
+graph.moved = Moved.
+graph.inserted = Inserted.  Double-click it to change it.
+graph.insertedAction = Inserted an action on %1.
+graph.changed = Changed.
+graph.deleted = Deleted.
+graph.wrapped = Wrapped in do...end: it takes more than one instruction now.
+graph.kind.message = message
+graph.kind.command = command
+graph.explain.if = IF: runs THEN when the condition is 1 (true), else ELSE.
+graph.explain.do = DO ... END: a group of instructions, repeated when it has a loop control (i = 1 to n, x over list, while, until).
+graph.explain.loop = LOOP ... END: repeats its instructions.
+graph.explain.select = SELECT: runs the first WHEN whose condition is 1; OTHERWISE when none is.
+graph.explain.when = WHEN: a condition of a SELECT; its THEN instruction runs when it is 1.
+graph.explain.otherwise = OTHERWISE: what a SELECT runs when no WHEN is true.
+graph.explain.assign = Assignment: the variable takes the value of the expression.
+graph.explain.message = Message: sends a message to an object (self~lcd~setText("0") asks the control to show "0").
+graph.explain.command = Command: a string sent to the environment (ADDRESS) to run.
+graph.explain.say = SAY: writes a line to the output.
+graph.explain.call = CALL: runs a routine or a label.
+graph.explain.return = RETURN: leaves this method (with a result, if one is given).
+graph.explain.expose = EXPOSE: makes the object's variables (attributes) visible here; it must come first.
+graph.explain.use = USE ARG: names the arguments the method was sent.
+graph.explain.nop = NOP: does nothing.
+graph.explain.leave = LEAVE: ends the loop.
+graph.explain.iterate = ITERATE: goes on to the loop's next turn.
+graph.explain.reply = REPLY: the caller carries on; this method goes on on its own thread.
+-- the Strings panel
+strings.title = Strings
+strings.head = each language is a `::RESOURCE strings.<language>` in the program, `key = text`
+strings.off = The texts are written into the program as they are.  To translate them, give the language they are in:
+strings.base.aria = Base language
+strings.on = Make translatable
+strings.addLang = Add a language
+strings.newLang.aria = New language
+strings.newString = New event string
+strings.key = Key
+strings.baseText = Base text
+strings.newText.example = Saved %1 records
+strings.hint = Edit a text in place.  An empty cell in a translation uses the base language's text.  In event code: `self~nls("key", value1, value2)`; %1, %2 in the text take the values.  ⇩ gives a translator the language as a plain `key = text` file; ⇧ reads it back.
+strings.event = event code
+strings.cell.aria = %1 in %2
+strings.set = %1 in %2 set.
+strings.cleared = %1 in %2: none; the base text is used.
+strings.use = ↵ code
+strings.use.tip = Put self~nls("%1") into the code at the caret
+strings.remove.tip = Remove %1
+strings.base = base
+strings.todo = %1 to do
+strings.complete = complete
+strings.export.tip = Download %1 as key = text, for a translator
+strings.import.tip = Read a translator's %1 file back
+strings.drop.tip = Take %1 out (its texts go)
+strings.drop.ask = Take %1 out?
+strings.dropped = %1 taken out.
+strings.exported = Saved %1: give it to the translator; ⇧ reads it back.
+strings.made = Translatable: the texts go into ::RESOURCE strings.%1; add a language.
+strings.langAdded = Added %1: fill in its column, or ⇩ give it to a translator.
+strings.keyAdded = Added %1: in event code, self~nls("%1").
+-- the designer refuses
+err.graph.oneInstruction = A THEN, ELSE or WHEN takes one instruction: wrap it in do...end first
+err.graph.nothing = Nothing to insert
+err.graph.lastWhen = A SELECT needs at least one WHEN: delete the SELECT instead
+err.graph.clause = A %1 belongs to its SELECT: move the SELECT, or the instructions in it
+err.graph.itself = A block cannot go inside itself
+err.graph.empty = A block needs its text; delete it instead
+err.graph.noBlock = No block %1
+err.catalogue = Unknown catalogue line: %1
+err.type = Unknown control type: %1
+err.name.needed = A name is needed
+err.name.start = Name %1 must start with a letter or _
+err.name.chars = Name %1 may only use letters, digits and _
+err.name.reserved = Name %1 is already a method of UserDialog
+err.name.reservedData = Name %1_data would be a method of UserDialog
+err.name.inUse = Name %1 is in use
+err.name.inUseBy = Name %1 is in use by %2
+err.name.variable = Name %1 is a variable
+err.name.method = Name %1 is a method of the form
+err.name.sharedScope = sharedScope is the form's shared scope
+err.name.on = Names starting on_ are the event methods'
+err.name.timer = Names starting timer_ are the timers'
+err.name.nls = Names starting nls are the language support's (self~nls)
+err.noControl = No control named %1
+err.number = Not a number: %1
+err.page.noTab = page is tabName:n; there is no control %1
+err.page.notTab = %1 is not a tab strip
+err.page.number = page is tabName:n with n a tab number
+err.page.range = %1 has tabs 1 to %2
+err.form.prop = The form has no property %1
+err.page.not = %1 cannot sit on a tab page
+err.prop = %1 has no property %2
+err.style = %1 is not a style of %2; it takes %3
+err.exstyle = %1 is not an extended style of %2; it takes %3
+err.columns = columns is Title:width|Title:width, width in dialog units
+err.columnWidth = column %1's width is a whole number of dialog units
+err.tabs = A tab strip needs at least one tab
+err.popup = A menu item needs the menu (popup) it is in
+err.bool = %1 is 0 or 1
+err.role = role is OK, CANCEL or empty
+err.role.code = %1 has event code: an %2 button's code goes in the form's %2 event
+err.role.taken = %1 already has role %2
+err.whole = %1 is a whole number
+err.interval = interval is a number of seconds
+err.interval.positive = interval must be more than 0
+err.node = A node needs text after its dots: %1
+err.node.first = The first node is a top node (no dots)
+err.oneLine = %1 is one line
+err.require.which = Which file?
+err.require.ood = ooDialog.cls is always required
+err.shared.value = A value (a Rexx expression) is needed
+err.shared.oneLine = The value is one line
+err.event = %1 has no event %2
+err.thread.noCode = Type the event's code first
+err.thread.form = The form's events run on the dialog's thread
+err.thread = thread is ui or background
+err.lang.twice = Language %1 is listed twice
+err.lang.base = The base language is %1: its texts are the design's own
+err.lang.baseFirst = Set the base language first
+err.lang.code = A language is 2 or 3 letters, perhaps with _ and a region: de, de_AT, pt_BR
+err.string.none = No string %1
+err.lang.none = No language %1
+err.string.oneLine = A string is one line
+err.string.baseNeeded = An event string needs its base text; remove it instead
+err.lang.first = Set the languages first
+err.key.chars = A key is letters, digits, _ and .: msg.noNumbers
+err.key.inUse = Key %1 is in use
+err.key.owned = Keys %1.… are %1's own
+err.string.text = An event string needs its base text
+err.string.remove = Only event strings are removed; a control's go with it
+err.lang.importBase = The base language's texts are edited in the design
+err.read.noDesign = No ::RESOURCE oodDesign in this program
+err.read.method = Method %1 is missing
+err.read.line = Unknown design line: %1
+err.read.event = Method %1 of event %2 %3 is missing
+err.read.keyValue = Expected key=value in: %1
+err.read.quote = Unclosed quote in: %1
+err.code.directive = A line of code cannot start with ::
+::END
+
+::resource strings.de
+-- Deutsch: übersetzt von Claude (Opus 5.5); bitte von einem Muttersprachler prüfen
+-- die Seite
+ui.name = ooDialog Designer
+ui.footer = Architektur: Tom Dyer.  Code des Designers: Claude (Opus 5.5).  ooDialog/WASM: Claude (Fable 5.2).  ooRexx/WASM-Laufzeit und der Rexx Parser (Graphansicht): Josep Maria Blasco.  ooDialog: das ooRexx-Projekt (CPL 1.0).
+ui.lang.tip = Die Sprache des Designers
+ui.lang.now = Der Designer spricht jetzt %1.
+ex.tip = Beginnen mit
+ex.new = Neuer Dialog
+ex.calculator = Rechner (EDM2-Test von DrDialog)
+ex.threads = Threads und ein Zeitgeber
+ex.contacts = Registerkarten, Listenansicht und Menü
+ex.gadgets = Strukturansicht, Schieberegler, Datumsauswahl
+ex.contactsDE = Kontakte auf Englisch und Deutsch (Texte…)
+btn.open = Öffnen…
+btn.open.tip = Eine mit dem Designer erstellte .rex öffnen
+btn.save = .rex speichern
+btn.save.tip = Das Programm herunterladen (es enthält seinen Entwurf)
+btn.program = Programm
+btn.program.tip = Das ooRexx zeigen, das dieser Entwurf schreibt
+btn.libraries = Bibliotheken…
+btn.libraries.tip = Mit einer Quelle von ooRexx-Bibliotheken verbinden und eine verwenden
+btn.strings = Texte…
+btn.strings.tip = Die Texte in jeder Sprache: ::RESOURCE strings.<Sprache>
+btn.trace = ▶ Verfolgen
+btn.trace.tip = Ausführen und dabei jeden Schritt des Ereigniscodes mit seinen Variablen aufzeichnen
+btn.run = ▶ Ausführen
+btn.run.tip = Mit ooDialog auf ooRexx/WASM ausführen
+btn.stop = Anhalten
+btn.insert = Einfügen…
+btn.insert.tip = Eine Aktion für ein Steuerelement einfügen
+btn.add = Hinzufügen
+btn.close = Schließen
+btn.copy = Kopieren
+btn.remove = Entfernen
+lang.label = Sprache
+lang.tip = Den Entwurf in dieser Sprache zeigen und ausführen
+lang.base = %1 (Basis)
+lang.shown = In %1 gezeigt; ▶ Ausführen läuft auch darin.
+lang.shownBase = In der Basissprache %1 gezeigt.
+lang.tooLong = Hier zu lang: %1.
+lang.tooLong.tip = %1: der Text ist in %2 zu lang für das Steuerelement
+palette.title = Steuerelemente
+palette.hint = Auf das Formular ziehen oder zum Hinzufügen anklicken.
+tray.aria = Unsichtbare Steuerelemente
+side.properties = Eigenschaften
+side.variables = Variablen
+side.variables.hint = (die Attribute des Dialogs)
+side.libraries = Bibliotheken
+side.shared = Gemeinsamer Bereich
+tree.aria = Objekte und Ereignisse
+tree.methods = Methoden
+tree.newMethod = Name der neuen Methode
+code.pick = Ein Ereignis oder eine Methode wählen
+code.pickFirst = Zuerst ein Ereignis oder eine Methode wählen.
+code.method = Methode %1  →  self~%1(...)
+code.placeholder = Rexx für dieses Ereignis.  Steuerelemente sind Methoden von self: self~lcd~setText("0").  Ein Steuerelement aus der Liste links auf diesen Bereich ziehen, um seine Aktionen zu sehen.
+thread.label = Läuft auf
+thread.ui = dem Thread des Dialogs
+thread.bg = einem eigenen Thread (Hintergrund)
+thread.nowBg = %1 %2 antwortet jetzt sofort und läuft auf einem eigenen Thread: der Dialog reagiert weiter.
+thread.nowUi = %1 %2 läuft auf dem Thread des Dialogs.
+insert.head = Eine Aktion einfügen für…
+view.aria = Den Code zeigen als
+view.code = Code
+view.graph = Graph
+view.both = Beides
+out.aria = Ausgabe des Programms
+-- Status
+st.ready = Bereit.  Ein Steuerelement auf das Formular ziehen.
+st.noStart = Start nicht möglich:
+st.added = %1 hinzugefügt.  Unter Eigenschaften umbenennen; seine Ereignisse stehen in der Liste unten.
+st.removed = %1 und seine Ereignisse entfernt.
+st.copied = Kopiert.
+st.saved = %1 gespeichert: das Programm, mit seinem Entwurf darin.
+st.opened = %1 geöffnet.
+st.new = Neuer Dialog.
+st.running = %1 läuft…
+st.tracing = %1 wird verfolgt…
+st.ended = %1 beendet, rc %2.
+st.runFailed = Ausführung fehlgeschlagen: %1
+tab.showPage = Seite %1 beim Entwerfen zeigen
+tab.designing = %1: Seite %2 wird entworfen.  Die Eigenschaft „Seite“ eines Steuerelements legt es auf eine Seite.
+-- Eigenschaften
+prop.form = Formular
+prop.remove = %1 entfernen
+prop.opts = Stile
+prop.exstyles = erweitert
+prop.page.always = — (immer sichtbar)
+prop.role.ok = OK (IDOK, Standard)
+prop.role.cancel = Abbrechen (IDCANCEL)
+prop.name = Name
+prop.title = Titel
+prop.text = Text
+prop.x = x
+prop.y = y
+prop.w = Breite
+prop.h = Höhe
+prop.items = Einträge (a|b|c)
+prop.groupstart = beginnt Gruppe
+prop.interval = Intervall (s)
+prop.columns = Spalten (Titel:Breite|…)
+prop.nodes = Knoten (a|.Kind|..Enkel)
+prop.rows = Zeilen (a;b|c;d)
+prop.tabs = Registerkarten (a|b)
+prop.popup = Menü
+prop.role = Rolle
+prop.page = Seite
+prop.checked = markiert
+prop.enabled = aktiv
+prop.grayed = grau
+prop.min = Minimum
+prop.max = Maximum
+prop.pos = Position
+var.new = neue Variable
+var.first = Anfangswert
+var.value.tip = Anfangswert: ein Rexx-Ausdruck
+var.add.tip = Die Variable hinzufügen
+lib.none = Bibliotheken… zum Hinzufügen.
+lib.added = ::requires "%1" hinzugefügt.  Was daraus gemacht wird, kommt in den gemeinsamen Bereich; Ereignisse erreichen es mit expose sharedScope.
+shared.name = Name
+shared.value.tip = Einmal in init erzeugt: ein Rexx-Ausdruck
+shared.add.tip = Zum gemeinsamen Bereich hinzufügen
+shared.added = In jedem Ereignis: expose sharedScope, dann sharedScope["%1"].
+-- die Steuerelemente
+kind.PUSHBUTTON = Schaltfläche
+kind.STATIC = Beschriftung
+kind.EDIT = Eingabefeld
+kind.CHECKBOX = Kontrollkästchen
+kind.RADIOBUTTON = Optionsfeld
+kind.GROUPBOX = Gruppenfeld
+kind.LISTBOX = Listenfeld
+kind.COMBOBOX = Kombinationsfeld
+kind.PROGRESSBAR = Fortschrittsanzeige
+kind.LISTVIEW = Listenansicht
+kind.TAB = Registerkarten
+kind.TREEVIEW = Strukturansicht
+kind.TRACKBAR = Schieberegler
+kind.DATETIME = Datumsauswahl
+kind.MENUITEM = Menüeintrag
+kind.TIMER = Zeitgeber-Thread
+-- Aktionen
+action.Set its text = Text setzen
+action.Get its text = Text holen
+action.Disable it = Deaktivieren
+action.Enable it = Aktivieren
+action.Hide it = Ausblenden
+action.Show it = Einblenden
+action.Give it the focus = Den Fokus geben
+action.Add an item = Einen Eintrag hinzufügen
+action.The selected item = Der gewählte Eintrag
+action.Remove all items = Alle Einträge entfernen
+action.Count the items = Die Einträge zählen
+action.Is it checked? = Ist es markiert?
+action.Check it = Markieren
+action.Uncheck it = Markierung aufheben
+action.Set the position = Die Position setzen
+action.Set the range = Den Bereich setzen
+action.Add a row = Eine Zeile hinzufügen
+action.Text of a cell = Text einer Zelle
+action.The selected row = Die gewählte Zeile
+action.Count the rows = Die Zeilen zählen
+action.Remove all rows = Alle Zeilen entfernen
+action.The selected tab's number (1 for the first) = Nummer der gewählten Registerkarte (1 für die erste)
+action.Its selected tab's text = Text der gewählten Registerkarte
+action.The selected node's text = Text des gewählten Knotens
+action.Add a top node = Einen obersten Knoten hinzufügen
+action.Add a child to the last node = Dem letzten Knoten ein Kind hinzufügen
+action.Remove all nodes = Alle Knoten entfernen
+action.Its position = Seine Position
+action.Set its position = Seine Position setzen
+action.Its date and time = Sein Datum und seine Uhrzeit
+action.Set it to now = Auf jetzt setzen
+action.Gray it = Grau schalten
+action.Start the timer = Den Zeitgeber starten
+action.Stop the timer = Den Zeitgeber anhalten
+action.Close the dialog (OK) = Den Dialog schließen (OK)
+action.Show a message = Eine Meldung zeigen
+action.Run a method on a new thread = Eine Methode auf einem neuen Thread ausführen
+action.Set the title = Den Titel setzen
+-- die Verfolgung
+trace.prev = Vorheriger Schritt
+trace.next = Nächster Schritt
+trace.step = Schritt %1 von %2:  %3, Block %4
+trace.stepOf = Schritt %1 von %2
+trace.waiting = warte auf den ersten Schritt…
+trace.ownThread = (eigener Thread)
+trace.uiThread = (Thread des Dialogs)
+trace.close = Verfolgung schließen
+trace.close.tip = Die Verfolgung verlassen
+trace.variable = Variable
+trace.value = Wert
+-- der Graph
+graph.aria = Der Ereigniscode als Blöcke
+graph.palette.aria = Blöcke, die in den Graphen gezogen werden können
+graph.wrap = In do…end einschließen
+graph.wrap.tip = Ein THEN oder ELSE hat eine Anweisung: in DO...END einschließen, damit es mehr aufnimmt
+graph.delete = Löschen
+graph.dropHere = einen Block hier ablegen
+graph.howTo = Einen Block anklicken, um ihn und seinen Code zu wählen; doppelklicken, um ihn zu ändern; ziehen, um ihn zu verschieben.
+graph.noParse = Der Code lässt sich nicht zerlegen, daher bleibt der Graph unverändert: %1
+graph.mendFirst = Zuerst den Code reparieren: der Graph wird aus zerlegbarem Code gezeichnet.
+graph.moved = Verschoben.
+graph.inserted = Eingefügt.  Doppelklicken, um ihn zu ändern.
+graph.insertedAction = Eine Aktion für %1 eingefügt.
+graph.changed = Geändert.
+graph.deleted = Gelöscht.
+graph.wrapped = In do...end eingeschlossen: jetzt nimmt es mehr als eine Anweisung auf.
+graph.kind.message = Nachricht
+graph.kind.command = Befehl
+graph.explain.if = IF: führt THEN aus, wenn die Bedingung 1 (wahr) ist, sonst ELSE.
+graph.explain.do = DO ... END: eine Gruppe von Anweisungen, wiederholt, wenn sie eine Schleifensteuerung hat (i = 1 to n, x over Liste, while, until).
+graph.explain.loop = LOOP ... END: wiederholt seine Anweisungen.
+graph.explain.select = SELECT: führt das erste WHEN aus, dessen Bedingung 1 ist; OTHERWISE, wenn keines es ist.
+graph.explain.when = WHEN: eine Bedingung eines SELECT; seine THEN-Anweisung läuft, wenn sie 1 ist.
+graph.explain.otherwise = OTHERWISE: was ein SELECT ausführt, wenn kein WHEN wahr ist.
+graph.explain.assign = Zuweisung: die Variable erhält den Wert des Ausdrucks.
+graph.explain.message = Nachricht: schickt einem Objekt eine Nachricht (self~lcd~setText("0") bittet das Steuerelement, "0" zu zeigen).
+graph.explain.command = Befehl: eine Zeichenkette, die an die Umgebung (ADDRESS) zur Ausführung geht.
+graph.explain.say = SAY: schreibt eine Zeile in die Ausgabe.
+graph.explain.call = CALL: ruft eine Routine oder eine Marke auf.
+graph.explain.return = RETURN: verlässt diese Methode (mit einem Ergebnis, wenn eines angegeben ist).
+graph.explain.expose = EXPOSE: macht die Variablen (Attribute) des Objekts hier sichtbar; es muss zuerst kommen.
+graph.explain.use = USE ARG: benennt die Argumente, die der Methode geschickt wurden.
+graph.explain.nop = NOP: tut nichts.
+graph.explain.leave = LEAVE: beendet die Schleife.
+graph.explain.iterate = ITERATE: geht zum nächsten Durchlauf der Schleife.
+graph.explain.reply = REPLY: der Aufrufer macht weiter; diese Methode läuft auf ihrem eigenen Thread weiter.
+-- das Fenster Texte
+strings.title = Texte
+strings.head = jede Sprache ist eine `::RESOURCE strings.<Sprache>` im Programm, `Schlüssel = Text`
+strings.off = Die Texte werden so ins Programm geschrieben, wie sie sind.  Um sie zu übersetzen, die Sprache angeben, in der sie sind:
+strings.base.aria = Basissprache
+strings.on = Übersetzbar machen
+strings.addLang = Eine Sprache hinzufügen
+strings.newLang.aria = Neue Sprache
+strings.newString = Neuer Ereignistext
+strings.key = Schlüssel
+strings.baseText = Basistext
+strings.newText.example = %1 Datensätze gespeichert
+strings.hint = Einen Text an Ort und Stelle bearbeiten.  Eine leere Zelle einer Übersetzung verwendet den Text der Basissprache.  Im Ereigniscode: `self~nls("Schlüssel", Wert1, Wert2)`; %1, %2 im Text nehmen die Werte auf.  ⇩ gibt einem Übersetzer die Sprache als einfache Datei `Schlüssel = Text`; ⇧ liest sie zurück.
+strings.event = Ereigniscode
+strings.cell.aria = %1 in %2
+strings.set = %1 in %2 gesetzt.
+strings.cleared = %1 in %2: keiner; der Basistext wird verwendet.
+strings.use = ↵ Code
+strings.use.tip = self~nls("%1") an der Einfügemarke in den Code setzen
+strings.remove.tip = %1 entfernen
+strings.base = Basis
+strings.todo = %1 offen
+strings.complete = vollständig
+strings.export.tip = %1 als Schlüssel = Text für einen Übersetzer herunterladen
+strings.import.tip = Die %1-Datei eines Übersetzers zurücklesen
+strings.drop.tip = %1 herausnehmen (seine Texte gehen verloren)
+strings.drop.ask = %1 herausnehmen?
+strings.dropped = %1 herausgenommen.
+strings.exported = %1 gespeichert: dem Übersetzer geben; ⇧ liest sie zurück.
+strings.made = Übersetzbar: die Texte kommen in ::RESOURCE strings.%1; eine Sprache hinzufügen.
+strings.langAdded = %1 hinzugefügt: seine Spalte ausfüllen oder mit ⇩ einem Übersetzer geben.
+strings.keyAdded = %1 hinzugefügt: im Ereigniscode self~nls("%1").
+-- der Designer lehnt ab
+err.graph.oneInstruction = Ein THEN, ELSE oder WHEN nimmt eine Anweisung: erst in do...end einschließen
+err.graph.nothing = Nichts einzufügen
+err.graph.lastWhen = Ein SELECT braucht mindestens ein WHEN: stattdessen das SELECT löschen
+err.graph.clause = Ein %1 gehört zu seinem SELECT: das SELECT verschieben oder die Anweisungen darin
+err.graph.itself = Ein Block kann nicht in sich selbst
+err.graph.empty = Ein Block braucht seinen Text; stattdessen löschen
+err.graph.noBlock = Kein Block %1
+err.catalogue = Unbekannte Katalogzeile: %1
+err.type = Unbekannter Steuerelementtyp: %1
+err.name.needed = Ein Name wird gebraucht
+err.name.start = Der Name %1 muss mit einem Buchstaben oder _ beginnen
+err.name.chars = Der Name %1 darf nur Buchstaben, Ziffern und _ enthalten
+err.name.reserved = Der Name %1 ist schon eine Methode von UserDialog
+err.name.reservedData = Der Name %1_data wäre eine Methode von UserDialog
+err.name.inUse = Der Name %1 ist vergeben
+err.name.inUseBy = Der Name %1 wird von %2 verwendet
+err.name.variable = Der Name %1 ist eine Variable
+err.name.method = Der Name %1 ist eine Methode des Formulars
+err.name.sharedScope = sharedScope ist der gemeinsame Bereich des Formulars
+err.name.on = Namen, die mit on_ beginnen, gehören den Ereignismethoden
+err.name.timer = Namen, die mit timer_ beginnen, gehören den Zeitgebern
+err.name.nls = Namen, die mit nls beginnen, gehören der Sprachunterstützung (self~nls)
+err.noControl = Kein Steuerelement namens %1
+err.number = Keine Zahl: %1
+err.page.noTab = Seite ist Registername:n; es gibt kein Steuerelement %1
+err.page.notTab = %1 ist keine Registerkartenleiste
+err.page.number = Seite ist Registername:n mit n einer Registernummer
+err.page.range = %1 hat die Registerkarten 1 bis %2
+err.form.prop = Das Formular hat keine Eigenschaft %1
+err.page.not = %1 kann nicht auf einer Registerseite liegen
+err.prop = %1 hat keine Eigenschaft %2
+err.style = %1 ist kein Stil von %2; erlaubt sind %3
+err.exstyle = %1 ist kein erweiterter Stil von %2; erlaubt sind %3
+err.columns = Spalten ist Titel:Breite|Titel:Breite, Breite in Dialogeinheiten
+err.columnWidth = Die Breite der Spalte %1 ist eine ganze Zahl von Dialogeinheiten
+err.tabs = Eine Registerkartenleiste braucht mindestens eine Registerkarte
+err.popup = Ein Menüeintrag braucht das Menü (Popup), in dem er steht
+err.bool = %1 ist 0 oder 1
+err.role = Rolle ist OK, CANCEL oder leer
+err.role.code = %1 hat Ereigniscode: der Code einer %2-Schaltfläche gehört in das %2-Ereignis des Formulars
+err.role.taken = %1 hat schon die Rolle %2
+err.whole = %1 ist eine ganze Zahl
+err.interval = Intervall ist eine Anzahl Sekunden
+err.interval.positive = Intervall muss größer als 0 sein
+err.node = Ein Knoten braucht Text nach seinen Punkten: %1
+err.node.first = Der erste Knoten ist ein oberster Knoten (ohne Punkte)
+err.oneLine = %1 ist eine Zeile
+err.require.which = Welche Datei?
+err.require.ood = ooDialog.cls wird immer benötigt
+err.shared.value = Ein Wert (ein Rexx-Ausdruck) wird gebraucht
+err.shared.oneLine = Der Wert ist eine Zeile
+err.event = %1 hat kein Ereignis %2
+err.thread.noCode = Zuerst den Code des Ereignisses schreiben
+err.thread.form = Die Ereignisse des Formulars laufen auf dem Thread des Dialogs
+err.thread = Thread ist ui oder background
+err.lang.twice = Die Sprache %1 steht zweimal da
+err.lang.base = Die Basissprache ist %1: ihre Texte sind die des Entwurfs
+err.lang.baseFirst = Zuerst die Basissprache setzen
+err.lang.code = Eine Sprache sind 2 oder 3 Buchstaben, vielleicht mit _ und einer Region: de, de_AT, pt_BR
+err.string.none = Kein Text %1
+err.lang.none = Keine Sprache %1
+err.string.oneLine = Ein Text ist eine Zeile
+err.string.baseNeeded = Ein Ereignistext braucht seinen Basistext; stattdessen entfernen
+err.lang.first = Zuerst die Sprachen setzen
+err.key.chars = Ein Schlüssel besteht aus Buchstaben, Ziffern, _ und .: msg.keineZahlen
+err.key.inUse = Der Schlüssel %1 ist vergeben
+err.key.owned = Schlüssel %1.… gehören %1
+err.string.text = Ein Ereignistext braucht seinen Basistext
+err.string.remove = Nur Ereignistexte werden entfernt; die eines Steuerelements gehen mit ihm
+err.lang.importBase = Die Texte der Basissprache werden im Entwurf bearbeitet
+err.read.noDesign = Keine ::RESOURCE oodDesign in diesem Programm
+err.read.method = Die Methode %1 fehlt
+err.read.line = Unbekannte Entwurfszeile: %1
+err.read.event = Die Methode %1 des Ereignisses %2 %3 fehlt
+err.read.keyValue = key=value erwartet in: %1
+err.read.quote = Nicht geschlossenes Anführungszeichen in: %1
+err.code.directive = Eine Codezeile kann nicht mit :: beginnen
+::END

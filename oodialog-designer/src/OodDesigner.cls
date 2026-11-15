@@ -17,13 +17,15 @@
 /* OodDesign~fromSource reads it back, event code included.                   */
 /*----------------------------------------------------------------------------*/
 
+::requires "OodUi.cls"    -- the designer's texts, and OodNls: the language support of the designer and its programs
+
 ::class OodModule public mixinclass Object
 ::method module_version class
-  return "0.6.0"
+  return "0.7.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::method module_version
-  return "0.6.0"
+  return "0.7.0"
 ::method module_lastChanged
   return "2026-11-14"
 
@@ -99,7 +101,7 @@
       when f["*"] == "form" then formEvents = f["EVENTS"]~upper
       when f["*"] == "action" then actions~append(f)
       when f["*"] == "evargs" then evargs[(f["TYPE"]"."f["EVENT"])~upper] = f["ARGS"]
-      otherwise raise syntax 93.900 array("Unknown catalogue line:" line)
+      otherwise raise syntax 93.900 array(oodT("err.catalogue", line))
     end
   end
   do line over .resources~oodReserved
@@ -120,7 +122,7 @@
   expose kinds
   use strict arg type
   k = kinds~at(type~upper)
-  if k == .nil then raise syntax 93.900 array("Unknown control type:" type)
+  if k == .nil then raise syntax 93.900 array(oodT("err.type", type))
   return k
 
 ::method isReserved class
@@ -220,32 +222,32 @@
 ::method checkName
   expose controls vars methods
   use strict arg name, forCtl
-  if name == "" then raise syntax 93.900 array("A name is needed")
+  if name == "" then raise syntax 93.900 array(oodT("err.name.needed"))
   if name~left(1)~verify("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_") > 0 then
-    raise syntax 93.900 array("Name" name "must start with a letter or _")
+    raise syntax 93.900 array(oodT("err.name.start", name))
   if name~verify("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_0123456789") > 0 then
-    raise syntax 93.900 array("Name" name "may only use letters, digits and _")
+    raise syntax 93.900 array(oodT("err.name.chars", name))
   if .OodCatalog~isReserved(name) then
-    raise syntax 93.900 array("Name" name "is already a method of UserDialog")
+    raise syntax 93.900 array(oodT("err.name.reserved", name))
   if .OodCatalog~isReserved(name"_data") then
-    raise syntax 93.900 array("Name" name"_data would be a method of UserDialog")
+    raise syntax 93.900 array(oodT("err.name.reservedData", name))
   do c over controls
     if c \== forCtl then do
-      if c~name~caselessEquals(name) then raise syntax 93.900 array("Name" name "is in use")
-      if (c~name"_data")~caselessEquals(name) then raise syntax 93.900 array("Name" name "is in use by" c~name)
-      if (c~name"_enabled")~caselessEquals(name) then raise syntax 93.900 array("Name" name "is in use by" c~name)
+      if c~name~caselessEquals(name) then raise syntax 93.900 array(oodT("err.name.inUse", name))
+      if (c~name"_data")~caselessEquals(name) then raise syntax 93.900 array(oodT("err.name.inUseBy", name, c~name))
+      if (c~name"_enabled")~caselessEquals(name) then raise syntax 93.900 array(oodT("err.name.inUseBy", name, c~name))
     end
   end
   do v over vars
-    if v["NAME"]~caselessEquals(name) then raise syntax 93.900 array("Name" name "is a variable")
+    if v["NAME"]~caselessEquals(name) then raise syntax 93.900 array(oodT("err.name.variable", name))
   end
   do m over methods
-    if m["NAME"]~caselessEquals(name) then raise syntax 93.900 array("Name" name "is a method of the form")
+    if m["NAME"]~caselessEquals(name) then raise syntax 93.900 array(oodT("err.name.method", name))
   end
-  if name~caselessEquals("sharedScope") then raise syntax 93.900 array("sharedScope is the form's shared scope")
-  if name~left(3)~caselessEquals("on_") then raise syntax 93.900 array("Names starting on_ are the event methods'")
-  if name~left(6)~caselessEquals("timer_") then raise syntax 93.900 array("Names starting timer_ are the timers'")
-  if name~left(3)~caselessEquals("nls") then raise syntax 93.900 array("Names starting nls are the language support's (self~nls)")
+  if name~caselessEquals("sharedScope") then raise syntax 93.900 array(oodT("err.name.sharedScope"))
+  if name~left(3)~caselessEquals("on_") then raise syntax 93.900 array(oodT("err.name.on"))
+  if name~left(6)~caselessEquals("timer_") then raise syntax 93.900 array(oodT("err.name.timer"))
+  if name~left(3)~caselessEquals("nls") then raise syntax 93.900 array(oodT("err.name.nls"))
   return 0
 
 ::method newName
@@ -268,7 +270,7 @@
   do c over controls
     if c~name~caselessEquals(name) then return c
   end
-  raise syntax 93.900 array("No control named" name)
+  raise syntax 93.900 array(oodT("err.noControl", name))
 
 ::method controlNames
   expose controls
@@ -364,7 +366,7 @@
 -- Geometry is in dialog units, whole numbers, inside the form.
 ::method toUnit
   use strict arg v
-  if \datatype(v, "N") then raise syntax 93.900 array("Not a number:" v)
+  if \datatype(v, "N") then raise syntax 93.900 array(oodT("err.number", v))
   v = format(v, , 0)
   if v < 0 then v = 0
   return v
@@ -424,11 +426,11 @@
   do o over controls
     if o~name~caselessEquals(tabName) then t = o
   end
-  if t == .nil then raise syntax 93.900 array("page is tabName:n; there is no control" tabName)
-  if t~type \== "TAB" then raise syntax 93.900 array(tabName "is not a tab strip")
+  if t == .nil then raise syntax 93.900 array(oodT("err.page.noTab", tabName))
+  if t~type \== "TAB" then raise syntax 93.900 array(oodT("err.page.notTab", tabName))
   count = t~prop("tabs")~makeArray("|")~items
-  if \datatype(n, "W") then raise syntax 93.900 array("page is tabName:n with n a tab number")
-  if n < 1 | n > count then raise syntax 93.900 array(tabName "has tabs 1 to" count)
+  if \datatype(n, "W") then raise syntax 93.900 array(oodT("err.page.number"))
+  if n < 1 | n > count then raise syntax 93.900 array(oodT("err.page.range", tabName, count))
   return t~name":"format(n)
 
 ::method getProp
@@ -464,7 +466,7 @@
         if value < 20 then value = 20
         form[key~upper] = value
       end
-      otherwise raise syntax 93.900 array("The form has no property" key)
+      otherwise raise syntax 93.900 array(oodT("err.form.prop", key))
     end
     return value
   end
@@ -478,17 +480,17 @@
     when key == "w" then self~setGeometry(name, c~x, c~y, value, c~h)
     when key == "h" then self~setGeometry(name, c~x, c~y, c~w, value)
     when key == "page" then do
-      if \self~onPageAllowed(c) then raise syntax 93.900 array(c~name "cannot sit on a tab page")
+      if \self~onPageAllowed(c) then raise syntax 93.900 array(oodT("err.page.not", c~name))
       c~setProp(key, self~checkPage(value))
     end
     when c~kind~props~wordpos(key) = 0 then
-      raise syntax 93.900 array(c~type "has no property" key)
+      raise syntax 93.900 array(oodT("err.prop", c~type, key))
     when key == "opts" then do
       allowed = c~kind~opts
       value = value~upper~space
       do o over value~makeArray(" ")
         if wordpos(o, allowed) = 0 then
-          raise syntax 93.900 array(o "is not a style of" c~type"; it takes" allowed)
+          raise syntax 93.900 array(oodT("err.style", o, c~type, allowed))
       end
       c~setProp(key, value)
     end
@@ -497,67 +499,67 @@
       value = value~upper~space
       do o over value~makeArray(" ")
         if wordpos(o, allowed) = 0 then
-          raise syntax 93.900 array(o "is not an extended style of" c~type"; it takes" allowed)
+          raise syntax 93.900 array(oodT("err.exstyle", o, c~type, allowed))
       end
       c~setProp(key, value)
     end
     when key == "columns" then do
       do col over value~makeArray("|")
         parse var col title ":" width
-        if title~strip == "" then raise syntax 93.900 array("columns is Title:width|Title:width, width in dialog units")
+        if title~strip == "" then raise syntax 93.900 array(oodT("err.columns"))
         if width \== "" then do
-          if \datatype(width, "W") then raise syntax 93.900 array("column" title"'s width is a whole number of dialog units")
+          if \datatype(width, "W") then raise syntax 93.900 array(oodT("err.columnWidth", title))
         end
       end
       c~setProp(key, value)
     end
     when key == "tabs" then do
-      if value == "" then raise syntax 93.900 array("A tab strip needs at least one tab")
+      if value == "" then raise syntax 93.900 array(oodT("err.tabs"))
       c~setProp(key, value)
     end
     when key == "popup" then do
-      if value~strip == "" then raise syntax 93.900 array("A menu item needs the menu (popup) it is in")
+      if value~strip == "" then raise syntax 93.900 array(oodT("err.popup"))
       c~setProp(key, value)
     end
     when key == "checked" | key == "enabled" | key == "groupstart" | key == "grayed" then do
-      if value \== "0" & value \== "1" then raise syntax 93.900 array(key "is 0 or 1")
+      if value \== "0" & value \== "1" then raise syntax 93.900 array(oodT("err.bool", key))
       c~setProp(key, value)
     end
     when key == "role" then do
       value = value~upper
       if wordpos(value, "OK CANCEL") = 0 & value \== "" then
-        raise syntax 93.900 array("role is OK, CANCEL or empty")
+        raise syntax 93.900 array(oodT("err.role"))
       if value \== "" then do
         if self~eventSummary(c~name)~pos(":1") > 0 then
-          raise syntax 93.900 array(c~name "has event code: an" value "button's code goes in the form's" value "event")
+          raise syntax 93.900 array(oodT("err.role.code", c~name, value))
         do o over controls
           if o \== c then do
-            if o~prop("role")~upper == value then raise syntax 93.900 array(o~name "already has role" value)
+            if o~prop("role")~upper == value then raise syntax 93.900 array(oodT("err.role.taken", o~name, value))
           end
         end
       end
       c~setProp(key, value)
     end
     when wordpos(key, "min max pos") > 0 then do
-      if \datatype(value, "W") then raise syntax 93.900 array(key "is a whole number")
+      if \datatype(value, "W") then raise syntax 93.900 array(oodT("err.whole", key))
       c~setProp(key, value)
     end
     when key == "interval" then do
-      if \datatype(value, "N") then raise syntax 93.900 array("interval is a number of seconds")
-      if value <= 0 then raise syntax 93.900 array("interval must be more than 0")
+      if \datatype(value, "N") then raise syntax 93.900 array(oodT("err.interval"))
+      if value <= 0 then raise syntax 93.900 array(oodT("err.interval.positive"))
       c~setProp(key, value)
     end
     when key == "nodes" then do
       do node over value~makeArray("|")
         depth = node~verify(".") - 1
-        if depth < 0 then raise syntax 93.900 array("A node needs text after its dots:" node)
-        if node~substr(depth + 1)~strip == "" then raise syntax 93.900 array("A node needs text after its dots:" node)
+        if depth < 0 then raise syntax 93.900 array(oodT("err.node", node))
+        if node~substr(depth + 1)~strip == "" then raise syntax 93.900 array(oodT("err.node", node))
       end
-      if value~left(1) == "." then raise syntax 93.900 array("The first node is a top node (no dots)")
+      if value~left(1) == "." then raise syntax 93.900 array(oodT("err.node.first"))
       c~setProp(key, value)
     end
     when key == "text" | key == "items" | key == "rows" then do
-      if value~pos("0a"x) > 0 | value~pos("0d"x) > 0 then raise syntax 93.900 array(key "is one line")
+      if value~pos("0a"x) > 0 | value~pos("0d"x) > 0 then raise syntax 93.900 array(oodT("err.oneLine", key))
       c~setProp(key, value)
     end
     otherwise c~setProp(key, value)
@@ -696,8 +698,8 @@
   expose requires
   use strict arg file
   file = file~strip~strip("B", '"')~strip("B", "'")
-  if file == "" then raise syntax 93.900 array("Which file?")
-  if file~caselessEquals("ooDialog.cls") then raise syntax 93.900 array("ooDialog.cls is always required")
+  if file == "" then raise syntax 93.900 array(oodT("err.require.which"))
+  if file~caselessEquals("ooDialog.cls") then raise syntax 93.900 array(oodT("err.require.ood"))
   do r over requires
     if r~caselessEquals(file) then return 0
   end
@@ -723,9 +725,9 @@
 ::method setShared
   expose shared
   use strict arg name, value
-  if name == "" then raise syntax 93.900 array("A name is needed")
-  if value~strip == "" then raise syntax 93.900 array("A value (a Rexx expression) is needed")
-  if value~pos("0a"x) > 0 then raise syntax 93.900 array("The value is one line")
+  if name == "" then raise syntax 93.900 array(oodT("err.name.needed"))
+  if value~strip == "" then raise syntax 93.900 array(oodT("err.shared.value"))
+  if value~pos("0a"x) > 0 then raise syntax 93.900 array(oodT("err.shared.oneLine"))
   do e over shared
     if e["NAME"] == name then do
       e["VALUE"] = value
@@ -770,7 +772,7 @@
   use strict arg name, event
   event = event~upper
   if wordpos(event, self~eventNames(name)) = 0 then
-    raise syntax 93.900 array(name "has no event" event)
+    raise syntax 93.900 array(oodT("err.event", name, event))
   return (name"."event)~upper
 
 -- the arguments ooDialog passes the event's method, "" when none are useful
@@ -838,12 +840,12 @@
   use strict arg name, event, thread
   thread = thread~lower
   e = events~at(self~eventKey(name, event))
-  if e == .nil then raise syntax 93.900 array("Type the event's code first")
+  if e == .nil then raise syntax 93.900 array(oodT("err.thread.noCode"))
   if self~isTimer(name) then return "timer"
   if name~caselessEquals("form") then do
-    if thread \== "ui" then raise syntax 93.900 array("The form's events run on the dialog's thread")
+    if thread \== "ui" then raise syntax 93.900 array(oodT("err.thread.form"))
   end
-  if wordpos(thread, "ui background") = 0 then raise syntax 93.900 array("thread is ui or background")
+  if wordpos(thread, "ui background") = 0 then raise syntax 93.900 array(oodT("err.thread"))
   e["THREAD"] = thread
   return thread
 
@@ -948,13 +950,13 @@
   do code over list~space~makeArray(" ")
     code = .OodDesign~checkLanguage(code)
     do n over new
-      if n == code then raise syntax 93.900 array("Language" code "is listed twice")
+      if n == code then raise syntax 93.900 array(oodT("err.lang.twice", code))
     end
     new~append(code)
   end
   if languages~items > 0, new~items > 0 then do
     if new[1] \== languages[1] then
-      raise syntax 93.900 array("The base language is" languages[1]": its texts are the design's own")
+      raise syntax 93.900 array(oodT("err.lang.base", languages[1]))
   end
   do lang over translations~allIndexes
     keep = .false
@@ -972,7 +974,7 @@
 ::method addLanguage
   expose languages
   use strict arg code
-  if languages~items = 0 then raise syntax 93.900 array("Set the base language first")
+  if languages~items = 0 then raise syntax 93.900 array(oodT("err.lang.baseFirst"))
   return self~setLanguages(languages~makeString("L", " ") code)
 
 -- a language code: two or three letters, perhaps _ and a region (de, de_AT, pt_BR)
@@ -980,10 +982,10 @@
   use strict arg code
   parse var code lang "_" region
   if lang~length < 2 | lang~length > 3 | \datatype(lang, "M") then
-    raise syntax 93.900 array("A language is 2 or 3 letters, perhaps with _ and a region: de, de_AT, pt_BR")
+    raise syntax 93.900 array(oodT("err.lang.code"))
   if code~pos("_") > 0 then do
     if region~length < 2 | region~length > 3 | \datatype(region, "A") then
-      raise syntax 93.900 array("A language is 2 or 3 letters, perhaps with _ and a region: de, de_AT, pt_BR")
+      raise syntax 93.900 array(oodT("err.lang.code"))
     return lang~lower"_"region~upper
   end
   return lang~lower
@@ -1013,7 +1015,7 @@
       return .array~of(self~control(owner)~name, prop~lower)
     end
   end
-  raise syntax 93.900 array("No string" key)
+  raise syntax 93.900 array(oodT("err.string.none", key))
 
 ::method userString
   expose userStrings
@@ -1036,7 +1038,7 @@
   use strict arg lang, key
   if lang == self~baseLanguage then return self~baseText(key)
   t = translations[lang]
-  if t == .nil then raise syntax 93.900 array("No language" lang)
+  if t == .nil then raise syntax 93.900 array(oodT("err.lang.none", lang))
   e = t[key~upper]
   if e == .nil then return ""
   return e[2]
@@ -1047,11 +1049,11 @@
 ::method setString
   expose translations
   use strict arg lang, key, text
-  if text~pos("0a"x) > 0 | text~pos("0d"x) > 0 then raise syntax 93.900 array("A string is one line")
+  if text~pos("0a"x) > 0 | text~pos("0d"x) > 0 then raise syntax 93.900 array(oodT("err.string.oneLine"))
   o = self~keyOwner(key)
   if lang == self~baseLanguage then do
     if o[1] == .nil then do
-      if text == "" then raise syntax 93.900 array("An event string needs its base text; remove it instead")
+      if text == "" then raise syntax 93.900 array(oodT("err.string.baseNeeded"))
       u = self~userString(key)
       u["TEXT"] = text
     end
@@ -1065,7 +1067,7 @@
     return text
   end
   t = translations[lang]
-  if t == .nil then raise syntax 93.900 array("No language" lang)
+  if t == .nil then raise syntax 93.900 array(oodT("err.lang.none", lang))
   realKey = self~nlsKeys~at(self~keyIndex(key))
   if text == "" then t~remove(key~upper)
   else t[key~upper] = .array~of(realKey, text)
@@ -1077,17 +1079,17 @@
   do i = 1 to keys~items
     if keys[i]~caselessEquals(key) then return i
   end
-  raise syntax 93.900 array("No string" key)
+  raise syntax 93.900 array(oodT("err.string.none", key))
 
 -- a string for event code: self~nls(key) in any method
 ::method addString
   expose userStrings
   use strict arg key, text
-  if \self~isNls then raise syntax 93.900 array("Set the languages first")
+  if \self~isNls then raise syntax 93.900 array(oodT("err.lang.first"))
   if key == "" | key~verify("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.") > 0 then
-    raise syntax 93.900 array("A key is letters, digits, _ and .: msg.noNumbers")
+    raise syntax 93.900 array(oodT("err.key.chars"))
   do k over self~nlsKeys
-    if k~caselessEquals(key) then raise syntax 93.900 array("Key" key "is in use")
+    if k~caselessEquals(key) then raise syntax 93.900 array(oodT("err.key.inUse", key))
   end
   if key~pos(".") > 0 then do
     parse var key owner "."
@@ -1095,9 +1097,9 @@
     do c over self~controls
       if c~name~caselessEquals(owner) then taken = .true
     end
-    if taken then raise syntax 93.900 array("Keys" owner".… are" owner"'s own")
+    if taken then raise syntax 93.900 array(oodT("err.key.owned", owner))
   end
-  if text == "" then raise syntax 93.900 array("An event string needs its base text")
+  if text == "" then raise syntax 93.900 array(oodT("err.string.text"))
   d = .directory~new
   d["KEY"] = key
   d["TEXT"] = text
@@ -1108,7 +1110,7 @@
   expose userStrings
   use strict arg key
   u = self~userString(key)
-  if u == .nil then raise syntax 93.900 array("Only event strings are removed; a control's go with it")
+  if u == .nil then raise syntax 93.900 array(oodT("err.string.remove"))
   userStrings~removeItem(u)
   self~dropStrings(key, .true)
   return 0
@@ -1184,7 +1186,7 @@
 -- the count set, and any key the design does not have.
 ::method importLanguage
   use strict arg lang, text
-  if lang == self~baseLanguage then raise syntax 93.900 array("The base language's texts are edited in the design")
+  if lang == self~baseLanguage then raise syntax 93.900 array(oodT("err.lang.importBase"))
   n = 0
   unknown = .array~new
   do l over text~changeStr("0d0a"x, "0a"x)~makeArray("0a"x)
@@ -1229,111 +1231,23 @@
   end
   return out
 
--- The language support written into the program (in the dialog's class).
+-- The language support written into the program (in the dialog's class):
+-- OodNls's own methods, copied from their source (OodNls.cls).
 ::method nlsMethods
   expose form
   use strict arg out
-  base = self~baseLanguage
-  out~append("-- Language support: texts are in ::RESOURCE strings.<language> at the end")
-  out~append("-- (key = text).  self~nls(key, a1, a2, ...) gives a key's text with %1,")
-  out~append("-- %2, ... replaced by a1, a2, ...; a key a language lacks takes" oodRx(base)"'s.")
   out~append("::attribute nlsChosen class      -- the program's argument: rexx" form["NAME"]".rex de")
-  out~append("::attribute nlsLanguage get")
-  out~append("")
-  out~append("::method nlsUse unguarded")
-  out~append("  expose nlsTable nlsLanguage")
-  out~append("  use strict arg lang = """"")
-  out~append("  if lang == .nil then lang = """"")
-  out~append("  if lang == """" then do var over .array~of(""LC_ALL"", ""LC_MESSAGES"", ""LANG"")")
-  out~append("    lang = value(var, , ""ENVIRONMENT"")   -- C and POSIX name no language")
-  out~append("    if lang \== """", lang~upper \== ""C"", lang~upper \== ""POSIX"" then leave")
-  out~append("    lang = """"")
-  out~append("  end")
-  out~append("  parse var lang lang ""."" .               -- de_DE.UTF-8: de_DE")
-  out~append("  lang = lang~changeStr(""-"", ""_"")          -- de-AT: de_AT")
-  out~append("  if .resources[(""STRINGS.""lang)~upper] == .nil then lang = lang~left(2)   -- de_AT: else de")
-  out~append("  if .resources[(""STRINGS.""lang)~upper] == .nil then lang =" oodRx(base))
-  out~append("  nlsLanguage = lang")
-  out~append("  nlsTable = .directory~new")
-  out~append("  parse source os .")
-  out~append("  tables = .array~of(" || oodRx(base) || ")")
-  out~append("  if lang \==" oodRx(base) "then tables~append(lang)")
-  out~append("  do table over tables")
-  out~append("    do line over .resources[(""STRINGS.""table)~upper]")
-  out~append("      parse var line key ""="" text")
-  out~append("      key = key~strip")
-  out~append("      if key == """" | key~left(2) == ""--"" then iterate")
-  out~append("      text = text~strip(""L"")")
-  out~append("      if text == """", table \==" oodRx(base) "then iterate   -- untranslated: the base's")
-  out~append("      -- ooDialog on Windows takes ANSI text: the file is UTF-8")
-  out~append("      if os~caselessPos(""Windows"") = 1 then text = nlsAnsi(text)")
-  out~append("      nlsTable[key~upper] = text")
-  out~append("    end")
-  out~append("  end")
-  out~append("")
-  out~append("::method nls unguarded")
-  out~append("  expose nlsTable")
-  out~append("  use strict arg key, ...")
-  out~append("  text = nlsTable[key~upper]")
-  out~append("  if text == .nil then return ""<""key"">""     -- a missing key shows itself")
-  out~append("  if arg() = 1 then return text")
-  out~append("  -- one pass: %n becomes argument n+1; what goes in is not looked at again")
-  out~append("  out = """"")
-  out~append("  i = 1")
-  out~append("  do forever")
-  out~append("    p = text~pos(""%"", i)")
-  out~append("    if p = 0 then leave")
-  out~append("    n = text~substr(p + 1)~verify(""0123456789"") - 1")
-  out~append("    if n < 0 then n = text~length - p")
-  out~append("    k = text~substr(p + 1, n)")
-  out~append("    if n > 0, k > 0, k < arg() then do")
-  out~append("      out = out || text~substr(i, p - i) || arg(k + 1)")
-  out~append("      i = p + 1 + n")
-  out~append("    end")
-  out~append("    else do")
-  out~append("      out = out || text~substr(i, p - i + 1)")
-  out~append("      i = p + 1")
-  out~append("    end")
-  out~append("  end")
-  out~append("  return out || text~substr(i)")
-  out~append("")
+  do l over .OodNls~programLines(self~baseLanguage)
+    out~append(l)
+  end
   return out
 
--- the routine nlsAnsi: UTF-8 to Windows-1252 (Western European) for ooDialog
--- on Windows; a character it has not is ?
+-- the routine nlsAnsi, after the class
 ::method nlsRoutine
   use strict arg out
-  out~append("::routine nlsAnsi")
-  out~append("  use strict arg s")
-  out~append("  if s~verify(xrange(""00""x, ""7F""x)) = 0 then return s")
-  out~append("  special = ""E282AC 80 E2809A 82 C692 83 E2809E 84 E280A6 85 E280A0 86 E280A1 87""")
-  out~append("  special = special ""CB86 88 E280B0 89 C5A0 8A E280B9 8B C592 8C C5BD 8E E28098 91 E28099 92""")
-  out~append("  special = special ""E2809C 93 E2809D 94 E280A2 95 E28093 96 E28094 97 CB9C 98 E284A2 99""")
-  out~append("  special = special ""C5A1 9A E280BA 9B C593 9C C5BE 9E C5B8 9F""")
-  out~append("  out = """"")
-  out~append("  i = 1")
-  out~append("  do while i <= s~length")
-  out~append("    c = s~subchar(i)")
-  out~append("    b = c~c2d")
-  out~append("    select")
-  out~append("      when b < 128 then do; out = out || c; i = i + 1; end")
-  out~append("      when b = 194 | b = 195 then do   -- C2 xx, C3 xx: U+0080 to U+00FF")
-  out~append("        out = out || d2c(s~subchar(i + 1)~c2d + 64 * (b - 194))")
-  out~append("        i = i + 2")
-  out~append("      end")
-  out~append("      otherwise do")
-  out~append("        n = 2")
-  out~append("        if b >= 224 then n = 3")
-  out~append("        if b >= 240 then n = 4")
-  out~append("        k = wordpos(s~substr(i, n)~c2x, special)")
-  out~append("        if k > 0 then out = out || special~word(k + 1)~x2c")
-  out~append("        else out = out || ""?""")
-  out~append("        i = i + n")
-  out~append("      end")
-  out~append("    end")
-  out~append("  end")
-  out~append("  return out")
-  out~append("")
+  do l over .OodNls~routineLines
+    out~append(l)
+  end
   return out
 
 /* ---- the design as text (::RESOURCE oodDesign) ---------------------------- */
@@ -1419,7 +1333,7 @@
     end
   end
   userKeys = .array~new
-  if res~items = 0 then raise syntax 93.900 array("No ::RESOURCE oodDesign in this program")
+  if res~items = 0 then raise syntax 93.900 array(oodT("err.read.noDesign"))
   d = .nil
   evs = .array~new
   do l over res
@@ -1443,10 +1357,10 @@
       when f["*"] == "string" then userKeys~append(f["KEY"])
       when f["*"] == "method" then do
         code = oodMethodBody(lines, f["NAME"])
-        if code == .nil then raise syntax 93.900 array("Method" f["NAME"] "is missing")
+        if code == .nil then raise syntax 93.900 array(oodT("err.read.method", f["NAME"]))
         d~setMethod(f["NAME"], code)
       end
-      otherwise raise syntax 93.900 array("Unknown design line:" l)
+      otherwise raise syntax 93.900 array(oodT("err.read.line", l))
     end
   end
   -- the strings: event strings' keys from the design, every text from the
@@ -1479,7 +1393,7 @@
   do f over evs
     m = d~methodName(f["CONTROL"], f["EVENT"])
     code = oodMethodBody(lines, m)
-    if code == .nil then raise syntax 93.900 array("Method" m "of event" f["CONTROL"] f["EVENT"] "is missing")
+    if code == .nil then raise syntax 93.900 array(oodT("err.read.event", m, f["CONTROL"], f["EVENT"]))
     d~setEventCode(f["CONTROL"], f["EVENT"], code)
     d~setEventThread(f["CONTROL"], f["EVENT"], f["THREAD"])
   end
@@ -1539,7 +1453,7 @@
   -- init: variables, the dialog template, data attributes' first values
   out~append("::method init")
   out~append("  forward class (super) continue")
-  if nls then out~append("  self~nlsUse(self~class~nlsChosen)")
+  if nls then out~append("  self~nlsUse(self~class~nlsChosen," oodRx(self~baseLanguage)")")
   if shared~items > 0 then do
     out~append("  self~sharedScope = .directory~new")
     do e over shared
@@ -1887,7 +1801,7 @@
   rest = rest~strip
   do while rest \== ""
     eq = rest~pos("=")
-    if eq = 0 then raise syntax 93.900 array("Expected key=value in:" line)
+    if eq = 0 then raise syntax 93.900 array(oodT("err.read.keyValue", line))
     key = rest~left(eq - 1)~strip~upper
     rest = rest~substr(eq + 1)
     if rest~left(1) == '"' then do
@@ -1896,7 +1810,7 @@
       closed = .false
       do while \closed
         q = rest~pos('"', p)
-        if q = 0 then raise syntax 93.900 array("Unclosed quote in:" line)
+        if q = 0 then raise syntax 93.900 array(oodT("err.read.quote", line))
         val = val || rest~substr(p, q - p)
         if rest~substr(q + 1, 1) == '"' then do
           val = val || '"'
@@ -1976,7 +1890,7 @@
   clean = .array~new
   do l over lines
     l = l~strip("T")
-    if l~strip~left(2) == "::" then raise syntax 93.900 array("A line of code cannot start with ::")
+    if l~strip~left(2) == "::" then raise syntax 93.900 array(oodT("err.code.directive"))
     clean~append(l)
   end
   do while clean~items > 0
@@ -2077,7 +1991,7 @@ action types=LISTVIEW label="Text of a cell" code="text = self~%n~itemText(item,
 action types=LISTVIEW label="The selected row" code="item = self~%n~selected"
 action types=LISTVIEW label="Count the rows" code="n = self~%n~items"
 action types=LISTVIEW label="Remove all rows" code="self~%n~deleteAll"
-action types=TAB label="The selected tab (1 = first)" code="page = self~%n~selectedIndex + 1"
+action types=TAB label="The selected tab's number (1 for the first)" code="page = self~%n~selectedIndex + 1"
 action types=TAB label="Its selected tab's text" code="text = self~%n~selected"
 action types=TREEVIEW label="The selected node's text" code="text = self~%n~itemText(self~%n~selected)"
 action types=TREEVIEW label="Add a top node" code="node = self~%n~add(""text"")"

@@ -82,7 +82,7 @@ call check "actions name the control", acts~pos("self~lcd~setText(") > 0
 call check "list actions for a list only", acts~pos("~add(") == 0
 
 -- 8. versions
-call check "module_version", .OodDesign~module_version == "0.6.0" & d~module_version == "0.6.0"
+call check "module_version", .OodDesign~module_version == "0.7.0" & d~module_version == "0.7.0"
 call check "module_lastChanged", .OodCatalog~module_lastChanged \== ""
 
 -- 9. v0.2: tab pages, list view, menu bar
@@ -157,7 +157,13 @@ refuses: procedure expose fails checks d v g
   fails = fails + 1
   return
 refused:
-  say "  ok   refuses" refLabel "--" condition("O")~at("MESSAGE")
+  -- the designer's own refusal: Error 93.900 with its message, not any error
+  if condition("O")~at("CODE") \== "93.900" | condition("O")~at("ADDITIONAL")~isA(.Array) = .false then do
+    say "  FAIL refused, but not by the designer:" refLabel "--" condition("O")~at("MESSAGE")
+    fails = fails + 1
+    return
+  end
+  say "  ok   refuses" refLabel "--" condition("O")~at("ADDITIONAL")[1]~left(90)
   return
 
 write: procedure

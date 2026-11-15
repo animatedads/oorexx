@@ -47,7 +47,7 @@ d~setEventCode("mnuAdd", "CLICKED", -
 src = d~generate
 call write "Contacts_nls.rex", src
 call check "argument chooses the language", src~pos('.Contacts~nlsChosen = lang~strip') > 0
-call check "init loads the table", src~pos('self~nlsUse(self~class~nlsChosen)') > 0
+call check "init loads the table", src~pos('self~nlsUse(self~class~nlsChosen, "en")') > 0
 call check "title from the table", src~pos('self~nls("form.title")') > 0
 call check "button text from the table", src~pos('self~createPushButton(IDCANCEL, 156, 120, 56, 14, "", self~nls("btnClose.text"))') > 0
 call check "tabs from the table", src~pos('do t over self~nls("tabMain.tabs")~makeArray("|")') > 0
@@ -192,7 +192,13 @@ refuses: procedure expose fails checks d
   fails = fails + 1
   return
 rfRefused:
-  say "  ok   refuses" rfLabel "--" condition("O")~at("MESSAGE")~left(90)
+  -- the designer's own refusal: Error 93.900 with its message, not any error
+  if condition("O")~at("CODE") \== "93.900" | condition("O")~at("ADDITIONAL")~isA(.Array) = .false then do
+    say "  FAIL refused, but not by the designer:" rfLabel "--" condition("O")~at("MESSAGE")
+    fails = fails + 1
+    return
+  end
+  say "  ok   refuses" rfLabel "--" condition("O")~at("ADDITIONAL")[1]~left(90)
   return
 
 ::requires "OodDesigner.cls"

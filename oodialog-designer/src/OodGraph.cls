@@ -211,7 +211,7 @@ parseFailed:
   expose lines nodes
   use strict arg parent, slot, index, text
   if \self~isBody(parent, slot) then
-    raise syntax 93.900 array("A THEN, ELSE or WHEN takes one instruction: wrap it in do...end first")
+    raise syntax 93.900 array(oodT("err.graph.oneInstruction"))
   kids = self~children(parent, slot)
   if index < 1 then index = 1
   if index > kids~items + 1 then index = kids~items + 1
@@ -344,7 +344,7 @@ parseFailed:
 
 ::method insertCode
   use strict arg parent, slot, index, text
-  if text~strip == "" then raise syntax 93.900 array("Nothing to insert")
+  if text~strip == "" then raise syntax 93.900 array(oodT("err.graph.nothing"))
   return self~applyEdits(.array~of(self~insertEdit(parent, slot, index, text)))
 
 ::method deleteCode
@@ -352,7 +352,7 @@ parseFailed:
   use strict arg id
   self~checkId(id)
   if nodes[id]["KIND"] == "when", self~children(nodes[id]["PARENT"], "when")~items = 1 then
-    raise syntax 93.900 array("A SELECT needs at least one WHEN: delete the SELECT instead")
+    raise syntax 93.900 array(oodT("err.graph.lastWhen"))
   return self~applyEdits(.array~of(self~deleteEdit(id)))
 
 -- move node id to index in parent's slot: one deletion and one insertion,
@@ -362,11 +362,11 @@ parseFailed:
   use strict arg id, parent, slot, index
   self~checkId(id)
   if nodes[id]["KIND"] == "when" | nodes[id]["KIND"] == "otherwise" then
-    raise syntax 93.900 array("A" nodes[id]["KIND"]~upper "belongs to its SELECT: move the SELECT, or the instructions in it")
+    raise syntax 93.900 array(oodT("err.graph.clause", nodes[id]["KIND"]~upper))
   -- not into itself
   p = parent
   do while p > 0
-    if p = id then raise syntax 93.900 array("A block cannot go inside itself")
+    if p = id then raise syntax 93.900 array(oodT("err.graph.itself"))
     p = nodes[p]["PARENT"]
   end
   text = self~nodeText(id)
@@ -392,7 +392,7 @@ parseFailed:
   use strict arg id, text
   self~checkId(id)
   n = nodes[id]
-  if text~strip == "" then raise syntax 93.900 array("A block needs its text; delete it instead")
+  if text~strip == "" then raise syntax 93.900 array(oodT("err.graph.empty"))
   -- keep the blanks the header ended with (before THEN, say)
   old = self~headerText(id)
   trail = old~substr(old~strip("T")~length + 1)
@@ -411,8 +411,8 @@ parseFailed:
 ::method checkId
   expose nodes
   use strict arg id
-  if \datatype(id, "W") then raise syntax 93.900 array("No block" id)
-  if id < 1 | id > nodes~items then raise syntax 93.900 array("No block" id)
+  if \datatype(id, "W") then raise syntax 93.900 array(oodT("err.graph.noBlock", id))
+  if id < 1 | id > nodes~items then raise syntax 93.900 array(oodT("err.graph.noBlock", id))
   return 0
 
 /* ---- the trace run ------------------------------------------------------------ */
@@ -493,3 +493,4 @@ parseFailed:
 
 ::requires "rexx-parser/bin/Rexx.Parser.cls"   -- Josep Maria Blasco's Rexx Parser (Apache 2.0)
 ::requires "OodDesigner.cls"
+::requires "OodUi.cls"
