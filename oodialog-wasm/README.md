@@ -1,4 +1,4 @@
-# ooDialog for ooRexx/WASM — v0.14.0
+# ooDialog for ooRexx/WASM — v0.15.0
 
 Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: Josep Maria Blasco's
 ooRexx/WASM (`oorexxwasm` 0.2.4, ooRexx 5.3.0) and its `js.cls`.
@@ -48,11 +48,11 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
     python3 tools/oodtest.py --poke upstream/examples 0 24
     python3 tools/oodtest.py --tree upstream/examples tests/t*.rex tests/up/calculator.rex tests/up/oodpbar.rex tests/up/oodStandardRoutines.rex
 
-## State on 2026-11-15 (v0.14.0)
+## State on 2026-11-15 (v0.15.0)
 
-- Natives ported: 589 of 1,182 (49.8%). (The total fell from 1,196 because 12
+- Natives ported: 595 of 1,182 (50.3%). (The total fell from 1,196 because 12
   natives are now plain Rexx in `src/patches.txt`.)
-- Tests: 33 of 33 pass in headless Chromium (`tests/t01`..`t17` with expected
+- Tests: 36 of 36 pass in headless Chromium (`tests/t01`..`t17` with expected
   output, the binary resource hand-off test `tests/res/t07_resdialog_binary`,
   four unmodified upstream samples: `calculator.rex`,
   `oodpbar.rex`, `oodStandardRoutines.rex`, and the tutorial
@@ -62,12 +62,15 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
   `oodraw.rex` (each of its seven drawings started and interrupted),
   `oowalker.rex` (the sprite walks), `oograph.rex` (bitmaps scrolled in),
   `mouse/dragNdrop.rex` (a row dragged with a real mouse from one list-view to
-  another), `mouse/mouseWheel.rex` (the wheel scrolls the edit control) and the
+  another), `mouse/mouseWheel.rex` (the wheel scrolls the edit control), the two
+  in-place editing examples (`subitem.editing/editControl.rex`,
+  `dropDownListComboBox.rex`: a cell is edited and kept, another cancelled),
+  the tutorial's `employe9.rex` (list box tab stops) and the
   tutorial's `drawing3.rex` and `drawing5.rex`; and the three
   programs written by ooDialog Designer v0.3.0, in `tests/designer`).
 - Sweep of all 140 upstream example programs (`oodtest.py --sweep`, results in
-  `sweep.tsv`), each run from its own directory: 70 show their dialog, 7 run to
-  the end, 9 show only a message box, 13 stop at a native not ported yet, 10
+  `sweep.tsv`), each run from its own directory: 72 show their dialog, 7 run to
+  the end, 9 show only a message box, 11 stop at a native not ported yet, 10
   stop on an error (8 need a reader of binary resources, which is another
   task's work; `oovideo.rex` is broken upstream), 24 are components: parts of
   the user guide's Order Manager, which name their files from the program's
@@ -87,7 +90,8 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
   and a clean end. 6 more have no fault except connecting an event this layer
   does not produce. 5 have a problem, each named in `poke.tsv`: 2 are
   components started alone (not a fault), the others are sub-item editing
-  (`setParent`), list tabulators and a ResourceImage. Every program ends.
+  (`setParent`), list tabulators and a ResourceImage; the first two are done in
+  v0.15.0, after this run. Every program ends.
   `oovideo.rex` fails on an unmatched `/*` at line 44 of the upstream file
   itself (r13513).
   The probe proves the absence of errors, not that results are right.
@@ -148,6 +152,20 @@ its sprite with them), getBitmapSize (from the file's header), drawBitmap,
 scrollButton, scroll, scrollBitmapFromTo, resizeControl, moveControl and
 winTimer. Not done: dimBitmap and the bitmap of a button that came from a
 binary resource.
+
+## In-place editing in a list-view
+
+`control~setParent(listView)` shows an edit or combo box on the list-view and
+places it in the list-view's client area; `isGrandChild` sends RETURN, ESCAPE,
+(TAB) and the loss of focus to the dialog (onEditGrandChildEvent,
+onComboBoxGrandChildEvent); getItemRect and getSubitemRect give the cell;
+BEGINSCROLL and ENDSCROLL are produced. A `.Rect` given to setWindowPos is a
+point / size rectangle, as in ooDialog (this layer read it as left, top,
+right, bottom before v0.15.0).
+
+List boxes: setTabulators / setListTabulators. An option of the page cannot
+show a tab, so the entry is shown with each tab filled out to its stop; its
+text stays as the program gave it.
 
 ## The Mouse class
 
@@ -213,7 +231,7 @@ WASM file system as bytes.
 
 ## Not yet (the sweep's order of need)
 
-Sub-item editing (setParent); month calendar; tool bar, status
+Month calendar; tool bar, status
 bar, re-bar; custom draw; ResizingAdmin's size limits; connectActivate,
 connectHelp, connectPosChanged and connectResizing (accepted, not produced);
 drawing the icons of image lists; a modeless property sheet; wizard header and

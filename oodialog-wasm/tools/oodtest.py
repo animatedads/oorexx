@@ -263,6 +263,7 @@ def main():
                             elif verb == 'select':
                                 sel, _, text = rest.partition(' => '); pg.select_option(sel, label=text, timeout=15000)
                             elif verb == 'press': pg.keyboard.press(rest)
+                            elif verb == 'type': pg.keyboard.type(rest)      # into whatever has the focus
                             elif verb == 'mouse':             # mouse move|down|up|wheel: at "selector @ dx dy" (from the element's top left); wheel takes the delta last
                                 what, _, where = rest.partition(' ')
                                 sel, _, offs = where.rpartition(' @ ')
@@ -281,6 +282,7 @@ def main():
                                 if got != want: raise Exception(f'expected {want!r}, got {got!r}')
                             elif verb == 'shot':
                                 pg.screenshot(path=str(ROOT / 'shots' / (rest + '.png')))
+                            else: raise Exception('unknown step: ' + verb)   # (a step that does nothing must not pass)
                             log('  step', line[:90])
                         except Exception as e:
                             log('  STEP FAILED', line, '::', ' | '.join(str(e).splitlines()[:12])[:900]); ok = False; break

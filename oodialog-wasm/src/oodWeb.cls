@@ -24,7 +24,7 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.14.0"
+  return "0.15.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute key unguarded
@@ -102,7 +102,7 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.14.0"
+  return "0.15.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute rexxSelf unguarded
@@ -131,7 +131,7 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.14.0"
+  return "0.15.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute dlg unguarded             -- its dialog's OodDlg
@@ -149,7 +149,7 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.14.0"
+  return "0.15.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::method module_version unguarded
@@ -284,6 +284,7 @@
     when kind == "KEY" then self~keyPress(key, id, code)
     when kind == "WM" then self~wmEvent(key, code, extra)
     when kind == "MOUSE" then self~mouseEvent(key, id, code, extra)
+    when kind == "GC" then self~grandChildEvent(key, id, code)
     otherwise nop
   end
 
@@ -1540,7 +1541,7 @@ noPackage:
       end
       when v~hasMethod("RIGHT") then do
         nums~append(v~left); nums~append(v~top)
-        nums~append(v~right - v~left); nums~append(v~bottom - v~top)
+        nums~append(v~right); nums~append(v~bottom)      -- (a point / size rectangle: right and bottom are the width and height)
       end
       otherwise do
         nums~append(v~x)
@@ -2098,6 +2099,7 @@ noPackage:
         select
           when event == "CLICK" | event == "DBLCLK" then args = .array~of(id, parts[1], parts[2], parts[3], (event == "CLICK"), ctl)
           when event == "COLUMNCLICK" | event == "ACTIVATE" | event == "KEYDOWN" then args = .array~of(id, extra, ctl)
+          when event == "BEGINSCROLL" | event == "ENDSCROLL" then args = .array~of(id, parts[1], parts[2], ctl, (event == "BEGINSCROLL"))
           otherwise args = .array~of(id, parts[1], parts[2], ctl)
         end
       end
@@ -4263,6 +4265,78 @@ noPackage:
   return 0
 
 /*---- controls ------------------------------------------------------------------*/
+/* In-place editing: an edit or combo box made the child of a list-view.
+   setParent(control): this control is shown on that one and placed in its client area.
+   isGrandChild(method, wantTab): RETURN, ESCAPE, (TAB) and losing the focus go to the
+   dialog's method (id, "enter" | "escape" | "tab" | "killfocus", control). */
+::method dlgctrl_setParent unguarded
+  use arg self_, msg, a
+  parent = a[1]
+  if \parent~hasMethod("oodPeer") then return .false
+  if \parent~oodPeer~isA(.OodCtl) then return .false
+  return (self~op(self_, "setParent", parent~oodPeer~id) == 1)
+::method e_isGrandchild unguarded
+  use arg self_, msg, a
+  p = self_~oodPeer
+  method = "onEditGrandChildEvent"
+  if p~dlg~kinds[p~id]~word(1) == "COMBO" then method = "onComboBoxGrandChildEvent"
+  if a~hasIndex(1) then if a[1] \== "" then method = a[1]
+  wantTab = .false
+  if a~hasIndex(2) then wantTab = (a[2] == .true)
+  p~dlg~store["GC" p~id] = .array~of(method, self_)
+  return (self~op(self_, "grandChild", wantTab) == 1)
+::method cb_isGrandchild unguarded
+  forward message "e_isGrandchild"
+::method grandChildEvent unguarded
+  use arg key, id, what
+  d = self~dialogOf(key)
+  if d == .nil then return
+  entry = d~store["GC" id]
+  if entry == .nil then return
+  self~invoke(d~rexxSelf, entry[1], .array~of(id, what, entry[2]))
+::method lv_getItemRect unguarded      -- getItemRect(index, part): a .Rect in the list-view's client area
+  use arg self_, msg, a
+  parse value self~op(self_, "lv.rect", a[1], "") with left top right bottom .
+  if left == "" then return .nil
+  return self~classOf("Rect")~new(left, top, right, bottom)
+::method lv_getSubitemRect unguarded   -- getSubitemRect(index, subIndex, part)
+  use arg self_, msg, a
+  parse value self~op(self_, "lv.rect", a[1], a[2]) with left top right bottom .
+  if left == "" then return .nil
+  return self~classOf("Rect")~new(left, top, right, bottom)
+/* setTabulators(stops...) of a list box, setListTabulators(id, stops...) of a dialog:
+   the tab stops in dialog units; one stop is repeated.  0 on success. */
+::method generic_setListTabulators unguarded
+  use arg self_, msg, a
+  p = self_~oodPeer
+  first = 1
+  if p~isA(.OodCtl) then do
+    d = p~dlg
+    id = p~id
+  end
+  else do
+    d = p
+    if \a~hasIndex(1) then return -1
+    id = self~resolveId(self_, a[1])
+    if id < 1 then return -1
+    first = 2
+  end
+  if \d~live then return -1
+  stops = ""
+  do i = first to a~last
+    if \a~hasIndex(i) then iterate
+    if \a[i]~datatype("N") then iterate
+    stops = stops (a[i] * d~factorX)~format(, 0)
+  end
+  if stops~words == 1 then do      -- one stop: every multiple of it
+    one = stops~strip
+    stops = ""
+    do k = 1 to 12
+      stops = stops (one * k)
+    end
+  end
+  self~ctlOp(d, id, "tabStops", stops~strip)
+  return 0
 ::method dlgctrl_assignFocus unguarded
   use arg self_
   self~op(self_, "focus")

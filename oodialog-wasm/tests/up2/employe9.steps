@@ -1,0 +1,14 @@
+wait .ood-dlg >> text=Add
+sleep 400
+fill .ood-dlg input.ood-edit => Jane Doe
+eval (() => { const b = [...[...document.querySelectorAll('.ood-dlg')].pop().querySelectorAll('button.ood-c')].find(x => x.textContent.trim() === 'Add'); b.click(); return 'Add'; })()
+sleep 600
+eval (() => { const b = [...[...document.querySelectorAll('.ood-dlg')].pop().querySelectorAll('button.ood-c')].find(x => x.textContent.trim() === 'List Employees'); b.click(); return 'List Employees'; })()
+sleep 800
+shot employe9_list
+expect JSON.stringify([...document.querySelectorAll('.ood-dlg')].pop().querySelector('select option').textContent) ==> "Mr. Jane Doe\t\tNew York"
+expect (() => { const d = [...document.querySelectorAll('.ood-dlg')].pop(), o = d.querySelector('select option'); const g = document.createElement('canvas').getContext('2d'); g.font = getComputedStyle(d.querySelector('select')).font; const at = g.measureText(o.label.slice(0, o.label.indexOf('New York'))).width; const city = [...d.querySelectorAll('.ood-c')].find(x => x.textContent.trim() === 'City'); const want = city.getBoundingClientRect().left - d.querySelector('select').getBoundingClientRect().left; return Math.abs(at - want) < 12; })() ==> True
+expect (window.oodOut.join('').match(/(native function \w+|Error \d+\.\d+[^\n]*)/g) || []).length ==> 0
+eval (() => { const b = [...[...document.querySelectorAll('.ood-dlg')].pop().querySelectorAll('button.ood-c')].find(x => x.textContent.trim() === 'OK'); b.click(); return 'OK'; })()
+sleep 400
+eval (() => { const b = [...[...document.querySelectorAll('.ood-dlg')].pop().querySelectorAll('button.ood-c')].find(x => x.textContent.trim() === 'Cancel'); b.click(); return 'Cancel'; })()

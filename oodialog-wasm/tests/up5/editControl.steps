@@ -1,0 +1,29 @@
+wait .ood-dlg >> text=Row 1
+sleep 400
+mouse down .ood-lv tbody tr >> nth=1 >> td >> nth=1 @ 20 6
+mouse up .ood-lv tbody tr >> nth=1 >> td >> nth=1 @ 20 6
+sleep 300
+mouse down .ood-lv tbody tr >> nth=1 >> td >> nth=1 @ 20 6
+mouse up .ood-lv tbody tr >> nth=1 >> td >> nth=1 @ 20 6
+sleep 500
+expect (() => { const e = document.querySelector('.ood-dlg .ood-edit'); const r = e.getBoundingClientRect(), td = document.querySelectorAll('.ood-lv tbody tr')[1].children[1].getBoundingClientRect(); return !e.hidden && Math.abs(r.left - td.left) < 3 && Math.abs(r.top - td.top) < 3 && Math.abs(r.width - td.width) < 4 && (document.activeElement === e || e.contains(document.activeElement)); })() ==> True
+type Edited here
+shot editControl
+press Enter
+sleep 400
+expect document.querySelectorAll('.ood-lv tbody tr')[1].children[1].textContent ==> Edited here
+expect document.querySelector('.ood-dlg .ood-edit').hidden ==> True
+expect document.querySelectorAll('.ood-dlg').length ==> 1
+mouse down .ood-lv tbody tr >> nth=2 >> td >> nth=2 @ 20 6
+mouse up .ood-lv tbody tr >> nth=2 >> td >> nth=2 @ 20 6
+sleep 300
+mouse down .ood-lv tbody tr >> nth=2 >> td >> nth=2 @ 20 6
+mouse up .ood-lv tbody tr >> nth=2 >> td >> nth=2 @ 20 6
+sleep 400
+type Not kept
+press Escape
+sleep 400
+expect document.querySelectorAll('.ood-lv tbody tr')[2].children[2].textContent ==> Row / Col (3, 3)
+expect document.querySelectorAll('.ood-dlg').length ==> 1
+expect (window.oodOut.join('').match(/(native function \w+|Error \d+\.\d+[^\n]*)/g) || []).length ==> 0
+click .ood-dlg button.ood-def

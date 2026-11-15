@@ -7,8 +7,8 @@ controls/ListView/columnClickListView.rex	shows
 controls/ListView/columnIcons.rex	error:Error 98.900 ooDialog/WASM: a dialog from a resource file needs a reader of binary Windows resources; set .ood
 controls/ListView/customDrawListview.rex	native:CD_CUSTOMDRAWCONTROL
 controls/ListView/subitem.editing/dropDownComboBox.rex	native:CB_GETEDITCONTROL
-controls/ListView/subitem.editing/dropDownListComboBox.rex	native:DLGCTRL_SETPARENT
-controls/ListView/subitem.editing/editControl.rex	native:DLGCTRL_SETPARENT
+controls/ListView/subitem.editing/dropDownListComboBox.rex	shows
+controls/ListView/subitem.editing/editControl.rex	shows
 controls/ListView/subitem.editing/importList.rex	message:Could not locate the default importer file list directory.  Do you wish to pick an alterna
 controls/PaidHolidays.rex	native:MC_GETMINRECT
 controls/ToolBar/customizeToolBar.rex	native:TBB_INIT
@@ -26,7 +26,7 @@ examples/addManyRows.rex	shows
 examples/browsePrinters.rex	shows
 examples/fileNameDialog_demo.rex	message:REMEMBER, FileNameDialog does NOT actually open or save your specified file, it simply pro
 examples/genGUID.rex	shows
-examples/imageButton.rex	shows +error
+examples/imageButton.rex	error:Error 97.1 Object "an ImageList" does not understand message "IMAGELIST".
 examples/openSaveFileDemo.rex	shows
 examples/publicRoutines_demo.rex	shows
 examples/saveFileWithFilter.rex	shows
@@ -34,7 +34,7 @@ examples/simpleFolderBrowse.rex	shows
 examples/stopWatch.rex	outside:winSystm.cls
 examples/useTools.rex	shows
 ftyperex.rex	outside:winsystm.cls
-menus/BinaryMenuBar.rex	error:Error 98.900 ooDialog/WASM: a BinaryMenuBar needs a reader of binary Windows resources; set .oodn~resourceProv
+menus/BinaryMenuBar.rex	shows +error
 menus/ContextMenu.rex	shows
 menus/ScriptMenuBar.rex	shows
 menus/UserMenuBar.rex	shows

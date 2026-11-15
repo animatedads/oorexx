@@ -24,7 +24,7 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.14.0"
+  return "0.15.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute key unguarded
@@ -102,7 +102,7 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.14.0"
+  return "0.15.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute rexxSelf unguarded
@@ -131,7 +131,7 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.14.0"
+  return "0.15.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute dlg unguarded             -- its dialog's OodDlg
@@ -149,7 +149,7 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.14.0"
+  return "0.15.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::method module_version unguarded
@@ -284,6 +284,7 @@
     when kind == "KEY" then self~keyPress(key, id, code)
     when kind == "WM" then self~wmEvent(key, code, extra)
     when kind == "MOUSE" then self~mouseEvent(key, id, code, extra)
+    when kind == "GC" then self~grandChildEvent(key, id, code)
     otherwise nop
   end
 
@@ -1540,7 +1541,7 @@ noPackage:
       end
       when v~hasMethod("RIGHT") then do
         nums~append(v~left); nums~append(v~top)
-        nums~append(v~right - v~left); nums~append(v~bottom - v~top)
+        nums~append(v~right); nums~append(v~bottom)      -- (a point / size rectangle: right and bottom are the width and height)
       end
       otherwise do
         nums~append(v~x)
@@ -2098,6 +2099,7 @@ noPackage:
         select
           when event == "CLICK" | event == "DBLCLK" then args = .array~of(id, parts[1], parts[2], parts[3], (event == "CLICK"), ctl)
           when event == "COLUMNCLICK" | event == "ACTIVATE" | event == "KEYDOWN" then args = .array~of(id, extra, ctl)
+          when event == "BEGINSCROLL" | event == "ENDSCROLL" then args = .array~of(id, parts[1], parts[2], ctl, (event == "BEGINSCROLL"))
           otherwise args = .array~of(id, parts[1], parts[2], ctl)
         end
       end
@@ -4263,6 +4265,78 @@ noPackage:
   return 0
 
 /*---- controls ------------------------------------------------------------------*/
+/* In-place editing: an edit or combo box made the child of a list-view.
+   setParent(control): this control is shown on that one and placed in its client area.
+   isGrandChild(method, wantTab): RETURN, ESCAPE, (TAB) and losing the focus go to the
+   dialog's method (id, "enter" | "escape" | "tab" | "killfocus", control). */
+::method dlgctrl_setParent unguarded
+  use arg self_, msg, a
+  parent = a[1]
+  if \parent~hasMethod("oodPeer") then return .false
+  if \parent~oodPeer~isA(.OodCtl) then return .false
+  return (self~op(self_, "setParent", parent~oodPeer~id) == 1)
+::method e_isGrandchild unguarded
+  use arg self_, msg, a
+  p = self_~oodPeer
+  method = "onEditGrandChildEvent"
+  if p~dlg~kinds[p~id]~word(1) == "COMBO" then method = "onComboBoxGrandChildEvent"
+  if a~hasIndex(1) then if a[1] \== "" then method = a[1]
+  wantTab = .false
+  if a~hasIndex(2) then wantTab = (a[2] == .true)
+  p~dlg~store["GC" p~id] = .array~of(method, self_)
+  return (self~op(self_, "grandChild", wantTab) == 1)
+::method cb_isGrandchild unguarded
+  forward message "e_isGrandchild"
+::method grandChildEvent unguarded
+  use arg key, id, what
+  d = self~dialogOf(key)
+  if d == .nil then return
+  entry = d~store["GC" id]
+  if entry == .nil then return
+  self~invoke(d~rexxSelf, entry[1], .array~of(id, what, entry[2]))
+::method lv_getItemRect unguarded      -- getItemRect(index, part): a .Rect in the list-view's client area
+  use arg self_, msg, a
+  parse value self~op(self_, "lv.rect", a[1], "") with left top right bottom .
+  if left == "" then return .nil
+  return self~classOf("Rect")~new(left, top, right, bottom)
+::method lv_getSubitemRect unguarded   -- getSubitemRect(index, subIndex, part)
+  use arg self_, msg, a
+  parse value self~op(self_, "lv.rect", a[1], a[2]) with left top right bottom .
+  if left == "" then return .nil
+  return self~classOf("Rect")~new(left, top, right, bottom)
+/* setTabulators(stops...) of a list box, setListTabulators(id, stops...) of a dialog:
+   the tab stops in dialog units; one stop is repeated.  0 on success. */
+::method generic_setListTabulators unguarded
+  use arg self_, msg, a
+  p = self_~oodPeer
+  first = 1
+  if p~isA(.OodCtl) then do
+    d = p~dlg
+    id = p~id
+  end
+  else do
+    d = p
+    if \a~hasIndex(1) then return -1
+    id = self~resolveId(self_, a[1])
+    if id < 1 then return -1
+    first = 2
+  end
+  if \d~live then return -1
+  stops = ""
+  do i = first to a~last
+    if \a~hasIndex(i) then iterate
+    if \a[i]~datatype("N") then iterate
+    stops = stops (a[i] * d~factorX)~format(, 0)
+  end
+  if stops~words == 1 then do      -- one stop: every multiple of it
+    one = stops~strip
+    stops = ""
+    do k = 1 to 12
+      stops = stops (one * k)
+    end
+  end
+  self~ctlOp(d, id, "tabStops", stops~strip)
+  return 0
 ::method dlgctrl_assignFocus unguarded
   use arg self_
   self~op(self_, "focus")
@@ -5660,6 +5734,13 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
   }
   const keysOf = (e) => [e.shiftKey ? 'SHIFT' : '', e.ctrlKey ? 'CONTROL' : '', e.altKey ? 'ALT' : ''].filter(Boolean).join(' ') || 'NONE';
   function lvWire(dlg, c) {
+    let scrolling = 0, lastX = 0, lastY = 0;                   // LVN_BEGINSCROLL when the view starts to move, LVN_ENDSCROLL when it rests
+    c.el.addEventListener('scroll', () => {
+      const dx = c.el.scrollLeft - lastX, dy = c.el.scrollTop - lastY; lastX = c.el.scrollLeft; lastY = c.el.scrollTop;
+      if (!scrolling) note(dlg, c, 'BEGINSCROLL', dx + SEP + dy);
+      clearTimeout(scrolling);
+      scrolling = setTimeout(() => { scrolling = 0; note(dlg, c, 'ENDSCROLL', dx + SEP + dy); }, 150);
+    }, true);
     const hit = (e) => {
       const tr = e.target.closest('tbody tr'), td = e.target.closest('td');
       return tr ? [tr.sectionRowIndex, td ? td.cellIndex : 0] : [-1, -1];
@@ -5782,8 +5863,27 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
 
   /* list helpers: positions are zero-based here, as in the Win32 messages */
   const optsOf = (c) => (c.items ? c.items : c.main).children;
+  /* LB_SETTABSTOPS: an option cannot show a tab, so what it shows (its label) is the
+     text with each tab filled out to the next stop; its text stays as the program gave it. */
+  function listTabbed(c, text) {
+    if (!c.tabStops || text.indexOf('\t') < 0) return null;
+    const g = (listTabbed.g = listTabbed.g || D.createElement('canvas').getContext('2d'));
+    g.font = getComputedStyle(c.main).font;
+    const pad = '\u00a0', padW = g.measureText(pad).width || 3;
+    let out = '';
+    text.split('\t').forEach((part, k, all) => {
+      out += part;
+      if (k === all.length - 1) return;
+      const last = c.tabStops[c.tabStops.length - 1] || 32, step = c.tabStops.length > 1 ? last - c.tabStops[c.tabStops.length - 2] : last;
+      let stop = c.tabStops.find((t) => t > g.measureText(out).width);
+      if (stop === undefined) { stop = last; while (stop <= g.measureText(out).width) stop += Math.max(8, step); }
+      out += pad.repeat(Math.max(1, Math.round((stop - g.measureText(out).width) / padW)));
+    });
+    return out;
+  }
   function listInsert(c, at, text) {
     const op = D.createElement('option'); op.textContent = text; if (c.items) op.value = text;
+    const shown = listTabbed(c, text); if (shown !== null) op.label = shown;
     const kids = optsOf(c), box = c.items || c.main;
     if (c.sort && at < 0) {
       at = 0; while (at < kids.length && kids[at].textContent.localeCompare(text, undefined, { sensitivity: 'base' }) <= 0) at++;
@@ -6209,9 +6309,32 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       case 'gdi': return gdi(dlg, c, el, a, String(b).split(SEP), String(c2).split(SEP));
       case 'clientRect': { const r = (c ? el : dlg.client).getBoundingClientRect(); return '0 0 ' + Math.round(r.width) + ' ' + Math.round(r.height); }
       case 'origin': { const r = dlg.client.getBoundingClientRect(); return Math.round(r.left) + ' ' + Math.round(r.top); }
-      case 'move': el.style.left = Number(a) + 'px'; el.style.top = Number(b) + 'px'; return '1';
+      case 'move': {
+        let x = Number(a), y = Number(b);
+        if (c && c.parentCtl) { x += c.parentCtl.el.offsetLeft + c.parentCtl.el.clientLeft; y += c.parentCtl.el.offsetTop + c.parentCtl.el.clientTop; }   // a child of another control: in that one's client area
+        el.style.left = x + 'px'; el.style.top = y + 'px'; return '1'; }
+      case 'tabStops': {                                       // the stops in pixels; the options already there are shown anew
+        if (!c) return '0';
+        c.tabStops = String(a).split(' ').filter(Boolean).map(Number).sort((x, y) => x - y);
+        for (const op of optsOf(c)) { const shown = listTabbed(c, op.textContent); if (shown !== null) op.label = shown; else op.removeAttribute('label'); }
+        return '1'; }
+      case 'setParent': {                                      // SetParent(): the control is shown on, and placed in, another control
+        const p = dlg.ctrls.get(Number(a)); if (!c || !p) return "0";
+        c.parentCtl = p; el.style.zIndex = 6; return '1'; }
+      case 'grandChild': {                                     // isGrandChild(): RETURN, ESCAPE, TAB and losing the focus go to the dialog
+        if (!c || c.gc) return '1';
+        c.gc = true; c.gcTab = (a === '1');
+        const m2 = c.main || el;
+        m2.addEventListener('keydown', (e) => {
+          const key = { Enter: 'enter', Escape: 'escape', Tab: 'tab' }[e.key];
+          if (!key) return;
+          e.preventDefault(); e.stopPropagation();             // not the dialog's default button, not its cancel
+          if (key !== 'tab' || c.gcTab) fire(dlg.key, 'GC', c.id, key);
+        });
+        m2.addEventListener('blur', () => { if (!el.hidden) fire(dlg.key, 'GC', c.id, 'killfocus'); });
+        return '1'; }
       case 'size':
-        if (c) { el.style.width = Number(a) + 'px'; el.style.height = Number(b) + 'px'; }
+        if (c) { el.style.width = Number(a) + 'px'; if (c.kind !== 'COMBO' || c.simple) el.style.height = Number(b) + 'px'; }   // (a drop-down combo's height is that of its list)
         else { dlg.client.style.width = Number(a) + 'px'; dlg.client.style.height = Math.max(0, Number(b) - dlg.titleEl.offsetHeight) + 'px'; }
         return '1';
       case 'closeBox': { const x = dlg.titleEl.querySelector('.ood-x'); if (x) { x.disabled = (a === '0'); x.style.opacity = a === '0' ? '.35' : ''; } dlg.noClose = (a === '0'); return '1'; }
@@ -6292,6 +6415,12 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
           return r + ' ' + col;
         }
         return '-1 0'; }
+      case 'rect': {                                           // the row's rectangle, or with a column that cell's, in the client area: "l t r b"
+        const tr = c.el.querySelectorAll('tbody tr')[i]; if (!tr) return '';
+        const cell = (b === '' || b === undefined || Number(b) < 0) ? tr : tr.children[Number(b)]; if (!cell) return '';
+        const o = c.el.getBoundingClientRect(), q = cell.getBoundingClientRect();
+        const l = Math.round(q.left - o.left - c.el.clientLeft), t = Math.round(q.top - o.top - c.el.clientTop);
+        return l + ' ' + t + ' ' + (l + Math.round(q.width)) + ' ' + (t + Math.round(q.height)); }
       case 'colCount': return String(c.cols.length);
       case 'colInfo': return c.cols[i] ? c.cols[i].text + SEP + c.cols[i].w + SEP + c.cols[i].fmt : '';
       case 'setColWidth': if (!c.cols[i]) return '0'; c.cols[i].w = Number(b); later(c, lvRender); return '1';
