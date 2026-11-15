@@ -28,3 +28,14 @@ jobs:
       - uses: microsoft/setup-msbuild@v2
       - name: Compile native WinUI 3 provider
         run: msbuild oodialog-fluent/windows/OodFluentWindows.vcxproj -restore -p:Configuration=Release -p:Platform=x64 -m
+      - name: Preserve Windows test candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: oodialog-fluent-winui3-x64-candidate
+          path: |
+            oodialog-fluent/windows/x64/Release/OodFluentWindows.dll
+            oodialog-fluent/windows/x64/Release/OodFluentWindows.lib
+            oodialog-fluent/windows/x64/Release/OodFluentWindows.pri
+            oodialog-fluent/windows/x64/Release/Microsoft.WindowsAppRuntime.Bootstrap.dll
+          if-no-files-found: error
+          retention-days: 7

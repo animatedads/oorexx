@@ -2,7 +2,7 @@
 
 Architecture: Tom Dyer. Code: ChatGPT (GPT-6).
 
-Status: **v0.1 foundation, LOCAL_PASS only**. No control is yet claimed to render in a real Windows ooDialog process. The checked-in C++ model and catalogue are executable and tested; the WinUI 3 island and ooRexx native package remain integration work.
+Status: **v0.1 foundation, Windows native BUILD_PASS, no runtime qualification**. No control is yet claimed to render in a real Windows ooDialog process. The C++ model has local and Windows/Linux CI test evidence; the WinUI 3 provider compiles as a native Windows DLL. The ooRexx native package and live dialog integration remain open.
 
 ## Objective
 
@@ -21,7 +21,7 @@ The extension is deliberately distinct from:
 | --- | --- | --- |
 | 83-control and pattern inventory | Catalogue and automated validation | Compare every entry with current Microsoft WinUI 3 Gallery |
 | Resource occurrence identity, proxy properties, event routing and lifecycle | Native-independent C++ core and C ABI, executable tests | Bind to ooRexx objects and WinUI host |
-| Windows provider | Candidate `windows/OodFluentIsland.cpp` maps WinUI 3 Button, ToggleSwitch, InfoBar and NumberBox under an HWND | Build and run on Windows with real ooDialog, focus/keyboard and UI-thread tests |
+| Windows provider | Windows App SDK 2.6.5 DLL BUILD_PASS (GitHub run 43718942362, 0 warnings/0 errors) for Button, ToggleSwitch, InfoBar and NumberBox | Run inside real ooDialog; focus/keyboard and UI-thread tests |
 | ooDialog integration | API contract | `::requires`-loadable ooRexx classes, compatibility with `UserDialog`/`ResDialog`/`RcDialog` and resource IDs |
 | Full coverage | Classification for stable, optional and unsupported controls | Each control must pass functional and visual Windows tests |
 

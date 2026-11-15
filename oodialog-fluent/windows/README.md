@@ -1,10 +1,10 @@
 # Windows native provider — build candidate
 
-Architecture: Tom Dyer. Code: ChatGPT (GPT-6). Status: **BUILD CANDIDATE**.
+Architecture: Tom Dyer. Code: ChatGPT (GPT-6). Status: **WINDOWS BUILD_PASS; RUNTIME NOT QUALIFIED**.
 
 `OodFluentIsland.cpp` is a native C++/WinRT DLL candidate targeting Microsoft Windows App SDK **2.6.5 stable**. It provides an HWND-hosted `DesktopWindowXamlSource`, creates genuine WinUI 3 `Button`, `ToggleSwitch`, `InfoBar` and `NumberBox` controls, and forwards their input to the native-independent `OodfSession` event queue. No Rexx handler runs inside a WinUI callback.
 
-This DLL is **not** yet an installable ooDialog extension. The ooRexx native package glue, runtime test process, resource loading/geometry parity, keyboard focus handoff, UI Automation verification and per-control complete properties are still required. A Windows MSBuild compile is evidence of source compatibility only, not functional or visual qualification.
+Windows CI run [43718942362](https://github.com/animatedads/oorexx/actions/runs/43718942362) built the x64 DLL with 0 warnings and 0 errors. This DLL is **not** yet an installable ooDialog extension. The ooRexx native package glue, runtime test process, resource loading/geometry parity, keyboard focus handoff, UI Automation verification and per-control complete properties are still required. A Windows MSBuild compile is evidence of source compatibility only, not functional or visual qualification.
 
 ## Build
 
