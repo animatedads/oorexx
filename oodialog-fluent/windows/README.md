@@ -14,7 +14,7 @@ From a Visual Studio Developer Command Prompt with desktop C++ tooling and netwo
 msbuild OodFluentWindows.vcxproj -restore -p:Configuration=Release -p:Platform=x64
 ```
 
-The project pins `Microsoft.WindowsAppSDK` **2.6.5** and `Microsoft.Windows.CppWinRT` **3.0.260818.1**. It compiles the native ooRexx package with official headers from `ooRexx/ooRexx` commit `c12e988dc3708846592e20b48350bcdef5b19c60`, in `vendor/oorexx-api/api` (or set MSBuild property `OOREXX_API_DIR`). CI checks out these pinned headers, rather than vendoring them into this tree. Its `WindowsAppSdkBootstrapInitialize` is intentionally enabled in the DLL: stock ooDialog is an unpackaged program and does not automatically bootstrap the Windows App SDK runtime. Shipping requires the Windows App SDK runtime redistributable and a deployment manifest; never assume the development computer's NuGet cache is the runtime.
+The project pins `Microsoft.WindowsAppSDK` **2.6.5** and `Microsoft.Windows.CppWinRT` **3.0.260818.1**. It compiles the native ooRexx package with official headers from `ooRexx/ooRexx` commit `c12e988dc3708846592e20b48350bcdef5b19c60`, in `vendor/oorexx-api/api` (or set MSBuild property `OOREXX_API_DIR`). Both `api` and `api/platform/windows` are required include paths for `rexxapitypes.h`. CI checks out these pinned headers, rather than vendoring them into this tree. Its `WindowsAppSdkBootstrapInitialize` is intentionally enabled in the DLL: stock ooDialog is an unpackaged program and does not automatically bootstrap the Windows App SDK runtime. Shipping requires the Windows App SDK runtime redistributable and a deployment manifest; never assume the development computer's NuGet cache is the runtime.
 
 ## ooRexx calling surface
 
