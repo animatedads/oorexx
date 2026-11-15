@@ -124,12 +124,13 @@ struct OodfWinHost {
         children.clear();
         if (root) root.Children().Clear();
         lifecycleTrace("CLEAR_CHILDREN_DONE");
-        if (island) island.Content(xaml::UIElement{nullptr});
-        root = nullptr;
         lifecycleTrace("CLOSE_ISLAND_BEGIN");
         if (island) island.Close();
+        lifecycleTrace("CLOSE_ISLAND_INVOKED");
+        root = nullptr;
         island = nullptr;
         lifecycleTrace("CLOSE_ISLAND_DONE");
+        lifecycleTrace("CLOSE_MANAGER_BEGIN");
         if (manager) manager.Close();
         manager = nullptr;
         lifecycleTrace("CLOSE_MANAGER_DONE");
