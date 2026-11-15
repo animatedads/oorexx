@@ -23,16 +23,19 @@
 #include "OodFluentIsland.h"
 
 #include <cstdio>
+#include <cmath>
 #include <cstring>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <stdexcept>
 #include <utility>
 
 namespace ui = winrt::Microsoft::UI;
 namespace xaml = winrt::Microsoft::UI::Xaml;
 namespace controls = winrt::Microsoft::UI::Xaml::Controls;
+namespace primitives = winrt::Microsoft::UI::Xaml::Controls::Primitives;
 namespace hosting = winrt::Microsoft::UI::Xaml::Hosting;
 
 static void lifecycleTrace(const char *stage) noexcept {
@@ -200,6 +203,21 @@ void event(OodfSession *model, uint64_t uid, const char *name, const std::string
     (void)oodf_raise(model, uid, name, value.c_str(), &queued);
 }
 
+bool parseBoolean(const std::string &value) {
+    if (value == "true") return true;
+    if (value == "false") return false;
+    winrt::throw_hresult(E_INVALIDARG);
+}
+
+double parseNumber(const std::string &value) {
+    size_t consumed = 0;
+    double number = 0;
+    try { number = std::stod(value, &consumed); }
+    catch (...) { winrt::throw_hresult(E_INVALIDARG); }
+    if (consumed != value.size() || !std::isfinite(number)) winrt::throw_hresult(E_INVALIDARG);
+    return number;
+}
+
 template<typename Operation>
 HRESULT safe(Operation &&operation) noexcept {
     try {
@@ -234,6 +252,8 @@ static HRESULT oodf_win_add_impl(OodfWinHost *host, int64_t resourceId,
         const auto type = winrt::to_string(winrt::hstring(kind));
         const auto label = winrt::hstring(caption);
         if (type != "Button" && type != "ToggleSwitch" &&
+            type != "CheckBox" && type != "ToggleButton" &&
+            type != "Slider" && type != "TextBox" && type != "ProgressBar" &&
             type != "InfoBar" && type != "NumberBox") winrt::throw_hresult(E_NOTIMPL);
         // Both complex templates currently trigger an access violation in
         // Windows App SDK 2.6.5 during DesktopWindowXamlSource.Close, even
@@ -268,6 +288,53 @@ static HRESULT oodf_win_add_impl(OodfWinHost *host, int64_t resourceId,
                 });
                 element = toggle;
                 winrt::check_hresult(status(oodf_set(host->model, id, "text", winrt::to_string(label).c_str())));
+            } else if (type == "CheckBox") {
+                controls::CheckBox check{};
+                check.Content(winrt::box_value(label));
+                check.Checked([model = host->model, id](auto const &, auto const &) {
+                    event(model, id, "checked", "true");
+                });
+                check.Unchecked([model = host->model, id](auto const &, auto const &) {
+                    event(model, id, "unchecked", "false");
+                });
+                check.Indeterminate([model = host->model, id](auto const &, auto const &) {
+                    event(model, id, "indeterminate", "null");
+                });
+                element = check;
+                winrt::check_hresult(status(oodf_set(host->model, id, "text", winrt::to_string(label).c_str())));
+            } else if (type == "ToggleButton") {
+                primitives::ToggleButton button{};
+                button.Content(winrt::box_value(label));
+                button.Checked([model = host->model, id](auto const &, auto const &) {
+                    event(model, id, "checked", "true");
+                });
+                button.Unchecked([model = host->model, id](auto const &, auto const &) {
+                    event(model, id, "unchecked", "false");
+                });
+                button.Click([model = host->model, id](auto const &, auto const &) {
+                    event(model, id, "click", "");
+                });
+                element = button;
+                winrt::check_hresult(status(oodf_set(host->model, id, "text", winrt::to_string(label).c_str())));
+            } else if (type == "Slider") {
+                controls::Slider slider{};
+                slider.Header(winrt::box_value(label));
+                slider.ValueChanged([model = host->model, id](auto const &, auto const &args) {
+                    event(model, id, "valueChanged", std::to_string(args.NewValue()));
+                });
+                element = slider;
+            } else if (type == "TextBox") {
+                controls::TextBox text{};
+                text.Header(winrt::box_value(label));
+                text.TextChanged([model = host->model, id](auto const &sender, auto const &) {
+                    event(model, id, "textChanged", winrt::to_string(sender.template as<controls::TextBox>().Text()));
+                });
+                element = text;
+            } else if (type == "ProgressBar") {
+                controls::ProgressBar progress{};
+                progress.Maximum(100.0);
+                progress.Value(0.0);
+                element = progress;
             } else if (type == "InfoBar") {
                 controls::InfoBar bar{};
                 bar.Message(label);
@@ -320,17 +387,61 @@ HRESULT __stdcall oodf_win_set(OodfWinHost *host, uint64_t uid,
         const auto control = it->second;
         const bool isButton = control.try_as<controls::Button>() != nullptr;
         const bool isToggle = control.try_as<controls::ToggleSwitch>() != nullptr;
+        const bool isCheck = control.try_as<controls::CheckBox>() != nullptr;
+        const bool isToggleButton = control.try_as<primitives::ToggleButton>() != nullptr;
+        const bool isSlider = control.try_as<controls::Slider>() != nullptr;
+        const bool isTextBox = control.try_as<controls::TextBox>() != nullptr;
+        const bool isProgress = control.try_as<controls::ProgressBar>() != nullptr;
         const bool isInfo = control.try_as<controls::InfoBar>() != nullptr;
         const bool isNumber = control.try_as<controls::NumberBox>() != nullptr;
         if (!((isButton && name == "text") || (isToggle && (name == "text" || name == "isOn")) ||
+              (isCheck && (name == "text" || name == "isChecked" || name == "isThreeState")) ||
+              (isToggleButton && (name == "text" || name == "isChecked")) ||
+              (isSlider && (name == "value" || name == "minimum" || name == "maximum" || name == "stepFrequency")) ||
+              (isTextBox && (name == "text" || name == "placeholderText" || name == "isReadOnly")) ||
+              (isProgress && (name == "value" || name == "maximum" || name == "isIndeterminate")) ||
               (isInfo && (name == "message" || name == "isOpen")) || (isNumber && name == "value")))
             winrt::throw_hresult(E_NOTIMPL);
         if (isButton) control.as<controls::Button>().Content(winrt::box_value(winrt::hstring(value)));
         if (isToggle && name == "text") control.as<controls::ToggleSwitch>().Header(winrt::box_value(winrt::hstring(value)));
-        if (isToggle && name == "isOn") control.as<controls::ToggleSwitch>().IsOn(utf8 == "true");
+        if (isToggle && name == "isOn") control.as<controls::ToggleSwitch>().IsOn(parseBoolean(utf8));
+        if (isCheck) {
+            auto check = control.as<controls::CheckBox>();
+            if (name == "text") check.Content(winrt::box_value(winrt::hstring(value)));
+            if (name == "isChecked") {
+                if (utf8 == "null") check.IsChecked(nullptr);
+                else check.IsChecked(winrt::box_value(parseBoolean(utf8)).as<winrt::Windows::Foundation::IReference<bool>>());
+            }
+            if (name == "isThreeState") check.IsThreeState(parseBoolean(utf8));
+        }
+        if (isToggleButton) {
+            auto button = control.as<primitives::ToggleButton>();
+            if (name == "text") button.Content(winrt::box_value(winrt::hstring(value)));
+            if (name == "isChecked")
+                button.IsChecked(winrt::box_value(parseBoolean(utf8)).as<winrt::Windows::Foundation::IReference<bool>>());
+        }
+        if (isSlider) {
+            auto slider = control.as<controls::Slider>();
+            if (name == "value") slider.Value(parseNumber(utf8));
+            if (name == "minimum") slider.Minimum(parseNumber(utf8));
+            if (name == "maximum") slider.Maximum(parseNumber(utf8));
+            if (name == "stepFrequency") slider.StepFrequency(parseNumber(utf8));
+        }
+        if (isTextBox) {
+            auto text = control.as<controls::TextBox>();
+            if (name == "text") text.Text(value);
+            if (name == "placeholderText") text.PlaceholderText(value);
+            if (name == "isReadOnly") text.IsReadOnly(parseBoolean(utf8));
+        }
+        if (isProgress) {
+            auto progress = control.as<controls::ProgressBar>();
+            if (name == "value") progress.Value(parseNumber(utf8));
+            if (name == "maximum") progress.Maximum(parseNumber(utf8));
+            if (name == "isIndeterminate") progress.IsIndeterminate(parseBoolean(utf8));
+        }
         if (isInfo && name == "message") control.as<controls::InfoBar>().Message(value);
-        if (isInfo && name == "isOpen") control.as<controls::InfoBar>().IsOpen(utf8 == "true");
-        if (isNumber) control.as<controls::NumberBox>().Value(std::stod(utf8));
+        if (isInfo && name == "isOpen") control.as<controls::InfoBar>().IsOpen(parseBoolean(utf8));
+        if (isNumber) control.as<controls::NumberBox>().Value(parseNumber(utf8));
         winrt::check_hresult(status(oodf_set(host->model, uid, name.c_str(), utf8.c_str())));
     });
 }

@@ -4,6 +4,7 @@
 
 #include <cstring>
 #include <memory>
+#include <mutex>
 #include <new>
 #include <optional>
 #include <string>
@@ -11,6 +12,10 @@
 using namespace oodfluent;
 
 struct OodfSession {
+    // Native XAML event delegates run on the HWND thread, while ooDialog's
+    // Rexx activity polls and binds on a different thread. Protect the whole
+    // model + pending retry envelope, not just the deque of events.
+    std::mutex mutex;
     Catalogue catalogue;
     std::unique_ptr<Session> model;
     std::optional<Event> nextEvent;
@@ -73,6 +78,7 @@ OodfStatus oodf_open(const char *cataloguePath, int enableExperimental, OodfSess
 OodfStatus oodf_create(OodfSession *session, int64_t resourceId, const char *type, uint64_t *uid) {
     return safe([&] {
         if (bad(session) || bad(type) || bad(uid)) return OODF_INVALID_ARGUMENT;
+        std::lock_guard<std::mutex> lock(session->mutex);
         *uid = session->model->create(resourceId, type);
         return OODF_OK;
     });
@@ -82,6 +88,7 @@ OodfStatus oodf_create_authored(OodfSession *session, int64_t resourceId, const 
                                uint64_t authoredUid, uint64_t *uid) {
     return safe([&] {
         if (bad(session) || bad(type) || bad(uid)) return OODF_INVALID_ARGUMENT;
+        std::lock_guard<std::mutex> lock(session->mutex);
         *uid = session->model->createWithUid(resourceId, type, authoredUid);
         return OODF_OK;
     });
@@ -90,6 +97,7 @@ OodfStatus oodf_create_authored(OodfSession *session, int64_t resourceId, const 
 OodfStatus oodf_set(OodfSession *session, uint64_t uid, const char *property, const char *value) {
     return safe([&] {
         if (bad(session) || bad(property) || bad(value)) return OODF_INVALID_ARGUMENT;
+        std::lock_guard<std::mutex> lock(session->mutex);
         session->model->set(uid, property, value);
         return OODF_OK;
     });
@@ -98,6 +106,7 @@ OodfStatus oodf_set(OodfSession *session, uint64_t uid, const char *property, co
 OodfStatus oodf_bind(OodfSession *session, uint64_t uid, const char *event, const char *handler) {
     return safe([&] {
         if (bad(session) || bad(event) || bad(handler)) return OODF_INVALID_ARGUMENT;
+        std::lock_guard<std::mutex> lock(session->mutex);
         session->model->bind(uid, event, handler);
         return OODF_OK;
     });
@@ -106,6 +115,7 @@ OodfStatus oodf_bind(OodfSession *session, uint64_t uid, const char *event, cons
 OodfStatus oodf_raise(OodfSession *session, uint64_t uid, const char *event, const char *value, int *queued) {
     return safe([&] {
         if (bad(session) || bad(event) || bad(value) || bad(queued)) return OODF_INVALID_ARGUMENT;
+        std::lock_guard<std::mutex> lock(session->mutex);
         *queued = session->model->raise(uid, event, value) ? 1 : 0;
         return OODF_OK;
     });
@@ -114,6 +124,7 @@ OodfStatus oodf_raise(OodfSession *session, uint64_t uid, const char *event, con
 OodfStatus oodf_remove(OodfSession *session, uint64_t uid) {
     return safe([&] {
         if (bad(session)) return OODF_INVALID_ARGUMENT;
+        std::lock_guard<std::mutex> lock(session->mutex);
         session->model->remove(uid);
         if (session->nextEvent && session->nextEvent->uid == uid) session->nextEvent.reset();
         return OODF_OK;
@@ -123,6 +134,7 @@ OodfStatus oodf_remove(OodfSession *session, uint64_t uid) {
 OodfStatus oodf_poll(OodfSession *session, OodfEventBuffer *out) {
     return safe([&] {
         if (bad(session) || bad(out)) return OODF_INVALID_ARGUMENT;
+        std::lock_guard<std::mutex> lock(session->mutex);
         if (!session->nextEvent) {
             Event next{};
             if (!session->model->take(next)) return OODF_NO_EVENT;

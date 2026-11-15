@@ -35,6 +35,26 @@
   use strict arg resourceId, caption = '', authoredUid = ''
   return self~newControl(resourceId, 'ToggleSwitch', caption, authoredUid)
 
+::method newCheckBox
+  use strict arg resourceId, caption = '', authoredUid = ''
+  return self~newControl(resourceId, 'CheckBox', caption, authoredUid)
+
+::method newToggleButton
+  use strict arg resourceId, caption = '', authoredUid = ''
+  return self~newControl(resourceId, 'ToggleButton', caption, authoredUid)
+
+::method newSlider
+  use strict arg resourceId, caption = '', authoredUid = ''
+  return self~newControl(resourceId, 'Slider', caption, authoredUid)
+
+::method newTextBox
+  use strict arg resourceId, caption = '', authoredUid = ''
+  return self~newControl(resourceId, 'TextBox', caption, authoredUid)
+
+::method newProgressBar
+  use strict arg resourceId, caption = '', authoredUid = ''
+  return self~newControl(resourceId, 'ProgressBar', caption, authoredUid)
+
 ::method newNumberBox
   use strict arg resourceId, caption = '', authoredUid = ''
   return self~newControl(resourceId, 'NumberBox', caption, authoredUid)
@@ -119,6 +139,12 @@
   use strict arg on
   if on then return self~setProperty('isOn', 'true')
   return self~setProperty('isOn', 'false')
+
+::method setChecked
+  use strict arg state
+  if state == .nil then return self~setProperty('isChecked', 'null')
+  if state then return self~setProperty('isChecked', 'true')
+  return self~setProperty('isChecked', 'false')
 
 ::method setOpen
   use strict arg on

@@ -3,10 +3,13 @@
 #include "OodFluentABI.h"
 
 #include <cstdlib>
+#include <atomic>
+#include <chrono>
 #include <functional>
 #include <iostream>
 #include <cstring>
 #include <string>
+#include <thread>
 
 using namespace oodfluent;
 
@@ -186,6 +189,53 @@ int main(int argc, char **argv) {
         CHECK(oodf_create(abi, 4003, "NotAControl", &abiUid) == OODF_UNKNOWN_CONTROL);
         CHECK(oodf_create(nullptr, 3, "Button", &abiUid) == OODF_INVALID_ARGUMENT);
         oodf_close(abi);
+
+        // WinUI callbacks and Rexx polling execute on different Windows
+        // threads. ABI operations must serialize BOTH the event queue and
+        // its buffer-too-small retry slot while preserving FIFO order.
+        OodfSession *concurrent = nullptr;
+        CHECK(oodf_open(argv[1], 0, &concurrent) == OODF_OK);
+        uint64_t concurrentUid = 0;
+        CHECK(oodf_create(concurrent, 9700, "TextBox", &concurrentUid) == OODF_OK);
+        CHECK(oodf_bind(concurrent, concurrentUid, "textChanged", "onConcurrent") == OODF_OK);
+        constexpr int messages = 300;
+        std::atomic_bool producerOk{true};
+        std::thread producer([&] {
+            for (int n = 0; n < messages; ++n) {
+                const auto payload = std::to_string(n);
+                int queued = -1;
+                if (oodf_raise(concurrent, concurrentUid, "textChanged", payload.c_str(), &queued) != OODF_OK || queued != 1)
+                    producerOk = false;
+            }
+        });
+        int received = 0;
+        auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        while (received < messages && std::chrono::steady_clock::now() < deadline) {
+            char evName[32]{}, evValue[32]{}, evHandler[32]{};
+            OodfEventBuffer buffer{};
+            buffer.eventName = evName;
+            buffer.eventNameCapacity = sizeof evName;
+            buffer.eventValue = evValue;
+            buffer.eventValueCapacity = sizeof evValue;
+            buffer.handler = evHandler;
+            buffer.handlerCapacity = sizeof evHandler;
+            auto result = oodf_poll(concurrent, &buffer);
+            if (result == OODF_NO_EVENT) {
+                std::this_thread::yield();
+                continue;
+            }
+            CHECK(result == OODF_OK);
+            if (result != OODF_OK) break;
+            CHECK(std::string(evName) == "textChanged");
+            CHECK(std::string(evValue) == std::to_string(received));
+            CHECK(buffer.uid == concurrentUid);
+            ++received;
+        }
+        producer.join();
+        CHECK(producerOk.load());
+        CHECK(received == messages);
+        CHECK(oodf_remove(concurrent, concurrentUid) == OODF_OK);
+        oodf_close(concurrent);
         OodfSession *badAbi = reinterpret_cast<OodfSession *>(0x1);
         CHECK(oodf_open("not-a-catalogue.tsv", 0, &badAbi) == OODF_CATALOGUE_ERROR);
         CHECK(badAbi == nullptr);

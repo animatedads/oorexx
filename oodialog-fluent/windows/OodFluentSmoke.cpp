@@ -72,17 +72,33 @@ int wmain(int argc, wchar_t **argv) {
     const bool empty = wcscmp(mode, L"empty") == 0;
     const bool buttonOnly = wcscmp(mode, L"button") == 0;
     const bool toggleOnly = wcscmp(mode, L"toggle") == 0;
+    const bool checkOnly = wcscmp(mode, L"check") == 0;
+    const bool toggleButtonOnly = wcscmp(mode, L"togglebutton") == 0;
+    const bool sliderOnly = wcscmp(mode, L"slider") == 0;
+    const bool textBoxOnly = wcscmp(mode, L"textbox") == 0;
+    const bool progressOnly = wcscmp(mode, L"progress") == 0;
+    const bool expanded = wcscmp(mode, L"expanded") == 0;
     const bool infoOnly = wcscmp(mode, L"info") == 0;
     const bool numberOnly = wcscmp(mode, L"number") == 0;
     const bool noNumber = wcscmp(mode, L"no-number") == 0;
     const bool guard = wcscmp(mode, L"guard") == 0;
-    if (!(all || empty || buttonOnly || toggleOnly || infoOnly || numberOnly || noNumber || guard)) return 2;
+    if (!(all || empty || buttonOnly || toggleOnly || checkOnly || toggleButtonOnly ||
+          sliderOnly || textBoxOnly || progressOnly || expanded ||
+          infoOnly || numberOnly || noNumber || guard)) return 2;
     fprintf(stderr, "STAGE MODE_%s\n", all ? "all" : empty ? "empty" :
-            buttonOnly ? "button" : toggleOnly ? "toggle" : infoOnly ? "info" :
+            buttonOnly ? "button" : toggleOnly ? "toggle" : checkOnly ? "check" :
+            toggleButtonOnly ? "togglebutton" : sliderOnly ? "slider" :
+            textBoxOnly ? "textbox" : progressOnly ? "progress" :
+            expanded ? "expanded" : infoOnly ? "info" :
             numberOnly ? "number" : noNumber ? "no-number" : "guard");
     fflush(stderr);
-    const bool wantButton = all || buttonOnly || noNumber;
-    const bool wantToggle = all || toggleOnly || noNumber;
+    const bool wantButton = all || buttonOnly || noNumber || expanded;
+    const bool wantToggle = all || toggleOnly || noNumber || expanded;
+    const bool wantCheck = all || checkOnly || expanded;
+    const bool wantToggleButton = all || toggleButtonOnly || expanded;
+    const bool wantSlider = all || sliderOnly || expanded;
+    const bool wantTextBox = all || textBoxOnly || expanded;
+    const bool wantProgress = all || progressOnly || expanded;
     const bool wantInfo = all || infoOnly || noNumber;
     const bool wantNumber = all || numberOnly;
     const std::wstring path = argv[1];
@@ -124,7 +140,8 @@ int wmain(int argc, wchar_t **argv) {
         return code;
     }
     stage("ISLAND_OPEN_OK");
-    uint64_t button = 0, toggle = 0, info = 0, number = 0;
+    uint64_t button = 0, toggle = 0, check = 0, toggleButton = 0;
+    uint64_t slider = 0, textBox = 0, progress = 0, info = 0, number = 0;
     wchar_t preUnload[32]{};
     (void)GetEnvironmentVariableW(L"OODF_PREUNLOAD", preUnload, 32);
     const bool unload = wcscmp(preUnload, L"unload") == 0 ||
@@ -146,6 +163,11 @@ int wmain(int argc, wchar_t **argv) {
         if (button != 71001) { result = E_UNEXPECTED; goto cleanup; }
     }
     if (wantToggle && FAILED(result = oodf_win_add(host, 4102, L"ToggleSwitch", L"Dark mode", &toggle))) goto cleanup;
+    if (wantCheck && FAILED(result = oodf_win_add(host, 4110, L"CheckBox", L"Accept", &check))) goto cleanup;
+    if (wantToggleButton && FAILED(result = oodf_win_add(host, 4111, L"ToggleButton", L"Pin", &toggleButton))) goto cleanup;
+    if (wantSlider && FAILED(result = oodf_win_add(host, 4112, L"Slider", L"Zoom", &slider))) goto cleanup;
+    if (wantTextBox && FAILED(result = oodf_win_add(host, 4113, L"TextBox", L"Search", &textBox))) goto cleanup;
+    if (wantProgress && FAILED(result = oodf_win_add(host, 4114, L"ProgressBar", L"Progress", &progress))) goto cleanup;
     if (wantInfo && FAILED(result = oodf_win_add(host, 4103, L"InfoBar", L"WinUI 3 is alive", &info))) goto cleanup;
     if (wantNumber && FAILED(result = oodf_win_add(host, 4104, L"NumberBox", L"Quantity", &number))) goto cleanup;
     stage("CREATE_CONTROLS_OK");
@@ -156,6 +178,12 @@ int wmain(int argc, wchar_t **argv) {
     }
     if (wantButton && FAILED(result = oodf_win_set(host, button, L"text", L"Updated from native API"))) goto cleanup;
     if (wantToggle && FAILED(result = oodf_win_set(host, toggle, L"isOn", L"true"))) goto cleanup;
+    if (wantCheck && FAILED(result = oodf_win_set(host, check, L"isChecked", L"true"))) goto cleanup;
+    if (wantCheck && FAILED(result = oodf_win_set(host, check, L"isThreeState", L"true"))) goto cleanup;
+    if (wantToggleButton && FAILED(result = oodf_win_set(host, toggleButton, L"isChecked", L"true"))) goto cleanup;
+    if (wantSlider && FAILED(result = oodf_win_set(host, slider, L"value", L"42.5"))) goto cleanup;
+    if (wantTextBox && FAILED(result = oodf_win_set(host, textBox, L"text", L"Unicode Stra\u00DFe"))) goto cleanup;
+    if (wantProgress && FAILED(result = oodf_win_set(host, progress, L"value", L"65"))) goto cleanup;
     if (wantNumber && FAILED(result = oodf_win_set(host, number, L"value", L"42"))) goto cleanup;
     if (wantInfo && FAILED(result = oodf_win_set(host, info, L"message", L"Property updates work"))) goto cleanup;
     // Pump a bounded burst of input/layout messages, not an infinite GUI loop.
@@ -189,6 +217,11 @@ int wmain(int argc, wchar_t **argv) {
         }
     }
     if (wantButton && FAILED(result = oodf_win_remove(host, button))) goto cleanup;
+    if (wantCheck && FAILED(result = oodf_win_remove(host, check))) goto cleanup;
+    if (wantToggleButton && FAILED(result = oodf_win_remove(host, toggleButton))) goto cleanup;
+    if (wantSlider && FAILED(result = oodf_win_remove(host, slider))) goto cleanup;
+    if (wantTextBox && FAILED(result = oodf_win_remove(host, textBox))) goto cleanup;
+    if (wantProgress && FAILED(result = oodf_win_remove(host, progress))) goto cleanup;
     stage("OPERATIONS_OK");
 cleanup:
     stage("TEARDOWN_BEGIN");

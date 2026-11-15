@@ -63,9 +63,12 @@ jobs:
           $supportedFailures = 0
           $diagnosticFailures = 0
           # Exhaustive teardown experiments are preserved in run 43725003804.
-          # Keep recurring CI bounded: four supported modes, three regressions.
+          # Existing qualified modes stay mandatory; the new family is
+          # isolated until its own creation/update/teardown exits qualify.
           $cases = @('empty:baseline', 'button:baseline', 'toggle:baseline',
-                     'guard:default', 'info:baseline', 'number:baseline', 'all:baseline')
+                     'guard:default', 'check:baseline', 'togglebutton:baseline',
+                     'slider:baseline', 'textbox:baseline', 'progress:baseline',
+                     'expanded:baseline', 'info:baseline', 'number:baseline', 'all:baseline')
           foreach ($case in $cases) {
             $mode, $experiment = $case.Split(':')
             $supported = $mode -in @('empty', 'button', 'toggle', 'guard')
