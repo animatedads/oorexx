@@ -1,0 +1,21 @@
+ooDialog Designer v0.7 -- dependencies
+Architecture: Tom Dyer.  Code: Claude (Opus 5.5).
+
+Model, generator, graph and language support (src/, the Autobuild tests):
+- ooRexx 5.3.0 (native, or ooRexx/WASM 0.2.4 by Josep Maria Blasco)
+- vendor/rexx-parser: Josep Maria Blasco's Rexx Parser, beta 0.7 (refresh
+  20261105), Apache License 2.0, unchanged; its LICENSE, NOTICE and VERSION
+  are beside it.  OodGraph.cls requires "rexx-parser/bin/Rexx.Parser.cls", so
+  vendor/ goes on REXX_PATH.  Only the graph (OodGraph.cls, t02) needs it.
+
+The programs it writes:
+- ooDialog (upstream, Windows) or ooDialog/WASM v0.7.0 (Claude (Fable 5.2))
+- nothing else: the language support (OodNls) is copied into each program
+
+The page (site/) and its browser tests (tools/dztest.py), not run by Autobuild:
+- ooRexx/WASM 0.2.4 web release, ooDialog/WASM dist/, the Object Editor
+  (object-editor/ of animatedads/oorexx, branch oodialog-designer: the
+  Libraries panel), Python Playwright with Chromium; tools/build.rex
+  assembles site/.
+
+tests/wincheck.rex needs Windows ooDialog: sent to CODEX-PC (REQ-00003595).

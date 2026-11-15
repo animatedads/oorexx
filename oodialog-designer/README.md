@@ -195,6 +195,12 @@ Then open `http://localhost:8080/designer.html`.
 Python drives the browser in the second command only; everything the
 designer decides is in ooRexx.
 
+All the ooRexx tests, each in its own process, with a running log (how
+Alchemy Autobuild runs them; `vendor/` holds the Rexx Parser in the
+`packages/oorexx_oodialog_designer_v0.7` copy):
+
+    REXX_PATH=src:tests:vendor rexx tests/run_all.rex .
+
 ## State (2026-11-15, v0.7.0)
 
 - `tests/t01_model.rex`: 69 of 69 checks pass under ooRexx/WASM in Node. They

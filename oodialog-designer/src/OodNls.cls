@@ -18,6 +18,10 @@
   return "0.7.0"
 ::method module_lastChanged class
   return "2026-11-15"
+::method module_version
+  return "0.7.0"
+::method module_lastChanged
+  return "2026-11-15"
 
 -- The lines a program gets: the methods' and the routine's own source.
 ::method programLines class
