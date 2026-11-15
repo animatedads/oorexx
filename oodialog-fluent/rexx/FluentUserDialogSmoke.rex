@@ -22,6 +22,10 @@ dialog~executeAsync
 call SysSleep 1
 say 'REXX_SMOKE_STAGE=REQUEST_CLOSE'
 dialog~ok
+/* ooDialog's documented async join; do not exit while its GUI thread unwinds. */
+result = dialog~endAsyncExecution
+say 'REXX_SMOKE_END_ASYNC_RESULT='result
+if result \= 1 then exit 4
 say 'REXX_SMOKE_PASS=1'
 exit 0
 
