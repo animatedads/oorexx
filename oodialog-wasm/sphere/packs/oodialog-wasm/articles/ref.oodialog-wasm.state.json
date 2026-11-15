@@ -1,9 +1,9 @@
 {
   "kind": "article",
   "id": "ref.oodialog-wasm.state",
-  "version": "0.2",
+  "version": "0.3",
   "sphere": "oodialog-wasm",
-  "title": "State at v0.17.0 and where the current state is recorded",
+  "title": "State at v0.18.0 and where the current state is recorded",
   "summary": "This article is a snapshot. The current figures are always in README.md of the project, with the version they were measured on; sweep.tsv and poke.tsv hold the per-example results.",
   "authority": "implementation-record",
   "section": "reference",
@@ -13,10 +13,10 @@
     "not-done"
   ],
   "snapshot": [
-    "Version 0.17.0, 15 November 2026.",
-    "Natives ported: 643 of 1,181.",
-    "Tests: 42 of 42 pass in headless Chromium. 29 of them are upstream examples or the designer's programs, run unchanged.",
-    "Sweep of the 140 upstream examples: 76 show their dialog, 7 run to the end, 9 show only a message box, 7 stop at a native not ported, 10 stop on an error (8 of them wait for a reader of binary resources), 24 are components, 7 are outside ooDialog.",
+    "Version 0.18.0, 15 November 2026.",
+    "Natives ported: 686 of 1,182. 12 of the 43 added in v0.18.0 accept their call and do nothing.",
+    "Tests: 45 of 45 pass in headless Chromium. 32 of them are upstream examples or the designer's programs, run unchanged.",
+    "Sweep of the 140 upstream examples: 79 show their dialog, 7 run to the end, 9 show only a message box, 5 stop at a native not ported, 9 stop on an error (8 of them wait for a reader of binary resources), 24 are components, 7 are outside ooDialog.",
     "Probe at v0.16.0, 81 examples: 66 clean, 10 connect an event that is not produced, 5 with a problem, none of them in the port's own code.",
     "\"shows\" in the sweep means a dialog appeared. It does not mean every feature of the example works. Only an example that is a test (with steps and assertions) is known to work."
   ],
@@ -26,11 +26,12 @@
     "Menus: menu bars and popup menus, from scripts and through the resource provider.",
     "Resizing: ResizingAdmin (pin definitions, size limits, wantSizeEnded) since v0.17.0; DlgAreaU with connectResize since v0.9.",
     "Drawing, bitmap buttons and animation, the Mouse class, in-place editing in a list-view (edit, drop-down list, editable combo box), list box tab stops, fonts.",
+    "Tool tips since v0.18.0: tools that are windows or rectangles, fixed and asked text, NEEDTEXT SHOW POP RELAY, ToolInfo, manageAtypicalTool, a tree-view's getToolTips with GETINFOTIP.",
     "File dialogs and shell dialogs over the WASM machine's file system."
   ],
   "not_done": [
     "Tool bar, status bar, re-bar; custom draw; scroll bars as controls.",
-    "Real tool tips: ToolInfo, manageAtypicalTool, getToolTips, the tool tip events. A tool tip today is the element's title.",
+    "getComboBoxInfo (the parts of a combo box as windows); tracking tool tips.",
     "ResizingAdmin's pagedTab; ControlDlgInfo and the tab owner dialogs.",
     "connectActivate, connectHelp, connectPosChanged, connectResizing (accepted, not produced).",
     "Image-list icons are not drawn; ResourceImage needs images from a binary resource.",
@@ -45,13 +46,13 @@
   ],
   "provenance": [
     {
-      "artifact": "oodialog-wasm-9f167f9.zip",
-      "sha256": "cc1894e0b0a3fc3840302f794a22d1e4ab083d04ecffa1f240d1d2710e6d5c5f",
+      "artifact": "oodialog-wasm-2a76b8a.zip",
+      "sha256": "ea1f87a9de3331dd3ece1b4b75fe54b3d2de050a9a06c8bb7663f23b6354f3e2",
       "member": "oodialog-wasm/README.md",
       "line_start": 51,
       "line_end": 100,
       "claim": "The state section with counts.",
-      "note": "git archive of animatedads/oorexx commit 9f167f9 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 2a76b8a (branch oodialog-wasm)"
     }
   ]
 }

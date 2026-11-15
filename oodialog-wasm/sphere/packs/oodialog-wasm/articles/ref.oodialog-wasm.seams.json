@@ -1,7 +1,7 @@
 {
   "kind": "article",
   "id": "ref.oodialog-wasm.seams",
-  "version": "0.2",
+  "version": "0.3",
   "sphere": "oodialog-wasm",
   "title": "Seams: the places where other work plugs in",
   "summary": "Four seams let other tasks build on the port without editing it: a resource provider for binary Windows resources, the list of live dialogs for system classes, the Windows file-name helper for loaders, and the file dialog class.",
@@ -28,40 +28,40 @@
   ],
   "provenance": [
     {
-      "artifact": "oodialog-wasm-9f167f9.zip",
-      "sha256": "cc1894e0b0a3fc3840302f794a22d1e4ab083d04ecffa1f240d1d2710e6d5c5f",
+      "artifact": "oodialog-wasm-2a76b8a.zip",
+      "sha256": "ea1f87a9de3331dd3ece1b4b75fe54b3d2de050a9a06c8bb7663f23b6354f3e2",
       "member": "oodialog-wasm/src/oodWeb.cls",
-      "line_start": 1405,
-      "line_end": 1405,
+      "line_start": 1406,
+      "line_end": 1406,
       "claim": "The resourceProvider attribute; the shapes are in the comment above it.",
-      "note": "git archive of animatedads/oorexx commit 9f167f9 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 2a76b8a (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-9f167f9.zip",
-      "sha256": "cc1894e0b0a3fc3840302f794a22d1e4ab083d04ecffa1f240d1d2710e6d5c5f",
+      "artifact": "oodialog-wasm-2a76b8a.zip",
+      "sha256": "ea1f87a9de3331dd3ece1b4b75fe54b3d2de050a9a06c8bb7663f23b6354f3e2",
       "member": "oodialog-wasm/src/oodWeb.cls",
-      "line_start": 480,
-      "line_end": 489,
+      "line_start": 481,
+      "line_end": 490,
       "claim": ".oodn~windows answers the live dialogs, oldest first.",
-      "note": "git archive of animatedads/oorexx commit 9f167f9 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 2a76b8a (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-9f167f9.zip",
-      "sha256": "cc1894e0b0a3fc3840302f794a22d1e4ab083d04ecffa1f240d1d2710e6d5c5f",
+      "artifact": "oodialog-wasm-2a76b8a.zip",
+      "sha256": "ea1f87a9de3331dd3ece1b4b75fe54b3d2de050a9a06c8bb7663f23b6354f3e2",
       "member": "oodialog-wasm/site/oodfiles.js",
       "line_start": 1,
       "line_end": 17,
       "claim": "windowsNames(files) and its rules.",
-      "note": "git archive of animatedads/oorexx commit 9f167f9 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 2a76b8a (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-9f167f9.zip",
-      "sha256": "cc1894e0b0a3fc3840302f794a22d1e4ab083d04ecffa1f240d1d2710e6d5c5f",
+      "artifact": "oodialog-wasm-2a76b8a.zip",
+      "sha256": "ea1f87a9de3331dd3ece1b4b75fe54b3d2de050a9a06c8bb7663f23b6354f3e2",
       "member": "oodialog-wasm/src/oodWeb.cls",
-      "line_start": 690,
-      "line_end": 705,
+      "line_start": 691,
+      "line_end": 706,
       "claim": "srcDir is taken from the bottom frame of the call stack.",
-      "note": "git archive of animatedads/oorexx commit 9f167f9 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 2a76b8a (branch oodialog-wasm)"
     }
   ]
 }

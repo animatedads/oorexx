@@ -1,7 +1,7 @@
 {
   "kind": "corpus",
   "id": "oodialog-wasm.facts",
-  "version": "0.2",
+  "version": "0.3",
   "sphere": "oodialog-wasm",
   "title": "ooDialog/WASM: every statement of the articles, one a record, for search",
   "records": [
@@ -269,8 +269,26 @@
     {
       "topic": "renderer-contract",
       "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "op_families",
+      "rule": "tip.*: tool tips, since v0.18.0. The id is the tool tip's ID, not a control's: route tip.* before looking the id up as a control. tip.add takes one JSON text {key, host, rect, text}: host is a control's id or 0 for the dialog; rect is null (the whole window) or [l, t, r, b] in that window's client area; text null means the text is asked from the program. Others: tip.del(key), tip.text(key, text; one separator character means asked), tip.relay(hostId, 1|0), tip.count, tip.delay(ms), tip.maxWidth(px), tip.title(text), tip.active(1|0), tip.events(words), tip.show(text), tip.pos(x, y in screen pixels), tip.pop, tip.shown (toolKey, separator, text; empty if no tip), tip.tree(treeViewId)."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "op_families",
+      "rule": "The renderer decides when a tip is due: the pointer rests on a tool for the delay. Fixed text: show the box, then send TT SHOW if tip.events names SHOW. Asked text: send TT NEEDTEXT; the program answers with tip.show. An empty text shows nothing. tip.pop ends the tip; if the pointer is still on the tool, the tip is due again after the delay. A tree-view named by tip.tree asks the text of the item under the pointer with NOTIFY GETINFOTIP (extra: the item); the answer is tip.show on tool tip ID 60000 + the tree-view's id."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "op_families",
+      "rule": "The op named tip (the element's title) is gone since v0.18.0. tv.hit(x, y) answers \"item LOCATION\"; tv.rect(item, textOnly) answers \"l t r b\" in the tree-view's client area."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
       "field": "events",
-      "rule": "The renderer sends (key, kind, id, code, extra). Kinds: CMD (WM_COMMAND), NOTIFY (a named control notification), MSGBOX (a message box was answered), CTX (context menu), KEY (a connected key), WM (a window message: RESIZE, SIZEMOVEENDED, MOVE, and RASIZEENDED when a ResizingAdmin dialog with wantSizeEnded stops being sized), MOUSE (a Mouse class event), GC (RETURN, ESCAPE, TAB or loss of focus in a control placed on another control)."
+      "rule": "The renderer sends (key, kind, id, code, extra). Kinds: CMD (WM_COMMAND), NOTIFY (a named control notification), MSGBOX (a message box was answered), CTX (context menu), KEY (a connected key), TT (a tool tip: id is the tool tip's ID, code is SHOW, POP, NEEDTEXT or RELAY, extra is the tool's key; for RELAY the key, x and y joined by the separator), WM (a window message: RESIZE, SIZEMOVEENDED, MOVE, and RASIZEENDED when a ResizingAdmin dialog with wantSizeEnded stops being sized), MOUSE (a Mouse class event), GC (RETURN, ESCAPE, TAB or loss of focus in a control placed on another control)."
     },
     {
       "topic": "renderer-contract",
@@ -448,7 +466,13 @@
       "topic": "differences",
       "article": "ops.oodialog-wasm.differences",
       "field": "differences",
-      "rule": "Tool tips are the browser's own (the title of the element). ToolInfo, manageAtypicalTool, getToolTips and the tool tip events are not ported."
+      "rule": "Tool tips are drawn by the page since v0.18.0. Only the INITIAL delay acts: a tip stays until the pointer leaves its tool. Balloon style, icon, margins, colours and tracking tool tips are accepted and not shown. LINKCLICK is never sent. RELAY is sent for pointer moves only. A touch screen shows no tips."
+    },
+    {
+      "topic": "differences",
+      "article": "ops.oodialog-wasm.differences",
+      "field": "differences",
+      "rule": "The dropped list of a combo box belongs to the browser and is not a window. getComboBoxInfo is not ported."
     },
     {
       "topic": "differences",
@@ -655,31 +679,31 @@
     {
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
-      "rule": "State at v0.17.0 and where the current state is recorded. This article is a snapshot. The current figures are always in README.md of the project, with the version they were measured on; sweep.tsv and poke.tsv hold the per-example results."
+      "rule": "State at v0.18.0 and where the current state is recorded. This article is a snapshot. The current figures are always in README.md of the project, with the version they were measured on; sweep.tsv and poke.tsv hold the per-example results."
     },
     {
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
       "field": "snapshot",
-      "rule": "Version 0.17.0, 15 November 2026."
+      "rule": "Version 0.18.0, 15 November 2026."
     },
     {
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
       "field": "snapshot",
-      "rule": "Natives ported: 643 of 1,181."
+      "rule": "Natives ported: 686 of 1,182. 12 of the 43 added in v0.18.0 accept their call and do nothing."
     },
     {
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
       "field": "snapshot",
-      "rule": "Tests: 42 of 42 pass in headless Chromium. 29 of them are upstream examples or the designer's programs, run unchanged."
+      "rule": "Tests: 45 of 45 pass in headless Chromium. 32 of them are upstream examples or the designer's programs, run unchanged."
     },
     {
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
       "field": "snapshot",
-      "rule": "Sweep of the 140 upstream examples: 76 show their dialog, 7 run to the end, 9 show only a message box, 7 stop at a native not ported, 10 stop on an error (8 of them wait for a reader of binary resources), 24 are components, 7 are outside ooDialog."
+      "rule": "Sweep of the 140 upstream examples: 79 show their dialog, 7 run to the end, 9 show only a message box, 5 stop at a native not ported, 9 stop on an error (8 of them wait for a reader of binary resources), 24 are components, 7 are outside ooDialog."
     },
     {
       "topic": "state",
@@ -727,6 +751,12 @@
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
       "field": "done",
+      "rule": "Tool tips since v0.18.0: tools that are windows or rectangles, fixed and asked text, NEEDTEXT SHOW POP RELAY, ToolInfo, manageAtypicalTool, a tree-view's getToolTips with GETINFOTIP."
+    },
+    {
+      "topic": "state",
+      "article": "ref.oodialog-wasm.state",
+      "field": "done",
       "rule": "File dialogs and shell dialogs over the WASM machine's file system."
     },
     {
@@ -739,7 +769,7 @@
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
       "field": "not_done",
-      "rule": "Real tool tips: ToolInfo, manageAtypicalTool, getToolTips, the tool tip events. A tool tip today is the element's title."
+      "rule": "getComboBoxInfo (the parts of a combo box as windows); tracking tool tips."
     },
     {
       "topic": "state",

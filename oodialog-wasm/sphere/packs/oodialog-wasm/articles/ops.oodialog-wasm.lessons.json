@@ -1,7 +1,7 @@
 {
   "kind": "article",
   "id": "ops.oodialog-wasm.lessons",
-  "version": "0.2",
+  "version": "0.3",
   "sphere": "oodialog-wasm",
   "title": "Lessons from the port: faults made and how each is now prevented",
   "summary": "Each lesson is a fault that happened in this work, its cause, and the rule that prevents it. They are here so that the next task does not repeat them.",
@@ -31,22 +31,22 @@
   ],
   "provenance": [
     {
-      "artifact": "oodialog-wasm-9f167f9.zip",
-      "sha256": "cc1894e0b0a3fc3840302f794a22d1e4ab083d04ecffa1f240d1d2710e6d5c5f",
+      "artifact": "oodialog-wasm-2a76b8a.zip",
+      "sha256": "ea1f87a9de3331dd3ece1b4b75fe54b3d2de050a9a06c8bb7663f23b6354f3e2",
       "member": "oodialog-wasm/src/oodWeb.cls",
-      "line_start": 525,
-      "line_end": 530,
+      "line_start": 526,
+      "line_end": 531,
       "claim": "onPumpThread: the rule that came from the msSleep race.",
-      "note": "git archive of animatedads/oorexx commit 9f167f9 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 2a76b8a (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-9f167f9.zip",
-      "sha256": "cc1894e0b0a3fc3840302f794a22d1e4ab083d04ecffa1f240d1d2710e6d5c5f",
+      "artifact": "oodialog-wasm-2a76b8a.zip",
+      "sha256": "ea1f87a9de3331dd3ece1b4b75fe54b3d2de050a9a06c8bb7663f23b6354f3e2",
       "member": "oodialog-wasm/README.md",
-      "line_start": 159,
-      "line_end": 174,
+      "line_start": 161,
+      "line_end": 176,
       "claim": "ResizingAdmin was not ported until v0.17.0.",
-      "note": "git archive of animatedads/oorexx commit 9f167f9 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 2a76b8a (branch oodialog-wasm)"
     }
   ]
 }

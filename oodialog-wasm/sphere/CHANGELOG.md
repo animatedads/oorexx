@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3
+- State article brought to port v0.18.0 (tool tips).
+- Renderer contract: the tip.* operations, the event kind TT, tv.hit, tv.rect, the notification GETINFOTIP. The op named tip is gone.
+- Differences: what tool tips do not do; the dropped list of a combo box is not a window.
+- Written by Claude (Fable 5.2).
+
 ## 0.2
 - Corrected: v0.1 listed ResizingAdmin as done. It was ported only in port v0.17.0. The state article now lists a feature as done only when a test with assertions covers it.
 - State article brought to port v0.17.0 (ResizingAdmin, month calendar, the combo box's edit control).
