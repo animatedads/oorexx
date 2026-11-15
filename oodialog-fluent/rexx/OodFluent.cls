@@ -71,7 +71,7 @@
 
 ::method dispatchPending
   expose dialog
-  /* Called from the ooDialog UI-thread message/timer dispatch; never from XAML. */
+  /* Called by the ooDialog/Rexx activity at a safe dispatch point, never from XAML. */
   use strict arg limit = 64
   if limit < 1 then raise user OodFluent additional ('limit must be positive')
   dispatched = 0

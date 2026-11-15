@@ -102,11 +102,9 @@ jobs:
         with:
           path: ${{ runner.temp }}/oorexx-verified-5.2.0-portable.zip
           key: oorexx-official-portable-windows-x64-5.2.0-13156-v1
-      - name: Probe real ooDialog Rexx session on Windows
-        # Exploratory until the downloaded ooRexx runtime and native ooDialog
-        # binding are independently verified. This step must not silently be
-        # counted as a passing supported-set gate.
-        continue-on-error: true
+      - name: Qualify real ooDialog Rexx session on Windows
+        # Required for the narrowly supported Button/ToggleSwitch subset.
+        # The cross-thread hook remains diagnostic opt-in, not released API.
         shell: pwsh
         timeout-minutes: 10
         run: |

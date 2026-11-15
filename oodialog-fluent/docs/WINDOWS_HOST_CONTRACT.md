@@ -29,4 +29,10 @@ The Designer may author an optional `fluentType` and its properties in a resourc
 
 ## Provenance and status
 
-This is a Windows provider contract, not a claim that the C++/WinRT island has been compiled or tested. `LOCAL_PASS` applies only to the independent model in v0.1.
+The Windows x64 DLL compiles and the standalone HWND subset (empty island,
+`Button`, `ToggleSwitch`) runs through clean teardown. GitHub CI run
+[43729428411](https://github.com/animatedads/oorexx/actions/runs/43729428411)
+also runs a genuine ooRexx 5.2.0 `UserDialog`, creating both controls through
+the **diagnostic opt-in same-process UI-thread broker** and closing them from
+Rexx with exit 0. This does not qualify unrestricted broker use, modal dialogs,
+complex template shutdown, event delivery, focus, or the full catalogue.
