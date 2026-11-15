@@ -8,6 +8,11 @@
 
 namespace {
 
+void stage(const char *name) {
+    fprintf(stderr, "STAGE %s\n", name);
+    fflush(stderr);
+}
+
 int fail(const char *operation, HRESULT result) {
     fprintf(stderr, "FAIL %s HRESULT=0x%08lX\n", operation, (unsigned long)result);
     return 1;
@@ -21,6 +26,8 @@ LRESULT CALLBACK windowProcedure(HWND hwnd, UINT message, WPARAM w, LPARAM l) {
 } // namespace
 
 int wmain(int argc, wchar_t **argv) {
+    // Emitted before any call: if absent, loading the WinUI DLL itself blocked.
+    stage("MAIN_ENTER");
     if (argc != 2) {
         fprintf(stderr, "usage: OodFluentSmoke <absolute-controls.tsv>\n");
         return 2;
@@ -34,6 +41,7 @@ int wmain(int argc, wchar_t **argv) {
                              catalogue.data(), needed, nullptr, nullptr)) return 2;
 
     OodfSession *model = nullptr;
+    stage("MODEL_OPEN");
     auto status = oodf_open(catalogue.c_str(), 0, &model);
     if (status != OODF_OK) {
         fprintf(stderr, "FAIL catalogue: %s\n", oodf_last_error());
@@ -51,8 +59,10 @@ int wmain(int argc, wchar_t **argv) {
     if (!hwnd) { fprintf(stderr, "FAIL CreateWindow\n"); oodf_close(model); return 2; }
     ShowWindow(hwnd, SW_SHOW);
     UpdateWindow(hwnd);
+    stage("HWND_READY");
 
     OodfWinHost *host = nullptr;
+    stage("ISLAND_OPEN_BEGIN");
     HRESULT result = oodf_win_open(hwnd, model, &host);
     if (FAILED(result)) {
         int code = fail("oodf_win_open", result);
@@ -60,13 +70,16 @@ int wmain(int argc, wchar_t **argv) {
         oodf_close(model);
         return code;
     }
+    stage("ISLAND_OPEN_OK");
     uint64_t button = 0, toggle = 0, info = 0, number = 0;
+    stage("CREATE_CONTROLS_BEGIN");
     if (FAILED(result = oodf_win_move(host, 4, 4, 600, 400))) goto cleanup;
     if (FAILED(result = oodf_win_add_authored(host, 4101, L"Button", L"Hello ooRexx", 71001, &button))) goto cleanup;
     if (button != 71001) { result = E_UNEXPECTED; goto cleanup; }
     if (FAILED(result = oodf_win_add(host, 4102, L"ToggleSwitch", L"Dark mode", &toggle))) goto cleanup;
     if (FAILED(result = oodf_win_add(host, 4103, L"InfoBar", L"WinUI 3 is alive", &info))) goto cleanup;
     if (FAILED(result = oodf_win_add(host, 4104, L"NumberBox", L"Quantity", &number))) goto cleanup;
+    stage("CREATE_CONTROLS_OK");
     if (oodf_bind(model, button, "click", "onButton") != OODF_OK) {
         fprintf(stderr, "FAIL event binding: %s\n", oodf_last_error());
         result = E_FAIL;
@@ -85,13 +98,16 @@ int wmain(int argc, wchar_t **argv) {
         }
         Sleep(20);
     }
+    stage("PUMP_OK");
     if (FAILED(result = oodf_win_remove(host, button))) goto cleanup;
     printf("PASS native Windows HWND/XAML island, 4 controls, properties, remove, close\n");
 cleanup:
+    stage("TEARDOWN_BEGIN");
     if (FAILED(result)) fail("native host operation", result);
     const HRESULT closed = oodf_win_close(host);
     if (FAILED(closed)) fail("oodf_win_close", closed);
     DestroyWindow(hwnd);
     oodf_close(model);
+    stage("TEARDOWN_DONE");
     return FAILED(result) || FAILED(closed) ? 1 : 0;
 }
