@@ -24,7 +24,7 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.16.0"
+  return "0.17.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute key unguarded
@@ -102,7 +102,7 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.16.0"
+  return "0.17.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute rexxSelf unguarded
@@ -131,7 +131,7 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.16.0"
+  return "0.17.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute dlg unguarded             -- its dialog's OodDlg
@@ -149,7 +149,7 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.16.0"
+  return "0.17.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::method module_version unguarded
@@ -314,7 +314,7 @@
   parse var extra first (sep) second
   do entry over d~wmTable
     if entry[1] \== event then iterate
-    if event == "SIZEMOVEENDED" then args = .array~new
+    if event == "SIZEMOVEENDED" | event == "RASIZEENDED" then args = .array~new
     else args = .array~of(0, second * 65536 + first)
     self~invoke(d~rexxSelf, entry[2], args)
   end
@@ -1157,6 +1157,7 @@ noPackage:
   d~pixelCX = pw
   d~pixelCY = ph
   d~live = .true
+  if d~store["RA"] \== .nil then self~ctlOp(d, 0, "ra.init", self~raSpec(d))
   d~templateActive = .false
   self~register(d)
   do entry over d~cmdTable
@@ -3597,6 +3598,170 @@ noPackage:
 ::method mouse_showCursor unguarded
   return 0
 
+
+/* ---- ResizingAdmin (oodResizableDialog.cpp) ----
+   A dialog class that inherits ResizingAdmin can be resized, and its controls follow.
+   defineSizing is called at the end of the dialog's init; there the program says how
+   each edge of a control is pinned.  The page does the arithmetic (raLayout). */
+::method raSetup unguarded
+  use arg self_
+  d = self_~oodPeer
+  ra = .directory~new
+  ra~def = .array~of(.array~of("P", "LEFT", 0), .array~of("P", "TOP", 0), .array~of("P", "RIGHT", 0), .array~of("P", "BOTTOM", 0))
+  ra~ctrls = .array~new            -- in the order the program names them: id, then the four edges
+  ra~min = "initial"
+  ra~max = .nil
+  ra~ended = .nil
+  d~store["RA"] = ra
+  self_~constDir["IDC_DEFAULT_PINTO_WINDOW"] = 0
+  self_~initResizing(.nil)
+  self_~defineSizing
+::method raState unguarded
+  use arg self_
+  ra = self_~oodPeer~store["RA"]
+  if ra == .nil then raise syntax 93.900 array("this dialog does not inherit ResizingAdmin")
+  return ra
+::method raEdge unguarded          -- (pinType, pinToEdge, pinToID) checked, for the side 1 left 2 top 3 right 4 bottom
+  use arg self_, side, how, which, pinTo
+  how = how~upper
+  which = which~upper
+  select
+    when how == "PROPORTIONAL" then type = "P"
+    when how == "STATIONARY" then type = "S"
+    when how == "MYLEFT" & side == 3 then type = "ML"
+    when how == "MYTOP" & side == 4 then type = "MT"
+    otherwise raise syntax 93.900 array('the pin type "'how'" is not valid for this edge; use PROPORTIONAL or STATIONARY (MYLEFT for a right edge, MYTOP for a bottom edge)')
+  end
+  if "LEFT TOP RIGHT BOTTOM XCENTER YCENTER"~wordPos(which) == 0 then raise syntax 93.900 array('"'which'" is not an edge; use LEFT, TOP, RIGHT, BOTTOM, XCENTER or YCENTER')
+  id = 0
+  if pinTo \== .nil then do
+    id = self~resolveId(self_, pinTo)
+    if id < 0 then raise syntax 93.900 array("the pin-to ID" pinTo "cannot be resolved")
+  end
+  return .array~of(type, which, id)
+::method raEdgeOf unguarded        -- an edge given as an array (pinType, pinToEdge [, pinToID])
+  use arg self_, side, spec
+  pinTo = .nil
+  if spec~hasIndex(3) then pinTo = spec[3]
+  return self~raEdge(self_, side, spec[1], spec[2], pinTo)
+::method raControl unguarded       -- the record of a control, made with the default edges when first named
+  use arg self_, rxID
+  ra = self~raState(self_)
+  id = self~resolveId(self_, rxID)
+  if id < 1 then raise syntax 93.900 array("the control ID" rxID "cannot be resolved")
+  do row over ra~ctrls
+    if row[1] == id then return row
+  end
+  row = .array~of(id, ra~def[1], ra~def[2], ra~def[3], ra~def[4])
+  ra~ctrls~append(row)
+  return row
+::method ra_initResizing unguarded
+  return 0
+::method ra_controlSide unguarded  -- controlLeft / Top / Right / Bottom(id, howPinned, whichEdge, pinToID)
+  use arg self_, msg, a
+  side = "CONTROLLEFT CONTROLTOP CONTROLRIGHT CONTROLBOTTOM"~wordPos(msg)
+  row = self~raControl(self_, a[1])
+  pinTo = .nil
+  if a~hasIndex(4) then pinTo = a[4]
+  row[side + 1] = self~raEdge(self_, side, a[2], a[3], pinTo)
+  return 0
+::method ra_controlSizing unguarded    -- controlSizing(id, left, top, right, bottom): an omitted edge keeps the default
+  use arg self_, msg, a
+  row = self~raControl(self_, a[1])
+  do side = 1 to 4
+    if a~hasIndex(side + 1) then row[side + 1] = self~raEdgeOf(self_, side, a[side + 1])
+  end
+  return 0
+::method ra_useDefaultSizing unguarded
+  use arg self_, msg, a
+  self~raControl(self_, a[1])
+  return 0
+::method ra_defaultSide unguarded  -- defaultLeft / Top / Right / Bottom(howPinned, whichEdge, pinToID)
+  use arg self_, msg, a
+  side = "DEFAULTLEFT DEFAULTTOP DEFAULTRIGHT DEFAULTBOTTOM"~wordPos(msg)
+  pinTo = .nil
+  if a~hasIndex(3) then pinTo = a[3]
+  self~raState(self_)~def[side] = self~raEdge(self_, side, a[1], a[2], pinTo)
+  return 0
+::method ra_defaultSizing unguarded
+  use arg self_, msg, a
+  ra = self~raState(self_)
+  do side = 1 to 4
+    if a~hasIndex(side) then ra~def[side] = self~raEdgeOf(self_, side, a[side])
+  end
+  return 0
+::method raSizeJson unguarded      -- a size limit for the page: "initial", null or [w, h]
+  use arg limit
+  if limit == .nil then return "null"
+  if limit == "initial" then return '"initial"'
+  return "["limit~width","limit~height"]"
+::method raSpec unguarded          -- the whole definition as JSON for the page
+  use arg d
+  ra = d~store["RA"]
+  json = '{"def":'self~raEdgesJson(ra~def)',"ctrls":['
+  first = .true
+  do row over ra~ctrls
+    if \first then json = json","
+    first = .false
+    json = json"["row[1]","self~raEdgesJson(.array~of(row[2], row[3], row[4], row[5]))~substr(2)
+  end
+  json = json'],"min":'self~raSizeJson(ra~min)',"max":'self~raSizeJson(ra~max)',"ended":'
+  if ra~ended == .nil then json = json"0}"
+  else json = json"1}"
+  return json
+::method raEdgesJson unguarded
+  use arg edges
+  json = "["
+  do i = 1 to edges~items
+    if i > 1 then json = json","
+    json = json'["'edges[i][1]'","'edges[i][2]'",'edges[i][3]']'
+  end
+  return json"]"
+::method raLimits unguarded
+  use arg self_
+  d = self_~oodPeer
+  ra = self~raState(self_)
+  if d~live then self~ctlOp(d, 0, "ra.limits", self~raSizeJson(ra~min), self~raSizeJson(ra~max))
+::method ra_minSize unguarded
+  use arg self_
+  limit = self~raState(self_)~min
+  if limit == "initial" then return .nil
+  return limit
+::method ra_maxSize unguarded
+  use arg self_
+  return self~raState(self_)~max
+::method ra_setMinSize unguarded   -- a .Size in pixels
+  use arg self_, msg, a
+  self~raState(self_)~min = a[1]
+  self~raLimits(self_)
+  return 0
+::method ra_setMaxSize unguarded
+  use arg self_, msg, a
+  self~raState(self_)~max = a[1]
+  self~raLimits(self_)
+  return 0
+::method ra_noMinSize unguarded
+  use arg self_
+  self~raState(self_)~min = .nil
+  self~raLimits(self_)
+  return 0
+::method ra_noMaxSize unguarded
+  use arg self_
+  self~raState(self_)~max = .nil
+  self~raLimits(self_)
+  return 0
+::method ra_wantSizeEnded unguarded    -- wantSizeEnded(method, willReply): the method is invoked when the user stops sizing
+  use arg self_, msg, a
+  method = "onSizeEnded"
+  if a~hasIndex(1) then if a[1] \== "" then method = a[1]
+  self~raState(self_)~ended = method
+  self_~oodPeer~wmTable~append(.array~of("RASIZEENDED", method))
+  return .true
+::method ra_pagedTab unguarded     -- (the pages of a tab are not resized with it yet)
+  use arg self_
+  self~raState(self_)
+  return 0
+
 ::method winex_deleteObject unguarded
   return 0
 ::method winex_deleteFont unguarded
@@ -3932,6 +4097,8 @@ noPackage:
   if a~hasIndex(2) then sub = a[2]
   if self~op(self_, "lv.setCell", a[1], sub, a[3]) == 1 then return 0
   return -1
+::method lv_arrange unguarded     -- arrange, alignLeft, alignTop, snapToGrid: the icons of the page's list-view flow by themselves
+  return 0
 ::method lv_getItemInfo unguarded  -- getItemInfo(index, directory, subItem): the text, image and state of an item go into the directory
   use arg self_, msg, a
   index = a[1]
@@ -4483,12 +4650,31 @@ noPackage:
   use arg self_, msg, a
   p = self_~oodPeer
   method = "onEditGrandChildEvent"
-  if p~dlg~kinds[p~id]~word(1) == "COMBO" then method = "onComboBoxGrandChildEvent"
+  if self_~isA(self~classOf("ComboBox")) then method = "onComboBoxGrandChildEvent"   -- (the edit of a combo box reports as an edit)
   if a~hasIndex(1) then if a[1] \== "" then method = a[1]
   wantTab = .false
   if a~hasIndex(2) then wantTab = (a[2] == .true)
   p~dlg~store["GC" p~id] = .array~of(method, self_)
   return (self~op(self_, "grandChild", wantTab) == 1)
+::method cb_getEditControl unguarded   -- the edit part of a combo box as an Edit object; .nil for a drop-down list
+  use arg self_
+  p = self_~oodPeer
+  if \p~dlg~live then return .nil
+  if self~op(self_, "isDropList") == 1 then return .nil
+  cached = p~dlg~controls[p~id "COMBOEDIT"]
+  if cached \== .nil then return cached
+  edit = self~classOf("Edit")~new(p~dlg~rexxSelf, p~id, .OodCtl~new(p~dlg, p~id, "EDIT"))
+  p~dlg~controls[p~id "COMBOEDIT"] = edit
+  return edit
+::method cb_setMinVisible unguarded    -- the rows of the dropped list: the browser decides; the number is kept
+  use arg self_, msg, a
+  self_~oodPeer~dlg~store["CBMINVISIBLE" self_~oodPeer~id] = a[1]
+  return .true
+::method cb_getMinVisible unguarded
+  use arg self_
+  count = self_~oodPeer~dlg~store["CBMINVISIBLE" self_~oodPeer~id]
+  if count == .nil then return 30
+  return count
 ::method cb_isGrandchild unguarded
   forward message "e_isGrandchild"
 ::method grandChildEvent unguarded
@@ -5621,13 +5807,68 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       new W.ResizeObserver(() => {
         if (first) { first = false; return; }
         if (!ood.dialogs.has(key)) return;
+        if (dlg.ra) raLayout(dlg);                             // ResizingAdmin: the controls follow the dialog
         if (dlg.subs.has('0.RESIZE')) fire(key, 'WM', 0, 'RESIZE', client.clientWidth + SEP + client.clientHeight);
         clearTimeout(timer);
-        timer = setTimeout(() => { if (ood.dialogs.has(key) && dlg.subs.has('0.SIZEMOVEENDED')) fire(key, 'WM', 0, 'SIZEMOVEENDED', ''); }, 250);
+        timer = setTimeout(() => {
+          if (!ood.dialogs.has(key)) return;
+          if (dlg.subs.has('0.SIZEMOVEENDED')) fire(key, 'WM', 0, 'SIZEMOVEENDED', '');
+          if (dlg.ra && dlg.ra.ended) fire(key, 'WM', 0, 'RASIZEENDED', '');
+        }, 250);
       }).observe(client);
     }
     return dlg.fx + ' ' + dlg.fy + ' ' + Math.round(rect.width) + ' ' + Math.round(rect.height);
   };
+
+  /* ---- ResizingAdmin (oodResizableDialog.cpp) ----
+     Each edge of each control is pinned to an edge of the dialog or of another control:
+       [pinType, pinToEdge, pinToID]   pinType S stationary, P proportional, ML my left, MT my top
+     ra = { def: [left, top, right, bottom], ctrls: [[id, left, top, right, bottom], ...], min, max, ended }
+     The controls named by the program come first, in its order; then the others as created. */
+  function raRect(el) { return { left: el.offsetLeft, top: el.offsetTop, right: el.offsetLeft + el.offsetWidth, bottom: el.offsetTop + el.offsetHeight }; }
+  function raInit(dlg, spec) {
+    const ra = JSON.parse(spec), cl = dlg.client;
+    ra.orig = { left: 0, top: 0, right: cl.clientWidth, bottom: cl.clientHeight };
+    ra.items = [];
+    const seen = new Set();
+    const add = (id, edges) => { const c = dlg.ctrls.get(id); if (!c || seen.has(id)) return; seen.add(id);
+      ra.items.push({ id, c, edges, orig: raRect(c.el), cur: raRect(c.el) }); };
+    for (const row of ra.ctrls) add(row[0], row.slice(1));
+    for (const [id, c] of dlg.ctrls) if (!c.parentCtl) add(id, ra.def);
+    dlg.ra = ra;
+    cl.style.resize = 'both';
+    raLimits(dlg, ra.min, ra.max);
+    return '1';
+  }
+  function raLimits(dlg, min, max) {                           // "initial": the size the dialog has now; null: none
+    const ra = dlg.ra, cl = dlg.client; ra.min = min; ra.max = max;
+    const m = min === 'initial' ? [ra.orig.right, ra.orig.bottom] : min;
+    cl.style.minWidth = m ? m[0] + 'px' : '60px'; cl.style.minHeight = m ? m[1] + 'px' : '30px';
+    cl.style.maxWidth = max ? max[0] + 'px' : ''; cl.style.maxHeight = max ? max[1] + 'px' : '';
+  }
+  function raLayout(dlg) {
+    const ra = dlg.ra, cl = dlg.client;
+    const cur = { left: 0, top: 0, right: cl.clientWidth, bottom: cl.clientHeight };
+    const rects = (id) => { if (id) { const it = ra.items.find((x) => x.id === id); if (it) return [it.orig, it.cur]; } return [ra.orig, cur]; };
+    const coord = (edge, r) => ({ LEFT: r.left, TOP: r.top, RIGHT: r.right, BOTTOM: r.bottom, XCENTER: (r.left + r.right) / 2, YCENTER: (r.top + r.bottom) / 2 }[edge]);
+    const span = (side, r) => (side === 'left' || side === 'right' ? r.right - r.left : r.bottom - r.top);
+    const edge = (it, side, e) => {
+      const [pi, pc] = rects(e[2]);
+      if (e[0] === 'S') return it.orig[side] - coord(e[1], pi) + coord(e[1], pc);
+      if (e[0] === 'ML') return it.cur.left + (it.orig.right - it.orig.left);
+      if (e[0] === 'MT') return it.cur.top + (it.orig.bottom - it.orig.top);
+      const was = span(side, pi) || 1;                         // proportional: the same edge of the window pinned to
+      return pc[side] + (it.orig[side] - pi[side]) * (span(side, pc) / was);
+    };
+    for (const it of ra.items) {
+      it.cur = { left: 0, top: 0, right: 0, bottom: 0 };
+      it.cur.left = Math.trunc(edge(it, 'left', it.edges[0])); it.cur.top = Math.trunc(edge(it, 'top', it.edges[1]));
+      it.cur.right = Math.trunc(edge(it, 'right', it.edges[2])); it.cur.bottom = Math.trunc(edge(it, 'bottom', it.edges[3]));
+      const s = it.c.el.style;
+      s.left = it.cur.left + 'px'; s.top = it.cur.top + 'px';
+      s.width = Math.max(0, it.cur.right - it.cur.left) + 'px'; s.height = Math.max(0, it.cur.bottom - it.cur.top) + 'px';
+    }
+  }
 
   function wireDialog(dlg) {
     const el = dlg.el;
@@ -6696,6 +6937,9 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       if (c.kind === 'BUTTON') { c.main.textContent = ''; paintButton(c); }
       return '1';
     }
+    if (c && name === 'isDropList') return c.droplist ? '1' : '0';
+    if (name === 'ra.init') return raInit(dlg, String(a));
+    if (name === 'ra.limits') { if (!dlg.ra) return '0'; raLimits(dlg, JSON.parse(String(a)), JSON.parse(String(b))); return '1'; }
     if (name === 'mouseSub') return mouseSub(dlg, c, el, String(a));
     if (name === 'mouse') return mouseOp(dlg, c, el, String(a), b);
     if (c && name === 'bitmapPos') { c.bmpPos = [Number(a) || 0, Number(b) || 0]; paintButton(c); return '1'; }

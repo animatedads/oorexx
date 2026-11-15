@@ -1,0 +1,19 @@
+wait .ood-dlg >> text=Row 1
+sleep 400
+mouse down .ood-lv tbody tr >> nth=1 >> td >> nth=1 @ 20 6
+mouse up .ood-lv tbody tr >> nth=1 >> td >> nth=1 @ 20 6
+sleep 300
+mouse down .ood-lv tbody tr >> nth=1 >> td >> nth=1 @ 20 6
+mouse up .ood-lv tbody tr >> nth=1 >> td >> nth=1 @ 20 6
+sleep 500
+expect (() => { const e = document.querySelector('.ood-dlg input.ood-edit[list]'); const r = e.getBoundingClientRect(), td = document.querySelectorAll('.ood-lv tbody tr')[1].children[1].getBoundingClientRect(); return e.closest('[hidden]') === null && Math.abs(r.left - td.left) < 4 && Math.abs(r.top - td.top) < 4 && Math.abs(r.width - td.width) < 6 && r.height < 40 && document.activeElement === e; })() ==> True
+expect [...document.querySelector('.ood-dlg datalist').children].map(o => o.value).join(',') ==> One,Two,Three
+type Typed in
+shot dropDownComboBox
+press Enter
+sleep 400
+expect document.querySelectorAll('.ood-lv tbody tr')[1].children[1].textContent ==> Typed in
+expect document.querySelector('.ood-dlg input.ood-edit[list]').closest('[hidden]') !== null ==> True
+expect document.querySelectorAll('.ood-dlg').length ==> 1
+expect (window.oodOut.join('').match(/(native function \w+|Error \d+\.\d+[^\n]*)/g) || []).length ==> 0
+click .ood-dlg button.ood-def

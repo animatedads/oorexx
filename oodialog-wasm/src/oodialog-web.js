@@ -180,13 +180,68 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       new W.ResizeObserver(() => {
         if (first) { first = false; return; }
         if (!ood.dialogs.has(key)) return;
+        if (dlg.ra) raLayout(dlg);                             // ResizingAdmin: the controls follow the dialog
         if (dlg.subs.has('0.RESIZE')) fire(key, 'WM', 0, 'RESIZE', client.clientWidth + SEP + client.clientHeight);
         clearTimeout(timer);
-        timer = setTimeout(() => { if (ood.dialogs.has(key) && dlg.subs.has('0.SIZEMOVEENDED')) fire(key, 'WM', 0, 'SIZEMOVEENDED', ''); }, 250);
+        timer = setTimeout(() => {
+          if (!ood.dialogs.has(key)) return;
+          if (dlg.subs.has('0.SIZEMOVEENDED')) fire(key, 'WM', 0, 'SIZEMOVEENDED', '');
+          if (dlg.ra && dlg.ra.ended) fire(key, 'WM', 0, 'RASIZEENDED', '');
+        }, 250);
       }).observe(client);
     }
     return dlg.fx + ' ' + dlg.fy + ' ' + Math.round(rect.width) + ' ' + Math.round(rect.height);
   };
+
+  /* ---- ResizingAdmin (oodResizableDialog.cpp) ----
+     Each edge of each control is pinned to an edge of the dialog or of another control:
+       [pinType, pinToEdge, pinToID]   pinType S stationary, P proportional, ML my left, MT my top
+     ra = { def: [left, top, right, bottom], ctrls: [[id, left, top, right, bottom], ...], min, max, ended }
+     The controls named by the program come first, in its order; then the others as created. */
+  function raRect(el) { return { left: el.offsetLeft, top: el.offsetTop, right: el.offsetLeft + el.offsetWidth, bottom: el.offsetTop + el.offsetHeight }; }
+  function raInit(dlg, spec) {
+    const ra = JSON.parse(spec), cl = dlg.client;
+    ra.orig = { left: 0, top: 0, right: cl.clientWidth, bottom: cl.clientHeight };
+    ra.items = [];
+    const seen = new Set();
+    const add = (id, edges) => { const c = dlg.ctrls.get(id); if (!c || seen.has(id)) return; seen.add(id);
+      ra.items.push({ id, c, edges, orig: raRect(c.el), cur: raRect(c.el) }); };
+    for (const row of ra.ctrls) add(row[0], row.slice(1));
+    for (const [id, c] of dlg.ctrls) if (!c.parentCtl) add(id, ra.def);
+    dlg.ra = ra;
+    cl.style.resize = 'both';
+    raLimits(dlg, ra.min, ra.max);
+    return '1';
+  }
+  function raLimits(dlg, min, max) {                           // "initial": the size the dialog has now; null: none
+    const ra = dlg.ra, cl = dlg.client; ra.min = min; ra.max = max;
+    const m = min === 'initial' ? [ra.orig.right, ra.orig.bottom] : min;
+    cl.style.minWidth = m ? m[0] + 'px' : '60px'; cl.style.minHeight = m ? m[1] + 'px' : '30px';
+    cl.style.maxWidth = max ? max[0] + 'px' : ''; cl.style.maxHeight = max ? max[1] + 'px' : '';
+  }
+  function raLayout(dlg) {
+    const ra = dlg.ra, cl = dlg.client;
+    const cur = { left: 0, top: 0, right: cl.clientWidth, bottom: cl.clientHeight };
+    const rects = (id) => { if (id) { const it = ra.items.find((x) => x.id === id); if (it) return [it.orig, it.cur]; } return [ra.orig, cur]; };
+    const coord = (edge, r) => ({ LEFT: r.left, TOP: r.top, RIGHT: r.right, BOTTOM: r.bottom, XCENTER: (r.left + r.right) / 2, YCENTER: (r.top + r.bottom) / 2 }[edge]);
+    const span = (side, r) => (side === 'left' || side === 'right' ? r.right - r.left : r.bottom - r.top);
+    const edge = (it, side, e) => {
+      const [pi, pc] = rects(e[2]);
+      if (e[0] === 'S') return it.orig[side] - coord(e[1], pi) + coord(e[1], pc);
+      if (e[0] === 'ML') return it.cur.left + (it.orig.right - it.orig.left);
+      if (e[0] === 'MT') return it.cur.top + (it.orig.bottom - it.orig.top);
+      const was = span(side, pi) || 1;                         // proportional: the same edge of the window pinned to
+      return pc[side] + (it.orig[side] - pi[side]) * (span(side, pc) / was);
+    };
+    for (const it of ra.items) {
+      it.cur = { left: 0, top: 0, right: 0, bottom: 0 };
+      it.cur.left = Math.trunc(edge(it, 'left', it.edges[0])); it.cur.top = Math.trunc(edge(it, 'top', it.edges[1]));
+      it.cur.right = Math.trunc(edge(it, 'right', it.edges[2])); it.cur.bottom = Math.trunc(edge(it, 'bottom', it.edges[3]));
+      const s = it.c.el.style;
+      s.left = it.cur.left + 'px'; s.top = it.cur.top + 'px';
+      s.width = Math.max(0, it.cur.right - it.cur.left) + 'px'; s.height = Math.max(0, it.cur.bottom - it.cur.top) + 'px';
+    }
+  }
 
   function wireDialog(dlg) {
     const el = dlg.el;
@@ -1255,6 +1310,9 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       if (c.kind === 'BUTTON') { c.main.textContent = ''; paintButton(c); }
       return '1';
     }
+    if (c && name === 'isDropList') return c.droplist ? '1' : '0';
+    if (name === 'ra.init') return raInit(dlg, String(a));
+    if (name === 'ra.limits') { if (!dlg.ra) return '0'; raLimits(dlg, JSON.parse(String(a)), JSON.parse(String(b))); return '1'; }
     if (name === 'mouseSub') return mouseSub(dlg, c, el, String(a));
     if (name === 'mouse') return mouseOp(dlg, c, el, String(a), b);
     if (c && name === 'bitmapPos') { c.bmpPos = [Number(a) || 0, Number(b) || 0]; paintButton(c); return '1'; }

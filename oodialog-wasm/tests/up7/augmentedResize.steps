@@ -1,0 +1,21 @@
+wait .ood-dlg
+sleep 500
+eval (() => { const d = document.querySelector('.ood-dlg'); window.__cl = [...d.querySelectorAll('*')].find(x => x.style.resize === 'both'); window.__a = (() => { const cl = window.__cl; const o = {}; [...cl.querySelectorAll(':scope > .ood-c')].forEach((e, i) => { o[i] = [e.offsetLeft, e.offsetTop, e.offsetWidth, e.offsetHeight]; }); return o; })(); window.__w = window.__cl.clientWidth; window.__h = window.__cl.clientHeight; return window.__w + 'x' + window.__h + ' controls ' + Object.keys(window.__a).length; })()
+expect window.__cl.style.minWidth === window.__w + 'px' && window.__cl.style.minHeight === window.__h + 'px' ==> True
+shot augmentedResize_before
+eval (() => { const cl = window.__cl; cl.style.width = (window.__w + 200) + 'px'; cl.style.height = (window.__h + 100) + 'px'; return 'larger'; })()
+sleep 600
+eval (() => { window.__b = (() => { const cl = window.__cl; const o = {}; [...cl.querySelectorAll(':scope > .ood-c')].forEach((e, i) => { o[i] = [e.offsetLeft, e.offsetTop, e.offsetWidth, e.offsetHeight]; }); return o; })(); return JSON.stringify(window.__b).slice(0, 300); })()
+expect (() => { const a = window.__a, b = window.__b; return [b[0][0] - a[0][0], b[0][1] - a[0][1], b[0][2] - a[0][2], b[0][3] - a[0][3]].join(','); })() ==> 0,0,200,100
+expect (() => { const a = window.__a, b = window.__b; return [b[1][0] - a[1][0], b[1][1] - a[1][1], b[1][2] - a[1][2], b[1][3] - a[1][3]].join(','); })() ==> 200,0,0,0
+expect (() => { const a = window.__a, b = window.__b; return [b[2][0] - a[2][0], b[2][1] - a[2][1], b[2][2] - a[2][2], b[2][3] - a[2][3]].join(','); })() ==> 0,100,200,0
+expect (() => { const a = window.__a, b = window.__b; const gapA = (a[2][0] + a[2][2]) - (a[6][0] + a[6][2]), gapB = (b[2][0] + b[2][2]) - (b[6][0] + b[6][2]); return gapA === gapB && b[6][2] > a[6][2] && b[6][3] === a[6][3]; })() ==> True
+expect (() => { const a = window.__a, b = window.__b; return (b[5][0] - b[6][0]) === (a[5][0] - a[6][0]) && b[5][2] === a[5][2]; })() ==> True
+expect (() => { const a = window.__a, b = window.__b; return [b[10][0] - a[10][0], b[10][1] - a[10][1], b[10][2] - a[10][2]].join(','); })() ==> 200,100,0
+shot augmentedResize_after
+eval (() => { const cl = window.__cl; cl.style.width = '200px'; cl.style.height = '100px'; return 'smaller'; })()
+sleep 600
+expect window.__cl.clientWidth === window.__w && window.__cl.clientHeight === window.__h ==> True
+expect (() => { const c = (() => { const cl = window.__cl; const o = {}; [...cl.querySelectorAll(':scope > .ood-c')].forEach((e, i) => { o[i] = [e.offsetLeft, e.offsetTop, e.offsetWidth, e.offsetHeight]; }); return o; })(); return JSON.stringify(c) === JSON.stringify(window.__a); })() ==> True
+expect (window.oodOut.join('').match(/(native function \w+|Error \d+\.\d+[^\n]*)/g) || []).length ==> 0
+click .ood-dlg button.ood-def

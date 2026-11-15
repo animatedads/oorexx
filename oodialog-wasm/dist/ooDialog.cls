@@ -8910,6 +8910,7 @@ syntax:
   if arg(4, "E") then self~parseIncludeFile(hFile)
   self~dlgID = .oodn~resolveId(self, resource)
   self~initCode = 0
+  if self~isA(.ResizingAdmin) then .oodn~raSetup(self)     -- (pbdlg_init: allocateResizeInfo, then defineSizing)
   return 0
 
 ::method setDefaultFont class

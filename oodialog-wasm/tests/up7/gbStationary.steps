@@ -1,0 +1,10 @@
+wait .ood-dlg
+sleep 500
+eval (() => { const d = document.querySelector('.ood-dlg'); window.__cl = [...d.querySelectorAll('*')].find(x => x.style.resize === 'both'); window.__a = (() => { const cl = window.__cl; const o = {}; [...cl.querySelectorAll(':scope > .ood-c')].forEach((e, i) => { o[i] = [e.offsetLeft, e.offsetTop, e.offsetWidth, e.offsetHeight]; }); return o; })(); window.__w = window.__cl.clientWidth; window.__h = window.__cl.clientHeight; return window.__w + 'x' + window.__h + ' min [' + window.__cl.style.minWidth + '] max [' + window.__cl.style.maxWidth + ' ' + window.__cl.style.maxHeight + ']'; })()
+expect window.__cl.style.minWidth + ' ' + (parseInt(window.__cl.style.maxWidth) > 300) ==> 60px true
+eval (() => { const cl = window.__cl; cl.style.width = (window.__w + 120) + 'px'; cl.style.height = (window.__h + 60) + 'px'; return 'larger'; })()
+sleep 600
+shot gbStationary_larger
+eval (() => { const a = window.__a, b = (() => { const cl = window.__cl; const o = {}; [...cl.querySelectorAll(':scope > .ood-c')].forEach((e, i) => { o[i] = [e.offsetLeft, e.offsetTop, e.offsetWidth, e.offsetHeight]; }); return o; })(); return Object.keys(a).map(k => [b[k][0] - a[k][0], b[k][1] - a[k][1], b[k][2] - a[k][2], b[k][3] - a[k][3]].join(',')).join(' | '); })()
+expect (window.oodOut.join('').match(/(native function \w+|Error \d+\.\d+[^\n]*)/g) || []).length ==> 0
+eval (() => { document.querySelector(".ood-dlg button.ood-def").click(); return "ok"; })()
