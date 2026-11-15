@@ -3388,15 +3388,67 @@ inline MessageResult interpreterCall(Variables &vars, const std::string &name, c
 // ADDRESS environment command: the interpreter that loaded this library runs the command with its own environment
 // handlers (same shell, same output, same RC); RC is then set in the compiled method's variables.
 // Not yet: ERROR / FAILURE conditions for a SIGNAL ON / CALL ON trap in the compiled method.
-inline void interpreterCommand(Variables &vars, const Value &environment, const Value &command) {
+// ADDRESS environment command WITH ...: one redirection of the command (INPUT, OUTPUT, ERROR), evaluated by the compiled
+// clause. kind: 0 not given, 'N' NORMAL, 'S' STEM (value: the stem, bound to a stem object the interpreter shares),
+// 'T' STREAM (value: the stream name), 'U' USING (value: the object). mode: 0, 'R' REPLACE, 'A' APPEND (OUTPUT, ERROR).
+struct CommandIo {
+    char kind = 0;
+    char mode = 0;
+    Value value = Value::string(std::string());
+};
+inline void interpreterCommand(Variables &vars, const Value &environment, const Value &command, const CommandIo *io = nullptr) {
     RexxThreadContext *t = rxobj::need();
     rxobj::LocalRefs temps(t);
     if (rxobj::bifStatsOn()) rxobj::bifStat("ADDRESS " + environment.bytes.str());
     // ERROR / FAILURE: when the activation traps them, the helper does too (CALL ON: the command completes, RC is set,
     // and its condition comes back), so the interpreter decides which one a command raises (FAILURE untrapped: ERROR).
     const int mode = MethodTraps::commandConditionMode() & 7;
-    static thread_local RexxRoutineObject routines[8] = {};
-    RexxRoutineObject &routine = routines[mode];
+    // WITH: the helper's ADDRESS VALUE gives the environment that redirection for its one command (a Stem object USING
+    // redirects as STEM does: rexxref ADDRESS), with the redirection objects as arguments 5 to 7.
+    std::string with;
+    if (io) {
+        static const char *const names[3] = {" input", " output", " error"};
+        for (int k = 0; k < 3; ++k) {
+            if (!io[k].kind) continue;
+            with += names[k];
+            if (io[k].mode == 'R') with += " replace";
+            else if (io[k].mode == 'A') with += " append";
+            const std::string arg = "(arg(" + std::to_string(5 + k) + "))";
+            switch (io[k].kind) {
+            case 'N': with += " normal"; break;
+            case 'T': with += " stream " + arg; break;
+            default: with += " using " + arg; break;   // 'S' (the stem object) and 'U'
+            }
+        }
+        if (!with.empty()) with = " with" + with;
+    }
+    // A command handler other than a shell (HOSTEMU's EXECIO ... STEM, a registered subcommand handler) reads and sets
+    // the variables of the activation it runs in (RexxVariablePool), the helper's: the compiled variables go in first
+    // (stems bound to stem objects the interpreter shares, the others by value) and the helper's come back after.
+    // The shells (sh, bash, ..., PATH, the default) run a process and touch no variable: nothing is carried for them.
+    std::string envName = environment.isObject() ? std::string("?") : environment.bytes.str();
+    for (char &c : envName) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    static const char *const shells[] = {"", "SYSTEM", "COMMAND", "SH", "BASH", "BSH", "CSH", "KSH", "TCSH", "ZSH", "PATH", "CMD"};
+    bool carry = true;
+    for (const char *shell : shells) if (envName == shell) carry = false;
+    std::vector<std::pair<std::string, Value>> carried;
+    if (carry) {
+        std::unordered_set<std::string> stems;
+        forEachVariable(vars, [&](const std::string &n, const Value &v) {
+            const std::size_t dot = n.find('.');
+            if (dot == std::string::npos) carried.emplace_back(n, v);
+            else stems.insert(n.substr(0, dot + 1));
+        });
+        vars.exposed.any([&](const char *e, std::size_t len) {
+            const std::string n(e, len);
+            if (!n.empty() && n.back() == '.') stems.insert(n);
+            else if (const Value *v = lookup(vars, n)) carried.emplace_back(n, *v);
+            return false;
+        });
+        for (const std::string &st : stems) carried.emplace_back(st, stemArg(vars, st));
+    }
+    static thread_local std::unordered_map<std::string, RexxRoutineObject> routines;
+    RexxRoutineObject &routine = routines[std::to_string(mode) + (carry ? "v" : "-") + with];
     if (routine == NULLOBJECT) {
         // (the activation's TRACE setting: TRACE OFF keeps a failing command quiet, as interpreted)
         std::string source = "use arg rx2cppEnvironment, rx2cppCommand, rx2cppTrace, rx2cppContext\ntrace value rx2cppTrace\nrx2cppQueue = .array~new\n";
@@ -3404,8 +3456,15 @@ inline void interpreterCommand(Variables &vars, const Value &environment, const 
         if (mode & 2) source += "call on failure name rx2cppQueued\n";
         if (mode & 4) source += "call on any name rx2cppQueued\n";
         // (.RS through the caller-context routine: the helper's own, with no environment symbol to look up)
-        source += "address value rx2cppEnvironment\nrx2cppCommand\n"
-                  "if rx2cppContext == .nil then return .array~of(rc, rx2cppQueue, .context~rs)\n"
+        if (carry)   // (a stem object assigned to a stem name: that variable is the shared stem)
+            source += "do rx2cppI = 1 to arg(8)~items; call value arg(8)[rx2cppI], arg(9)[rx2cppI]; end; drop rx2cppI\n";
+        source += "address value rx2cppEnvironment" + with + "\nrx2cppCommand\n";
+        if (carry)
+            source += "rx2cppVariables = .nil; if rx2cppContext == .nil then rx2cppVariables = .context~variables; "
+                      "else rx2cppVariables = rx2cppContext~call~variables\n"
+                      "if rx2cppContext == .nil then return .array~of(rc, rx2cppQueue, .context~rs, rx2cppVariables)\n"
+                      "return .array~of(rc, rx2cppQueue, rx2cppContext~call~rs, rx2cppVariables)\n";
+        source += "if rx2cppContext == .nil then return .array~of(rc, rx2cppQueue, .context~rs)\n"
                   "return .array~of(rc, rx2cppQueue, rx2cppContext~call~rs)\n"
                   "rx2cppQueued: if rx2cppQueue~append(condition('O')) > 0 then nop\nreturn\n";
         routine = rxobj::helperRoutine(t, t->NewRoutine("rx2cpp_address", source.c_str(), source.size()));
@@ -3413,11 +3472,32 @@ inline void interpreterCommand(Variables &vars, const Value &environment, const 
         rxobj::pinRef(t, (RexxObjectPtr)routine);
     }
     std::vector<rxobj::Arg> conv;
-    RexxArrayObject arr = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(4));
+    RexxArrayObject arr = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(carry ? 9 : with.empty() ? 4 : 7));
+    if (carry) {
+        RexxArrayObject names = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(carried.size()));
+        RexxArrayObject values = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(carried.size()));
+        std::size_t k = 0;
+        for (const auto &nv : carried) {
+            ++k;
+            t->ArrayPut(names, temps((RexxObjectPtr)t->NewString(nv.first.data(), nv.first.size())), k);
+            conv.clear(); EnvObject::convert({nv.second}, conv);   // (a stem: the interpreter's stem object it is bound to)
+            RexxObjectPtr o = conv[0].obj ? (RexxObjectPtr)conv[0].obj : temps((RexxObjectPtr)t->NewString(conv[0].bytes.data(), conv[0].bytes.size()));
+            t->ArrayPut(values, o, k);
+        }
+        t->ArrayPut(arr, (RexxObjectPtr)names, 8);
+        t->ArrayPut(arr, (RexxObjectPtr)values, 9);
+    }
     {
         RexxObjectPtr context = rxobj::callerContextRoutine(t);
         t->ArrayPut(arr, context != NULLOBJECT ? context : t->Nil(), 4);
     }
+    if (!with.empty())
+        for (int k = 0; k < 3; ++k) {
+            if (io[k].kind != 'S' && io[k].kind != 'T' && io[k].kind != 'U') continue;
+            conv.clear(); EnvObject::convert({io[k].value}, conv);   // (a stem: the interpreter's stem object it is bound to)
+            RexxObjectPtr o = conv[0].obj ? (RexxObjectPtr)conv[0].obj : temps((RexxObjectPtr)t->NewString(conv[0].bytes.data(), conv[0].bytes.size()));
+            t->ArrayPut(arr, o, 5 + k);
+        }
     std::size_t index = 0;
     const Value trace = Value::string(traceSetting());
     for (const Value *v : {&environment, &command, &trace}) {
@@ -3448,6 +3528,42 @@ inline void interpreterCommand(Variables &vars, const Value &environment, const 
     if (RexxObjectPtr status = t->ArrayAt((RexxArrayObject)r, 3)) if (ActivationScope *a = ActivationScope::current()) {
         std::int64_t n = 0;
         if (t->ObjectToInt64(status, &n)) a->returnStatus = static_cast<int>(n);
+    }
+    // the variables the handler left: set, dropped, new stems copied in (stems carried in were shared: already changed)
+    if (carry) if (RexxObjectPtr left = t->ArrayAt((RexxArrayObject)r, 4)) if (t->IsDirectory(left)) {
+        RexxDirectoryObject dir = (RexxDirectoryObject)left;
+        auto text = [&](RexxObjectPtr o) { RexxStringObject so = (RexxStringObject)temps((RexxObjectPtr)t->ObjectToString(o)); return std::string(t->StringData(so), t->StringLength(so)); };
+        auto valueOf = [&](RexxObjectPtr o) -> Value {
+            if (o == t->Nil()) return nil();
+            if (rxobj::isPlainString(t, o)) return Value::string(text(o));
+            return EnvObject::adopt((void *)rxobj::pinRef(t, o));
+        };
+        std::unordered_set<std::string> present;
+        RexxArrayObject names = (RexxArrayObject)temps(t->SendMessage0((RexxObjectPtr)dir, "ALLINDEXES"));
+        const std::size_t m = names ? t->ArraySize(names) : 0;
+        for (std::size_t k = 1; k <= m; ++k) {
+            RexxObjectPtr nameObj = t->ArrayAt(names, k);
+            if (nameObj == NULLOBJECT) continue;
+            const std::string n = text(nameObj);
+            present.insert(n);
+            if (n.compare(0, 6, "RX2CPP") == 0 || n == "RC") continue;   // (RC: the command's, set above)
+            RexxObjectPtr v = t->DirectoryAt(dir, n.c_str());
+            if (!n.empty() && n.back() == '.') {
+                bool shared = false;
+                for (const auto &nv : carried) if (nv.first == n) shared = true;
+                if (shared || v == NULLOBJECT) continue;
+                resetStem(vars, n);
+                RexxArrayObject tails = (RexxArrayObject)temps(t->SendMessage0(v, "ALLINDEXES"));
+                const std::size_t tn = tails ? t->ArraySize(tails) : 0;
+                for (std::size_t j = 1; j <= tn; ++j) {
+                    RexxObjectPtr tail = t->ArrayAt(tails, j);
+                    set(vars, n + text(tail), valueOf(temps(t->SendMessage1(v, "[]", tail))));
+                }
+            }
+            else if (v != NULLOBJECT) set(vars, n, valueOf(v));
+        }
+        for (const auto &nv : carried)
+            if (nv.first.back() != '.' && nv.first != "RC" && present.find(nv.first) == present.end()) drop(vars, nv.first);
     }
     // the command's condition, raised in this activation (SIGNAL ON: now; CALL ON: at the clause boundary)
     RexxObjectPtr queued = t->ArrayAt((RexxArrayObject)r, 2);
