@@ -34,14 +34,25 @@ const graphFixture = [
   'TABLE\tperson_ext\t0',
   'COLUMN\tperson_ext\tid\tINTEGER\t0\t1\t0'
 ].join('\n').replace(/\\t/g, '\t');
+let graphCurrentFixture = graphFixture;
+const graphAddedLinks = [];
 const model = {
+  async module_version() { return '0.1.3'; },
   async language(lang) { labLanguage = lang; return lang; },
   async databaseNames() { return [...databases.keys()].join('\n'); },
   async name() { return current; },
   async createDatabase(name) { assert.match(name, /^[A-Za-z_][A-Za-z0-9_]*$/); databases.set(name, new Map()); current = name; return true; },
   async openDatabase(name) { assert(databases.has(name)); current = name; return true; },
   async tableNames() { return [...databases.get(current).keys()].join('\n'); },
-  async graphLines(extra) { assert.equal(typeof extra, 'string'); return graphFixture + (extra ? '\n' + extra : ''); },
+  async graphLines(extra) { assert.equal(typeof extra, 'string'); return graphCurrentFixture + graphAddedLinks.join('') + (extra ? '\n' + extra : ''); },
+  async addRelationship(parent, parentColumn, child, childColumn, onDelete) {
+    assert.equal(typeof parent, 'string');
+    assert.equal(typeof onDelete, 'string');
+    const line = '\n' + ['FK', child, childColumn, parent, parentColumn, onDelete].join('\t');
+    assert(!graphAddedLinks.some((item) => item.includes('\t' + childColumn + '\t')), 'duplicate relation refused by mock');
+    graphAddedLinks.push(line);
+    return 'SUCCESS';
+  },
   async schema(name) { return databases.get(current).get(name).columns; },
   async createTable(name, columns) { assert(columns.includes('id\tINTEGER\t0\t1\t0')); databases.get(current).set(name, { columns, rows: [] }); return 'SUCCESS'; },
   async replaceEmptyTable(name, columns) {
@@ -163,9 +174,41 @@ async function until(predicate, message) {
   personBox.dispatchEvent(new window.Event('click', { bubbles: true }));
   await until(() => document.getElementById('dbTableName').value === 'person', 'table click selects schema editor');
   assert(document.getElementById('dbTabGraph').classList.contains('on'), 'graph tab remains active');
+
+  // Graph authoring: one pointer drag plus one click-to-connect fallback.
+  graphCurrentFixture += '\n' + [
+    'TABLE\tcustomers\t0', 'COLUMN\tcustomers\tid\tINTEGER\t0\t1\t0',
+    'TABLE\tsales\t0', 'COLUMN\tsales\tid\tINTEGER\t0\t1\t0',
+    'TABLE\tcustomers_sales\t0', 'COLUMN\tcustomers_sales\tcustomers_id\tINTEGER\t0\t0\t0',
+    'COLUMN\tcustomers_sales\tsales_id\tINTEGER\t0\t0\t0'
+  ].join('\n');
+  click('dbGraphRefresh');
+  await until(() => document.querySelector('.db-graph-column[data-db-table="customers"][data-db-column="id"]'), 'relationship source rendered');
+  document.getElementById('dbGraphOnDelete').value = 'CASCADE';
+  const source = document.querySelector('.db-graph-column[data-db-table="customers"][data-db-column="id"]');
+  const targetColumn = document.querySelector('.db-graph-column[data-db-table="customers_sales"][data-db-column="customers_id"]');
+  const schemaSvg = document.querySelector('.db-graph-svg');
+  Object.defineProperty(schemaSvg, 'viewBox', { value: { baseVal: { x: 0, y: 0, width: 1120, height: 900 } } });
+  function pointer(type, id, x) {
+    const event = new window.MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: 50 });
+    Object.defineProperty(event, 'pointerId', { value: id });
+    return event;
+  }
+  source.dispatchEvent(pointer('pointerdown', 7, 10));
+  window.dispatchEvent(pointer('pointermove', 7, 55));
+  targetColumn.dispatchEvent(pointer('pointerup', 7, 55));
+  await until(() => graphAddedLinks.length === 1, 'first FK persisted through model');
+  assert.equal(graphAddedLinks[0], '\nFK\tcustomers_sales\tcustomers_id\tcustomers\tid\tCASCADE', 'pointer drag respects ON DELETE');
+  await until(() => document.getElementById('dbGraph').textContent.includes('BEI LÖSCHEN CASCADE'), 'first link drawn in German');
+  document.getElementById('dbGraphOnDelete').value = 'RESTRICT';
+  document.querySelector('.db-graph-column[data-db-table="sales"][data-db-column="id"]').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  document.querySelector('.db-graph-column[data-db-table="customers_sales"][data-db-column="sales_id"]').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  await until(() => graphAddedLinks.length === 2, 'second FK persisted by selecting two columns');
+  assert.equal(graphAddedLinks[1], '\nFK\tcustomers_sales\tsales_id\tsales\tid\tRESTRICT', 'second link retains action');
+  await until(() => document.querySelectorAll('.db-graph-junction').length === 2, 'new link table becomes compact junction');
   click('dbTabSql');
   assert(!document.getElementById('dbSqlPanel').hidden, 'SQL tab restored');
   click('dbClose');
   assert(document.getElementById('dbOverlay').hidden);
-  console.log('DATABASE LAB DOM: 24 interaction checks PASS');
+  console.log('DATABASE LAB DOM: 30 interaction checks PASS');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

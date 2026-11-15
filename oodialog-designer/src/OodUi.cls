@@ -560,6 +560,14 @@ db.graphDelete = ON DELETE
 db.graphVia = via
 db.graphSelect = Select table
 db.graphRows = rows
+db.graphDragHint = Drag a primary or unique key to the target foreign-key column to create a relationship. Or select two columns.
+db.graphOnDelete = ON DELETE
+db.graphNeedKey = Start from a primary key or unique column
+db.graphChooseTarget = Choose a target column for
+db.graphDifferentTable = A relationship must connect two different tables
+db.graphLinked = Relationship created
+db.graphRequires = Graphical relationships require Database Lab model v0.1.3
+db.graphDropColumn = Drop onto a column in another table
 ::END
 
 ::resource strings.de
@@ -1068,4 +1076,12 @@ db.graphDelete = BEI LÖSCHEN
 db.graphVia = über
 db.graphSelect = Tabelle auswählen
 db.graphRows = Zeilen
+db.graphDragHint = Primärschlüssel oder eindeutigen Schlüssel auf die Fremdschlüssel-Zielspalte ziehen, um eine Beziehung zu erstellen. Oder zwei Spalten auswählen.
+db.graphOnDelete = BEI LÖSCHEN
+db.graphNeedKey = Beginnen Sie bei einem Primärschlüssel oder einer eindeutigen Spalte
+db.graphChooseTarget = Zielspalte wählen für
+db.graphDifferentTable = Eine Beziehung muss zwei verschiedene Tabellen verbinden
+db.graphLinked = Beziehung erstellt
+db.graphRequires = Grafische Beziehungen benötigen Datenbanklabor-Modell v0.1.3
+db.graphDropColumn = Auf einer Spalte in einer anderen Tabelle ablegen
 ::END
