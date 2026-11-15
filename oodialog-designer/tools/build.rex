@@ -54,6 +54,7 @@ call write "site/examples/Calculator.rex", .calcDesign~build~generate
 call write "site/examples/Threads.rex", .threadsDesign~build~generate
 call write "site/examples/Contacts.rex", .viewsDesign~build~generate
 call write "site/examples/Gadgets.rex", .gadgetsDesign~build~generate
+call write "site/examples/ContactsDE.rex", .contactsDeDesign~build~generate
 call log "build: done"
 return 0
 
@@ -96,3 +97,4 @@ write: procedure
 ::requires "threads.rex"
 ::requires "views.rex"
 ::requires "gadgets.rex"
+::requires "languages.rex"

@@ -14,11 +14,14 @@
     <option value="examples/Threads.rex">Threads and a timer</option>
     <option value="examples/Contacts.rex">Tabs, list view and menu</option>
     <option value="examples/Gadgets.rex">Tree view, track bar, date picker</option>
+    <option value="examples/ContactsDE.rex">Contacts in English and German (Strings…)</option>
   </select>
   <button id="btnOpen" title="Open a .rex made with the designer">Open…</button>
   <button id="btnSave" title="Download the program (it carries its design)">Save .rex</button>
   <button id="btnProgram" title="Show the ooRexx this design writes">Program</button>
   <button id="btnLibraries" title="Connect to a source of ooRexx libraries and use one">Libraries…</button>
+  <button id="btnStrings" title="The texts in each language: ::RESOURCE strings.&lt;language&gt;">Strings…</button>
+  <label id="langBox" hidden title="Show the design, and run it, in this language">Language <select id="lang"></select></label>
   <button id="btnTrace" title="Run it, recording each step of the event code with its variables">▶ Trace</button>
   <button id="btnRun" class="go" title="Run it with ooDialog on ooRexx/WASM">▶ Run</button>
   <button id="btnStop" disabled>Stop</button>
@@ -70,6 +73,19 @@
   </div>
 </section>
 <div id="menu" hidden></div>
+<div id="stringsView" hidden><div class="panel wide">
+  <div class="panelHead"><strong>Strings</strong> <span class="hint">each language is a <code>::RESOURCE strings.&lt;language&gt;</code> in the program, <code>key = text</code></span>
+    <button id="sClose">Close</button></div>
+  <div id="sOff" class="sbar">The texts are written into the program as they are.  To translate them, give the language they are in:
+    <input id="sBase" value="en" size="6" aria-label="Base language"> <button id="sOn">Make translatable</button></div>
+  <div id="sOn2" class="sbar" hidden>
+    <span>Add a language <input id="sNewLang" placeholder="de" size="6" aria-label="New language"> <button id="sAddLang">Add</button></span>
+    <span>New event string <input id="sNewKey" placeholder="msg.saved" size="14" aria-label="Key"> <input id="sNewText" placeholder="Saved %1 records" size="24" aria-label="Base text"> <button id="sAddKey">Add</button></span>
+  </div>
+  <div id="sTableWrap"><table id="sTable"></table></div>
+  <p class="hint" id="sHint">Edit a text in place.  An empty cell in a translation uses the base language's text.  In event code: <code>self~nls("key", value1, value2)</code>; %1, %2 in the text take the values.  ⇩ gives a translator the language as a plain <code>key = text</code> file; ⇧ reads it back.</p>
+  <input id="sFile" type="file" accept=".txt" hidden>
+</div></div>
 <div id="programView" hidden><div class="panel"><div class="panelHead"><strong id="programName"></strong>
   <button id="btnCopy">Copy</button><button id="btnProgramClose">Close</button></div><pre id="programText"></pre></div></div>
 <footer>Architecture: Tom Dyer.  Designer code: Claude (Opus 5.5).  ooDialog/WASM: Claude (Fable 5.2).

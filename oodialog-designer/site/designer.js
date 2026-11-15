@@ -21,6 +21,8 @@
     fx: 1.5, fy: 1.6,                           // pixels per dialog unit
     oodFiles: null, run: null, saveTimer: null,
     page: {},                                   // tab strip name -> the page shown while designing
+    lang: '',                                   // the language the design is shown and run in ('' = base)
+    view: null,                                 // the snapshot as drawn: texts in st.lang
   };
   window.oodDesigner = st;                      // for tests
 
@@ -65,7 +67,7 @@
     return f;
   }
   function parseSnapshot(text) {
-    const snap = { form: {}, vars: [], controls: [], events: [], methods: [], requires: [], shared: [] };
+    const snap = { form: {}, vars: [], controls: [], events: [], methods: [], requires: [], shared: [], languages: [], strings: [] };
     for (const line of text.split('\n')) {
       if (!line.trim()) continue;
       const f = fields(line);
@@ -76,6 +78,8 @@
       else if (f['*'] === 'method') snap.methods.push(f.name);
       else if (f['*'] === 'requires') snap.requires.push(f.file);
       else if (f['*'] === 'shared') snap.shared.push(f);
+      else if (f['*'] === 'languages') snap.languages = f.list.split(/\s+/).filter(Boolean);
+      else if (f['*'] === 'string') snap.strings.push(f.key);
     }
     return snap;
   }
@@ -141,11 +145,57 @@
     const text = await rx(() => st.d.snapshot());
     st.snap = parseSnapshot(String(text));
     if (st.sel !== 'form' && !findCtl(st.sel)) st.sel = 'form';
+    await makeView();
     drawForm(); drawProps(); drawVars(); drawLibs(); drawTree();
+    markOverflow();
     autosave();
   }
+  /* ---- languages: the design drawn in st.lang ------------------------------
+     The snapshot holds the base language's texts (they are the properties);
+     the form is drawn from a copy with st.lang's texts put in, so a German
+     label that is too long for its control shows as it will run. */
+  const base = () => st.snap.languages[0] || '';
+  async function makeView() {
+    const langs = st.snap.languages;
+    if (!langs.includes(st.lang) || st.lang === base()) st.lang = '';
+    const sel = $('lang'); sel.textContent = '';
+    for (const l of langs) sel.appendChild(Object.assign(D.createElement('option'), { value: l, textContent: l + (l === base() ? ' (base)' : '') }));
+    sel.value = st.lang || base(); $('langBox').hidden = langs.length < 2;
+    st.view = st.snap;
+    if (!st.lang) return;
+    const text = String(await rx(() => st.d.textsIn(st.lang)).catch(() => ''));
+    const view = JSON.parse(JSON.stringify(st.snap));
+    for (const line of text.split('\n')) {
+      const t = line.indexOf('\t'); if (t < 0) continue;
+      const key = line.slice(0, t), val = line.slice(t + 1);
+      const dot = key.lastIndexOf('.'), owner = key.slice(0, dot), prop = key.slice(dot + 1);
+      if (owner === 'form') { view.form.title = val; continue; }
+      const c = view.controls.find((x) => x.name.toLowerCase() === owner.toLowerCase());
+      if (c && prop === 'popup') { for (const o of view.controls) if (o.type === 'MENUITEM' && o.popup === c.popup && o !== c) o.popup = val; c.popup = val; }
+      else if (c) c[prop] = val;
+    }
+    st.view = view;
+  }
+  // texts too long for their controls, in the language shown
+  function markOverflow() {
+    const long = [];
+    D.querySelectorAll('#client .dz').forEach((el) => {
+      const body = el.firstChild; if (!body) return;
+      const over = body.scrollWidth > body.clientWidth + 1;
+      el.classList.toggle('overflow', over);
+      if (over) { long.push(el.dataset.name); el.title = el.dataset.name + ': the text is too long for the control in ' + (st.lang || base() || 'this language'); }
+    });
+    return long;
+  }
+  $('lang').addEventListener('change', async () => {
+    st.lang = $('lang').value === base() ? '' : $('lang').value;
+    await refresh();
+    const long = markOverflow();
+    status((st.lang ? 'Shown in ' + st.lang + '; ▶ Run runs in it too.' : 'Shown in the base language, ' + base() + '.') +
+      (long.length ? '  Too long here: ' + long.join(', ') + '.' : ''), long.length > 0);
+  });
   function drawForm() {
-    const f = st.snap.form, client = $('client');
+    const f = st.view.form, client = $('client');
     $('formTitle').textContent = f.title;
     client.style.width = Math.round(f.w * st.fx) + 'px';
     client.style.height = Math.round(f.h * st.fy) + 'px';
@@ -153,7 +203,7 @@
     $('form').classList.toggle('sel', st.sel === 'form');
     client.textContent = ''; $('tray').textContent = '';
     drawMenuBar();
-    for (const c of st.snap.controls) {
+    for (const c of st.view.controls) {
       if (st.kinds[c.type].nonvisual === '1') {
         const chip = D.createElement('span'); chip.className = 'chip' + (st.sel === c.name ? ' sel' : '');
         chip.textContent = c.type === 'TIMER' ? '⏱ ' + c.name + ' (' + c.interval + ' s)'
@@ -173,7 +223,7 @@
   function drawMenuBar() {
     let bar = $('formMenu');
     const popups = [];
-    for (const c of st.snap.controls) if (c.type === 'MENUITEM' && !popups.includes(c.popup)) popups.push(c.popup);
+    for (const c of st.view.controls) if (c.type === 'MENUITEM' && !popups.includes(c.popup)) popups.push(c.popup);
     if (!popups.length) { if (bar) bar.remove(); return; }
     if (!bar) { bar = D.createElement('div'); bar.id = 'formMenu'; $('form').insertBefore(bar, $('client')); }
     bar.textContent = '';
@@ -707,7 +757,7 @@
       const files = Object.assign({}, st.oodFiles, await OxLibraries.installedFiles(st.sess), { ['/home/rexx/' + name]: src });
       const add = (t) => { $('out').textContent += t; $('out').scrollTop = $('out').scrollHeight; };
       status(verb + ' ' + name + '…');
-      st.run = st.rexx.run({ args: [name], files, js: { page: true, worker: true }, onOut: add, onErr: add });
+      st.run = st.rexx.run({ args: st.lang ? [name, st.lang] : [name], files, js: { page: true, worker: true }, onOut: add, onErr: add });
       window.oodDone = null; $('btnStop').disabled = false;
       const r = await st.run.done;
       window.oodDone = { rc: r.rc };
@@ -718,6 +768,99 @@
   }
   st.runProgram = runProgram;
   $('btnStop').addEventListener('click', () => { if (st.run) st.run.stop(); });
+
+  /* ---- the Strings panel: one column per language ------------------------------ */
+  let stringsDraw = 0;
+  async function drawStrings() {
+    const on = st.snap.languages.length > 0, mine = ++stringsDraw;
+    $('sOff').hidden = on; $('sOn2').hidden = !on;
+    if (!on) { $('sTable').textContent = ''; return; }
+    const rows = String(await rx(() => st.d.stringLines())).split('\n');
+    if (mine !== stringsDraw) return;                 // a later redraw is on its way
+    const table = D.createElement('table'); table.id = 'sTable';
+    const langs = rows.shift().split('\t').slice(1);
+    const head = table.createTHead().insertRow();
+    head.appendChild(Object.assign(D.createElement('th'), { textContent: 'Key' }));
+    const missing = langs.map(() => 0);
+    const body = table.createTBody();
+    for (const row of rows) {
+      const f = row.split('\t'); const key = f[0], owner = f[f.length - 1];
+      const tr = body.insertRow(); tr.dataset.key = key;
+      const k = tr.insertCell(); k.className = 'key'; k.textContent = key;
+      k.appendChild(Object.assign(D.createElement('small'), { textContent: owner === 'event' ? 'event code' : owner }));
+      langs.forEach((lang, i) => {
+        const td = tr.insertCell(); const inp = D.createElement('input');
+        inp.value = f[i + 1]; inp.dataset.lang = lang; inp.setAttribute('aria-label', key + ' in ' + lang);
+        if (i > 0 && !f[i + 1]) { td.className = 'missing'; inp.placeholder = f[1]; missing[i]++; }
+        inp.addEventListener('change', async () => {
+          const ok = await rx(() => st.d.setString(lang, key, inp.value)).then(() => true, () => false);
+          if (ok) { await refresh(); await drawStrings(); markOverflow(); status(key + ' in ' + lang + (inp.value ? ' set.' : ': none; the base text is used.')); }
+        });
+        td.appendChild(inp);
+      });
+      const act = tr.insertCell(); act.className = 'act';
+      if (owner === 'event') {
+        const use = Object.assign(D.createElement('button'), { textContent: '↵ code', title: 'Put self~nls("' + key + '") into the code at the caret' });
+        use.addEventListener('click', () => {
+          if ($('code').disabled) { status('Pick an event or a method first.'); return; }
+          $('stringsView').hidden = true; insertText('self~nls("' + key + '")'); $('code').focus();
+        });
+        const del = Object.assign(D.createElement('button'), { textContent: '×', title: 'Remove ' + key });
+        del.addEventListener('click', async () => { await rx(() => st.d.removeString(key)).catch(() => {}); await refresh(); await drawStrings(); });
+        act.append(use, del);
+      }
+    }
+    langs.forEach((lang, i) => {
+      const th = D.createElement('th'); th.dataset.lang = lang;
+      th.append(lang, Object.assign(D.createElement('small'), { textContent: i === 0 ? ' base' : missing[i] ? '  ' + missing[i] + ' to do' : '  complete' }));
+      if (i > 0) {
+        const ex = Object.assign(D.createElement('button'), { textContent: '⇩', title: 'Download ' + lang + ' as key = text, for a translator' });
+        ex.addEventListener('click', () => exportLang(lang));
+        const im = Object.assign(D.createElement('button'), { textContent: '⇧', title: 'Read a translator\'s ' + lang + ' file back' });
+        im.addEventListener('click', () => { st.importLang = lang; $('sFile').click(); });
+        const rm = Object.assign(D.createElement('button'), { textContent: '×', title: 'Take ' + lang + ' out (its texts go)' });
+        rm.addEventListener('click', async () => {
+          if (rm.textContent === '×') { rm.textContent = 'Take ' + lang + ' out?'; return; }   // a second click: its texts go
+          await rx(() => st.d.setLanguages(langs.filter((l) => l !== lang).join(' '))).catch(() => {});
+          await refresh(); await drawStrings(); status(lang + ' taken out.');
+        });
+        th.append(ex, im, rm);
+      }
+      head.appendChild(th);
+    });
+    head.appendChild(D.createElement('th'));
+    $('sTable').replaceWith(table);
+  }
+  async function exportLang(lang) {
+    const text = String(await rx(() => st.d.exportLanguage(lang)));
+    const a = D.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
+    a.download = st.snap.form.name + '.' + lang + '.txt'; D.body.appendChild(a); a.click(); a.remove();
+    status('Saved ' + a.download + ': give it to the translator; ⇧ reads it back.');
+  }
+  $('sFile').addEventListener('change', async () => {
+    const f = $('sFile').files[0]; if (!f) return; $('sFile').value = '';
+    const text = await f.text();
+    const r = await rx(() => st.d.importLanguage(st.importLang, text)).catch(() => null);
+    if (r === null) return;
+    await refresh(); await drawStrings();
+    status(String(r).split('\n').join('; '));
+  });
+  $('btnStrings').addEventListener('click', async () => { await flushCode(); $('stringsView').hidden = false; await drawStrings(); });
+  $('sClose').addEventListener('click', () => { $('stringsView').hidden = true; });
+  $('sOn').addEventListener('click', async () => {
+    const ok = await rx(() => st.d.setLanguages($('sBase').value.trim())).then(() => true, () => false);
+    if (ok) { await refresh(); await drawStrings(); status('Translatable: the texts go into ::RESOURCE strings.' + base() + '; add a language.'); }
+  });
+  $('sAddLang').addEventListener('click', async () => {
+    const lang = $('sNewLang').value.trim(); if (!lang) return;
+    const ok = await rx(() => st.d.addLanguage(lang)).then(() => true, () => false);
+    if (ok) { $('sNewLang').value = ''; await refresh(); await drawStrings(); status('Added ' + lang + ': fill in its column, or ⇩ give it to a translator.'); }
+  });
+  $('sAddKey').addEventListener('click', async () => {
+    const key = $('sNewKey').value.trim(), text = $('sNewText').value;
+    const ok = await rx(() => st.d.addString(key, text)).then(() => true, () => false);
+    if (ok) { $('sNewKey').value = ''; $('sNewText').value = ''; await refresh(); await drawStrings(); status('Added ' + key + ': in event code, self~nls("' + key + '").'); }
+  });
 
   /* ---- Code | Graph | Both ------------------------------------------------- */
   D.querySelectorAll('#views button').forEach((b) => b.addEventListener('click', () => {

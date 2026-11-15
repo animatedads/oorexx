@@ -19,11 +19,11 @@
 
 ::class OodModule public mixinclass Object
 ::method module_version class
-  return "0.5.0"
+  return "0.6.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::method module_version
-  return "0.5.0"
+  return "0.6.0"
 ::method module_lastChanged
   return "2026-11-14"
 
@@ -188,10 +188,16 @@
 ::attribute methods         -- .Array of .Directory  NAME CODE: the form's own methods
 ::attribute requires        -- .Array of file names: the form's ::requires besides ooDialog.cls
 ::attribute shared          -- .Array of .Directory  NAME VALUE: the entries of self~sharedScope
+::attribute languages       -- .Array of language codes, the base first; empty: texts written as literals
+::attribute userStrings     -- .Array of .Directory  KEY TEXT: strings for event code, base language
+::attribute translations    -- .Directory  LANG -> .Directory KEY(upper) -> .Array(key, text)
 
 ::method init
-  expose form controls vars events methods requires shared
+  expose form controls vars events methods requires shared languages userStrings translations
   use strict arg name = "MyDialog"
+  languages = .array~new
+  userStrings = .array~new
+  translations = .directory~new
   form = .directory~new
   form["NAME"] = name
   form["TITLE"] = "My Dialog"
@@ -239,6 +245,7 @@
   if name~caselessEquals("sharedScope") then raise syntax 93.900 array("sharedScope is the form's shared scope")
   if name~left(3)~caselessEquals("on_") then raise syntax 93.900 array("Names starting on_ are the event methods'")
   if name~left(6)~caselessEquals("timer_") then raise syntax 93.900 array("Names starting timer_ are the timers'")
+  if name~left(3)~caselessEquals("nls") then raise syntax 93.900 array("Names starting nls are the language support's (self~nls)")
   return 0
 
 ::method newName
@@ -351,6 +358,7 @@
   do key over gone
     events~remove(key)
   end
+  self~dropStrings(c~name".")
   return 0
 
 -- Geometry is in dialog units, whole numbers, inside the form.
@@ -559,7 +567,7 @@
 -- Renaming moves the control's events to the new name and rewrites
 -- self~old in all the event and method code, where it is a whole symbol.
 ::method renameControl
-  expose events methods controls
+  expose events methods controls translations
   use strict arg c, newName
   old = c~name
   if old == newName then return 0
@@ -586,6 +594,18 @@
   do o over controls
     p = o~prop("page")
     if p~caselessPos(old":") = 1 then o~setProp("page", newName":"p~substr(length(old) + 2))
+  end
+  -- its strings' keys follow it, in every language
+  do lang over translations~allIndexes
+    t = translations[lang]
+    do k over t~allIndexes
+      if k~left(length(old) + 1) == (old".")~upper then do
+        entry = t[k]
+        t~remove(k)
+        newKey = newName || entry[1]~substr(length(old) + 1)
+        t[newKey~upper] = .array~of(newKey, entry[2])
+      end
+    end
   end
   c~name = newName
   return 0
@@ -868,13 +888,462 @@
   end
   return out~makeString("L", "0a"x)
 
+/* ---- languages: the texts as ::RESOURCE string tables ---------------------
+
+   ::RESOURCE is ooRexx's place for text that is not code, and its first use
+   is text in more than one language.  With languages set, the program keeps
+   every text the user sees in a ::RESOURCE strings.<lang> per language,
+   key = text, and asks self~nls(key) for it; the base language's table is
+   written from the design itself.  Keys: form.title, <control>.text (not an
+   entry field's: that is data), .items, .tabs, .columns, and <item>.popup
+   for the first item of each menu; event code's own strings have keys of
+   their own (self~nls("key", arg1, ...): %1, %2, ... in the text take the
+   arguments).  A key with no text in a language takes the base language's.
+   The language: the program's argument (rexx Calc.rex de), else the first
+   two letters of LANG, else the base. */
+
+-- The translatable properties of a control: prop names.
+::method nlsProps
+  use strict arg c
+  select
+    when c~type == "EDIT" then return ""
+    when c~type == "MENUITEM" then do
+      -- the menu's (popup's) name: on its first item; a separator has no text
+      p = "text"
+      if c~prop("text") == "-" then p = ""
+      if self~firstInPopup(c) then p = "popup" p
+      return p~strip
+    end
+    otherwise nop
+  end
+  out = ""
+  do p over "text items tabs columns"~makeArray(" ")
+    if c~kind~props~wordpos(p) > 0 then out = out p
+  end
+  return out~strip
+
+::method firstInPopup
+  expose controls
+  use strict arg c
+  do o over controls
+    if o~type == "MENUITEM", o~prop("popup") == c~prop("popup") then return o == c
+  end
+  return .false
+
+::method isNls
+  expose languages
+  return languages~items > 0
+
+::method baseLanguage
+  expose languages
+  if languages~items = 0 then return ""
+  return languages[1]
+
+-- languages: "en de fr", the base first.  Turning them on keeps every text;
+-- a language taken out loses its table; "" turns language support off.
+::method setLanguages
+  expose languages translations
+  use strict arg list
+  new = .array~new
+  do code over list~space~makeArray(" ")
+    code = .OodDesign~checkLanguage(code)
+    do n over new
+      if n == code then raise syntax 93.900 array("Language" code "is listed twice")
+    end
+    new~append(code)
+  end
+  if languages~items > 0, new~items > 0 then do
+    if new[1] \== languages[1] then
+      raise syntax 93.900 array("The base language is" languages[1]": its texts are the design's own")
+  end
+  do lang over translations~allIndexes
+    keep = .false
+    do n over new
+      if n == lang then keep = .true
+    end
+    if \keep then translations~remove(lang)
+  end
+  do n over new
+    if \translations~hasIndex(n), n \== new[1] then translations[n] = .directory~new
+  end
+  languages = new
+  return languages~makeString("L", " ")
+
+::method addLanguage
+  expose languages
+  use strict arg code
+  if languages~items = 0 then raise syntax 93.900 array("Set the base language first")
+  return self~setLanguages(languages~makeString("L", " ") code)
+
+-- a language code: two or three letters, perhaps _ and a region (de, de_AT, pt_BR)
+::method checkLanguage class
+  use strict arg code
+  parse var code lang "_" region
+  if lang~length < 2 | lang~length > 3 | \datatype(lang, "M") then
+    raise syntax 93.900 array("A language is 2 or 3 letters, perhaps with _ and a region: de, de_AT, pt_BR")
+  if code~pos("_") > 0 then do
+    if region~length < 2 | region~length > 3 | \datatype(region, "A") then
+      raise syntax 93.900 array("A language is 2 or 3 letters, perhaps with _ and a region: de, de_AT, pt_BR")
+    return lang~lower"_"region~upper
+  end
+  return lang~lower
+
+-- every key, in order: the form's, each control's, then the event code's
+::method nlsKeys
+  expose controls userStrings
+  keys = .array~of("form.title")
+  do c over controls
+    do p over self~nlsProps(c)~makeArray(" ")
+      if p \== "" then keys~append(c~name"."p)
+    end
+  end
+  do u over userStrings
+    keys~append(u["KEY"])
+  end
+  return keys
+
+-- key -> .array(control or "form" or .nil for a user key, prop)
+::method keyOwner
+  use strict arg key
+  parse var key owner "." prop
+  if key~caselessEquals("form.title") then return .array~of("form", "title")
+  do k over self~nlsKeys
+    if k~caselessEquals(key) then do
+      if self~userString(key) \== .nil then return .array~of(.nil, "")
+      return .array~of(self~control(owner)~name, prop~lower)
+    end
+  end
+  raise syntax 93.900 array("No string" key)
+
+::method userString
+  expose userStrings
+  use strict arg key
+  do u over userStrings
+    if u["KEY"]~caselessEquals(key) then return u
+  end
+  return .nil
+
+-- the base language's text of a key
+::method baseText
+  use strict arg key
+  o = self~keyOwner(key)
+  if o[1] == .nil then return self~userString(key)["TEXT"]
+  return self~getProp(o[1], o[2])
+
+-- a key's text in a language; "" when it has none there (the base's is used)
+::method stringIn
+  expose translations
+  use strict arg lang, key
+  if lang == self~baseLanguage then return self~baseText(key)
+  t = translations[lang]
+  if t == .nil then raise syntax 93.900 array("No language" lang)
+  e = t[key~upper]
+  if e == .nil then return ""
+  return e[2]
+
+-- A key's text in a language.  The base language's texts are the design's:
+-- setting one sets the property (or the event string).  "" in another
+-- language removes the text there.
+::method setString
+  expose translations
+  use strict arg lang, key, text
+  if text~pos("0a"x) > 0 | text~pos("0d"x) > 0 then raise syntax 93.900 array("A string is one line")
+  o = self~keyOwner(key)
+  if lang == self~baseLanguage then do
+    if o[1] == .nil then do
+      if text == "" then raise syntax 93.900 array("An event string needs its base text; remove it instead")
+      u = self~userString(key)
+      u["TEXT"] = text
+    end
+    else if o[2] == "popup" then do
+      was = self~getProp(o[1], "popup")
+      do c over self~controls
+        if c~type == "MENUITEM", c~prop("popup") == was then self~setProp(c~name, "popup", text)
+      end
+    end
+    else self~setProp(o[1], o[2], text)
+    return text
+  end
+  t = translations[lang]
+  if t == .nil then raise syntax 93.900 array("No language" lang)
+  realKey = self~nlsKeys~at(self~keyIndex(key))
+  if text == "" then t~remove(key~upper)
+  else t[key~upper] = .array~of(realKey, text)
+  return text
+
+::method keyIndex
+  use strict arg key
+  keys = self~nlsKeys
+  do i = 1 to keys~items
+    if keys[i]~caselessEquals(key) then return i
+  end
+  raise syntax 93.900 array("No string" key)
+
+-- a string for event code: self~nls(key) in any method
+::method addString
+  expose userStrings
+  use strict arg key, text
+  if \self~isNls then raise syntax 93.900 array("Set the languages first")
+  if key == "" | key~verify("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.") > 0 then
+    raise syntax 93.900 array("A key is letters, digits, _ and .: msg.noNumbers")
+  do k over self~nlsKeys
+    if k~caselessEquals(key) then raise syntax 93.900 array("Key" key "is in use")
+  end
+  if key~pos(".") > 0 then do
+    parse var key owner "."
+    taken = owner~caselessEquals("form")
+    do c over self~controls
+      if c~name~caselessEquals(owner) then taken = .true
+    end
+    if taken then raise syntax 93.900 array("Keys" owner".… are" owner"'s own")
+  end
+  if text == "" then raise syntax 93.900 array("An event string needs its base text")
+  d = .directory~new
+  d["KEY"] = key
+  d["TEXT"] = text
+  userStrings~append(d)
+  return key
+
+::method removeString
+  expose userStrings
+  use strict arg key
+  u = self~userString(key)
+  if u == .nil then raise syntax 93.900 array("Only event strings are removed; a control's go with it")
+  userStrings~removeItem(u)
+  self~dropStrings(key, .true)
+  return 0
+
+-- translations of a key, or of every key starting with prefix
+::method dropStrings
+  expose translations
+  use strict arg prefix, whole = .false
+  do lang over translations~allIndexes
+    t = translations[lang]
+    do k over t~allIndexes
+      if whole then do
+        if k == prefix~upper then t~remove(k)
+      end
+      else if k~left(length(prefix)) == prefix~upper then t~remove(k)
+    end
+  end
+  return 0
+
+-- the string table for the editor: a line of languages, then per key
+-- key TAB base TAB lang2 ... (TAB separated; "" where there is none)
+::method stringLines
+  expose languages
+  out = .array~new
+  out~append("languages" || "09"x || languages~makeString("L", "09"x))
+  do key over self~nlsKeys
+    line = key
+    do lang over languages
+      line = line || "09"x || self~stringIn(lang, key)
+    end
+    o = self~keyOwner(key)
+    if o[1] == .nil then line = line || "09"x || "event"
+    else line = line || "09"x || o[1]
+    out~append(line)
+  end
+  return out~makeString("L", "0a"x)
+
+-- every key's text in a language, the base's where it has none: for drawing
+-- the design in that language
+::method textsIn
+  use strict arg lang
+  out = .array~new
+  do key over self~nlsKeys
+    t = ""
+    if lang \== self~baseLanguage then t = self~stringIn(lang, key)
+    if t == "" then t = self~baseText(key)
+    out~append(key || "09"x || t)
+  end
+  return out~makeString("L", "0a"x)
+
+-- A language as a file for a translator: key = text, each with the base
+-- text above it; a key not yet translated has nothing after its =.
+::method exportLanguage
+  expose form
+  use strict arg lang
+  base = self~baseLanguage
+  out = .array~new
+  out~append("--" form["NAME"]": strings in" lang "(base" base")")
+  out~append("-- Put the" lang "text after each =.  & marks the key letter (&File).")
+  out~append("-- %1, %2 ... stand for values the program puts in.  A key left empty uses the" base "text.")
+  do key over self~nlsKeys
+    out~append("")
+    out~append("--" base":" self~baseText(key))
+    t = ""
+    if lang \== base then t = self~stringIn(lang, key)
+    else t = self~baseText(key)
+    if t == "" then out~append(key "=")
+    else out~append(key "=" t)
+  end
+  return out~makeString("L", "0a"x) || "0a"x
+
+-- Read a translator's file back.  Answers what it did, one line each:
+-- the count set, and any key the design does not have.
+::method importLanguage
+  use strict arg lang, text
+  if lang == self~baseLanguage then raise syntax 93.900 array("The base language's texts are edited in the design")
+  n = 0
+  unknown = .array~new
+  do l over text~changeStr("0d0a"x, "0a"x)~makeArray("0a"x)
+    parse var l key "=" t
+    key = key~strip
+    if key == "" | key~left(2) == "--" | l~pos("=") = 0 then iterate
+    t = t~strip("L")
+    if self~keyIndexOrZero(key) = 0 then do
+      unknown~append(key)
+      iterate
+    end
+    self~setString(lang, key, t)
+    if t \== "" then n = n + 1
+  end
+  out = .array~of(n "strings set in" lang)
+  do k over unknown
+    out~append("not in the design:" k)
+  end
+  return out~makeString("L", "0a"x)
+
+::method keyIndexOrZero
+  use strict arg key
+  keys = self~nlsKeys
+  do i = 1 to keys~items
+    if keys[i]~caselessEquals(key) then return i
+  end
+  return 0
+
+-- one ::RESOURCE strings.<lang>: the base language's from the design, the
+-- others' from their translations, in key order
+::method resourceTable
+  use strict arg lang
+  out = .array~new
+  do key over self~nlsKeys
+    -- the base table has every key, an empty text too; another table only
+    -- the texts it has
+    if lang == self~baseLanguage then out~append((key "=" self~baseText(key))~strip("T"))
+    else do
+      t = self~stringIn(lang, key)
+      if t \== "" then out~append(key "=" t)
+    end
+  end
+  return out
+
+-- The language support written into the program (in the dialog's class).
+::method nlsMethods
+  expose form
+  use strict arg out
+  base = self~baseLanguage
+  out~append("-- Language support: texts are in ::RESOURCE strings.<language> at the end")
+  out~append("-- (key = text).  self~nls(key, a1, a2, ...) gives a key's text with %1,")
+  out~append("-- %2, ... replaced by a1, a2, ...; a key a language lacks takes" oodRx(base)"'s.")
+  out~append("::attribute nlsChosen class      -- the program's argument: rexx" form["NAME"]".rex de")
+  out~append("::attribute nlsLanguage get")
+  out~append("")
+  out~append("::method nlsUse unguarded")
+  out~append("  expose nlsTable nlsLanguage")
+  out~append("  use strict arg lang = """"")
+  out~append("  if lang == .nil then lang = """"")
+  out~append("  if lang == """" then do var over .array~of(""LC_ALL"", ""LC_MESSAGES"", ""LANG"")")
+  out~append("    lang = value(var, , ""ENVIRONMENT"")   -- C and POSIX name no language")
+  out~append("    if lang \== """", lang~upper \== ""C"", lang~upper \== ""POSIX"" then leave")
+  out~append("    lang = """"")
+  out~append("  end")
+  out~append("  parse var lang lang ""."" .               -- de_DE.UTF-8: de_DE")
+  out~append("  lang = lang~changeStr(""-"", ""_"")          -- de-AT: de_AT")
+  out~append("  if .resources[(""STRINGS.""lang)~upper] == .nil then lang = lang~left(2)   -- de_AT: else de")
+  out~append("  if .resources[(""STRINGS.""lang)~upper] == .nil then lang =" oodRx(base))
+  out~append("  nlsLanguage = lang")
+  out~append("  nlsTable = .directory~new")
+  out~append("  parse source os .")
+  out~append("  tables = .array~of(" || oodRx(base) || ")")
+  out~append("  if lang \==" oodRx(base) "then tables~append(lang)")
+  out~append("  do table over tables")
+  out~append("    do line over .resources[(""STRINGS.""table)~upper]")
+  out~append("      parse var line key ""="" text")
+  out~append("      key = key~strip")
+  out~append("      if key == """" | key~left(2) == ""--"" then iterate")
+  out~append("      text = text~strip(""L"")")
+  out~append("      if text == """", table \==" oodRx(base) "then iterate   -- untranslated: the base's")
+  out~append("      -- ooDialog on Windows takes ANSI text: the file is UTF-8")
+  out~append("      if os~caselessPos(""Windows"") = 1 then text = nlsAnsi(text)")
+  out~append("      nlsTable[key~upper] = text")
+  out~append("    end")
+  out~append("  end")
+  out~append("")
+  out~append("::method nls unguarded")
+  out~append("  expose nlsTable")
+  out~append("  use strict arg key, ...")
+  out~append("  text = nlsTable[key~upper]")
+  out~append("  if text == .nil then return ""<""key"">""     -- a missing key shows itself")
+  out~append("  if arg() = 1 then return text")
+  out~append("  -- one pass: %n becomes argument n+1; what goes in is not looked at again")
+  out~append("  out = """"")
+  out~append("  i = 1")
+  out~append("  do forever")
+  out~append("    p = text~pos(""%"", i)")
+  out~append("    if p = 0 then leave")
+  out~append("    n = text~substr(p + 1)~verify(""0123456789"") - 1")
+  out~append("    if n < 0 then n = text~length - p")
+  out~append("    k = text~substr(p + 1, n)")
+  out~append("    if n > 0, k > 0, k < arg() then do")
+  out~append("      out = out || text~substr(i, p - i) || arg(k + 1)")
+  out~append("      i = p + 1 + n")
+  out~append("    end")
+  out~append("    else do")
+  out~append("      out = out || text~substr(i, p - i + 1)")
+  out~append("      i = p + 1")
+  out~append("    end")
+  out~append("  end")
+  out~append("  return out || text~substr(i)")
+  out~append("")
+  return out
+
+-- the routine nlsAnsi: UTF-8 to Windows-1252 (Western European) for ooDialog
+-- on Windows; a character it has not is ?
+::method nlsRoutine
+  use strict arg out
+  out~append("::routine nlsAnsi")
+  out~append("  use strict arg s")
+  out~append("  if s~verify(xrange(""00""x, ""7F""x)) = 0 then return s")
+  out~append("  special = ""E282AC 80 E2809A 82 C692 83 E2809E 84 E280A6 85 E280A0 86 E280A1 87""")
+  out~append("  special = special ""CB86 88 E280B0 89 C5A0 8A E280B9 8B C592 8C C5BD 8E E28098 91 E28099 92""")
+  out~append("  special = special ""E2809C 93 E2809D 94 E280A2 95 E28093 96 E28094 97 CB9C 98 E284A2 99""")
+  out~append("  special = special ""C5A1 9A E280BA 9B C593 9C C5BE 9E C5B8 9F""")
+  out~append("  out = """"")
+  out~append("  i = 1")
+  out~append("  do while i <= s~length")
+  out~append("    c = s~subchar(i)")
+  out~append("    b = c~c2d")
+  out~append("    select")
+  out~append("      when b < 128 then do; out = out || c; i = i + 1; end")
+  out~append("      when b = 194 | b = 195 then do   -- C2 xx, C3 xx: U+0080 to U+00FF")
+  out~append("        out = out || d2c(s~subchar(i + 1)~c2d + 64 * (b - 194))")
+  out~append("        i = i + 2")
+  out~append("      end")
+  out~append("      otherwise do")
+  out~append("        n = 2")
+  out~append("        if b >= 224 then n = 3")
+  out~append("        if b >= 240 then n = 4")
+  out~append("        k = wordpos(s~substr(i, n)~c2x, special)")
+  out~append("        if k > 0 then out = out || special~word(k + 1)~x2c")
+  out~append("        else out = out || ""?""")
+  out~append("        i = i + n")
+  out~append("      end")
+  out~append("    end")
+  out~append("  end")
+  out~append("  return out")
+  out~append("")
+  return out
+
 /* ---- the design as text (::RESOURCE oodDesign) ---------------------------- */
 
 ::method resourceLines
-  expose form controls vars events methods requires shared
+  expose form controls vars events methods requires shared languages userStrings
   out = .array~new
   out~append("designer version="self~module_version)
   out~append("form name="oodQ(form["NAME"]) "title="oodQ(form["TITLE"]) "w="form["W"] "h="form["H"] "style="oodQ(form["STYLE"]))
+  if languages~items > 0 then out~append("languages list="oodQ(languages~makeString("L", " ")))
   do r over requires
     out~append("requires file="oodQ(r))
   end
@@ -894,6 +1363,9 @@
   end
   do m over methods
     out~append("method name="m["NAME"])
+  end
+  do u over userStrings
+    out~append("string key="u["KEY"])   -- its texts: ::RESOURCE strings.<language>
   end
   do key over self~eventOrder
     e = events[key]
@@ -925,17 +1397,28 @@
   use strict arg text
   lines = text~changeStr("0d0a"x, "0a"x)~makeArray("0a"x)
   res = .array~new
+  tables = .directory~new      -- language -> lines of ::RESOURCE strings.<language>
   inRes = .false
+  inTable = .nil
   do l over lines
     s = l~strip
     if inRes then do
       if s~caselessEquals("::END") then inRes = .false
       else res~append(l)
     end
+    else if inTable \== .nil then do
+      if s~caselessEquals("::END") then inTable = .nil
+      else inTable~append(l)
+    end
     else do
       if s~upper~space == "::RESOURCE OODDESIGN" then inRes = .true
+      else if s~upper~word(1) == "::RESOURCE", s~word(2)~upper~left(8) == "STRINGS." then do
+        inTable = .array~new
+        tables[s~word(2)~substr(9)~lower] = inTable
+      end
     end
   end
+  userKeys = .array~new
   if res~items = 0 then raise syntax 93.900 array("No ::RESOURCE oodDesign in this program")
   d = .nil
   evs = .array~new
@@ -956,12 +1439,40 @@
       when f["*"] == "shared" then d~setShared(f["NAME"], oodAt(f, "VALUE"))
       when f["*"] == "control" then d~readControl(f)
       when f["*"] == "event" then evs~append(f)
+      when f["*"] == "languages" then d~setLanguages(f["LIST"])
+      when f["*"] == "string" then userKeys~append(f["KEY"])
       when f["*"] == "method" then do
         code = oodMethodBody(lines, f["NAME"])
         if code == .nil then raise syntax 93.900 array("Method" f["NAME"] "is missing")
         d~setMethod(f["NAME"], code)
       end
       otherwise raise syntax 93.900 array("Unknown design line:" l)
+    end
+  end
+  -- the strings: event strings' keys from the design, every text from the
+  -- tables (an edit made to a table by hand is kept)
+  if d~isNls then do
+    base = d~baseLanguage
+    texts = .directory~new
+    do l over oodTableOr(tables, base)
+      parse var l key "=" t
+      key = key~strip
+      if key \== "", key~left(2) \== "--", l~pos("=") > 0 then texts[key~upper] = t~strip("L")
+    end
+    do k over userKeys
+      d~addString(k, oodAt(texts, k~upper))
+    end
+    do k over d~nlsKeys
+      if texts~hasIndex(k~upper), texts[k~upper] \== d~baseText(k) then d~setString(base, k, texts[k~upper])
+    end
+    do lang over d~languages
+      if lang == base then iterate
+      do l over oodTableOr(tables, lang)
+        parse var l key "=" t
+        key = key~strip
+        if key == "" | key~left(2) == "--" | l~pos("=") = 0 then iterate
+        if d~keyIndexOrZero(key) > 0 then d~setString(lang, key, t~strip("L"))
+      end
     end
   end
   -- event code: the body of each event's method, less what the generator adds
@@ -993,14 +1504,19 @@
 -- The program.  filter (optional) may change each method's code before it
 -- is written: a trace run's probes (OodTraceFilter, OodGraph.cls).
 ::method generate
-  expose form controls vars events methods requires shared
+  expose form controls vars events methods requires shared languages
   use strict arg filter = .nil
   nm = form["NAME"]
+  nls = self~isNls
   out = .array~new
   out~append("/*" nm".rex -- an ooDialog program made with the ooDialog Designer" self~module_version)
   out~append("   Design: the ::RESOURCE oodDesign at the end.  The designer writes this")
   out~append("   whole file; what you type is the body of each event method.")
   out~append("   ooDialog Designer -- architecture: Tom Dyer; code: Claude (Opus 5.5). */")
+  if nls then do
+    out~append("parse arg lang                     -- the language: de, fr_CA, ...")
+    out~append("."nm"~nlsChosen = lang~strip")
+  end
   out~append("dlg = ."nm"~new")
   out~append("if dlg~initCode \= 0 then return dlg~initCode")
   out~append("return dlg~execute(""SHOWTOP"")")
@@ -1023,6 +1539,7 @@
   -- init: variables, the dialog template, data attributes' first values
   out~append("::method init")
   out~append("  forward class (super) continue")
+  if nls then out~append("  self~nlsUse(self~class~nlsChosen)")
   if shared~items > 0 then do
     out~append("  self~sharedScope = .directory~new")
     do e over shared
@@ -1036,7 +1553,7 @@
   do c over controls
     if c~type == "TIMER" then out~append("  self~"c~name"_enabled =" oodBool(c~prop("enabled")))
   end
-  out~append("  self~create(0, 0," form["W"]"," form["H"]"," oodRx(form["TITLE"])"," oodRx(form["STYLE"])")")
+  out~append("  self~create(0, 0," form["W"]"," form["H"]"," self~textExpr("form", "title", form["TITLE"])"," oodRx(form["STYLE"])")")
   do c over controls
     if c~kind~args~wordpos("attr") = 0 then iterate
     if c~type == "EDIT" then out~append("  self~"c~name"_data =" oodRx(c~prop("text")))
@@ -1050,7 +1567,7 @@
     if k~nonvisual then iterate
     line = "  self~"k~create"("c~dlgId"," c~x"," c~y"," c~w"," c~h"," oodRx(c~opts)
     do a over k~args~makeArray(" ")
-      if a == "text" then line = line"," oodRx(c~prop("text"))
+      if a == "text" then line = line"," self~textExpr(c, "text", c~prop("text"))
       if a == "attr" then line = line"," oodRx(c~name"_data")
     end
     out~append(line")")
@@ -1077,7 +1594,12 @@
   do c over controls
     if c~type == "LISTBOX" | c~type == "COMBOBOX" then do
       if c~prop("items") \== "" then do
-        do item over c~prop("items")~makeArray("|")
+        if nls then do
+          out~append("  do item over self~nls("oodRx(c~name".items")")~makeArray(""|"")")
+          out~append("    self~"c~name"~add(item)")
+          out~append("  end")
+        end
+        else do item over c~prop("items")~makeArray("|")
           out~append("  self~"c~name"~add("oodRx(item)")")
         end
       end
@@ -1089,7 +1611,16 @@
     if c~type == "LISTVIEW" then do
       if c~prop("exstyles") \== "" then out~append("  self~"c~name"~addExtendedStyle("oodRx(c~prop("exstyles"))")")
       i = 0
-      do col over c~prop("columns")~makeArray("|")
+      if nls, c~prop("columns") \== "" then do
+        out~append("  i = 0")
+        out~append("  do col over self~nls("oodRx(c~name".columns")")~makeArray(""|"")")
+        out~append("    parse var col title "":"" width")
+        out~append("    if width == """" then width = 50")
+        out~append("    self~"c~name"~insertColumn(i, title, width)")
+        out~append("    i = i + 1")
+        out~append("  end")
+      end
+      else do col over c~prop("columns")~makeArray("|")
         parse var col title ":" width
         if width == "" then width = 50
         out~append("  self~"c~name"~insertColumn("i"," oodRx(title)"," width")")
@@ -1130,7 +1661,12 @@
         if line \== "" then line = line", "
         line = line || oodRx(t)
       end
-      out~append("  self~"c~name"~addSequence("line")")
+      if nls then do
+        out~append("  do t over self~nls("oodRx(c~name".tabs")")~makeArray(""|"")")
+        out~append("    self~"c~name"~addSequence(t)")
+        out~append("  end")
+      end
+      else out~append("  self~"c~name"~addSequence("line")")
       if self~pageMembers(c)~items > 0 then out~append("  self~"c~name"_show(1)")
     end
   end
@@ -1197,6 +1733,7 @@
     out~append("  end")
     out~append("")
   end
+  if nls then self~nlsMethods(out)
   -- the form's own methods
   do m over methods
     out~append("::method" m["NAME"] "unguarded")
@@ -1237,6 +1774,16 @@
   if filter \== .nil then do l over filter~extraLines
     out~append(l)
   end
+  if nls then do
+    self~nlsRoutine(out)
+    do lang over languages
+      out~append("::resource strings."lang)
+      do l over self~resourceTable(lang)
+        out~append(l)
+      end
+      out~append("::END")
+    end
+  end
   out~append("::resource oodDesign")
   do l over self~resourceLines
     out~append(l)
@@ -1257,6 +1804,13 @@
 -- The menu bar: menu items, in creation order, grouped by the menu (popup)
 -- each is in; an item whose text is - is a separator.  Attached in
 -- initDialog; upstream keeps it as self~menuBar.
+-- a text in the program: self~nls(key) with languages, else the literal
+::method textExpr
+  use strict arg owner, prop, text
+  if \self~isNls then return oodRx(text)
+  if owner~isA(.String) then return "self~nls("oodRx(owner"."prop)")"
+  return "self~nls("oodRx(owner~name"."prop)")"
+
 ::method generateMenu
   expose controls events
   use strict arg out
@@ -1278,7 +1832,7 @@
     pn = pn + 1
     flags = ""
     if pn = popups~items then flags = "END"
-    out~append("  menu~addPopup("9000 + pn"," oodRx(p)"," oodRx(flags)")")
+    out~append("  menu~addPopup("9000 + pn"," self~textExpr(items[p][1], "popup", p)"," oodRx(flags)")")
     list = items[p]
     do i = 1 to list~items
       c = list[i]
@@ -1289,7 +1843,7 @@
       flags = flags~strip
       if c~prop("text") == "-" then out~append("  menu~addSeparator("c~id"," oodRx(flags)")")
       else do
-        line = "  menu~addItem("c~id"," oodRx(c~prop("text"))"," oodRx(flags)
+        line = "  menu~addItem("c~id"," self~textExpr(c, "text", c~prop("text"))"," oodRx(flags)
         if events~hasIndex((c~name".CLICKED")~upper) then line = line"," oodRx(self~methodName(c~name, "CLICKED"))
         out~append(line")")
       end
@@ -1375,6 +1929,13 @@
   return v
 
 -- a Rexx string literal
+-- a language's table lines, or none
+::routine oodTableOr public
+  use strict arg tables, lang
+  t = tables[lang~lower]
+  if t == .nil then return .array~new
+  return t
+
 ::routine oodRx public
   use strict arg v
   return '"' || v~string~changeStr('"', '""') || '"'

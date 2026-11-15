@@ -4,7 +4,8 @@
    Architecture: Tom Dyer.  Code: Claude (Opus 5.5).
 
    usage:  rexx wincheck.rex DIR
-     DIR holds Calculator.rex, Threads.rex and Contacts.rex (site/examples).
+     DIR holds Calculator.rex, Threads.rex, Contacts.rex and ContactsDE.rex
+     (site/examples).
    Each program is loaded without its main code (Package~loadPackage with
    the source), its dialog made and shown with executeAsync, and its
    buttons pressed with Button~click (BM_CLICK, as a mouse click), so the
@@ -86,13 +87,31 @@ call press dlg, "btnClose"
 dlg~endAsyncExecution
 call check "Contacts: closed", dlg~finished == .true
 
+/* ---- ContactsDE: the same in German, from ::RESOURCE strings.de ---- */
+dlg = loadForm(dir, "ContactsDE", "de")
+call check "ContactsDE: dialog made", dlg~initCode = 0
+call check "ContactsDE: the language is de", dlg~nlsLanguage == "de"
+call check "ContactsDE: dialog shown", dlg~executeAsync(, "SHOWTOP") = 0
+call SysSleep 0.5
+-- ooDialog on Windows takes ANSI (Windows-1252): the program turns the
+-- UTF-8 of its file into that; ooDialog/WASM takes the UTF-8 as it is
+sz = "C39F"x
+if .rexxInfo~platform~caselessPos("Windows") = 1 then sz = "DF"x
+call check "ContactsDE: the button's German text, with its sharp s", dlg~btnClose~getText == "Schlie" || sz || "en"
+dlg~on_mnuAdd_clicked
+call check "ContactsDE: an event string with %1, in German", dlg~lblInfo~getText == "5 Personen"
+call check "ContactsDE: a key German lacks takes English", dlg~nls("lblInfo.text") == ""
+call press dlg, "btnClose"
+dlg~endAsyncExecution
+call check "ContactsDE: closed", dlg~finished == .true
+
 say "wincheck:" checks - fails "of" checks "checks passed"
 if fails > 0 then return 1
 return 0
 
 /* the form class of DIR/name.rex, its main code left out */
 loadForm: procedure
-  use strict arg lfDir, lfName
+  use strict arg lfDir, lfName, lfLang = ""
   lfFile = lfDir || .File~separator || lfName".rex"
   lfIn = .stream~new(lfFile)
   if lfIn~query("exists") == "" then do
@@ -117,6 +136,7 @@ loadForm: procedure
     say "wincheck: no class" lfName "in" lfFile
     exit 2
   end
+  if lfLang \== "" then lfCls~nlsChosen = lfLang   -- what its main code does with its argument
   return lfCls~new
 
 /* a click on a button, as a user's: BM_CLICK, then a moment for the event */

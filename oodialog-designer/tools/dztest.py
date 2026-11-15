@@ -3,7 +3,7 @@
 Architecture: Tom Dyer.  Code: Claude (Opus 5.5).
 
 usage: python3 tools/dztest.py [scenario ...]     (after rexx tools/build.rex)
-Scenarios: hand, calculator, threads, refuse, saveopen, views, gadgets, libraries, graph, trace (default: all).
+Scenarios: hand, calculator, threads, refuse, saveopen, views, gadgets, libraries, graph, trace, languages (default: all).
 Python is used here only because this tool drives a browser (Playwright);
 the designer's model, generator and reader are ooRexx (src/OodDesigner.cls)
 and are tested without a browser by tests/t01_model.rex.  Progress is logged
@@ -315,7 +315,78 @@ def sc_trace(pg):
     expect_in('step 2, after the run', 'step 2 of', pg.inner_text('#tWhere'))
     pg.click('#tClose'); expect('trace closed', pg.is_visible('#traceBar'), False)
 
-SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views, 'gadgets': sc_gadgets, 'libraries': sc_libraries, 'graph': sc_graph, 'trace': sc_trace}
+def s_cell(pg, key, lang):
+    return pg.locator(f'#sTable tr[data-key="{key}"] input[data-lang="{lang}"]')
+def s_set(pg, key, lang, text):
+    c = s_cell(pg, key, lang); c.fill(text); c.press('Enter'); settle(pg, 700)
+
+def sc_languages(pg):
+    """Contacts into German: make it translatable, add de, translate in the
+    Strings grid, an event string with %1, a translator's file out and back,
+    the design shown in German with a too-long text marked, then run in German."""
+    ready(pg); open_example(pg, 'examples/Contacts.rex')
+    pg.click('#btnStrings'); pg.wait_for_selector('#stringsView:not([hidden])')
+    pg.fill('#sBase', 'en'); pg.click('#sOn'); settle(pg, 700)
+    expect('translatable: base en', snap(pg)['languages'], ['en'])
+    expect('a key per text (not the separator)', pg.locator('#sTable tbody tr').count(), 10)
+    pg.fill('#sNewLang', 'de'); pg.click('#sAddLang'); settle(pg, 700)
+    expect('German column', pg.locator('#sTable th[data-lang="de"]').count(), 1)
+    expect_in('all to do', '10 to do', pg.inner_text('#sTable th[data-lang="de"]'))
+    s_set(pg, 'form.title', 'de', 'Kontakte')
+    s_set(pg, 'tabMain.tabs', 'de', 'Personen|Notizen')
+    s_set(pg, 'lvPeople.columns', 'de', 'Name:80|Rolle:84|Seit:30')
+    s_set(pg, 'btnClose.text', 'de', 'Schließen und beenden')
+    s_set(pg, 'mnuAdd.popup', 'de', '&Personen')
+    s_set(pg, 'mnuAdd.text', 'de', 'Rexx-Person &hinzufügen')
+    s_set(pg, 'mnuExit.text', 'de', '&Beenden')
+    expect_in('three left to do', '3 to do', pg.inner_text('#sTable th[data-lang="de"]'))
+    # an event string, with %1
+    pg.fill('#sNewKey', 'msg.count'); pg.fill('#sNewText', '%1 people'); pg.click('#sAddKey'); settle(pg, 700)
+    s_set(pg, 'msg.count', 'de', '%1 Personen')
+    # the translator's file: out, one more text, back
+    with pg.expect_download() as dl: pg.click('#sTable th[data-lang="de"] button[title^="Download"]')
+    text = pathlib.Path(dl.value.path()).read_text(encoding='utf-8')
+    expect_in('export: key = text with the base above', '-- en: Close\nbtnClose.text = Schließen und beenden', text)
+    expect_in('export: untranslated is empty', '\nmnuGrid.text =\n', text)
+    text = text.replace('mnuGrid.text =\n', 'mnuGrid.text = &Gitterlinien\n')
+    pg.evaluate("window.oodDesigner.importLang = 'de'")   # what the ⇧ button sets before it opens the file dialog
+    pg.set_input_files('#sFile', files=[{'name': 'Contacts.de.txt', 'mimeType': 'text/plain', 'buffer': text.encode('utf-8')}]); settle(pg, 900)
+    expect_in('import reported', '9 strings set in de', status(pg))
+    expect('import set the text', s_cell(pg, 'mnuGrid.text', 'de').input_value(), '&Gitterlinien')
+    pg.screenshot(path=str(SHOTS / 'languages_strings.png'))
+    pg.click('#sClose')
+    # the event uses the string
+    pick_event(pg, 'mnuAdd', 'CLICKED')
+    type_code(pg, 'self~lvPeople~addRow( , , "Rony Flatscher", "BSF4ooRexx", 2000)\nself~lblInfo~setText(self~nls("msg.count", self~lvPeople~items))')
+    # the design in German
+    pg.select_option('#lang', 'de'); settle(pg, 900)
+    expect('title in German', pg.inner_text('#formTitle'), 'Kontakte')
+    expect('tabs in German', pg.inner_text('#client .dz[data-name="tabMain"]').split(), ['Personen', 'Notizen'])
+    expect('menu bar in German (View has no German yet: English)', pg.inner_text('#formMenu').split(), ['Personen', 'View'])
+    expect('too long in German: marked', pg.locator('#client .dz.overflow[data-name="btnClose"]').count(), 1)
+    expect_in('and named in the status', 'btnClose', status(pg))
+    expect('properties keep the base text', pg.evaluate("window.oodDesigner.snap.controls.find(c => c.name === 'btnClose').text"), 'Close')
+    pg.screenshot(path=str(SHOTS / 'languages_design_de.png'))
+    src = program_text(pg)
+    expect_in('a ::RESOURCE per language', '::resource strings.de\nform.title = Kontakte\n', src)
+    # run in German
+    run(pg)
+    expect_in('runs in German: the title', 'Kontakte', pg.inner_text('.ood-dlg'))
+    expect_in('umlauts and ß come through', 'Schließen und beenden', dlg_text(pg))
+    pg.click('.ood-menubar >> text=Personen'); pg.click('.ood-menu >> text=Rexx-Person hinzufügen'); settle(pg)
+    expect_in('event string with %1, in German', '5 Personen', dlg_text(pg))
+    pg.screenshot(path=str(SHOTS / 'languages_run_de.png'))
+    pg.click('.ood-menubar >> text=Personen'); pg.click('.ood-menu >> text=Beenden')
+    expect('Beenden cancels', wait_end(pg)['rc'], 2)
+    # and in the base language
+    pg.select_option('#lang', 'en'); settle(pg, 900)
+    expect('title back in English', pg.inner_text('#formTitle'), 'Contacts')
+    # saved and opened again: the languages come back
+    pg.evaluate("(src) => window.oodDesigner.openSource(src, 'again')", src); settle(pg, 900)
+    expect('reopened with its languages', snap(pg)['languages'], ['en', 'de'])
+    expect('round trip byte-identical', program_text(pg), src)
+
+SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views, 'gadgets': sc_gadgets, 'libraries': sc_libraries, 'graph': sc_graph, 'trace': sc_trace, 'languages': sc_languages}
 def main():
     names = sys.argv[1:] or list(SCENARIOS)
     srv = subprocess.Popen(['node', str(SITE / 'serve.mjs'), str(SITE), '--port', str(PORT)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
