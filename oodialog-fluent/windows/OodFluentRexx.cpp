@@ -5,8 +5,11 @@
 #include "OodFluentIsland.h"
 
 #include <charconv>
+#include <atomic>
+#include <cstdio>
 #include <cstring>
 #include <cstdint>
+#include <functional>
 #include <iomanip>
 #include <limits>
 #include <map>
@@ -22,12 +25,95 @@ namespace {
 struct Session {
     OodfSession *model = nullptr;
     OodfWinHost *host = nullptr;
+    HWND parent = nullptr;
+    DWORD rexxThread = 0;
     DWORD uiThread = 0;
 };
 
 std::mutex sessionsMutex;
 std::map<uint64_t, std::unique_ptr<Session>> sessions;
 uint64_t nextToken = 1;
+
+// ooDialog's Rexx initDialog activity is NOT its HWND-owning thread.
+// All C++/WinRT island operations run synchronously on the owning GUI thread,
+// reached through a thread-scoped Win32 hook. This broker neither invokes Rexx
+// from a native hook nor subclasses the user's dialog window.
+constexpr UINT kGuiDispatchMessage = WM_APP + 0x2F71;
+struct GuiAction {
+    HWND target{};
+    std::function<HRESULT()> invoke;
+    HRESULT result = E_UNEXPECTED;
+    std::atomic_bool completed{false};
+};
+
+std::mutex guiActionsMutex;
+std::map<uintptr_t, GuiAction *> guiActions;
+std::atomic<uintptr_t> nextGuiTicket{1};
+
+void guiTrace(const char *stage) {
+    if (!GetEnvironmentVariableA("OODF_LIFECYCLE_TRACE", nullptr, 0)) return;
+    fprintf(stderr, "GUI_BRIDGE_STAGE %s thread=%lu\n", stage,
+            static_cast<unsigned long>(GetCurrentThreadId()));
+    fflush(stderr);
+}
+
+LRESULT CALLBACK guiThreadHook(int code, WPARAM wp, LPARAM lp) {
+    if (code == HC_ACTION) {
+        auto *message = reinterpret_cast<const CWPSTRUCT *>(lp);
+        if (message && message->message == kGuiDispatchMessage) {
+            GuiAction *action = nullptr;
+            {
+                std::lock_guard<std::mutex> lock(guiActionsMutex);
+                auto found = guiActions.find(static_cast<uintptr_t>(message->wParam));
+                if (found != guiActions.end() && found->second->target == message->hwnd) {
+                    action = found->second;
+                    guiActions.erase(found); // Prevent duplicate or re-entrant execution.
+                }
+            }
+            if (action) {
+                guiTrace("HOOK_INVOKE_BEGIN");
+                try { action->result = action->invoke(); }
+                catch (...) { action->result = E_FAIL; }
+                action->completed.store(true, std::memory_order_release);
+                guiTrace("HOOK_INVOKE_DONE");
+            }
+        }
+    }
+    return CallNextHookEx(nullptr, code, wp, lp);
+}
+
+HRESULT onDialogWindowThread(HWND window, std::function<HRESULT()> operation) {
+    if (!IsWindow(window)) return HRESULT_FROM_WIN32(ERROR_INVALID_WINDOW_HANDLE);
+    DWORD owner = GetWindowThreadProcessId(window, nullptr);
+    if (!owner) return HRESULT_FROM_WIN32(GetLastError());
+    if (owner == GetCurrentThreadId()) return operation();
+    char optIn[2]{};
+    if (GetEnvironmentVariableA("OODF_TEST_CROSS_THREAD_HOOK", optIn, sizeof(optIn)) != 1 || optIn[0] != '1')
+        return RPC_E_WRONG_THREAD; // Diagnostic broker not yet release-qualified.
+    guiTrace("HOOK_INSTALL_BEGIN");
+    HHOOK hook = SetWindowsHookExW(WH_CALLWNDPROC, guiThreadHook, nullptr, owner);
+    if (!hook) return HRESULT_FROM_WIN32(GetLastError());
+    guiTrace("HOOK_INSTALLED");
+    GuiAction action{window, std::move(operation)};
+    auto ticket = nextGuiTicket.fetch_add(1);
+    {
+        std::lock_guard<std::mutex> lock(guiActionsMutex);
+        guiActions.emplace(ticket, &action);
+    }
+    // SendMessage synchronizes the hook's execution and lifetime of the
+    // stack-backed request. A bounded/cancellable broker is a later release
+    // requirement; no request pointer is ever received from HWND messages.
+    guiTrace("SEND_BEGIN");
+    SendMessageW(window, kGuiDispatchMessage, static_cast<WPARAM>(ticket), 0);
+    guiTrace("SEND_DONE");
+    {
+        std::lock_guard<std::mutex> lock(guiActionsMutex);
+        guiActions.erase(ticket);
+    }
+    UnhookWindowsHookEx(hook);
+    guiTrace("HOOK_UNINSTALLED");
+    return action.completed.load(std::memory_order_acquire) ? action.result : E_UNEXPECTED;
+}
 
 RexxObjectPtr error(RexxCallContext *context, const std::string &detail) {
     context->RaiseException1(Rexx_Error_Invalid_argument_user_defined,
@@ -72,8 +158,9 @@ Session *get(RexxCallContext *context, const char *token) {
         error(context, "session has closed or is unknown");
         return nullptr;
     }
-    if (it->second->uiThread != GetCurrentThreadId()) {
-        error(context, "call must execute on the dialog UI thread");
+    const DWORD caller = GetCurrentThreadId();
+    if (it->second->rexxThread != caller && it->second->uiThread != caller) {
+        error(context, "call must execute on the dialog's Rexx activity or UI thread");
         return nullptr;
     }
     return it->second.get();
@@ -111,12 +198,16 @@ RexxRoutine3(RexxObjectPtr, OodfNativeOpen,
     auto session = std::make_unique<Session>();
     auto status = oodf_open(cataloguePath, experimental, &session->model);
     if (status != OODF_OK) return error(context, oodf_last_error());
-    HRESULT result = oodf_win_open(parent, session->model, &session->host);
+    session->parent = parent;
+    session->rexxThread = GetCurrentThreadId();
+    session->uiThread = GetWindowThreadProcessId(parent, nullptr);
+    HRESULT result = onDialogWindowThread(parent, [&] {
+        return oodf_win_open(parent, session->model, &session->host);
+    });
     if (FAILED(result)) {
         oodf_close(session->model);
         return error(context, "WinUI host initialization failed: " + hex(result));
     }
-    session->uiThread = GetCurrentThreadId();
     const auto token = nextToken++;
     sessions.emplace(token, std::move(session));
     return context->String(std::to_string(token).c_str());
@@ -132,7 +223,9 @@ RexxRoutine4(RexxObjectPtr, OodfNativeCreate,
     try {
         const std::wstring type = wide(kind), label = wide(caption);
         uint64_t uid = 0;
-        HRESULT result = oodf_win_add(session->host, id, type.c_str(), label.c_str(), &uid);
+        HRESULT result = onDialogWindowThread(session->parent, [&] {
+            return oodf_win_add(session->host, id, type.c_str(), label.c_str(), &uid);
+        });
         if (FAILED(result)) return error(context, "control creation failed: " + hex(result));
         return context->String(std::to_string(uid).c_str());
     } catch (const std::exception &e) { return error(context, e.what()); }
@@ -151,7 +244,9 @@ RexxRoutine5(RexxObjectPtr, OodfNativeCreateAuthored,
     try {
         const std::wstring type = wide(kind), label = wide(caption);
         uint64_t uid = 0;
-        HRESULT result = oodf_win_add_authored(session->host, id, type.c_str(), label.c_str(), authoredUid, &uid);
+        HRESULT result = onDialogWindowThread(session->parent, [&] {
+            return oodf_win_add_authored(session->host, id, type.c_str(), label.c_str(), authoredUid, &uid);
+        });
         if (FAILED(result)) return error(context, "authored occurrence creation failed: " + hex(result));
         return context->String(std::to_string(uid).c_str());
     } catch (const std::exception &e) { return error(context, e.what()); }
@@ -166,7 +261,9 @@ RexxRoutine4(RexxObjectPtr, OodfNativeSet,
     if (!occurrence(context, uidText, uid)) return NULLOBJECT;
     try {
         auto name = wide(property), text = wide(value);
-        HRESULT result = oodf_win_set(session->host, uid, name.c_str(), text.c_str());
+        HRESULT result = onDialogWindowThread(session->parent, [&] {
+            return oodf_win_set(session->host, uid, name.c_str(), text.c_str());
+        });
         if (FAILED(result)) return error(context, "property update failed: " + hex(result));
         return context->True();
     } catch (const std::exception &e) { return error(context, e.what()); }
@@ -189,7 +286,9 @@ RexxRoutine5(RexxObjectPtr, OodfNativeMove,
     std::lock_guard<std::mutex> lock(sessionsMutex);
     Session *session = get(context, token);
     if (!session) return NULLOBJECT;
-    HRESULT result = oodf_win_move(session->host, x, y, width, height);
+    HRESULT result = onDialogWindowThread(session->parent, [&] {
+        return oodf_win_move(session->host, x, y, width, height);
+    });
     if (FAILED(result)) return error(context, "island resize failed: " + hex(result));
     return context->True();
 }
@@ -200,7 +299,9 @@ RexxRoutine2(RexxObjectPtr, OodfNativeRemove, CSTRING, token, CSTRING, uidText) 
     if (!session) return NULLOBJECT;
     uint64_t uid{};
     if (!occurrence(context, uidText, uid)) return NULLOBJECT;
-    HRESULT result = oodf_win_remove(session->host, uid);
+    HRESULT result = onDialogWindowThread(session->parent, [&] {
+        return oodf_win_remove(session->host, uid);
+    });
     if (FAILED(result)) return error(context, "control removal failed: " + hex(result));
     return context->True();
 }
@@ -241,7 +342,9 @@ RexxRoutine1(RexxObjectPtr, OodfNativeClose, CSTRING, token) {
     if (!decimal(token, id)) return error(context, "invalid session token");
     Session *session = get(context, token);
     if (!session) return NULLOBJECT;
-    HRESULT result = oodf_win_close(session->host);
+    HRESULT result = onDialogWindowThread(session->parent, [&] {
+        return oodf_win_close(session->host);
+    });
     if (FAILED(result)) return error(context, "WinUI host close failed: " + hex(result));
     oodf_close(session->model);
     sessions.erase(id);
