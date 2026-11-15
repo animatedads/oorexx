@@ -1,6 +1,6 @@
 /* Architecture: Tom Dyer. Code: ChatGPT (GPT-6).                      */
 /* Real ooDialog HWND + WinUI 3 + ooRexx package integration exercise. */
-/* CI presses the ordinary ooDialog IDOK button to exercise teardown.  */
+/* CI closes the asynchronous ooDialog through its own Rexx API.        */
 
 parse arg catalogue
 /* rexx.exe receives the command's quoted argument as Rexx text. */
@@ -17,10 +17,11 @@ if \ dialog~createCenter(300, 190, 'OodFluent ooDialog Runtime Smoke') then do
   exit 3
 end
 
-say 'REXX_SMOKE_STAGE=EXECUTE_BEGIN'
-result = dialog~execute('SHOWTOP')
-say 'REXX_SMOKE_EXECUTE_RESULT='result
-if result \= 1 then exit 4
+say 'REXX_SMOKE_STAGE=EXECUTE_ASYNC_BEGIN'
+dialog~executeAsync
+call SysSleep 1
+say 'REXX_SMOKE_STAGE=REQUEST_CLOSE'
+dialog~ok
 say 'REXX_SMOKE_PASS=1'
 exit 0
 

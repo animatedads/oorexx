@@ -84,8 +84,10 @@ LRESULT CALLBACK guiThreadHook(int code, WPARAM wp, LPARAM lp) {
 
 HRESULT onDialogWindowThread(HWND window, std::function<HRESULT()> operation) {
     if (!IsWindow(window)) return HRESULT_FROM_WIN32(ERROR_INVALID_WINDOW_HANDLE);
-    DWORD owner = GetWindowThreadProcessId(window, nullptr);
+    DWORD processId = 0;
+    DWORD owner = GetWindowThreadProcessId(window, &processId);
     if (!owner) return HRESULT_FROM_WIN32(GetLastError());
+    if (processId != GetCurrentProcessId()) return E_ACCESSDENIED;
     if (owner == GetCurrentThreadId()) return operation();
     char optIn[2]{};
     if (GetEnvironmentVariableA("OODF_TEST_CROSS_THREAD_HOOK", optIn, sizeof(optIn)) != 1 || optIn[0] != '1')

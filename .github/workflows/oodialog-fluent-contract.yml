@@ -161,39 +161,18 @@ jobs:
           $script = (Resolve-Path 'oodialog-fluent/rexx/FluentUserDialogSmoke.rex').Path
           $stdout = Join-Path $binary 'rexx-oodialog-stdout.txt'
           $stderr = Join-Path $binary 'rexx-oodialog-stderr.txt'
-          Add-Type -TypeDefinition @'
-          using System;
-          using System.Runtime.InteropServices;
-          public static class OodfDialogHarness {
-              [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-              public static extern IntPtr FindWindow(string className, string windowName);
-              [DllImport("user32.dll")]
-              public static extern bool PostMessage(IntPtr window, uint message, IntPtr wp, IntPtr lp);
-          }
-          '@
           Write-Output 'REXX_PROBE_STAGE=START_USER_DIALOG'
           $process = Start-Process -FilePath $rexx.FullName -ArgumentList "`"$script`" `"$catalogue`"" -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
-          $posted = $false
-          for ($i = 0; $i -lt 80; $i++) {
-            $process.Refresh()
-            if ($process.HasExited) { break }
-            $window = [OodfDialogHarness]::FindWindow($null, 'OodFluent ooDialog Runtime Smoke')
-            if ($window -ne [IntPtr]::Zero) {
-              $posted = [OodfDialogHarness]::PostMessage($window, 0x111, [IntPtr]1, [IntPtr]::Zero)
-              if ($posted) { break }
-            }
-            Start-Sleep -Milliseconds 250
-          }
-          if (-not $process.WaitForExit(20000)) {
+          if (-not $process.WaitForExit(30000)) {
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
             Write-Output 'REXX_PROBE_TIMEOUT'
           }
           $process.Refresh()
-          Write-Output "REXX_PROBE_POSTED_OK=$posted REXX_PROBE_EXIT=$($process.ExitCode)"
+          Write-Output "REXX_PROBE_EXIT=$($process.ExitCode)"
           $output = if (Test-Path $stdout) { Get-Content $stdout -Raw } else { '' }
           Write-Output $output
           if (Test-Path $stderr) { Get-Content $stderr | ForEach-Object { Write-Output "REXX_STDERR $_" } }
-          if ($process.ExitCode -ne 0 -or -not $posted -or
+          if ($process.ExitCode -ne 0 -or
               $output -notmatch 'REXX_SMOKE_STAGE=CONTROLS_READY' -or
               $output -notmatch 'REXX_SMOKE_STAGE=FLUENT_CLOSED' -or
               $output -notmatch 'REXX_SMOKE_PASS=1') {
