@@ -24,7 +24,7 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.11.0"
+  return "0.12.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute key unguarded
@@ -102,7 +102,7 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.11.0"
+  return "0.12.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute rexxSelf unguarded
@@ -131,7 +131,7 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.11.0"
+  return "0.12.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute dlg unguarded             -- its dialog's OodDlg
@@ -149,7 +149,7 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.11.0"
+  return "0.12.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::method module_version unguarded
@@ -440,11 +440,16 @@
 
 /* Send an event method.  An error in it is reported and the dialog goes on. */
 ::method invoke unguarded
+  expose handlerDepth
   use arg dlg, method, args
+  if \var("HANDLERDEPTH") then handlerDepth = 0
+  handlerDepth = handlerDepth + 1  -- (msSleep asks: is an event method running?)
   signal on syntax                 -- (a class may answer events in UNKNOWN, as the DLL allowed)
   dlg~sendWith(method, args)
+  handlerDepth = handlerDepth - 1
   return
 syntax:
+  handlerDepth = handlerDepth - 1
   co = condition("O")
   say "ooDialog: error in event method" method": rc" rc "line" sigl condition("C") condition("D")
   if co \== .nil then do
@@ -454,6 +459,29 @@ syntax:
     end
   end
   return
+
+/* The seam for a system-classes file (WindowsManager, WindowObject, MenuObject of
+   winsystm.cls, done for this machine): the dialogs now on the page, as their own
+   ooDialog objects, oldest first.  Everything else such a file needs is ooDialog's
+   public API on those objects (title, hwnd, moveTo, resizeTo, show, menuBar ...). */
+::method windows unguarded
+  expose dialogs
+  found = .array~new
+  keys = dialogs~allIndexes~sort
+  do key over keys
+    d = dialogs[key]
+    if d~live then if d~embed == .nil then found~append(d~rexxSelf)
+  end
+  return found
+
+::method handlerOutlivedDialogs unguarded
+  expose handlerDepth dialogs
+  if \var("HANDLERDEPTH") then return .false
+  if handlerDepth < 1 then return .false
+  do d over dialogs~allItems       -- a dialog marked finished is only waiting for this method to return
+    if d~live then if d~rexxSelf~finished \== .true then return .false
+  end
+  return .true
 
 /* Take the page's events on this thread until the dialog is finished. */
 ::method pumpUntilFinished unguarded
@@ -743,6 +771,7 @@ syntax:
   options = "NORMAL"
   if a~hasIndex(1) then options = a[1]
   self~web~show(d~key, options~upper)
+  if options~upper~pos("HIDE") == 0 then self~gdiPaintAll(d)      -- Windows paints the owner-drawn controls now
   return .true
 ::method pbdlg_toTheTop unguarded
   use arg self_
@@ -838,6 +867,19 @@ syntax:
   ctl = cls~new(self_, id, .OodCtl~new(d, id, d~kinds[id]))
   d~controls[cacheKey] = ctl
   return ctl
+::method pbdlg_getNewControl unguarded  -- newControl(id): the object of whatever control has that ID
+  use arg self_, msg, a
+  d = self_~oodPeer
+  if \d~live then return .nil
+  id = self~resolveId(self_, a[1])
+  if id < 1 then return .nil
+  kind = d~kinds[id]
+  if kind == .nil then return .nil
+  kinds = "BUTTON CHECK RADIO GROUP STATIC FRAME IMAGE EDIT LIST COMBO PROGRESS LISTVIEW TREEVIEW TAB UPDOWN TRACKBAR DATETIMEPICKER"
+  names = "PUSHBUTTON CHECKBOX RADIOBUTTON GROUPBOX STATIC STATIC STATIC EDIT LISTBOX COMBOBOX PROGRESSBAR LISTVIEW TREEVIEW TAB UPDOWN TRACKBAR DATETIMEPICKER"
+  at = kinds~wordPos(kind~word(1)~upper)
+  if at == 0 then return .nil
+  return self~pbdlg_newControl(self_, "NEW"names~word(at), a)
 ::method pbdlg_newControlEx unguarded   -- newUpDown, newReBar, newStatusBar, newToolBar ...
   forward message "pbdlg_newControl"
 ::method dlgctrl_unInit unguarded
@@ -2701,6 +2743,417 @@ syntax:
   if self_~oodPeer~results~items == 0 then return self~shellFolder(self_~oodPeer~folder)
   return filespec("LOCATION", self_~oodPeer~results[1])~strip("T", "/")
 
+
+/* ---- Drawing: device contexts, pens, brushes ----
+   A DC is a canvas of the page over a dialog's client area or over one control
+   (oodialog-web.js, gdi).  The state of a DC is kept here; each call takes the pen,
+   the brush, the font and the colours with it.  Colours are palette indexes, as
+   ooDialog gives them to PALETTEINDEX(). */
+::method gdiNew unguarded          -- keep a DC, pen or brush; answers its handle
+  expose gdiObjs gdiCount
+  use arg entry
+  if \var("GDIOBJS") then do
+    gdiObjs = .directory~new
+    gdiCount = 0
+  end
+  gdiCount = gdiCount + 1
+  handle = "0x"d2x(218103808 + gdiCount)~right(16, "0")        -- 0x0D000000 + n: no window of this page has such a handle
+  gdiObjs[handle] = entry
+  return handle
+::method gdiGet unguarded
+  expose gdiObjs
+  use arg handle
+  if \var("GDIOBJS") then return .nil
+  if \handle~isA(.String) then return .nil
+  return gdiObjs[handle]
+::method gdiDrop unguarded
+  expose gdiObjs
+  use arg handle
+  if var("GDIOBJS") then gdiObjs~remove(handle)
+::method gdiStock unguarded        -- the pen, brush and font a new DC has: black 1 solid, white, the dialog's font
+  expose stockPen stockBrush stockFont
+  use arg kind
+  if \var("STOCKPEN") then do
+    stockPen = self~gdiNew(.array~of("PEN", 1, "SOLID", "#000000"))
+    stockBrush = self~gdiNew(.array~of("BRUSH", "#ffffff"))
+    stockFont = self~gdiNew(.array~of("FONT", ""))
+  end
+  if kind == "PEN" then return stockPen
+  if kind == "BRUSH" then return stockBrush
+  return stockFont
+::method gdiTarget unguarded       -- the dialog state and control ID of a window handle; .nil if it is no window
+  use arg hwnd
+  handle = self~number(hwnd)
+  owner = self~dialogOf(handle % 65536)
+  if owner == .nil then return .nil
+  return .array~of(owner, handle // 65536)
+::method gdiTargetOf unguarded     -- the same for a dialog or control object
+  use arg self_
+  p = self_~oodPeer
+  if p~isA(.OodCtl) then return .array~of(p~dlg, p~id)
+  return .array~of(p, 0)
+::method gdiNewDC unguarded
+  use arg target
+  if target == .nil then return 0
+  dc = .directory~new
+  dc~kind = "DC"
+  dc~d = target[1]
+  dc~id = target[2]
+  dc~pen = self~gdiStock("PEN")
+  dc~brush = self~gdiStock("BRUSH")
+  dc~font = self~gdiStock("FONT")
+  dc~textColor = "#000000"
+  dc~bkMode = "O"
+  dc~bkColor = "#ffffff"
+  dc~align = "LEFT TOP NOUPDATECP"
+  dc~arcDirection = "COUNTERCLOCKWISE"
+  dc~x = 0
+  dc~y = 0
+  return self~gdiNew(dc)
+::method gdiDC unguarded           -- the state of a DC handle, .nil if it is none
+  use arg handle
+  dc = self~gdiGet(handle)
+  if dc == .nil then return .nil
+  if \dc~isA(.directory) then return .nil
+  return dc
+::method gdiFontCss unguarded      -- a font handle as a CSS font
+  use arg handle
+  font = self~fontOf(handle)
+  if font == .nil then return ""
+  css = ""
+  if font[3]~pos("I") > 0 then css = css "italic"
+  if font[3]~pos("B") > 0 then css = css "bold"
+  return (css font[2]"pt" '"'font[1]'", sans-serif')~strip
+::method gdiStyle unguarded        -- what a call takes with it
+  use arg dc
+  sep = self~sep
+  pen = self~gdiGet(dc~pen)
+  if pen == .nil then pen = .array~of("PEN", 1, "SOLID", "#000000")
+  brush = self~gdiGet(dc~brush)
+  fill = ""
+  if brush \== .nil then fill = brush[2]
+  return pen[4] || sep || pen[2] || sep || pen[3] || sep || fill || sep || self~gdiFontCss(dc~font) || sep || -
+         dc~textColor || sep || dc~bkMode || sep || dc~bkColor || sep || dc~align
+::method gdiCall unguarded         -- one drawing call on a DC
+  use arg dc, verb, values
+  return self~ctlOp(dc~d, dc~id, "gdi", verb, values~makeString("L", self~sep), self~gdiStyle(dc))
+::method gdiInt unguarded
+  use arg v
+  if v~isA(.String) then if v~datatype("N") then return v~format(, 0) + 0
+  return 0
+
+::method dlgext_getWindowDC unguarded
+  use arg self_, msg, a
+  return self~gdiNewDC(self~gdiTarget(a[1]))
+::method winex_getDC unguarded
+  use arg self_
+  return self~gdiNewDC(self~gdiTargetOf(self_))
+::method dlgext_freeWindowDC unguarded
+  use arg self_, msg, a
+  if a~hasIndex(2) then self~gdiDrop(a[2])
+  return 1
+::method winex_freeDC unguarded
+  use arg self_, msg, a
+  if a~hasIndex(1) then self~gdiDrop(a[1])
+  return 1
+::method winex_createPen unguarded -- createPen(width, style, colour)
+  use arg self_, msg, a
+  width = 1
+  if a~hasIndex(1) then width = a[1]
+  style = self~opt(a, 2)~upper
+  if style == "INSIDEFRAME" then style = "NULL"
+  if "DASH DOT DASHDOT DASHDOTDOT NULL"~wordPos(style) == 0 then style = "SOLID"
+  color = 0
+  if a~hasIndex(3) then color = a[3]
+  return self~gdiNew(.array~of("PEN", width, style, self~colorOf(color)))
+::method winex_createBrush unguarded   -- createBrush(colour, specifier): none of both is the hollow brush
+  use arg self_, msg, a
+  if \a~hasIndex(1) & \a~hasIndex(2) then return self~gdiNew(.array~of("BRUSH", ""))
+  color = 1
+  if a~hasIndex(1) then color = a[1]
+  css = self~colorOf(color)
+  kind = self~opt(a, 2)~upper
+  if "UPDIAGONAL DOWNDIAGONAL CROSS DIAGCROSS HORIZONTAL VERTICAL"~wordPos(kind) > 0 then css = "hatch:"kind":"css
+  return self~gdiNew(.array~of("BRUSH", css))                  -- a bitmap file as the specifier: the plain colour
+::method dlgext_createBrush unguarded
+  forward message "winex_createBrush"
+::method winex_getSysBrush unguarded
+  return self~gdiNew(.array~of("BRUSH", "#f0f0f0"))
+::method winex_objectToDC unguarded    -- objectToDC(dc, pen | brush | font): the object it replaces
+  use arg self_, msg, a
+  dc = self~gdiDC(a[1])
+  if dc == .nil then return 0
+  obj = self~gdiGet(a[2])
+  if obj \== .nil then if obj~isA(.array) then do
+    select
+      when obj[1] == "PEN" then do
+        old = dc~pen
+        dc~pen = a[2]
+      end
+      when obj[1] == "BRUSH" then do
+        old = dc~brush
+        dc~brush = a[2]
+      end
+      otherwise
+        old = dc~font
+        dc~font = a[2]
+    end
+    return old
+  end
+  if self~fontOf(a[2]) == .nil then return 0
+  old = dc~font
+  dc~font = a[2]
+  return old
+::method winex_drawLine unguarded      -- drawLine(dc, x, y, x2, y2): without x, y from where the last line ended
+  use arg self_, msg, a
+  dc = self~gdiDC(a[1])
+  if dc == .nil then return 1
+  if a~hasIndex(2) then dc~x = a[2]
+  if a~hasIndex(3) then dc~y = a[3]
+  self~gdiCall(dc, "line", .array~of(dc~x, dc~y, a[4], a[5]))
+  dc~x = a[4]
+  dc~y = a[5]
+  return 0
+::method winex_rectangle unguarded     -- rectangle(dc, left, top, right, bottom, fill): with fill, filled with the brush
+  use arg self_, msg, a
+  dc = self~gdiDC(a[1])
+  if dc == .nil then return 1
+  self~gdiCall(dc, "rect", .array~of(a[2], a[3], a[4], a[5], a~hasIndex(6)))
+  dc~x = a[2]
+  dc~y = a[3]
+  return 0
+::method winex_drawArcOrPie unguarded  -- drawArc / drawPie(dc, left, top, right, bottom, startX, startY, endX, endY)
+  use arg self_, msg, a
+  dc = self~gdiDC(a[1])
+  if dc == .nil then return 1
+  v = .array~of(a[2], a[3], a[4], a[5], 0, 0, 0, 0, (msg == "DRAWPIE"), dc~arcDirection)
+  do i = 6 to 9
+    if a~hasIndex(i) then v[i - 1] = a[i]
+  end
+  self~gdiCall(dc, "arc", v)
+  return 0
+::method winex_drawAngleArc unguarded  -- drawAngleArc(dc, moveToX, moveToY, x, y, radius, startAngle, sweepAngle)
+  use arg self_, msg, a
+  dc = self~gdiDC(a[1])
+  if dc == .nil then return 1
+  if a~hasIndex(2) then dc~x = a[2]
+  if a~hasIndex(3) then dc~y = a[3]
+  parse value self~gdiCall(dc, "angleArc", .array~of(a[4], a[5], a[6], a[7], a[8], dc~x, dc~y)) with endX endY .
+  if endX \== "" then do
+    dc~x = endX
+    dc~y = endY
+  end
+  return 0
+::method winex_getSetArcDirection unguarded
+  use arg self_, msg, a
+  dc = self~gdiDC(a[1])
+  if dc == .nil then return ""
+  old = dc~arcDirection
+  if msg == "SETARCDIRECTION" then do
+    if self~opt(a, 2)~upper~abbrev("CL") then dc~arcDirection = "CLOCKWISE"
+    else dc~arcDirection = "COUNTERCLOCKWISE"
+  end
+  return old
+::method winex_drawPixel unguarded
+  use arg self_, msg, a
+  dc = self~gdiDC(a[1])
+  if dc == .nil then return 1
+  self~gdiCall(dc, "pixel", .array~of(a[2], a[3], self~colorOf(a[4])))
+  return 0
+::method winex_getPixel unguarded      -- the colour at x, y as a COLORREF; -1 where nothing was drawn
+  use arg self_, msg, a
+  dc = self~gdiDC(a[1])
+  if dc == .nil then return -1
+  answer = self~gdiCall(dc, "getPixel", .array~of(a[2], a[3]))
+  if answer == "" then return -1
+  return answer
+::method winex_fillDrawing unguarded   -- fillDrawing(dc, x, y, colour): fill with the brush out to the border of that colour
+  use arg self_, msg, a
+  dc = self~gdiDC(a[1])
+  if dc == .nil then return 1
+  self~gdiCall(dc, "flood", .array~of(a[2], a[3], self~colorOf(a[4])))
+  return 0
+::method winex_fillRect unguarded      -- fillRect(dc, rect, brush)
+  use arg self_, msg, a
+  dc = self~gdiDC(a[1])
+  if dc == .nil then return 1
+  keep = dc~brush
+  if a~hasIndex(3) then if self~gdiGet(a[3]) \== .nil then dc~brush = a[3]
+  r = a[2]
+  self~gdiCall(dc, "fillRect", .array~of(r~left, r~top, r~right, r~bottom))
+  dc~brush = keep
+  return 0
+::method winex_fontColor unguarded     -- fontColor(colour, dc)
+  use arg self_, msg, a
+  dc = self~gdiDC(a[2])
+  if dc == .nil then return 1
+  color = 0
+  if a~hasIndex(1) then color = a[1]
+  dc~textColor = self~colorOf(color)
+  return 0
+::method winex_textBkMode unguarded    -- opaqueText(dc), transparentText(dc)
+  use arg self_, msg, a
+  dc = self~gdiDC(a[1])
+  if dc == .nil then return 1
+  if msg == "TRANSPARENTTEXT" then dc~bkMode = "T"
+  else dc~bkMode = "O"
+  return 0
+::method winex_setTextAlign unguarded  -- setTextAlign(dc, words): the words before
+  use arg self_, msg, a
+  dc = self~gdiDC(a[1])
+  if dc == .nil then return ""
+  old = dc~align
+  dc~align = self~opt(a, 2)~upper~space
+  if dc~align == "" then dc~align = "LEFT TOP NOUPDATECP"
+  return old
+::method winex_getTextAlign unguarded
+  use arg self_, msg, a
+  dc = self~gdiDC(a[1])
+  if dc == .nil then return ""
+  return dc~align
+::method winex_getTextExtent unguarded -- getTextExtent(dc, text): a .Size in pixels
+  use arg self_, msg, a
+  dc = self~gdiDC(a[1])
+  if dc == .nil then return self~classOf("Size")~new(0, 0)
+  parse value self~gdiCall(dc, "extent", .array~of(a[2])) with width height .
+  if width == "" then return self~classOf("Size")~new(0, 0)
+  return self~classOf("Size")~new(width, height)
+::method winex_writeDirect unguarded   -- writeDirect(dc, x, y, text)
+  use arg self_, msg, a
+  dc = self~gdiDC(a[1])
+  if dc == .nil then return 1
+  self~gdiCall(dc, "text", .array~of(a[2], a[3], a[4]))
+  return 0
+/* write(x, y, text, fontName, fontSize, fontStyle, fgColor, bkColor) on a window:
+   a DC for this one text. */
+::method gdiWrite unguarded
+  use arg target, a, at
+  handle = self~gdiNewDC(target)
+  if handle == 0 then return 1
+  dc = self~gdiDC(handle)
+  if a~hasIndex(at + 3) | a~hasIndex(at + 4) then do
+    name = "MS Shell Dlg"
+    if a~hasIndex(at + 3) then name = a[at + 3]
+    size = 10
+    if a~hasIndex(at + 4) then size = a[at + 4]
+    words = self~opt(a, at + 5)~upper
+    style = ""
+    if words~pos("BOLD") > 0 | words~pos("THICK") > 0 then style = style"B"
+    if words~pos("ITALIC") > 0 then style = style"I"
+    dc~font = self~newFont(name, size, style)
+  end
+  words = self~opt(a, at + 5)~upper                 -- as drawFontToDC(): the DC's mode (opaque) unless the style says
+  if words~pos("TRANSPARENT") > 0 then dc~bkMode = "T"
+  else if words~pos("OPAQUE") > 0 then dc~bkMode = "O"
+  if a~hasIndex(at + 6) then if a[at + 6] \== -1 then dc~textColor = self~colorOf(a[at + 6])
+  if a~hasIndex(at + 7) then if a[at + 7] \== -1 then dc~bkColor = self~colorOf(a[at + 7])
+  self~gdiCall(dc, "text", .array~of(a[at], a[at + 1], a[at + 2]))
+  self~gdiDrop(handle)
+  return 0
+::method winex_write unguarded
+  use arg self_, msg, a
+  return self~gdiWrite(self~gdiTargetOf(self_), a, 1)
+::method dlgext_writeToWindow unguarded
+  use arg self_, msg, a
+  return self~gdiWrite(self~gdiTarget(a[1]), a, 2)
+::method gdiClear unguarded        -- erase what was drawn: all of it, or a rectangle (a .Rect or four numbers from index at)
+  use arg target, a, at
+  if target == .nil then return 1
+  v = .array~of("")
+  if a~hasIndex(at) then do
+    if a[at]~isA(.String) then v = .array~of(a[at], a[at + 1], a[at + 2], a[at + 3])
+    else v = .array~of(a[at]~left, a[at]~top, a[at]~right, a[at]~bottom)
+  end
+  self~ctlOp(target[1], target[2], "gdi", "clear", v~makeString("L", self~sep), "")
+  return 0
+::method dlgext_clearRect unguarded
+  use arg self_, msg, a
+  return self~gdiClear(self~gdiTarget(a[1]), a, 2)
+::method dlgext_clearWindowRect unguarded
+  use arg self_, msg, a
+  return self~gdiClear(self~gdiTarget(a[1]), a, 99)
+::method dlgext_clearControlRect unguarded
+  use arg self_, msg, a
+  return self~gdiClear(.array~of(self_~oodPeer, self~resolveId(self_, a[1])), a, 99)
+::method dlgext_getControlRect unguarded   -- the control's rectangle on the screen (here: in the page)
+  use arg self_, msg, a
+  parse value self~ctlOp(self_~oodPeer, self~resolveId(self_, a[1]), "rect") with left top right bottom .
+  if left == "" then return self~classOf("Rect")~new
+  return self~classOf("Rect")~new(left, top, right, bottom)
+
+/* connectDraw(id, method, willReply): the method draws the control.  Windows asks
+   it to (WM_DRAWITEM) whenever the control must be painted; here it is asked when the
+   dialog is shown and when the program redraws the control.
+   Its arguments: id, lParam, the control object, itemID, flags, dc, rect, itemData. */
+::method en_connectDraw unguarded
+  use arg self_, msg, a
+  id = 0
+  if a~hasIndex(1) then do
+    id = self~resolveId(self_, a[1])
+    if id < 0 then return -1
+  end
+  method = "onDraw"
+  if a~hasIndex(2) then if a[2] \== "" then method = a[2]
+  self_~oodPeer~store["DRAW" id] = method
+  return 0
+::method gdiPaint unguarded        -- ask the draw method of one control, if there is one
+  use arg d, id, erase = .true
+  if \d~live then return
+  method = d~store["DRAW" id]
+  if method == .nil then method = d~store["DRAW" 0]
+  if method == .nil then return
+  if self~ctlOp(d, id, "exists") \== 1 then return
+  self~ctlOp(d, id, "gdi", "ownerDraw", "", "")
+  if erase then self~ctlOp(d, id, "gdi", "clear", "", "")
+  handle = self~gdiNewDC(.array~of(d, id))
+  parse value self~ctlOp(d, id, "gdi", "size", "", "") with width height .
+  if width == "" then return
+  dlg = d~rexxSelf
+  control = dlg~newControl(id)
+  if control == .nil | control == 0 then control = dlg
+  self~invoke(dlg, method, .array~of(id, 0, control, 0, "", handle, self~classOf("Rect")~new(0, 0, width, height), .nil))
+  self~gdiDrop(handle)
+::method gdiPaintAll unguarded     -- every control that has a draw method
+  use arg d
+  if d~store == .nil then return
+  do name over d~store~allIndexes
+    if \name~isA(.String) then iterate
+    if name~word(1) \== "DRAW" then iterate
+    if name~word(2) == 0 then iterate
+    self~gdiPaint(d, name~word(2))
+  end
+::method dlgext_redrawControl unguarded    -- redrawControl(id, erase)
+  use arg self_, msg, a
+  erase = .false
+  if a~hasIndex(2) then erase = (a[2] == .true)
+  self~gdiPaint(self_~oodPeer, self~resolveId(self_, a[1]), erase)
+  return 0
+::method dlgext_drawButton unguarded
+  use arg self_, msg, a
+  self~gdiPaint(self_~oodPeer, self~resolveId(self_, a[1]), .true)
+  return 0
+::method gdiRedraw unguarded
+  use arg target, erase
+  if target == .nil then return 1
+  if target[2] == 0 then do
+    if erase then self~ctlOp(target[1], 0, "gdi", "clear", "", "")
+    self~gdiPaintAll(target[1])
+  end
+  else self~gdiPaint(target[1], target[2], erase)
+  return 0
+::method dlgext_redrawWindowRect unguarded -- redrawWindowRect(hwnd, erase)
+  use arg self_, msg, a
+  erase = .false
+  if a~hasIndex(2) then erase = (a[2] == .true)
+  if a~hasIndex(1) then return self~gdiRedraw(self~gdiTarget(a[1]), erase)
+  return self~gdiRedraw(.array~of(self_~oodPeer, 0), erase)
+::method dlgext_redrawRect unguarded       -- redrawRect(hwnd, left, top, right, bottom, erase)
+  use arg self_, msg, a
+  erase = .false
+  if a~hasIndex(6) then erase = (a[6] == .true)
+  if a~hasIndex(1) then return self~gdiRedraw(self~gdiTarget(a[1]), erase)
+  return self~gdiRedraw(.array~of(self_~oodPeer, 0), erase)
+
 ::method winex_deleteObject unguarded
   return 0
 ::method winex_deleteFont unguarded
@@ -4255,9 +4708,26 @@ syntax:
   dlg~execute("SHOWTOP")
   return dlg~chosen
 
+/* msSleep(ms).  ooDialog runs an event method on a thread of its own, so a method that
+   draws in a loop and sleeps between the steps leaves the dialog alive: its Interrupt
+   button still works.  Here the event methods run on the thread that takes the page's
+   events, so the sleep takes them meanwhile: the other events are handled inside it. */
 ::method msSleep_rtn unguarded
   use arg , , a
-  call SysSleep a[1] / 1000
+  numeric digits 20
+  ms = a[1]
+  if \ms~datatype("N") then return 0
+  -- An event method that is still looping after the last dialog has gone (the
+  -- user closed it meanwhile) has nothing to wait for: on Windows it would run on
+  -- its own thread beside the program's end; here the program ends only when it returns.
+  if self~handlerOutlivedDialogs then return 0
+  until = time("F") + ms * 1000
+  do forever
+    left = (until - time("F")) / 1000000
+    if left <= 0 then leave
+    event = .js~nextEvent(min(left, 0.05))
+    if event \== .nil then event~dispatch
+  end
   return 0
 
 ::method play_rtn unguarded
@@ -5045,6 +5515,141 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
   const bgr = (v) => 'rgb(' + (v & 255) + ',' + ((v >> 8) & 255) + ',' + ((v >> 16) & 255) + ')';
 
   /* ---- operations that carry text, and window operations ---------------- */
+  /* ---- Drawing (GDI) ----
+     A device context is a canvas laid over the dialog's client area or over one control.
+     It takes no pointer events, so the control under it still works.  Rexx keeps the state
+     of a DC (pen, brush, font, colours); every call brings what it needs:
+       style = stroke, width, dash, fill, font, textColour, bkMode (O|T), bkColour, align words */
+  function gdiCanvas(dlg, c, el) {
+    const id = c ? c.id : 0;
+    dlg.gdi = dlg.gdi || new Map();
+    let cv = dlg.gdi.get(id);
+    let left = 0, top = 0, w = dlg.client.clientWidth, h = dlg.client.clientHeight;
+    if (c) {
+      left = 0; top = 0;
+      for (let n = el; n && n !== dlg.client; n = n.offsetParent) { left += n.offsetLeft; top += n.offsetTop; }
+      w = el.offsetWidth; h = el.offsetHeight;
+    }
+    if (!cv) {
+      cv = D.createElement('canvas'); cv.className = 'ood-gdi';
+      cv.style.cssText = 'position:absolute;pointer-events:none;z-index:5';
+      dlg.client.appendChild(cv); dlg.gdi.set(id, cv);
+    }
+    if (cv.width !== w || cv.height !== h) { cv.width = Math.max(1, w); cv.height = Math.max(1, h); }
+    cv.style.left = left + 'px'; cv.style.top = top + 'px';
+    return cv;
+  }
+  function gdiHatch(kind, color) {
+    const t = D.createElement('canvas'); t.width = 8; t.height = 8;
+    const g = t.getContext('2d'); g.strokeStyle = color; g.lineWidth = 1; g.beginPath();
+    const line = (x1, y1, x2, y2) => { g.moveTo(x1, y1); g.lineTo(x2, y2); };
+    if (kind === 'HORIZONTAL' || kind === 'CROSS') line(0, 4.5, 8, 4.5);
+    if (kind === 'VERTICAL' || kind === 'CROSS') line(4.5, 0, 4.5, 8);
+    if (kind === 'UPDIAGONAL' || kind === 'DIAGCROSS') line(0, 8, 8, 0);
+    if (kind === 'DOWNDIAGONAL' || kind === 'DIAGCROSS') line(0, 0, 8, 8);
+    g.stroke();
+    return t;
+  }
+  function gdiRgb(css) {                                       // a CSS colour as [r, g, b]
+    const t = D.createElement('canvas'); t.width = t.height = 1;
+    const g = t.getContext('2d'); g.fillStyle = css; g.fillRect(0, 0, 1, 1);
+    return g.getImageData(0, 0, 1, 1).data;
+  }
+  function gdi(dlg, c, el, verb, v, st) {
+    const cv = gdiCanvas(dlg, c, el), g = cv.getContext('2d', { willReadFrequently: true });
+    const n = (i) => Number(v[i]) || 0;
+    const [stroke, width, dash, fill, font, textColor, bkMode, bkColor, align] = st;
+    const lw = Math.max(1, Number(width) || 1);
+    const pen = () => {
+      g.strokeStyle = stroke || '#000'; g.lineWidth = lw; g.lineCap = 'round'; g.lineJoin = 'round';
+      const u = lw; g.setLineDash({ DASH: [6 * u, 3 * u], DOT: [u, 2 * u], DASHDOT: [6 * u, 3 * u, u, 3 * u], DASHDOTDOT: [6 * u, 3 * u, u, 3 * u, u, 3 * u] }[dash] || []);
+    };
+    const brush = () => {
+      if (!fill) return false;
+      if (fill.startsWith('hatch:')) { const [, kind, color] = fill.split(':'); g.fillStyle = g.createPattern(gdiHatch(kind, color), 'repeat'); }
+      else g.fillStyle = fill;
+      return true;
+    };
+    const o = (lw % 2) ? 0.5 : 0;                              // odd widths on the pixel grid
+    switch (verb) {
+      case 'line': if (dash === 'NULL') return '1'; pen(); g.beginPath(); g.moveTo(n(0) + o, n(1) + o); g.lineTo(n(2) + o, n(3) + o); g.stroke(); return '1';
+      case 'rect': {
+        const x = Math.min(n(0), n(2)), y = Math.min(n(1), n(3)), w = Math.abs(n(2) - n(0)), h = Math.abs(n(3) - n(1));
+        if (v[4] === '1' && brush()) g.fillRect(x, y, w, h);
+        if (dash !== 'NULL') { pen(); g.strokeRect(x + o, y + o, w, h); }
+        return '1'; }
+      case 'arc': {                                            // Arc() and Pie(): counter-clockwise from the start radial to the end radial
+        const cx = (n(0) + n(2)) / 2, cy = (n(1) + n(3)) / 2, rx = Math.abs(n(2) - n(0)) / 2, ry = Math.abs(n(3) - n(1)) / 2;
+        if (rx <= 0 || ry <= 0) return '0';
+        const whole = (n(4) === n(6) && n(5) === n(7));
+        const ang = (x, y) => Math.atan2((y - cy) / ry, (x - cx) / rx);
+        const a1 = whole ? 0 : ang(n(4), n(5)), a2 = whole ? 2 * Math.PI : ang(n(6), n(7));
+        const ccw = !whole && v[9] !== 'CLOCKWISE';
+        g.beginPath();
+        if (v[8] === '1' && !whole) g.moveTo(cx, cy);
+        g.ellipse(cx, cy, rx, ry, 0, a1, a2, ccw);
+        if (v[8] === '1') { g.closePath(); if (brush()) g.fill(); }
+        if (dash !== 'NULL') { pen(); g.stroke(); }
+        return '1'; }
+      case 'angleArc': {                                       // x, y, radius, start and sweep in degrees, counter-clockwise; fromX fromY
+        const a1 = -n(3) * Math.PI / 180, a2 = -(n(3) + n(4)) * Math.PI / 180;
+        pen(); g.beginPath();
+        if (v[5] !== '') g.moveTo(n(5), n(6));
+        g.arc(n(0), n(1), Math.max(0, n(2)), a1, a2, n(4) > 0); g.stroke();
+        return Math.round(n(0) + n(2) * Math.cos(a2)) + ' ' + Math.round(n(1) + n(2) * Math.sin(a2)); }
+      case 'pixel': g.fillStyle = v[2]; g.fillRect(n(0), n(1), 1, 1); return '1';
+      case 'getPixel': { if (n(0) < 0 || n(1) < 0 || n(0) >= cv.width || n(1) >= cv.height) return '-1';
+        const d = g.getImageData(n(0), n(1), 1, 1).data; return d[3] === 0 ? '-1' : String(d[0] + d[1] * 256 + d[2] * 65536); }
+      case 'fillRect': if (brush()) g.fillRect(Math.min(n(0), n(2)), Math.min(n(1), n(3)), Math.abs(n(2) - n(0)), Math.abs(n(3) - n(1))); return '1';
+      case 'clear': if (v[0] === '') g.clearRect(0, 0, cv.width, cv.height); else g.clearRect(Math.min(n(0), n(2)), Math.min(n(1), n(3)), Math.abs(n(2) - n(0)), Math.abs(n(3) - n(1))); return '1';
+      case 'extent': { g.font = font || getComputedStyle(dlg.client).font; const m = g.measureText(v[0]);
+        return Math.ceil(m.width) + ' ' + Math.ceil((m.fontBoundingBoxAscent || 10) + (m.fontBoundingBoxDescent || 3)); }
+      case 'text': {
+        g.font = font || getComputedStyle(dlg.client).font;
+        const words = ' ' + (align || '') + ' ';
+        g.textAlign = words.includes(' CENTER ') ? 'center' : words.includes(' RIGHT ') ? 'right' : 'left';
+        g.textBaseline = words.includes(' BASELINE ') ? 'alphabetic' : words.includes(' BOTTOM ') ? 'bottom' : 'top';
+        const lines = String(v[2]).split('\n');
+        const m = g.measureText('Mg'), lh = Math.ceil((m.fontBoundingBoxAscent || 10) + (m.fontBoundingBoxDescent || 3));
+        lines.forEach((t, i) => {
+          const y = n(1) + i * lh;
+          if (bkMode === 'O') {
+            const w = g.measureText(t).width;
+            const x0 = g.textAlign === 'center' ? n(0) - w / 2 : g.textAlign === 'right' ? n(0) - w : n(0);
+            const y0 = g.textBaseline === 'alphabetic' ? y - (m.fontBoundingBoxAscent || 10) : g.textBaseline === 'bottom' ? y - lh : y;
+            g.fillStyle = bkColor || '#fff'; g.fillRect(x0, y0, w, lh);
+          }
+          g.fillStyle = textColor || '#000'; g.fillText(t, n(0), y);
+        });
+        return '1'; }
+      case 'flood': {                                          // FloodFill(): from x, y out to the border colour
+        const x0 = Math.round(n(0)), y0 = Math.round(n(1)), W = cv.width, H = cv.height;
+        if (x0 < 0 || y0 < 0 || x0 >= W || y0 >= H || !fill) return '0';
+        const img = g.getImageData(0, 0, W, H), px = img.data;
+        const bc = gdiRgb(v[2]), fc = gdiRgb(fill.startsWith('hatch:') ? fill.split(':')[2] : fill);
+        const near = (i, col) => px[i + 3] > 40 && Math.abs(px[i] - col[0]) + Math.abs(px[i + 1] - col[1]) + Math.abs(px[i + 2] - col[2]) < 150;
+        const seen = new Uint8Array(W * H), stack = [x0 + y0 * W];
+        while (stack.length) {
+          const p = stack.pop();
+          if (seen[p]) continue;
+          seen[p] = 1;
+          const i = p * 4;
+          if (near(i, bc)) continue;                           // the border stops the fill
+          px[i] = fc[0]; px[i + 1] = fc[1]; px[i + 2] = fc[2]; px[i + 3] = 255;
+          const x = p % W;
+          if (x > 0) stack.push(p - 1);
+          if (x < W - 1) stack.push(p + 1);
+          if (p >= W) stack.push(p - W);
+          if (p < W * (H - 1)) stack.push(p + W);
+        }
+        g.putImageData(img, 0, 0);
+        return '1'; }
+      case 'ownerDraw': if (c) (c.textEl || c.main || el).style.color = 'transparent'; return '1';   // the program draws it: no text of its own
+      case 'size': return cv.width + ' ' + cv.height;
+    }
+    return '';
+  }
+
   ood.op = function (key, id, name, a, b, c2) {
     const dlg = ood.dialogs.get(Number(key)); if (!dlg) return '';
     id = Number(id);
@@ -5080,6 +5685,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
         if (f.length) f[(i + (a === '1' ? 1 : f.length - 1)) % f.length].main.focus();
         return '1'; }
       case 'rect': { const r = el.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom].map(Math.round).join(' '); }
+      case 'gdi': return gdi(dlg, c, el, a, String(b).split(SEP), String(c2).split(SEP));
       case 'clientRect': { const r = (c ? el : dlg.client).getBoundingClientRect(); return '0 0 ' + Math.round(r.width) + ' ' + Math.round(r.height); }
       case 'origin': { const r = dlg.client.getBoundingClientRect(); return Math.round(r.left) + ' ' + Math.round(r.top); }
       case 'move': el.style.left = Number(a) + 'px'; el.style.top = Number(b) + 'px'; return '1';

@@ -1,0 +1,48 @@
+wait .ood-dlg >> text=Rectangles
+sleep 500
+eval (() => { const b = [...document.querySelectorAll('.ood-dlg button.ood-c')].find(x => x.textContent.trim() === 'Rectangles'); if (b.disabled) return 'disabled'; b.click(); return 'clicked Rectangles'; })()
+sleep 3200
+expect (() => { const cv = [...document.querySelectorAll('canvas.ood-gdi')].sort((a,b)=>b.width*b.height-a.width*a.height)[0]; if (!cv) return 'no canvas'; const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n > 500; })() ==> True
+expect (window.oodOut.join('').match(/(native function \w+|Error \d+\.\d+[^\n]*)/g)||[]).length ==> 0
+eval (() => { const b = [...document.querySelectorAll('.ood-dlg button.ood-c')].find(x => x.textContent.trim() === 'Interrupt'); b.click(); return 'interrupt ' + b.disabled; })()
+sleep 1500
+eval (() => { const b = [...document.querySelectorAll('.ood-dlg button.ood-c')].find(x => x.textContent.trim() === 'Pen Rectangles'); if (b.disabled) return 'disabled'; b.click(); return 'clicked Pen Rectangles'; })()
+sleep 3200
+expect (() => { const cv = [...document.querySelectorAll('canvas.ood-gdi')].sort((a,b)=>b.width*b.height-a.width*a.height)[0]; if (!cv) return 'no canvas'; const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n > 500; })() ==> True
+expect (window.oodOut.join('').match(/(native function \w+|Error \d+\.\d+[^\n]*)/g)||[]).length ==> 0
+eval (() => { const b = [...document.querySelectorAll('.ood-dlg button.ood-c')].find(x => x.textContent.trim() === 'Interrupt'); b.click(); return 'interrupt ' + b.disabled; })()
+sleep 1500
+eval (() => { const b = [...document.querySelectorAll('.ood-dlg button.ood-c')].find(x => x.textContent.trim() === 'Pixels'); if (b.disabled) return 'disabled'; b.click(); return 'clicked Pixels'; })()
+sleep 3200
+expect (() => { const cv = [...document.querySelectorAll('canvas.ood-gdi')].sort((a,b)=>b.width*b.height-a.width*a.height)[0]; if (!cv) return 'no canvas'; const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n > 500; })() ==> True
+expect (window.oodOut.join('').match(/(native function \w+|Error \d+\.\d+[^\n]*)/g)||[]).length ==> 0
+eval (() => { const b = [...document.querySelectorAll('.ood-dlg button.ood-c')].find(x => x.textContent.trim() === 'Interrupt'); b.click(); return 'interrupt ' + b.disabled; })()
+sleep 1500
+eval (() => { const b = [...document.querySelectorAll('.ood-dlg button.ood-c')].find(x => x.textContent.trim() === 'Star'); if (b.disabled) return 'disabled'; b.click(); return 'clicked Star'; })()
+sleep 3200
+expect (() => { const cv = [...document.querySelectorAll('canvas.ood-gdi')].sort((a,b)=>b.width*b.height-a.width*a.height)[0]; if (!cv) return 'no canvas'; const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n > 500; })() ==> True
+expect (window.oodOut.join('').match(/(native function \w+|Error \d+\.\d+[^\n]*)/g)||[]).length ==> 0
+shot oodraw_star
+eval (() => { const b = [...document.querySelectorAll('.ood-dlg button.ood-c')].find(x => x.textContent.trim() === 'Interrupt'); b.click(); return 'interrupt ' + b.disabled; })()
+sleep 1500
+eval (() => { const b = [...document.querySelectorAll('.ood-dlg button.ood-c')].find(x => x.textContent.trim() === 'Lines'); if (b.disabled) return 'disabled'; b.click(); return 'clicked Lines'; })()
+sleep 3200
+expect (() => { const cv = [...document.querySelectorAll('canvas.ood-gdi')].sort((a,b)=>b.width*b.height-a.width*a.height)[0]; if (!cv) return 'no canvas'; const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n > 500; })() ==> True
+expect (window.oodOut.join('').match(/(native function \w+|Error \d+\.\d+[^\n]*)/g)||[]).length ==> 0
+eval (() => { const b = [...document.querySelectorAll('.ood-dlg button.ood-c')].find(x => x.textContent.trim() === 'Interrupt'); b.click(); return 'interrupt ' + b.disabled; })()
+sleep 1500
+eval (() => { const b = [...document.querySelectorAll('.ood-dlg button.ood-c')].find(x => x.textContent.trim() === 'Squares'); if (b.disabled) return 'disabled'; b.click(); return 'clicked Squares'; })()
+sleep 3200
+expect (() => { const cv = [...document.querySelectorAll('canvas.ood-gdi')].sort((a,b)=>b.width*b.height-a.width*a.height)[0]; if (!cv) return 'no canvas'; const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n > 500; })() ==> True
+expect (window.oodOut.join('').match(/(native function \w+|Error \d+\.\d+[^\n]*)/g)||[]).length ==> 0
+shot oodraw_squares
+eval (() => { const b = [...document.querySelectorAll('.ood-dlg button.ood-c')].find(x => x.textContent.trim() === 'Interrupt'); b.click(); return 'interrupt ' + b.disabled; })()
+sleep 1500
+eval (() => { const b = [...document.querySelectorAll('.ood-dlg button.ood-c')].find(x => x.textContent.trim() === 'Ellipses'); if (b.disabled) return 'disabled'; b.click(); return 'clicked Ellipses'; })()
+sleep 3200
+expect (() => { const cv = [...document.querySelectorAll('canvas.ood-gdi')].sort((a,b)=>b.width*b.height-a.width*a.height)[0]; if (!cv) return 'no canvas'; const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n > 500; })() ==> True
+expect (window.oodOut.join('').match(/(native function \w+|Error \d+\.\d+[^\n]*)/g)||[]).length ==> 0
+shot oodraw_ellipses
+eval (() => { const b = [...document.querySelectorAll('.ood-dlg button.ood-c')].find(x => x.textContent.trim() === 'Interrupt'); b.click(); return 'interrupt ' + b.disabled; })()
+sleep 1500
+eval (() => { const b = [...document.querySelectorAll('.ood-dlg button.ood-c')].find(x => x.textContent.trim() === 'Cancel'); b.click(); return 'cancel'; })()

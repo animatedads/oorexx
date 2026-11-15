@@ -1,4 +1,4 @@
-# ooDialog for ooRexx/WASM — v0.11.0
+# ooDialog for ooRexx/WASM — v0.12.0
 
 Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: Josep Maria Blasco's
 ooRexx/WASM (`oorexxwasm` 0.2.4, ooRexx 5.3.0) and its `js.cls`.
@@ -48,21 +48,23 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
     python3 tools/oodtest.py --poke upstream/examples 0 24
     python3 tools/oodtest.py --tree upstream/examples tests/t*.rex tests/up/calculator.rex tests/up/oodpbar.rex tests/up/oodStandardRoutines.rex
 
-## State on 2026-11-15 (v0.11.0)
+## State on 2026-11-15 (v0.12.0)
 
-- Natives ported: 523 of 1,184 (44.2%). (The total fell from 1,196 because 12
+- Natives ported: 559 of 1,184 (47.2%). (The total fell from 1,196 because 12
   natives are now plain Rexx in `src/patches.txt`.)
-- Tests: 25 of 25 pass in headless Chromium (`tests/t01`..`t16` with expected
+- Tests: 28 of 28 pass in headless Chromium (`tests/t01`..`t16` with expected
   output, the binary resource hand-off test `tests/res/t07_resdialog_binary`,
   four unmodified upstream samples: `calculator.rex`,
   `oodpbar.rex`, `oodStandardRoutines.rex`, and the tutorial
   `employee11tab.rex`, a four-page property sheet from an .rc file, in which
   an employee is added and then found on the list page, and
-  `ticketWizard.rex`, a Wizard 97 walked with Next, a refusal and Back; and the three
+  `ticketWizard.rex`, a Wizard 97 walked with Next, a refusal and Back,
+  `oodraw.rex` (each of its seven drawings started and interrupted) and the
+  tutorial's `drawing3.rex` and `drawing5.rex`; and the three
   programs written by ooDialog Designer v0.3.0, in `tests/designer`).
 - Sweep of all 140 upstream example programs (`oodtest.py --sweep`, results in
-  `sweep.tsv`), each run from its own directory: 61 show their dialog, 7 run to
-  the end, 9 show only a message box, 23 stop at a native not ported yet, 9
+  `sweep.tsv`), each run from its own directory: 67 show their dialog, 7 run to
+  the end, 9 show only a message box, 17 stop at a native not ported yet, 9
   stop on an error (6 need a reader of binary resources, which is another
   task's work; `oovideo.rex` is broken upstream), 24 are components: parts of
   the user guide's Order Manager, which name their files from the program's
@@ -77,13 +79,13 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
   (`tests/t16_winnames`).
 - Depth probe (`oodtest.py --poke`, results in `poke.tsv`): the 70 examples
   that show a dialog or a message box are used automatically (tabs, rows,
-  check boxes, lists, edits, menus, every button, then closed). 56 come through
-  with no error, no unhandled Windows message and a clean end. 6 more have no
-  fault except connecting an event this layer does not produce. 8 have a
-  problem, each named in `poke.tsv`: 2 are components started alone (not a
-  fault), the others are drawing, sub-item editing (`setParent`), list
-  tabulators and single faults. Every program ends. `oovideo.rex` fails on an
-  unmatched `/*` at line 44 of the upstream file itself (r13513).
+  check boxes, lists, edits, menus, every button, then closed). Of 76, 63 come
+  through with no error, no unhandled Windows message and a clean end. 6 more
+  have no fault except connecting an event this layer does not produce. 7 have
+  a problem, each named in `poke.tsv`: 2 are components started alone (not a
+  fault), the others are sub-item editing (`setParent`), list tabulators,
+  bitmap drawing and single faults. Every program ends. `oovideo.rex` fails on
+  an unmatched `/*` at line 44 of the upstream file itself (r13513).
   The probe proves the absence of errors, not that results are right.
 - Working, each asserted by a test: UserDialog; RcDialog (upstream's own .rc
   parser); push button, check box, radio button, group box, static text and
@@ -122,6 +124,41 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
   ResPSPDialog (the last two go to the resource reader), ScriptMenuBar (menu from an .rc file),
   PopupMenu show/track and the context-menu event, lb~addDirectory.
 
+## Drawing
+
+A device context is a canvas of the page laid over the dialog's client area or
+over one control; it takes no pointer events, so the control under it works.
+Ported: getDC / getWindowDC / getControlDC, createPen (styles and widths),
+createBrush (solid, hollow, the six hatches), objectToDC, fontToDC, drawLine,
+rectangle, drawArc, drawPie, drawAngleArc, drawPixel, getPixel, fillRect,
+fillDrawing (a flood fill), write, writeDirect, writeToWindow, fontColor,
+opaqueText / transparentText, setTextAlign, getTextExtent, clearRect and the
+redraw calls, and `connectDraw`: the draw method is asked when the dialog is
+shown and when the program redraws the control. Colours are the palette indexes
+ooDialog uses. Differences from Windows: what is drawn stays (Windows loses it
+when the window is repainted); lines are anti-aliased, so a flood fill can
+leave a thin rim; a bitmap brush is a plain colour. Not done: drawBitmap,
+scrollButton and the other bitmap animation calls (`oograph.rex`,
+`oowalker.rex`), and the Mouse class.
+
+## Event methods and msSleep
+
+ooDialog runs an event method on a thread of its own. Here the event methods
+run on the thread that takes the page's events. So that a method which draws in
+a loop does not freeze its dialog, `msSleep` handles the other events while it
+waits: the Interrupt button of `oodraw.rex` works. A loop that never calls
+msSleep (or returns) still holds the dialog. Once a method's dialog has been
+closed, its msSleep returns at once, so the program can end.
+
+## Seam for system classes (winsystm.cls)
+
+`winsystm.cls` and OLE are Windows system libraries, not ooDialog; the sweep
+marks programs that need them `outside`. A file that provides WindowsManager,
+WindowObject, MenuObject and WindowsClipboard for this machine can be built on:
+`.oodn~windows` (the dialogs on the page as their ooDialog objects, oldest
+first; asserted by `tests/t14_owned`), ooDialog's own API on those objects, and
+`.js~page` of the runtime's `js.cls` for the browser's clipboard.
+
 ## Binary Windows resources (ResDialog, BinaryMenuBar)
 
 This layer does not read `.dll` or `.res` files; a reader is plugged in:
@@ -145,12 +182,13 @@ WASM file system as bytes.
 
 ## Not yet (the sweep's order of need)
 
-Owner-draw and the drawing (GDI) methods; the Mouse class; connectActivate,
+Bitmap drawing and animation (drawBitmap, getBitmapSize, scrollButton); the
+Mouse class; sub-item editing (setParent); month calendar; tool bar, status
+bar, re-bar; custom draw; ResizingAdmin's size limits; connectActivate,
 connectHelp, connectPosChanged and connectResizing (accepted, not produced);
-drawing the icons of image lists; wizards and a modeless property sheet; tool tips; month calendar; scroll bar; tool bar, status bar,
-re-bar; list-view LvItem/LvFullRow objects and the remaining list-view and
-tree-view events; track bar events; resizing; the folder dialog;
-popup/popupAsChild untested.
+drawing the icons of image lists; a modeless property sheet; wizard header and
+watermark images; list-view LvItem/LvFullRow objects and the remaining
+list-view and tree-view events; the CommonDialogCustomizations controls.
 
 ## Known
 

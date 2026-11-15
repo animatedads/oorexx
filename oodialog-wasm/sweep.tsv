@@ -34,7 +34,7 @@ examples/simpleFolderBrowse.rex	shows
 examples/stopWatch.rex	outside:winSystm.cls
 examples/useTools.rex	shows
 ftyperex.rex	outside:winsystm.cls
-menus/BinaryMenuBar.rex	shows +error
+menus/BinaryMenuBar.rex	error:Error 98.900 ooDialog/WASM: a BinaryMenuBar needs a reader of binary Windows resources; set .oodn~resourceProv
 menus/ContextMenu.rex	shows
 menus/ScriptMenuBar.rex	shows
 menus/UserMenuBar.rex	shows
@@ -47,17 +47,17 @@ oobmpvu.rex	shows
 oodStandardDialogs.rex	shows
 oodStandardRoutines.rex	shows
 oodpbar.rex	shows
-oodraw.rex	native:DLGEXT_GETWINDOWDC
+oodraw.rex	shows
 oograph.rex	native:DLGEXT_GETBITMAPSIZE
 oophil.rex	shows
 oovideo.rex	error:Error 6.1 Unmatched comment delimiter ("/*") on line 44.
 oowalk2.rex	error:Error 98.900 ooDialog/WASM: a dialog from a resource file needs a reader of binary Windows resources; set .ood
-oowalker.rex	native:DLGEXT_WRITETOWINDOW
+oowalker.rex	shows
 propertySheet.tabControls/PropertySheetDemo.rex	shows
 propertySheet.tabControls/TabDemo.rex	error:Error 98.900 ooDialog/WASM: a dialog from a resource file needs a reader of binary Windows resources; set .ood
 propertySheet.tabControls/TabOwnerDemo.rex	native:CDI_INIT
 propertySheet.tabControls/UserTabDemo.rex	shows
-propertySheet.tabControls/oodListViews.rex	error:Error 97.1 Object "The NIL object" does not understand message "ADDNEWATTRIBUTE".
+propertySheet.tabControls/oodListViews.rex	shows +error
 propertySheet.tabControls/ticketWizard.rex	shows
 resizableDialogs/DialogAreaU/dlgAreaUDemo.rex	shows
 resizableDialogs/DialogAreaU/dlgAreaUDemoThree.rex	shows
@@ -74,10 +74,10 @@ simple/SimpleMonthCalendar.rex	native:MC_GETMINRECT
 simple/SimpleUpDown.rex	shows
 sysinfo/sysinfo.rex	native:MOUSE_NEW_CLS
 tutorial/drawing1.rex	shows
-tutorial/drawing2.rex	native:EN_CONNECTDRAW
-tutorial/drawing3.rex	native:EN_CONNECTDRAW
-tutorial/drawing4.rex	native:EN_CONNECTDRAW
-tutorial/drawing5.rex	native:EN_CONNECTDRAW
+tutorial/drawing2.rex	shows
+tutorial/drawing3.rex	shows
+tutorial/drawing4.rex	shows
+tutorial/drawing5.rex	shows
 tutorial/employe1.rex	shows
 tutorial/employe2.rex	shows
 tutorial/employe3.rex	shows

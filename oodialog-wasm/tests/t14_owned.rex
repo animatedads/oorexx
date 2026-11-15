@@ -10,7 +10,7 @@ main~executeAsync("SHOWTOP")
 pal~popup("SHOWTOP")
 main~endAsyncExecution
 call SysSleep 0.5
-say "log: owner ended; palette left" pal~left
+say "log: owner ended; palette left" pal~left "windows" pal~seen
 return 0
 
 ::requires "ooDialog.cls"
@@ -21,11 +21,18 @@ return 0
 
 ::class Palette subclass UserDialog
 ::attribute left unguarded
+::attribute seen unguarded
 ::method init
   forward class (super) continue
   self~left = 0
 ::method defineDialog
   self~createPushButton(201, 6, 6, 60, 14, , "Tool")
+::method initDialog unguarded     -- .oodn~windows: the dialogs on the page (the seam for a system-classes file)
+  self~seen = ""
+  do w over .oodn~windows
+    self~seen = self~seen w~title
+  end
+  self~seen = self~seen~strip
 ::method ok unguarded
 ::method cancel unguarded
 ::method leaving unguarded

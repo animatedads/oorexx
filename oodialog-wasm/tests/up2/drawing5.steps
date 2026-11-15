@@ -1,0 +1,5 @@
+wait .ood-dlg
+sleep 800
+shot drawing5
+eval (() => [...document.querySelectorAll('.ood-dlg button.ood-c')].map(x => x.textContent.trim()).join(','))()
+press Escape

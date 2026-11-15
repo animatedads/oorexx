@@ -776,6 +776,141 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
   const bgr = (v) => 'rgb(' + (v & 255) + ',' + ((v >> 8) & 255) + ',' + ((v >> 16) & 255) + ')';
 
   /* ---- operations that carry text, and window operations ---------------- */
+  /* ---- Drawing (GDI) ----
+     A device context is a canvas laid over the dialog's client area or over one control.
+     It takes no pointer events, so the control under it still works.  Rexx keeps the state
+     of a DC (pen, brush, font, colours); every call brings what it needs:
+       style = stroke, width, dash, fill, font, textColour, bkMode (O|T), bkColour, align words */
+  function gdiCanvas(dlg, c, el) {
+    const id = c ? c.id : 0;
+    dlg.gdi = dlg.gdi || new Map();
+    let cv = dlg.gdi.get(id);
+    let left = 0, top = 0, w = dlg.client.clientWidth, h = dlg.client.clientHeight;
+    if (c) {
+      left = 0; top = 0;
+      for (let n = el; n && n !== dlg.client; n = n.offsetParent) { left += n.offsetLeft; top += n.offsetTop; }
+      w = el.offsetWidth; h = el.offsetHeight;
+    }
+    if (!cv) {
+      cv = D.createElement('canvas'); cv.className = 'ood-gdi';
+      cv.style.cssText = 'position:absolute;pointer-events:none;z-index:5';
+      dlg.client.appendChild(cv); dlg.gdi.set(id, cv);
+    }
+    if (cv.width !== w || cv.height !== h) { cv.width = Math.max(1, w); cv.height = Math.max(1, h); }
+    cv.style.left = left + 'px'; cv.style.top = top + 'px';
+    return cv;
+  }
+  function gdiHatch(kind, color) {
+    const t = D.createElement('canvas'); t.width = 8; t.height = 8;
+    const g = t.getContext('2d'); g.strokeStyle = color; g.lineWidth = 1; g.beginPath();
+    const line = (x1, y1, x2, y2) => { g.moveTo(x1, y1); g.lineTo(x2, y2); };
+    if (kind === 'HORIZONTAL' || kind === 'CROSS') line(0, 4.5, 8, 4.5);
+    if (kind === 'VERTICAL' || kind === 'CROSS') line(4.5, 0, 4.5, 8);
+    if (kind === 'UPDIAGONAL' || kind === 'DIAGCROSS') line(0, 8, 8, 0);
+    if (kind === 'DOWNDIAGONAL' || kind === 'DIAGCROSS') line(0, 0, 8, 8);
+    g.stroke();
+    return t;
+  }
+  function gdiRgb(css) {                                       // a CSS colour as [r, g, b]
+    const t = D.createElement('canvas'); t.width = t.height = 1;
+    const g = t.getContext('2d'); g.fillStyle = css; g.fillRect(0, 0, 1, 1);
+    return g.getImageData(0, 0, 1, 1).data;
+  }
+  function gdi(dlg, c, el, verb, v, st) {
+    const cv = gdiCanvas(dlg, c, el), g = cv.getContext('2d', { willReadFrequently: true });
+    const n = (i) => Number(v[i]) || 0;
+    const [stroke, width, dash, fill, font, textColor, bkMode, bkColor, align] = st;
+    const lw = Math.max(1, Number(width) || 1);
+    const pen = () => {
+      g.strokeStyle = stroke || '#000'; g.lineWidth = lw; g.lineCap = 'round'; g.lineJoin = 'round';
+      const u = lw; g.setLineDash({ DASH: [6 * u, 3 * u], DOT: [u, 2 * u], DASHDOT: [6 * u, 3 * u, u, 3 * u], DASHDOTDOT: [6 * u, 3 * u, u, 3 * u, u, 3 * u] }[dash] || []);
+    };
+    const brush = () => {
+      if (!fill) return false;
+      if (fill.startsWith('hatch:')) { const [, kind, color] = fill.split(':'); g.fillStyle = g.createPattern(gdiHatch(kind, color), 'repeat'); }
+      else g.fillStyle = fill;
+      return true;
+    };
+    const o = (lw % 2) ? 0.5 : 0;                              // odd widths on the pixel grid
+    switch (verb) {
+      case 'line': if (dash === 'NULL') return '1'; pen(); g.beginPath(); g.moveTo(n(0) + o, n(1) + o); g.lineTo(n(2) + o, n(3) + o); g.stroke(); return '1';
+      case 'rect': {
+        const x = Math.min(n(0), n(2)), y = Math.min(n(1), n(3)), w = Math.abs(n(2) - n(0)), h = Math.abs(n(3) - n(1));
+        if (v[4] === '1' && brush()) g.fillRect(x, y, w, h);
+        if (dash !== 'NULL') { pen(); g.strokeRect(x + o, y + o, w, h); }
+        return '1'; }
+      case 'arc': {                                            // Arc() and Pie(): counter-clockwise from the start radial to the end radial
+        const cx = (n(0) + n(2)) / 2, cy = (n(1) + n(3)) / 2, rx = Math.abs(n(2) - n(0)) / 2, ry = Math.abs(n(3) - n(1)) / 2;
+        if (rx <= 0 || ry <= 0) return '0';
+        const whole = (n(4) === n(6) && n(5) === n(7));
+        const ang = (x, y) => Math.atan2((y - cy) / ry, (x - cx) / rx);
+        const a1 = whole ? 0 : ang(n(4), n(5)), a2 = whole ? 2 * Math.PI : ang(n(6), n(7));
+        const ccw = !whole && v[9] !== 'CLOCKWISE';
+        g.beginPath();
+        if (v[8] === '1' && !whole) g.moveTo(cx, cy);
+        g.ellipse(cx, cy, rx, ry, 0, a1, a2, ccw);
+        if (v[8] === '1') { g.closePath(); if (brush()) g.fill(); }
+        if (dash !== 'NULL') { pen(); g.stroke(); }
+        return '1'; }
+      case 'angleArc': {                                       // x, y, radius, start and sweep in degrees, counter-clockwise; fromX fromY
+        const a1 = -n(3) * Math.PI / 180, a2 = -(n(3) + n(4)) * Math.PI / 180;
+        pen(); g.beginPath();
+        if (v[5] !== '') g.moveTo(n(5), n(6));
+        g.arc(n(0), n(1), Math.max(0, n(2)), a1, a2, n(4) > 0); g.stroke();
+        return Math.round(n(0) + n(2) * Math.cos(a2)) + ' ' + Math.round(n(1) + n(2) * Math.sin(a2)); }
+      case 'pixel': g.fillStyle = v[2]; g.fillRect(n(0), n(1), 1, 1); return '1';
+      case 'getPixel': { if (n(0) < 0 || n(1) < 0 || n(0) >= cv.width || n(1) >= cv.height) return '-1';
+        const d = g.getImageData(n(0), n(1), 1, 1).data; return d[3] === 0 ? '-1' : String(d[0] + d[1] * 256 + d[2] * 65536); }
+      case 'fillRect': if (brush()) g.fillRect(Math.min(n(0), n(2)), Math.min(n(1), n(3)), Math.abs(n(2) - n(0)), Math.abs(n(3) - n(1))); return '1';
+      case 'clear': if (v[0] === '') g.clearRect(0, 0, cv.width, cv.height); else g.clearRect(Math.min(n(0), n(2)), Math.min(n(1), n(3)), Math.abs(n(2) - n(0)), Math.abs(n(3) - n(1))); return '1';
+      case 'extent': { g.font = font || getComputedStyle(dlg.client).font; const m = g.measureText(v[0]);
+        return Math.ceil(m.width) + ' ' + Math.ceil((m.fontBoundingBoxAscent || 10) + (m.fontBoundingBoxDescent || 3)); }
+      case 'text': {
+        g.font = font || getComputedStyle(dlg.client).font;
+        const words = ' ' + (align || '') + ' ';
+        g.textAlign = words.includes(' CENTER ') ? 'center' : words.includes(' RIGHT ') ? 'right' : 'left';
+        g.textBaseline = words.includes(' BASELINE ') ? 'alphabetic' : words.includes(' BOTTOM ') ? 'bottom' : 'top';
+        const lines = String(v[2]).split('\n');
+        const m = g.measureText('Mg'), lh = Math.ceil((m.fontBoundingBoxAscent || 10) + (m.fontBoundingBoxDescent || 3));
+        lines.forEach((t, i) => {
+          const y = n(1) + i * lh;
+          if (bkMode === 'O') {
+            const w = g.measureText(t).width;
+            const x0 = g.textAlign === 'center' ? n(0) - w / 2 : g.textAlign === 'right' ? n(0) - w : n(0);
+            const y0 = g.textBaseline === 'alphabetic' ? y - (m.fontBoundingBoxAscent || 10) : g.textBaseline === 'bottom' ? y - lh : y;
+            g.fillStyle = bkColor || '#fff'; g.fillRect(x0, y0, w, lh);
+          }
+          g.fillStyle = textColor || '#000'; g.fillText(t, n(0), y);
+        });
+        return '1'; }
+      case 'flood': {                                          // FloodFill(): from x, y out to the border colour
+        const x0 = Math.round(n(0)), y0 = Math.round(n(1)), W = cv.width, H = cv.height;
+        if (x0 < 0 || y0 < 0 || x0 >= W || y0 >= H || !fill) return '0';
+        const img = g.getImageData(0, 0, W, H), px = img.data;
+        const bc = gdiRgb(v[2]), fc = gdiRgb(fill.startsWith('hatch:') ? fill.split(':')[2] : fill);
+        const near = (i, col) => px[i + 3] > 40 && Math.abs(px[i] - col[0]) + Math.abs(px[i + 1] - col[1]) + Math.abs(px[i + 2] - col[2]) < 150;
+        const seen = new Uint8Array(W * H), stack = [x0 + y0 * W];
+        while (stack.length) {
+          const p = stack.pop();
+          if (seen[p]) continue;
+          seen[p] = 1;
+          const i = p * 4;
+          if (near(i, bc)) continue;                           // the border stops the fill
+          px[i] = fc[0]; px[i + 1] = fc[1]; px[i + 2] = fc[2]; px[i + 3] = 255;
+          const x = p % W;
+          if (x > 0) stack.push(p - 1);
+          if (x < W - 1) stack.push(p + 1);
+          if (p >= W) stack.push(p - W);
+          if (p < W * (H - 1)) stack.push(p + W);
+        }
+        g.putImageData(img, 0, 0);
+        return '1'; }
+      case 'ownerDraw': if (c) (c.textEl || c.main || el).style.color = 'transparent'; return '1';   // the program draws it: no text of its own
+      case 'size': return cv.width + ' ' + cv.height;
+    }
+    return '';
+  }
+
   ood.op = function (key, id, name, a, b, c2) {
     const dlg = ood.dialogs.get(Number(key)); if (!dlg) return '';
     id = Number(id);
@@ -811,6 +946,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
         if (f.length) f[(i + (a === '1' ? 1 : f.length - 1)) % f.length].main.focus();
         return '1'; }
       case 'rect': { const r = el.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom].map(Math.round).join(' '); }
+      case 'gdi': return gdi(dlg, c, el, a, String(b).split(SEP), String(c2).split(SEP));
       case 'clientRect': { const r = (c ? el : dlg.client).getBoundingClientRect(); return '0 0 ' + Math.round(r.width) + ' ' + Math.round(r.height); }
       case 'origin': { const r = dlg.client.getBoundingClientRect(); return Math.round(r.left) + ' ' + Math.round(r.top); }
       case 'move': el.style.left = Number(a) + 'px'; el.style.top = Number(b) + 'px'; return '1';

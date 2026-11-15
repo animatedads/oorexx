@@ -1,0 +1,10 @@
+wait .ood-dlg >> text=Circle
+click .ood-dlg >> text=Circle
+sleep 600
+expect (() => { const cv = document.querySelector('canvas.ood-gdi'); const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n > 3000; })() ==> True
+shot drawing3_circle
+click .ood-dlg >> text=Rectangle
+sleep 600
+expect (() => { const cv = document.querySelector('canvas.ood-gdi'); const p = cv.getContext('2d').getImageData(5, 100, 1, 1).data; return p[3] > 0; })() ==> True
+shot drawing3_rectangle
+click .ood-dlg >> text=Leave
