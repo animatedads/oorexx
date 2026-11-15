@@ -3357,6 +3357,7 @@ expose dlgObjList
   initResult = result
   .oodn~pageInit(self, "RES", pageOpts, "", 200)
   return initResult
+
 ::method execute unguarded
     -- if autodetection is on, create the data attributes
     if self~autoDetect then do
@@ -4611,8 +4612,12 @@ expose dlgObjList
 ::constant MCM_GETMONTHDELTA       "0x1013"
 ::constant MCM_SETMONTHDELTA       "0x1014"
 
+-- upstream: ::attribute date external "_mc_date" (get_mc_date, set_mc_date): the selected day.
 ::method date unguarded
-  forward to (.oodn) message "_mc_date" arguments (.array~of(self, "DATE", arg(1, "A")))
+  return .oodn~mc_date(self)
+::method "date=" unguarded
+  use strict arg date
+  .oodn~mc_setDate(self, date)
 
 ::method addStyle unguarded
   forward to (.oodn) message "mc_addRemoveStyle" arguments (.array~of(self, "ADDSTYLE", arg(1, "A")))

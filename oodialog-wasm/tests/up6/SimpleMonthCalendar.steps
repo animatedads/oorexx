@@ -1,0 +1,17 @@
+wait .ood-mc
+sleep 500
+expect document.querySelector('.ood-mc').scrollWidth <= document.querySelector('.ood-mc').offsetWidth ==> True
+eval (() => { const c = [...document.querySelectorAll('.ood-mc-day:not(.ood-mc-other)')].find(x => x.textContent === '20'); window.__d = c.dataset.date; c.click(); return window.__d; })()
+sleep 500
+expect document.querySelector('.ood-mc-sel').dataset.date === window.__d ==> True
+expect (() => { const d = new Date(window.__d + 'T00:00:00'); const want = d.toLocaleString('en-US', { month: 'long' }) + ' 20, ' + d.getFullYear(); return [...document.querySelectorAll('.ood-dlg .ood-c')].some(x => (x.innerText || '').trim() === want); })() ==> True
+eval (() => { window.__t = document.querySelector('.ood-mc-title').textContent; return window.__t; })()
+click .ood-mc-next
+sleep 300
+expect (() => { const d = new Date(window.__d + 'T00:00:00'); const n = new Date(d.getFullYear(), d.getMonth() + 1, 1); return document.querySelector('.ood-mc-title').textContent === n.toLocaleString('en-US', { month: 'long' }) + ' ' + n.getFullYear(); })() ==> True
+eval (() => { const c = [...document.querySelectorAll('.ood-mc-day:not(.ood-mc-other)')].find(x => x.textContent === '25'); window.__d = c.dataset.date; c.click(); return window.__d; })()
+sleep 500
+expect (() => { const d = new Date(window.__d + 'T00:00:00'); const want = d.toLocaleString('en-US', { month: 'long' }) + ' 25, ' + d.getFullYear(); return [...document.querySelectorAll('.ood-dlg .ood-c')].some(x => (x.innerText || '').trim() === want); })() ==> True
+shot SimpleMonthCalendar
+expect (window.oodOut.join('').match(/(native function \w+|Error \d+\.\d+[^\n]*)/g) || []).length ==> 0
+click .ood-dlg button.ood-def

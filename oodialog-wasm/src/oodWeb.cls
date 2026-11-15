@@ -24,7 +24,7 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.15.0"
+  return "0.16.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute key unguarded
@@ -102,7 +102,7 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.15.0"
+  return "0.16.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute rexxSelf unguarded
@@ -131,7 +131,7 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.15.0"
+  return "0.16.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute dlg unguarded             -- its dialog's OodDlg
@@ -149,7 +149,7 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.15.0"
+  return "0.16.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::method module_version unguarded
@@ -439,6 +439,17 @@
   wParam = code * 65536 + id
   lParam = "0x"d2x(key * 65536 + id)~right(16, "0")
   self~invoke(dlg, method, .array~of(wParam, lParam))
+
+/* Send an event method whose answer is wanted; .nil if it gives none or fails. */
+::method invokeResult unguarded
+  use arg dlg, method, args
+  signal on syntax
+  answer = dlg~sendWith(method, args)
+  if var("ANSWER") then return answer
+  return .nil
+syntax:
+  say "ooDialog/WASM: error in event method" method":" condition("O")~message
+  return .nil
 
 /* Send an event method.  An error in it is reported and the dialog goes on. */
 ::method invoke unguarded
@@ -933,8 +944,8 @@ noPackage:
   if id < 1 then return .nil
   kind = d~kinds[id]
   if kind == .nil then return .nil
-  kinds = "BUTTON CHECK RADIO GROUP STATIC FRAME IMAGE EDIT LIST COMBO PROGRESS LISTVIEW TREEVIEW TAB UPDOWN TRACKBAR DATETIMEPICKER"
-  names = "PUSHBUTTON CHECKBOX RADIOBUTTON GROUPBOX STATIC STATIC STATIC EDIT LISTBOX COMBOBOX PROGRESSBAR LISTVIEW TREEVIEW TAB UPDOWN TRACKBAR DATETIMEPICKER"
+  kinds = "BUTTON CHECK RADIO GROUP STATIC FRAME IMAGE EDIT LIST COMBO PROGRESS LISTVIEW TREEVIEW TAB UPDOWN TRACKBAR DATETIMEPICKER MONTHCALENDAR"
+  names = "PUSHBUTTON CHECKBOX RADIOBUTTON GROUPBOX STATIC STATIC STATIC EDIT LISTBOX COMBOBOX PROGRESSBAR LISTVIEW TREEVIEW TAB UPDOWN TRACKBAR DATETIMEPICKER MONTHCALENDAR"
   at = kinds~wordPos(kind~word(1)~upper)
   if at == 0 then return .nil
   return self~pbdlg_newControl(self_, "NEW"names~word(at), a)
@@ -1527,7 +1538,7 @@ noPackage:
   use arg self_, msg, a
   opts = ""
   nums = .array~new
-  do i = 2 to a~last
+  do i = 2 to a~size
     if \a~hasIndex(i) then iterate
     v = a[i]
     select
@@ -2031,6 +2042,7 @@ noPackage:
     when kind == "TAB" then return self~en_connectTabEvent(dlg, msg, args)
     when kind == "UPDOWN" then return self~en_connectUpDownEvent(dlg, msg, args)
     when kind == "DATETIMEPICKER" then return self~en_connectDateTimePickerEvent(dlg, msg, args)
+    when kind == "MONTHCALENDAR" then return self~en_connectMonthCalendarEvent(dlg, msg, args)
     otherwise do
       say "ooDialog/WASM: connectEvent" a[1] "for control" p~id "is connected but is not produced yet"
       return 0
@@ -2120,6 +2132,14 @@ noPackage:
         args = .array~of(parts[1] * 65536 + codes~word(codes~wordPos(parts[2]) + 1), hwnd)
       end
       when kind == "DATETIMEPICKER" then args = .array~of(self~dateTimeOf(extra), .true, id, hwnd, event, dlg~newDateTimePicker(id))
+      when kind == "MONTHCALENDAR" then do
+        if event == "GETDAYSTATE" then do         -- (start, count, id, hwnd): the method answers a day state buffer
+          buffer = self~invokeResult(dlg, entry[3], .array~of(self~dateTimeOf(parts[1]), parts[2], id, hwnd))
+          if buffer \== .nil then if buffer~isA(.String) then self~ctlOp(d, id, "mc.dayStateFrom", parts[1], buffer)
+          iterate
+        end
+        args = .array~of(self~dateTimeOf(parts[1]), self~dateTimeOf(parts[2]), id, hwnd)
+      end
       otherwise args = .array~of(id, extra)
     end
     self~invoke(dlg, entry[3], args)
@@ -2182,6 +2202,190 @@ noPackage:
   use arg iso
   parse var iso year "-" month "-" day "T" hours ":" minutes ":" seconds
   return .DateTime~new(year, month, day, hours, minutes, seconds)
+/*---- Month calendar --------------------------------------------------------------------
+   One month is shown and one day is selected (no MULTI selection).  A DayState is a bit
+   mask of the bold days of one month; a day state buffer is the masks as words. */
+::method mc_date unguarded
+  use arg self_
+  return self~dateTimeOf(self~op(self_, "mc.get"))
+::method mc_setDate unguarded
+  use arg self_, date
+  self~op(self_, "mc.set", date~isoDate~left(19))
+  return 0
+::method mc_getMinRect unguarded   -- getMinRect(rect): right and bottom are the size the calendar needs
+  use arg self_, msg, a
+  parse value self~op(self_, "mc.minRect") with width height .
+  if width == "" then return .false
+  a[1]~left = 0
+  a[1]~top = 0
+  a[1]~right = width
+  a[1]~bottom = height
+  return .true
+::method mc_sizeRectToMin unguarded
+  use arg self_, msg, a
+  parse value self~op(self_, "mc.minRect") with width height .
+  if width == "" then return .false
+  a[1]~right = a[1]~left + width
+  a[1]~bottom = a[1]~top + height
+  return a[1]
+::method mc_setRange unguarded     -- setRange(array of two DateTime; .nil for no limit)
+  use arg self_, msg, a
+  range = a[1]
+  low = ""
+  high = ""
+  if range~hasIndex(1) then if range[1] \== .nil then low = range[1]~isoDate~left(19)
+  if range~hasIndex(2) then if range[2] \== .nil then high = range[2]~isoDate~left(19)
+  self~op(self_, "mc.range", low, high)
+  return .true
+::method mc_getRange unguarded     -- getRange(array): "none", "min", "max" or "both"
+  use arg self_, msg, a
+  parse value self~op(self_, "mc.getRange") with low (self~sep) high
+  if low \== "" then a[1][1] = self~dateTimeOf(low)
+  if high \== "" then a[1][2] = self~dateTimeOf(high)
+  if low \== "" & high \== "" then return "both"
+  if low \== "" then return "min"
+  if high \== "" then return "max"
+  return "none"
+::method mc_getMonthRange unguarded    -- getMonthRange(array, span): the first and last day shown; answers the months
+  use arg self_, msg, a
+  span = "D"
+  if self~opt(a, 2)~upper~abbrev("P") then span = "P"
+  sep = self~sep
+  parse value self~op(self_, "mc.months", span) with first (sep) last (sep) count
+  if first == "" then return 0
+  a[1][1] = self~dateTimeOf(first)
+  a[1][2] = self~dateTimeOf(last)
+  return count
+::method mc_getSelectionRange unguarded
+  use arg self_, msg, a
+  day = self~dateTimeOf(self~op(self_, "mc.get"))
+  a[1][1] = day
+  a[1][2] = day
+  return .true
+::method mc_setSelectionRange unguarded
+  use arg self_, msg, a
+  self~op(self_, "mc.set", a[1][1]~isoDate~left(19))
+  return .true
+::method mc_getToday unguarded
+  use arg self_
+  return self~dateTimeOf(self~op(self_, "mc.today"))
+::method mc_setToday unguarded
+  use arg self_, msg, a
+  if a~hasIndex(1) then self~op(self_, "mc.today", a[1]~isoDate~left(19))
+  else self~op(self_, "mc.today", .DateTime~new~isoDate~left(19))
+  return 0
+::method mc_setDayState unguarded  -- setDayState(array of DayState): for the months from the first one shown
+  use arg self_, msg, a
+  masks = ""
+  do state over a[1]
+    masks = masks state~value
+  end
+  self~op(self_, "mc.dayState", masks~strip)
+  return .true
+::method mc_setDayStateQuick unguarded
+  use arg self_, msg, a
+  masks = ""
+  do i = 1 to 3
+    if a~hasIndex(i) then masks = masks a[i]~value
+    else masks = masks 0
+  end
+  self~op(self_, "mc.dayState", masks~strip)
+  return .true
+::method mc_getFirstDayOfWeek unguarded    -- 0 Monday ... 6 Sunday
+  use arg self_
+  return self~op(self_, "mc.firstDay")
+::method mc_setFirstDayOfWeek unguarded
+  use arg self_, msg, a
+  old = self~op(self_, "mc.firstDay")
+  day = a[1]
+  if \day~datatype("W") then do
+    names = "MONDAY TUESDAY WEDNESDAY THURSDAY FRIDAY SATURDAY SUNDAY"
+    day = names~wordPos(day~upper) - 1
+    if day < 0 then return old
+  end
+  self~op(self_, "mc.firstDay", day)
+  return old
+::method mc_getCalendarCount unguarded
+  return 1
+::method mc_getCurrentView unguarded
+  return "Monthly"
+::method mc_setCurrentView unguarded
+  return .false
+::method mc_getCalendarBorder unguarded
+  return 4
+::method mc_setCalendarBorder unguarded
+  return 0
+::method mc_getCALID unguarded
+  return "GREGORIAN"
+::method mc_setCALID unguarded
+  return 0
+::method mc_getColor unguarded
+  return -1
+::method mc_setColor unguarded
+  return -1
+::method mc_getStyle unguarded
+  return ""
+::method mc_addRemoveStyle unguarded
+  return ""
+::method mc_replaceStyle unguarded
+  return ""
+::method mc_hitTestInfo unguarded  -- hitTestInfo(point | x, y): a directory: hit, and date for a day
+  use arg self_, msg, a
+  if a[1]~isA(.String) then do
+    x = a[1]
+    y = a[2]
+  end
+  else do
+    x = a[1]~x
+    y = a[1]~y
+  end
+  answer = self~op(self_, "mc.hit", x, y)
+  info = .directory~new
+  what = answer~word(1)
+  select
+    when what == "DATE" then do
+      info~hit = "CalendarDate"
+      info~date = self~dateTimeOf(answer~word(2))
+    end
+    when what == "PREV" then info~hit = "TitleButtonPrev"
+    when what == "NEXT" then info~hit = "TitleButtonNext"
+    when what == "TITLE" then info~hit = "TitleBackground"
+    when what == "TODAY" then info~hit = "TodayLink"
+    otherwise info~hit = "NoWhere"
+  end
+  return info
+::method ds_init unguarded         -- .DayState~new(day, day ...): those days of the month are bold
+  use arg self_, msg, a
+  mask = 0
+  do i = 1 to a~size               -- (an empty array has no last index)
+    if \a~hasIndex(i) then iterate
+    day = a[i]
+    if \day~datatype("W") then raise syntax 93.905 array(i, day)
+    if day < 1 | day > 31 then raise syntax 93.907 array(i, 1, 31, day)
+    bit = 2 ** (day - 1)
+    if mask // (bit * 2) < bit then mask = mask + bit
+  end
+  self_~oodPeer = mask
+  return 0
+::method ds_value unguarded
+  use arg self_
+  return self_~oodPeer
+::method dss_makeDayStateBuffer unguarded  -- .DayStates~makeDayStateBuffer(array of DayState)
+  use arg self_, msg, a
+  masks = ""
+  do state over a[1]
+    masks = masks state~value
+  end
+  return masks~strip
+::method dss_quickDayStateBuffer unguarded
+  use arg self_, msg, a
+  masks = ""
+  do i = 1 to 3
+    if a~hasIndex(i) then masks = masks a[i]~value
+    else masks = masks 0
+  end
+  return masks~strip
+
 ::method dtp_getDateTime unguarded
   use arg self_
   return self~dateTimeOf(self~op(self_, "dtp.get"))
@@ -3593,7 +3797,7 @@ noPackage:
   return 0
 ::method en_connectMonthCalendarEvent unguarded
   use arg self_, msg, a
-  return self~notProduced("month calendar", a)
+  return self~connectNotify(self_, a, "GETDAYSTATE GETDAYSTATE SELCHANGE SELCHANGE SELECT SELECT")
 ::method en_connectToolTipEvent unguarded
   use arg self_, msg, a
   return self~notProduced("tool tip", a)
@@ -3689,7 +3893,7 @@ noPackage:
   at = -1
   if a~hasIndex(1) then at = a[1]
   texts = self~opt(a, 3)
-  do i = 4 to a~last
+  do i = 4 to a~size
     texts = texts || self~sep || self~opt(a, i)
   end
   return self~op(self_, "lv.insRow", at, texts)
@@ -3961,7 +4165,7 @@ noPackage:
 ::method tab_addFullSeq unguarded  -- label, imageIndex, userData triples
   use arg self_, msg, a
   last = -1
-  do i = 1 to a~last by 3
+  do i = 1 to a~size by 3
     last = self~op(self_, "tab.ins", -1, self~opt(a, i))
   end
   return last
@@ -4323,7 +4527,7 @@ noPackage:
   end
   if \d~live then return -1
   stops = ""
-  do i = first to a~last
+  do i = first to a~size
     if \a~hasIndex(i) then iterate
     if \a[i]~datatype("N") then iterate
     stops = stops (a[i] * d~factorX)~format(, 0)

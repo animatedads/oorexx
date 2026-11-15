@@ -172,3 +172,12 @@
   initResult = result
   .oodn~pageInit(self, "RES", pageOpts, "", 200)
   return initResult
+
+--@replace MonthCalendar date
+-- upstream: ::attribute date external "_mc_date" (get_mc_date, set_mc_date): the selected day.
+::method date unguarded
+  return .oodn~mc_date(self)
+::method "date=" unguarded
+  use strict arg date
+  .oodn~mc_setDate(self, date)
+

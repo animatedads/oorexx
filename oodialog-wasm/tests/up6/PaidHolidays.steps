@@ -1,0 +1,18 @@
+wait .ood-mc
+sleep 600
+expect document.querySelector('.ood-mc-title').textContent + ' ' + [...document.querySelectorAll('.ood-mc-bold')].map(x => x.dataset.date).join(',') ==> December 2011 2011-12-23,2011-12-30
+click .ood-mc-next
+sleep 300
+expect document.querySelector('.ood-mc-title').textContent ==> December 2011
+click .ood-mc-prev
+sleep 600
+expect document.querySelector('.ood-mc-title').textContent + ' ' + [...document.querySelectorAll('.ood-mc-bold')].filter(x => !x.classList.contains('ood-mc-other')).map(x => x.dataset.date).join(',') ==> November 2011 2011-11-24,2011-11-25
+shot PaidHolidays
+click .ood-mc-prev
+click .ood-mc-prev
+click .ood-mc-prev
+click .ood-mc-prev
+sleep 600
+expect document.querySelector('.ood-mc-title').textContent + ' ' + [...document.querySelectorAll('.ood-mc-bold')].filter(x => !x.classList.contains('ood-mc-other')).map(x => x.dataset.date).join(',') ==> July 2011 2011-07-04
+expect (window.oodOut.join('').match(/(native function \w+|Error \d+\.\d+[^\n]*)/g) || []).length ==> 0
+click .ood-dlg button.ood-def

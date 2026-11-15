@@ -1,4 +1,4 @@
-# ooDialog for ooRexx/WASM — v0.15.0
+# ooDialog for ooRexx/WASM — v0.16.0
 
 Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: Josep Maria Blasco's
 ooRexx/WASM (`oorexxwasm` 0.2.4, ooRexx 5.3.0) and its `js.cls`.
@@ -48,11 +48,11 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
     python3 tools/oodtest.py --poke upstream/examples 0 24
     python3 tools/oodtest.py --tree upstream/examples tests/t*.rex tests/up/calculator.rex tests/up/oodpbar.rex tests/up/oodStandardRoutines.rex
 
-## State on 2026-11-15 (v0.15.0)
+## State on 2026-11-15 (v0.16.0)
 
-- Natives ported: 595 of 1,182 (50.3%). (The total fell from 1,196 because 12
+- Natives ported: 625 of 1,181 (52.9%). (The total fell from 1,196 because 12
   natives are now plain Rexx in `src/patches.txt`.)
-- Tests: 36 of 36 pass in headless Chromium (`tests/t01`..`t17` with expected
+- Tests: 38 of 38 pass in headless Chromium (`tests/t01`..`t17` with expected
   output, the binary resource hand-off test `tests/res/t07_resdialog_binary`,
   four unmodified upstream samples: `calculator.rex`,
   `oodpbar.rex`, `oodStandardRoutines.rex`, and the tutorial
@@ -65,12 +65,13 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
   another), `mouse/mouseWheel.rex` (the wheel scrolls the edit control), the two
   in-place editing examples (`subitem.editing/editControl.rex`,
   `dropDownListComboBox.rex`: a cell is edited and kept, another cancelled),
-  the tutorial's `employe9.rex` (list box tab stops) and the
+  the tutorial's `employe9.rex` (list box tab stops), the two month calendar
+  examples (`SimpleMonthCalendar.rex`, `PaidHolidays.rex`) and the
   tutorial's `drawing3.rex` and `drawing5.rex`; and the three
   programs written by ooDialog Designer v0.3.0, in `tests/designer`).
 - Sweep of all 140 upstream example programs (`oodtest.py --sweep`, results in
-  `sweep.tsv`), each run from its own directory: 72 show their dialog, 7 run to
-  the end, 9 show only a message box, 11 stop at a native not ported yet, 10
+  `sweep.tsv`), each run from its own directory: 75 show their dialog, 7 run to
+  the end, 9 show only a message box, 9 stop at a native not ported yet, 9
   stop on an error (8 need a reader of binary resources, which is another
   task's work; `oovideo.rex` is broken upstream), 24 are components: parts of
   the user guide's Order Manager, which name their files from the program's
@@ -86,14 +87,13 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
 - Depth probe (`oodtest.py --poke`, results in `poke.tsv`): the 70 examples
   that show a dialog or a message box are used automatically (tabs, rows,
   check boxes, lists, edits, menus, every button, then closed; last run at
-  v0.13.1). Of 75, 64 come through with no error, no unhandled Windows message
-  and a clean end. 6 more have no fault except connecting an event this layer
-  does not produce. 5 have a problem, each named in `poke.tsv`: 2 are
-  components started alone (not a fault), the others are sub-item editing
-  (`setParent`), list tabulators and a ResourceImage; the first two are done in
-  v0.15.0, after this run. Every program ends.
-  `oovideo.rex` fails on an unmatched `/*` at line 44 of the upstream file
-  itself (r13513).
+  v0.16.0). Of 81, 66 come through with no error, no unhandled Windows message
+  and a clean end. 10 more have no fault except connecting an event this layer
+  does not produce. 5 have a problem, each named in `poke.tsv`, and none of
+  them is a fault of this layer's own code: 2 are components started alone,
+  `BinaryMenuBar.rex` and `sample.rex` (ResourceImage) need a reader of binary
+  resources, and `sysinfo.rex` needs OLE and so does not end. `oovideo.rex`
+  fails on an unmatched `/*` at line 44 of the upstream file itself (r13513).
   The probe proves the absence of errors, not that results are right.
 - Working, each asserted by a test: UserDialog; RcDialog (upstream's own .rc
   parser); push button, check box, radio button, group box, static text and
@@ -152,6 +152,21 @@ its sprite with them), getBitmapSize (from the file's header), drawBitmap,
 scrollButton, scroll, scrollBitmapFromTo, resizeControl, moveControl and
 winTimer. Not done: dimBitmap and the bitmap of a button that came from a
 binary resource.
+
+## Month calendar
+
+A month grid with previous and next, today's date and one selected day: the
+`date` attribute, getMinRect, setRange and getRange, getMonthRange,
+setDayState and the DayState / DayStates classes (bold days), the SELECT,
+SELCHANGE and GETDAYSTATE events, setToday, setFirstDayOfWeek, hitTestInfo.
+One month is shown and one day is selected: no multi-selection, no year or
+decade views, no colours.
+
+## Documentation for other tasks
+
+The sphere `oodialog-wasm` (in `sphere/`, and published to the estate's
+spheres) holds what another task needs: the renderer contract, the seams, the
+differences from Windows, the harness, how to port a native, and the lessons.
 
 ## In-place editing in a list-view
 
@@ -231,7 +246,7 @@ WASM file system as bytes.
 
 ## Not yet (the sweep's order of need)
 
-Month calendar; tool bar, status
+Tool bar, status
 bar, re-bar; custom draw; ResizingAdmin's size limits; connectActivate,
 connectHelp, connectPosChanged and connectResizing (accepted, not produced);
 drawing the icons of image lists; a modeless property sheet; wizard header and
