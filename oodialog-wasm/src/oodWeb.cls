@@ -24,7 +24,7 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.13.0"
+  return "0.13.1"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute key unguarded
@@ -102,7 +102,7 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.13.0"
+  return "0.13.1"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute rexxSelf unguarded
@@ -131,7 +131,7 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.13.0"
+  return "0.13.1"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute dlg unguarded             -- its dialog's OodDlg
@@ -149,7 +149,7 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.13.0"
+  return "0.13.1"
 ::method module_lastChanged class
   return "2026-11-14"
 ::method module_version unguarded
@@ -508,6 +508,12 @@ syntax:
     end
     otherwise return 1
   end
+
+::method onPumpThread unguarded    -- is the caller below pumpUntilFinished on the call stack?
+  do frame over .context~stackFrames
+    if frame~name == "PUMPUNTILFINISHED" then return .true
+  end
+  return .false
 
 ::method handlerOutlivedDialogs unguarded
   expose handlerDepth dialogs
@@ -4870,7 +4876,8 @@ noPackage:
 /* msSleep(ms).  ooDialog runs an event method on a thread of its own, so a method that
    draws in a loop and sleeps between the steps leaves the dialog alive: its Interrupt
    button still works.  Here the event methods run on the thread that takes the page's
-   events, so the sleep takes them meanwhile: the other events are handled inside it. */
+   events, so the sleep takes them meanwhile: the other events are handled inside it.
+   (Only there: see onPumpThread.) */
 ::method msSleep_rtn unguarded
   use arg , , a
   numeric digits 20
@@ -4880,6 +4887,13 @@ noPackage:
   -- user closed it meanwhile) has nothing to wait for: on Windows it would run on
   -- its own thread beside the program's end; here the program ends only when it returns.
   if self~handlerOutlivedDialogs then return 0
+  -- Only the thread that takes the page's events may take them here.  A thread the
+  -- program started itself (an animation) just sleeps: were it to run an event method
+  -- inside its own sleep, a method that waits for that thread to stop would wait for ever.
+  if \self~onPumpThread then do
+    call SysSleep ms / 1000
+    return 0
+  end
   until = time("F") + ms * 1000
   do forever
     left = (until - time("F")) / 1000000

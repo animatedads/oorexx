@@ -1,4 +1,4 @@
-# ooDialog for ooRexx/WASM — v0.13.0
+# ooDialog for ooRexx/WASM — v0.13.1
 
 Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: Josep Maria Blasco's
 ooRexx/WASM (`oorexxwasm` 0.2.4, ooRexx 5.3.0) and its `js.cls`.
@@ -48,7 +48,7 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
     python3 tools/oodtest.py --poke upstream/examples 0 24
     python3 tools/oodtest.py --tree upstream/examples tests/t*.rex tests/up/calculator.rex tests/up/oodpbar.rex tests/up/oodStandardRoutines.rex
 
-## State on 2026-11-15 (v0.13.0)
+## State on 2026-11-15 (v0.13.1)
 
 - Natives ported: 566 of 1,184 (47.8%). (The total fell from 1,196 because 12
   natives are now plain Rexx in `src/patches.txt`.)
@@ -152,7 +152,11 @@ resource, and the Mouse class.
 ooDialog runs an event method on a thread of its own. Here the event methods
 run on the thread that takes the page's events. So that a method which draws in
 a loop does not freeze its dialog, `msSleep` handles the other events while it
-waits: the Interrupt button of `oodraw.rex` works. A loop that never calls
+waits: the Interrupt button of `oodraw.rex` works. Only the thread that takes
+the events does this; a thread the program started itself (the animation of
+`oowalker.rex`) just sleeps, or an event method waiting for that thread to stop
+could be run inside the thread's own sleep and wait for ever (v0.13.0 did
+that, one run in five). A loop that never calls
 msSleep (or returns) still holds the dialog. Once a method's dialog has been
 closed, its msSleep returns at once, so the program can end.
 
