@@ -42,6 +42,8 @@ This is an **explicit-pump preview**, not automatic ooDialog `WM_NOTIFY` routing
 
 `OodFluentSmoke.exe` can attempt a real HWND + island lifecycle in an interactive desktop session and return a nonzero exit code on failure. GitHub hosted Windows runners may lack a usable interactive desktop; CI deliberately records the runtime result separately from compilation and preserves its diagnostic log. A green workflow alone **does not prove** a live ooDialog run.
 
+CI run 43722647566 first demonstrated executable entry, `OodfSession` opening, a real HWND and entry to `oodf_win_open`. The provider returned `0x80670016` during runtime bootstrap (a Windows App Runtime/DDLM package resolution error), rather than hanging before `main`. CI now attempts to install Microsoft's signed, version-matched Windows App Runtime 2.6.5 x64 installer on the *ephemeral Windows runner* before probing the island. A successful CI installation is not a user-machine deployment claim; UI/event parity still requires a real ooDialog process.
+
 ## API and responsibility
 
 Open an `OodfSession` via `oodf_open`, create the island with `oodf_win_open(parentHwnd, session, &host)`, then add controls and geometry. Control events stay in the session until consumed with `oodf_poll`, preserving `resourceId`, `uid`, `handler`, `value`, `revision`. On dialog teardown, call `oodf_win_close` on the same UI thread, then `oodf_close`.

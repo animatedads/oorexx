@@ -38,6 +38,20 @@ jobs:
         run: msbuild oodialog-fluent/windows/OodFluentWindows.vcxproj -restore -p:Configuration=Release -p:Platform=x64 -m
       - name: Compile Windows native host exercise
         run: msbuild oodialog-fluent/windows/OodFluentSmoke.vcxproj -p:Configuration=Release -p:Platform=x64 -m
+      - name: Install pinned Microsoft Windows App Runtime on ephemeral runner
+        shell: pwsh
+        continue-on-error: true
+        timeout-minutes: 3
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP "WindowsAppRuntimeInstall-2.6.5-x64.exe"
+          Invoke-WebRequest -Uri "https://aka.ms/windowsappsdk/2.6/2.6.5/windowsappruntimeinstall-x64.exe" -OutFile $installer
+          $signature = Get-AuthenticodeSignature $installer
+          if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Microsoft') {
+            throw "Microsoft runtime installer signature verification failed"
+          }
+          $process = Start-Process -FilePath $installer -ArgumentList '--quiet' -PassThru -Wait
+          Write-Output "Windows App SDK 2.6.5 runtime installer exit=$($process.ExitCode)"
+          if ($process.ExitCode -ne 0) { throw "Windows App Runtime prerequisite installation failed" }
       - name: Attempt Windows host runtime exercise
         shell: pwsh
         timeout-minutes: 2
