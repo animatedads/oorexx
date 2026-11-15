@@ -97,31 +97,46 @@ jobs:
           $results | ForEach-Object { Write-Output $_ }
           Write-Output "SUPPORTED_RUNTIME_FAILURES=$supportedFailures DIAGNOSTIC_UNQUALIFIED_FAILURES=$diagnosticFailures"
           if ($supportedFailures -ne 0) { throw "$supportedFailures supported Windows runtime case(s) failed" }
+      - name: Reuse verified official ooRexx portable archive
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/oorexx-verified-5.2.0-portable.zip
+          key: oorexx-official-portable-windows-x64-5.2.0-13156-v1
       - name: Probe real ooDialog Rexx session on Windows
         # Exploratory until the downloaded ooRexx runtime and native ooDialog
         # binding are independently verified. This step must not silently be
         # counted as a passing supported-set gate.
         continue-on-error: true
         shell: pwsh
-        timeout-minutes: 5
+        timeout-minutes: 10
         run: |
           $ErrorActionPreference = 'Stop'
           # Use SourceForge's binary redirector, not the /download HTML
           # landing page (which can return a small non-ZIP response in CI).
           $url = 'https://downloads.sourceforge.net/project/oorexx/oorexx/5.2.0/portable/oorexx-5.2.0-13156.windows.x86_64-portable-release.zip'
-          $archive = Join-Path $env:RUNNER_TEMP 'oorexx-5.2.0-portable.zip'
+          $archive = Join-Path $env:RUNNER_TEMP 'oorexx-verified-5.2.0-portable.zip'
+          $incoming = Join-Path $env:RUNNER_TEMP 'oorexx-incoming-5.2.0.zip'
           $unpack = Join-Path $env:RUNNER_TEMP 'oorexx-portable'
           Write-Output 'REXX_PROBE_STAGE=DOWNLOAD_PORTABLE_5_2'
-          # SourceForge documents command-line retrieval with curl -L;
-          # the PowerShell WebRequest user agent receives HTML on this runner.
-          & curl.exe --fail --location --retry 2 --max-time 100 --output $archive $url
-          if ($LASTEXITCODE -ne 0) { throw "SourceForge curl download failed ($LASTEXITCODE)" }
-          $bytes = [IO.File]::ReadAllBytes($archive)
-          $signature = [Convert]::ToHexString($bytes[0..([Math]::Min(3, $bytes.Length - 1))])
-          Write-Output "REXX_DOWNLOAD_BYTES=$($bytes.Length) SIGNATURE=$signature"
-          if ($bytes.Length -lt 5000000 -or -not $signature.StartsWith('504B0304')) {
-            throw 'Invalid or incomplete ooRexx portable ZIP from binary redirector'
+          if (-not (Test-Path $archive)) {
+            # SourceForge documents command-line retrieval with curl -L;
+            # WebRequest's user agent instead receives HTML on this runner.
+            & curl.exe --fail --location --retry 1 --max-time 240 --output $incoming $url
+            if ($LASTEXITCODE -ne 0) { throw "SourceForge curl download failed ($LASTEXITCODE)" }
           }
+          $candidate = if (Test-Path $archive) { $archive } else { $incoming }
+          $bytes = [IO.File]::ReadAllBytes($candidate)
+          $signature = [Convert]::ToHexString($bytes[0..([Math]::Min(3, $bytes.Length - 1))])
+          Write-Output "REXX_DOWNLOAD_BYTES=$($bytes.Length) SIGNATURE=$signature SHA256=$((Get-FileHash $candidate -Algorithm SHA256).Hash)"
+          if ($bytes.Length -lt 5000000 -or -not $signature.StartsWith('504B0304')) {
+            throw 'Invalid or incomplete ooRexx portable ZIP from SourceForge'
+          }
+          $zipCheck = [IO.Compression.ZipFile]::OpenRead($candidate)
+          try {
+            if ($zipCheck.Entries.Count -lt 20) { throw 'ooRexx portable ZIP has too few entries' }
+            Write-Output "REXX_ZIP_ENTRIES=$($zipCheck.Entries.Count)"
+          } finally { $zipCheck.Dispose() }
+          if (-not (Test-Path $archive)) { Move-Item $incoming $archive }
           Expand-Archive -Path $archive -DestinationPath $unpack -Force
           $rexx = Get-ChildItem $unpack -Recurse -File -Filter 'rexx.exe' | Select-Object -First 1
           $dialogClass = Get-ChildItem $unpack -Recurse -File -Filter 'ooDialog.cls' | Select-Object -First 1
