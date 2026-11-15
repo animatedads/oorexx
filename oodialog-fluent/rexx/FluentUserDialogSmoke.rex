@@ -48,9 +48,10 @@ exit 0
   button = fluent~newButton(201, 'Native WinUI 3 Button', '800000001')
   toggle = fluent~newToggleSwitch(202, 'Native WinUI 3 Toggle', '800000002')
   button~setText('WinUI button through Rexx')
-  toggle~setOn(.true)
   button~connectEvent('click', 'onFluentButton')
   toggle~connectEvent('toggled', 'onFluentToggle')
+  /* A property-driven native event tests the GUI queue -> Rexx boundary. */
+  toggle~setOn(.true)
   say 'REXX_SMOKE_STAGE=CONTROLS_READY'
 
 ::method onFluentButton
@@ -64,7 +65,8 @@ exit 0
 ::method ok
   expose fluent
   say 'REXX_SMOKE_STAGE=OO_DIALOG_OK'
-  fluent~dispatchPending
+  count = fluent~dispatchPending
+  say 'REXX_SMOKE_EVENTS_DISPATCHED='count
   fluent~close
   say 'REXX_SMOKE_STAGE=FLUENT_CLOSED'
   return self~ok:super

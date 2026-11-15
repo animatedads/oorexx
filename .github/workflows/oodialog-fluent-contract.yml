@@ -157,26 +157,33 @@ jobs:
           $env:OODF_TEST_CROSS_THREAD_HOOK = '1'
           $catalogue = (Resolve-Path 'oodialog-fluent/catalogue/controls.tsv').Path
           $script = (Resolve-Path 'oodialog-fluent/rexx/FluentUserDialogSmoke.rex').Path
-          $stdout = Join-Path $binary 'rexx-oodialog-stdout.txt'
-          $stderr = Join-Path $binary 'rexx-oodialog-stderr.txt'
-          Write-Output 'REXX_PROBE_STAGE=START_USER_DIALOG'
-          $process = Start-Process -FilePath $rexx.FullName -ArgumentList "`"$script`" `"$catalogue`"" -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
-          if (-not $process.WaitForExit(30000)) {
-            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-            Write-Output 'REXX_PROBE_TIMEOUT'
+          $failedTrials = 0
+          foreach ($trial in 1..3) {
+            $stdout = Join-Path $binary "rexx-oodialog-$trial-stdout.txt"
+            $stderr = Join-Path $binary "rexx-oodialog-$trial-stderr.txt"
+            Write-Output "REXX_PROBE_STAGE=START_USER_DIALOG TRIAL=$trial"
+            $process = Start-Process -FilePath $rexx.FullName -ArgumentList "`"$script`" `"$catalogue`"" -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+            if (-not $process.WaitForExit(30000)) {
+              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+              Write-Output "REXX_PROBE_TIMEOUT TRIAL=$trial"
+            }
+            $process.Refresh()
+            Write-Output "REXX_PROBE_TRIAL=$trial EXIT=$($process.ExitCode)"
+            $output = if (Test-Path $stdout) { Get-Content $stdout -Raw } else { '' }
+            Write-Output $output
+            if (Test-Path $stderr) { Get-Content $stderr | ForEach-Object { Write-Output "REXX_STDERR[$trial] $_" } }
+            if ($process.ExitCode -ne 0 -or
+                $output -notmatch 'REXX_SMOKE_STAGE=CONTROLS_READY' -or
+                $output -notmatch 'REXX_SMOKE_STAGE=FLUENT_CLOSED' -or
+                $output -notmatch 'REXX_SMOKE_EVENT=toggle' -or
+                $output -notmatch 'REXX_SMOKE_PASS=1') {
+              $failedTrials++
+              Write-Output "REXX_PROBE_TRIAL_FAILED=$trial"
+            }
           }
-          $process.Refresh()
-          Write-Output "REXX_PROBE_EXIT=$($process.ExitCode)"
-          $output = if (Test-Path $stdout) { Get-Content $stdout -Raw } else { '' }
-          Write-Output $output
-          if (Test-Path $stderr) { Get-Content $stderr | ForEach-Object { Write-Output "REXX_STDERR $_" } }
-          if ($process.ExitCode -ne 0 -or
-              $output -notmatch 'REXX_SMOKE_STAGE=CONTROLS_READY' -or
-              $output -notmatch 'REXX_SMOKE_STAGE=FLUENT_CLOSED' -or
-              $output -notmatch 'REXX_SMOKE_PASS=1') {
-            throw 'Real ooDialog live-session probe is not yet qualified'
-          }
-          Write-Output 'REXX_PROBE_PASS=1'
+          Write-Output "REXX_PROBE_FAILED_TRIALS=$failedTrials"
+          if ($failedTrials -ne 0) { throw 'Real ooDialog live-session or event delivery regression' }
+          Write-Output 'REXX_PROBE_PASS=3/3'
       - name: Inspect Windows crash dump with installed debugger
         if: always()
         continue-on-error: true
