@@ -1,7 +1,7 @@
 {
   "kind": "corpus",
   "id": "oodialog-wasm.facts",
-  "version": "0.1",
+  "version": "0.2",
   "sphere": "oodialog-wasm",
   "title": "ooDialog/WASM: every statement of the articles, one a record, for search",
   "records": [
@@ -63,6 +63,12 @@
       "article": "ops.oodialog-wasm.start",
       "field": "facts",
       "rule": "The lane of this work in the agent mailbox is oodialog_wasm."
+    },
+    {
+      "topic": "start",
+      "article": "ops.oodialog-wasm.start",
+      "field": "facts",
+      "rule": "Other tasks around it: the designer (writes ooDialog programs), the Qt6 renderer (answers the renderer contract outside a browser), the binary resource reader (plugs into the resource provider), and ChatGPT's work that adds the newer Microsoft controls to ooDialog itself. When upstream's classes gain a control, the generator carries the new class over unchanged and each of its natives raises SYNTAX 98.900 until it is ported."
     },
     {
       "topic": "start",
@@ -139,7 +145,7 @@
       "topic": "build-and-test",
       "article": "ops.oodialog-wasm.build-and-test",
       "field": "procedure",
-      "rule": "Run the other groups, each with its own tree: tests/up2 with upstream/examples/tutorial; tests/up3 with upstream/examples/propertySheet.tabControls; tests/up4 with upstream/examples/mouse; tests/up5 with upstream/examples/controls/ListView/subitem.editing; tests/up6/SimpleMonthCalendar.rex with upstream/examples/simple; tests/up6/PaidHolidays.rex with upstream/examples/controls; tests/res/t07_resdialog_binary.rex with no tree."
+      "rule": "Run the other groups, each with its own tree: tests/up2 with upstream/examples/tutorial; tests/up3 with upstream/examples/propertySheet.tabControls; tests/up4 with upstream/examples/mouse; tests/up5 with upstream/examples/controls/ListView/subitem.editing; tests/up6/SimpleMonthCalendar.rex with upstream/examples/simple; tests/up6/PaidHolidays.rex with upstream/examples/controls; tests/up7 with upstream/examples/resizableDialogs/ResizingAdmin; tests/res/t07_resdialog_binary.rex with no tree."
     },
     {
       "topic": "build-and-test",
@@ -227,8 +233,20 @@
     {
       "topic": "renderer-contract",
       "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "calls",
+      "rule": "setHandler(fn): the renderer calls fn(key, kind, id, code, extra) for each event. In the browser fn only puts the event in a queue."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
       "field": "op_families",
-      "rule": "Plain names act on any window: rect, clientRect, move, size, show, hide, enable, setText, getText, focus, exists, setParent, grandChild, tabStops, bitmapPos."
+      "rule": "Plain names act on any window: rect, clientRect, move, size, show, hide, enable, setText, getText, focus, exists, setParent, grandChild, tabStops, bitmapPos, isDropList."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "op_families",
+      "rule": "ra.init and ra.limits: ResizingAdmin. ra.init takes one JSON text: def (the four default edges), ctrls (rows of id and four edges), min, max, ended. An edge is [pinType, pinToEdge, pinToID] with pinType S, P, ML or MT. The renderer keeps each control's first rectangle and, whenever the dialog's client area changes size, places every control by the arithmetic of raLayout in the reference source."
     },
     {
       "topic": "renderer-contract",
@@ -252,7 +270,7 @@
       "topic": "renderer-contract",
       "article": "ref.oodialog-wasm.renderer-contract",
       "field": "events",
-      "rule": "The renderer sends (key, kind, id, code, extra). Kinds: CMD (WM_COMMAND), NOTIFY (a named control notification), MSGBOX (a message box was answered), CTX (context menu), KEY (a connected key), WM (a window message such as RESIZE), MOUSE (a Mouse class event), GC (RETURN, ESCAPE, TAB or loss of focus in a control placed on another control)."
+      "rule": "The renderer sends (key, kind, id, code, extra). Kinds: CMD (WM_COMMAND), NOTIFY (a named control notification), MSGBOX (a message box was answered), CTX (context menu), KEY (a connected key), WM (a window message: RESIZE, SIZEMOVEENDED, MOVE, and RASIZEENDED when a ResizingAdmin dialog with wantSizeEnded stops being sized), MOUSE (a Mouse class event), GC (RETURN, ESCAPE, TAB or loss of focus in a control placed on another control)."
     },
     {
       "topic": "renderer-contract",
@@ -419,6 +437,18 @@
       "article": "ops.oodialog-wasm.differences",
       "field": "differences",
       "rule": "The month calendar shows one month and selects one day."
+    },
+    {
+      "topic": "differences",
+      "article": "ops.oodialog-wasm.differences",
+      "field": "differences",
+      "rule": "ResizingAdmin: pagedTab is accepted and does nothing, so the pages of a tab control are not resized with their dialog. A dialog made larger than the browser window is not scaled down again."
+    },
+    {
+      "topic": "differences",
+      "article": "ops.oodialog-wasm.differences",
+      "field": "differences",
+      "rule": "Tool tips are the browser's own (the title of the element). ToolInfo, manageAtypicalTool, getToolTips and the tool tip events are not ported."
     },
     {
       "topic": "differences",
@@ -625,31 +655,43 @@
     {
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
-      "rule": "State at v0.16.0 and where the current state is recorded. This article is a snapshot. The current figures are always in README.md of the project, with the version they were measured on; sweep.tsv and poke.tsv hold the per-example results."
+      "rule": "State at v0.17.0 and where the current state is recorded. This article is a snapshot. The current figures are always in README.md of the project, with the version they were measured on; sweep.tsv and poke.tsv hold the per-example results."
     },
     {
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
       "field": "snapshot",
-      "rule": "Version 0.16.0, 15 November 2026."
+      "rule": "Version 0.17.0, 15 November 2026."
     },
     {
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
       "field": "snapshot",
-      "rule": "About half of the native entry points are ported (595 of 1,182 at v0.15.0; the month calendar and the DayState classes were added after that count)."
+      "rule": "Natives ported: 643 of 1,181."
     },
     {
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
       "field": "snapshot",
-      "rule": "Tests: 38 of 38 pass in headless Chromium."
+      "rule": "Tests: 42 of 42 pass in headless Chromium. 29 of them are upstream examples or the designer's programs, run unchanged."
     },
     {
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
       "field": "snapshot",
-      "rule": "Sweep of the 140 upstream examples at v0.15.0: 72 show their dialog, 7 run to the end, 9 show only a message box, 11 stop at a native not ported, 10 stop on an error (8 of them wait for a reader of binary resources), 24 are components, 7 are outside ooDialog."
+      "rule": "Sweep of the 140 upstream examples: 76 show their dialog, 7 run to the end, 9 show only a message box, 7 stop at a native not ported, 10 stop on an error (8 of them wait for a reader of binary resources), 24 are components, 7 are outside ooDialog."
+    },
+    {
+      "topic": "state",
+      "article": "ref.oodialog-wasm.state",
+      "field": "snapshot",
+      "rule": "Probe at v0.16.0, 81 examples: 66 clean, 10 connect an event that is not produced, 5 with a problem, none of them in the port's own code."
+    },
+    {
+      "topic": "state",
+      "article": "ref.oodialog-wasm.state",
+      "field": "snapshot",
+      "rule": "\"shows\" in the sweep means a dialog appeared. It does not mean every feature of the example works. Only an example that is a test (with steps and assertions) is known to work."
     },
     {
       "topic": "state",
@@ -673,7 +715,13 @@
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
       "field": "done",
-      "rule": "Drawing, bitmap buttons and animation, the Mouse class, in-place editing in a list-view, list box tab stops, resizing (ResizingAdmin), tool tips (text), fonts."
+      "rule": "Resizing: ResizingAdmin (pin definitions, size limits, wantSizeEnded) since v0.17.0; DlgAreaU with connectResize since v0.9."
+    },
+    {
+      "topic": "state",
+      "article": "ref.oodialog-wasm.state",
+      "field": "done",
+      "rule": "Drawing, bitmap buttons and animation, the Mouse class, in-place editing in a list-view (edit, drop-down list, editable combo box), list box tab stops, fonts."
     },
     {
       "topic": "state",
@@ -691,7 +739,19 @@
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
       "field": "not_done",
-      "rule": "ResizingAdmin's size limits; connectActivate, connectHelp, connectPosChanged, connectResizing (accepted, not produced)."
+      "rule": "Real tool tips: ToolInfo, manageAtypicalTool, getToolTips, the tool tip events. A tool tip today is the element's title."
+    },
+    {
+      "topic": "state",
+      "article": "ref.oodialog-wasm.state",
+      "field": "not_done",
+      "rule": "ResizingAdmin's pagedTab; ControlDlgInfo and the tab owner dialogs."
+    },
+    {
+      "topic": "state",
+      "article": "ref.oodialog-wasm.state",
+      "field": "not_done",
+      "rule": "connectActivate, connectHelp, connectPosChanged, connectResizing (accepted, not produced)."
     },
     {
       "topic": "state",
@@ -728,6 +788,12 @@
       "article": "ref.oodialog-wasm.state",
       "field": "invariants",
       "rule": "When this article and README.md disagree, README.md is right and this article needs a new version."
+    },
+    {
+      "topic": "state",
+      "article": "ref.oodialog-wasm.state",
+      "field": "invariants",
+      "rule": "A feature is listed as done only when a test with assertions covers it."
     },
     {
       "topic": "lessons",
@@ -793,6 +859,18 @@
       "article": "ops.oodialog-wasm.lessons",
       "field": "lessons",
       "rule": "The other tasks could not know what had changed, because the state was only in this chat, the README and mailbox messages. Rule: this sphere is kept current, and each release is announced in the lane with the new ops and events."
+    },
+    {
+      "topic": "lessons",
+      "article": "ops.oodialog-wasm.lessons",
+      "field": "lessons",
+      "rule": "Version 0.1 of this sphere listed ResizingAdmin as done. It was not ported at all: its examples showed a dialog, the sweep said \"shows\", and the claim was written from that. Rule: a feature is listed as done only when a test with assertions covers it; \"shows\" is not \"works\"."
+    },
+    {
+      "topic": "lessons",
+      "article": "ops.oodialog-wasm.lessons",
+      "field": "lessons",
+      "rule": "A Rexx string that begins with a quoted word, written as three double quotes, does not parse the way it reads. Rule: put a text with double quotes inside single quotes: '\"'name'\" is not an edge'."
     },
     {
       "topic": "lessons",

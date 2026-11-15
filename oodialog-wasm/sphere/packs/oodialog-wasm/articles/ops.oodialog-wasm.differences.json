@@ -1,7 +1,7 @@
 {
   "kind": "article",
   "id": "ops.oodialog-wasm.differences",
-  "version": "0.1",
+  "version": "0.2",
   "sphere": "oodialog-wasm",
   "title": "Where the port differs from ooDialog on Windows, by design",
   "summary": "These differences come from the browser, not from faults. Check this list before reporting a behaviour as a bug.",
@@ -23,6 +23,8 @@
     "File and folder dialogs browse the WASM machine's file system. COM calls answer S_OK and do nothing. A refused file (onFileOk) closes the dialog and shows it again.",
     "There are no printers. A printer root in BrowseForFolder is ignored.",
     "The month calendar shows one month and selects one day.",
+    "ResizingAdmin: pagedTab is accepted and does nothing, so the pages of a tab control are not resized with their dialog. A dialog made larger than the browser window is not scaled down again.",
+    "Tool tips are the browser's own (the title of the element). ToolInfo, manageAtypicalTool, getToolTips and the tool tip events are not ported.",
     "A list box entry cannot show a tab character. With tab stops set, the entry is shown filled out to each stop; its text stays as the program gave it.",
     "A dialog larger than the browser window is scaled down to fit.",
     "Events the port accepts but never produces print one line: \"... is connected but is not produced yet\". The program goes on."
@@ -32,22 +34,31 @@
   ],
   "provenance": [
     {
-      "artifact": "oodialog-wasm-39a1eec.zip",
-      "sha256": "182237b600c6e2dfff5b15f7a9ee780a25b3f45cea13189778822d17547076e8",
+      "artifact": "oodialog-wasm-9f167f9.zip",
+      "sha256": "cc1894e0b0a3fc3840302f794a22d1e4ab083d04ecffa1f240d1d2710e6d5c5f",
       "member": "oodialog-wasm/src/oodWeb.cls",
-      "line_start": 5410,
-      "line_end": 5432,
+      "line_start": 5596,
+      "line_end": 5619,
       "claim": "msSleep handles events only on the event thread; other threads sleep.",
-      "note": "git archive of animatedads/oorexx commit 39a1eec (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 9f167f9 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-39a1eec.zip",
-      "sha256": "182237b600c6e2dfff5b15f7a9ee780a25b3f45cea13189778822d17547076e8",
+      "artifact": "oodialog-wasm-9f167f9.zip",
+      "sha256": "cc1894e0b0a3fc3840302f794a22d1e4ab083d04ecffa1f240d1d2710e6d5c5f",
       "member": "oodialog-wasm/src/oodWeb.cls",
-      "line_start": 1515,
+      "line_start": 1516,
       "line_end": 1525,
       "claim": "An owned dialog is finished with its owner.",
-      "note": "git archive of animatedads/oorexx commit 39a1eec (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 9f167f9 (branch oodialog-wasm)"
+    },
+    {
+      "artifact": "oodialog-wasm-9f167f9.zip",
+      "sha256": "cc1894e0b0a3fc3840302f794a22d1e4ab083d04ecffa1f240d1d2710e6d5c5f",
+      "member": "oodialog-wasm/src/oodWeb.cls",
+      "line_start": 3760,
+      "line_end": 3763,
+      "claim": "pagedTab is accepted and does nothing.",
+      "note": "git archive of animatedads/oorexx commit 9f167f9 (branch oodialog-wasm)"
     }
   ]
 }

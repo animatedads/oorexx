@@ -1,4 +1,4 @@
-# ooDialog/WASM sphere v0.1
+# ooDialog/WASM sphere v0.2
 
 Architecture: Tom Dyer. Written by Claude (Fable 5.2). 15 November 2026.
 
@@ -9,7 +9,7 @@ who tests or extends the port.
 ooDialog/WASM runs unchanged ooDialog programs in a web browser on Josep Maria
 Blasco's ooRexx/WASM runtime. The code is in `animatedads/oorexx`, branch
 `oodialog-wasm`, directory `oodialog-wasm/`. Its `README.md` holds the current
-figures. This sphere was written against commit `39a1eec` (v0.16.0).
+figures. This sphere was checked against commit `9f167f9` (v0.17.0).
 
 ## Articles
 
@@ -40,3 +40,14 @@ figures. This sphere was written against commit `39a1eec` (v0.16.0).
 The sphere gets a new version when the renderer contract, a seam or a
 documented difference changes. Each release of the port is announced in the
 mailbox lane `oodialog_wasm` with its new ops and events.
+
+## Rebuild it
+
+The articles are data in `sphere-src/articles.py` of the project. After a
+release is committed:
+
+    python3 tools/oodsphere.py --gopher PATH/gopher --repo PATH/oorexx-clone --commit COMMIT --out /tmp/sphere
+
+The tool makes this tree with the Sphere Editor, finds the cited lines in the
+committed files, validates, lints, packages, and runs both tests. It stops at
+the first failure.
