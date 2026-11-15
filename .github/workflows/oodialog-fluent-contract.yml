@@ -71,6 +71,7 @@ jobs:
             $mode, $experiment = $case.Split(':')
             $env:OODF_SMOKE_MODE = $mode
             $env:OODF_CLOSE_EXPERIMENT = $experiment
+            $env:OODF_CRASH_DUMP = Join-Path (Resolve-Path $binary).Path "runtime-$mode-$experiment.dmp"
             $stdout = "$binary/runtime-$mode-$experiment-stdout.txt"
             $stderr = "$binary/runtime-$mode-$experiment-stderr.txt"
             $process = Start-Process -FilePath "$binary/OodFluentSmoke.exe" -ArgumentList $catalogue -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
@@ -89,6 +90,22 @@ jobs:
           $results | Set-Content "$binary/runtime-smoke.txt"
           $results | ForEach-Object { Write-Output $_ }
           if ($failureCount -ne 0) { throw "$failureCount Windows runtime mode(s) not qualified" }
+      - name: Inspect Windows crash dump with installed debugger
+        if: always()
+        continue-on-error: true
+        shell: pwsh
+        timeout-minutes: 3
+        run: |
+          $binary = "oodialog-fluent/windows/x64/Release"
+          $dump = "$binary/runtime-info-baseline.dmp"
+          if (-not (Test-Path $dump)) { Write-Output "NO_DUMP_GENERATED"; exit 0 }
+          Write-Output "MINIDUMP_SIZE=$((Get-Item $dump).Length)"
+          $cdb = @(
+            'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe',
+            'C:\Program Files\Windows Kits\10\Debuggers\x64\cdb.exe'
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $cdb) { Write-Output "CDB_NOT_INSTALLED; minidump preserved as candidate"; exit 0 }
+          & $cdb -z (Resolve-Path $dump).Path -c '.symfix; .reload; .ecxr; kv; q' | Select-Object -Last 100
       - name: Preserve Windows test candidate
         uses: actions/upload-artifact@v4
         with:
@@ -103,5 +120,6 @@ jobs:
             oodialog-fluent/windows/x64/Release/runtime-smoke.txt
             oodialog-fluent/windows/x64/Release/runtime-*-stdout.txt
             oodialog-fluent/windows/x64/Release/runtime-*-stderr.txt
+            oodialog-fluent/windows/x64/Release/runtime-*.dmp
           if-no-files-found: error
           retention-days: 7

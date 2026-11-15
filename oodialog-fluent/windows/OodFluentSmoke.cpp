@@ -2,9 +2,11 @@
 // Interactive-desktop host exercise: deliberately separate from BUILD qualification.
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <DbgHelp.h>
 #include <stdio.h>
 #include <string>
 #include "OodFluentIsland.h"
+#pragma comment(lib, "Dbghelp.lib")
 
 namespace {
 
@@ -23,9 +25,39 @@ LRESULT CALLBACK windowProcedure(HWND hwnd, UINT message, WPARAM w, LPARAM l) {
     return DefWindowProcW(hwnd, message, w, l);
 }
 
+LONG WINAPI recordNativeCrash(EXCEPTION_POINTERS *exception) {
+    fprintf(stderr, "UNHANDLED_EXCEPTION code=0x%08lX address=%p\n",
+            static_cast<unsigned long>(exception->ExceptionRecord->ExceptionCode),
+            exception->ExceptionRecord->ExceptionAddress);
+    HMODULE module{};
+    if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                           GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           reinterpret_cast<LPCWSTR>(exception->ExceptionRecord->ExceptionAddress), &module)) {
+        fprintf(stderr, "FAULT_MODULE base=%p offset=0x%llX\n", module,
+                 static_cast<unsigned long long>(
+                     reinterpret_cast<uintptr_t>(exception->ExceptionRecord->ExceptionAddress) -
+                     reinterpret_cast<uintptr_t>(module)));
+    }
+    wchar_t path[MAX_PATH]{};
+    if (GetEnvironmentVariableW(L"OODF_CRASH_DUMP", path, MAX_PATH)) {
+        HANDLE file = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ, nullptr,
+                                  CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (file != INVALID_HANDLE_VALUE) {
+            MINIDUMP_EXCEPTION_INFORMATION crash{GetCurrentThreadId(), exception, FALSE};
+            const BOOL recorded = MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(),
+                file, MiniDumpWithThreadInfo, &crash, nullptr, nullptr);
+            fprintf(stderr, "MINIDUMP recorded=%d win32=%lu\n", recorded, GetLastError());
+            CloseHandle(file);
+        }
+    }
+    fflush(stderr);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+
 } // namespace
 
 int wmain(int argc, wchar_t **argv) {
+    SetUnhandledExceptionFilter(recordNativeCrash);
     // Emitted before any call: if absent, loading the WinUI DLL itself blocked.
     stage("MAIN_ENTER");
     if (argc != 2) {
