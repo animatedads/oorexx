@@ -5,12 +5,14 @@
      RUNTIME_DIR        Josep Maria Blasco's oorexxwasm-web release, unpacked
      OODIALOG_DIST_DIR  ooDialog/WASM's dist/ (ooDialog.cls, oodWeb.cls, ooShapes.cls)
      OBJECT_EDITOR_DIR  the Object Editor (its reflection, library providers, Libraries panel)
+     REXX_PARSER_DIR    Josep Maria Blasco's Rexx Parser (its bin/ is copied, with a
+                        manifest the page reads to put it in the session)
    Run in the designer's directory.  Writes site/: the page, the runtime,
    OodDesigner.cls, ood/ (ooDialog/WASM) and examples/ (made by
    tests/calculator.rex, threads.rex, views.rex and gadgets.rex through OodDesign). */
-parse arg runtime oodDist objEd
-if objEd == "" then do
-  say "usage: rexx tools/build.rex RUNTIME_DIR OODIALOG_DIST_DIR OBJECT_EDITOR_DIR"
+parse arg runtime oodDist objEd rexxParser
+if rexxParser == "" then do
+  say "usage: rexx tools/build.rex RUNTIME_DIR OODIALOG_DIST_DIR OBJECT_EDITOR_DIR REXX_PARSER_DIR"
   return 1
 end
 sep = "/"
@@ -24,6 +26,21 @@ do f over .array~of("ooDialog.cls", "oodWeb.cls", "ooShapes.cls")
   call copy oodDist || sep || f, "site" || sep || "ood" || sep || f
 end
 call copy "src" || sep || "OodDesigner.cls", "site" || sep || "OodDesigner.cls"
+call copy "src/OodGraph.cls", "site/OodGraph.cls"
+-- the Rexx Parser: bin/ and its notices, and a manifest of the files
+call SysFileTree rexxParser"/bin/*", "rp.", "FSO"
+manifest = .array~new
+do i = 1 to rp.0
+  rel = rp.i~substr(length(rexxParser) + 2)~changeStr("\", "/")
+  dir = "site/rexx-parser/" || rel~left(rel~lastPos("/") - 1)
+  call makeDirs dir
+  call copy rp.i, "site/rexx-parser/"rel
+  manifest~append(rel)
+end
+do f over .array~of("LICENSE", "NOTICE", "VERSION")
+  call copy rexxParser"/"f, "site/rexx-parser/"f
+end
+call write "site/rexx-parser/manifest.txt", manifest~makeString("L", "0a"x) || "0a"x
 -- the Libraries panel and what it runs on: the Object Editor's reflection
 -- and the library providers, with the Alchemy index
 call copy objEd"/src/ObjectEditor.cls", "site/ObjectEditor.cls"
@@ -39,6 +56,16 @@ call write "site/examples/Contacts.rex", .viewsDesign~build~generate
 call write "site/examples/Gadgets.rex", .gadgetsDesign~build~generate
 call log "build: done"
 return 0
+
+makeDirs: procedure
+  use arg mdPath
+  mdSoFar = ""
+  do mdPart over mdPath~makeArray("/")
+    if mdSoFar == "" then mdSoFar = mdPart
+    else mdSoFar = mdSoFar"/"mdPart
+    call SysMkDir mdSoFar
+  end
+  return
 
 log: procedure
   use arg logText

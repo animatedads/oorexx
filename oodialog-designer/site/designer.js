@@ -88,10 +88,15 @@
       measure();
       st.rexx = await ooRexx.load();
       const files = {};
-      for (const f of ['OodDesigner.cls', 'ObjectEditor.cls', 'LibraryProviders.cls']) files['/home/rexx/' + f] = await (await fetch(f)).text();
+      for (const f of ['OodDesigner.cls', 'OodGraph.cls', 'ObjectEditor.cls', 'LibraryProviders.cls']) files['/home/rexx/' + f] = await (await fetch(f)).text();
+      // Josep Maria Blasco's Rexx Parser, which OodGraph.cls parses event code with
+      for (const rel of (await (await fetch('rexx-parser/manifest.txt')).text()).split('\n').map((l) => l.trim()).filter(Boolean))
+        files['/home/rexx/rexx-parser/' + rel] = await (await fetch('rexx-parser/' + rel)).text();
       st.sess = await st.rexx.start({ js: { page: true, worker: true }, files });
       await st.sess.loadPackage('LibraryProviders.cls');   // with OodDesigner.cls and ObjectEditor.cls
+      await st.sess.loadPackage('OodGraph.cls');           // with the Rexx Parser
       await OxLibraries.setup(st.sess);
+      OxGraph.attach({ sess: st.sess, rx, status, setCode, actionsMenu });
       await loadCatalog();
       await newDesign();
       status('Ready.  Drag a control onto the form.');
@@ -536,7 +541,7 @@
   async function showCode() {
     await flushCode();
     const code = $('code');
-    if (!st.cur) { $('codeTitle').textContent = 'Pick an event or a method'; code.value = ''; code.disabled = true; $('threadBox').hidden = true; return; }
+    if (!st.cur) { $('codeTitle').textContent = 'Pick an event or a method'; code.value = ''; code.disabled = true; $('threadBox').hidden = true; OxGraph.show(''); return; }
     if (st.cur.type === 'event') {
       const { ctl, ev } = st.cur;
       const args = String(await rx(() => st.d.eventArgs(ctl, ev)).catch(() => ''));
@@ -552,6 +557,8 @@
       $('threadBox').hidden = true;
     }
     code.disabled = false; codeDirty = false;
+    await OxGraph.show(code.value);
+    traceShowStep();
   }
   function methodName(ctl, ev) {
     if (ctl === 'form' && ev === 'OK') return 'ok';
@@ -569,6 +576,13 @@
       if (ok) cur.fresh = false;
     }
     if (ok) await refresh();
+    if (st.cur === cur) await OxGraph.show(text);
+  }
+  // a graph edit answers the new code: it becomes the event's code
+  async function setCode(text) {
+    if (!st.cur) return;
+    $('code').value = text; codeDirty = true;
+    await flushCode();
   }
   $('code').addEventListener('input', () => { codeDirty = true; clearTimeout(codeTimer); codeTimer = setTimeout(flushCode, 600); });
   $('code').addEventListener('blur', flushCode);
@@ -604,7 +618,7 @@
     e.preventDefault(); $('code').classList.remove('drop');
     actionsMenu(name, e.clientX, e.clientY);
   });
-  async function actionsMenu(name, x, y) {
+  async function actionsMenu(name, x, y, then = insertLine) {
     const text = String(await rx(() => st.d.actionsFor(name)).catch(() => ''));
     const menu = $('menu'); menu.textContent = '';
     const h = D.createElement('div'); h.className = 'mh'; h.textContent = name; menu.appendChild(h);
@@ -612,7 +626,7 @@
       const [label, code] = line.split('\t');
       const it = D.createElement('div'); it.dataset.action = label;
       it.append(label, Object.assign(D.createElement('small'), { textContent: code }));
-      it.addEventListener('click', () => { menu.hidden = true; insertLine(code); });
+      it.addEventListener('click', () => { menu.hidden = true; then(code); });
       menu.appendChild(it);
     }
     openMenu(x, y);
@@ -680,8 +694,11 @@
   /* ---- run it: ooDialog on ooRexx/WASM, in this page ------------------------- */
   $('btnRun').addEventListener('click', async () => {
     const src = await program().catch(() => null); if (src === null) return;
+    await runProgram(src, 'Running');
+  });
+  async function runProgram(src, verb) {
     const name = st.snap.form.name + '.rex';
-    $('out').textContent = ''; $('btnRun').disabled = true;
+    $('out').textContent = ''; $('btnRun').disabled = true; $('btnTrace').disabled = true;
     try {
       if (!st.oodFiles) {
         st.oodFiles = {};
@@ -689,7 +706,7 @@
       }
       const files = Object.assign({}, st.oodFiles, await OxLibraries.installedFiles(st.sess), { ['/home/rexx/' + name]: src });
       const add = (t) => { $('out').textContent += t; $('out').scrollTop = $('out').scrollHeight; };
-      status('Running ' + name + '…');
+      status(verb + ' ' + name + '…');
       st.run = st.rexx.run({ args: [name], files, js: { page: true, worker: true }, onOut: add, onErr: add });
       window.oodDone = null; $('btnStop').disabled = false;
       const r = await st.run.done;
@@ -697,9 +714,76 @@
       status(name + ' ended, rc ' + r.rc + '.');
     } catch (e) { status('Run failed: ' + errText(e), true); }
     D.querySelectorAll('.ood-dlg,.ood-back,.ood-menu').forEach((el) => el.remove());
-    $('btnRun').disabled = false; $('btnStop').disabled = true; st.run = null;
-  });
+    $('btnRun').disabled = false; $('btnTrace').disabled = false; $('btnStop').disabled = true; st.run = null;
+  }
+  st.runProgram = runProgram;
   $('btnStop').addEventListener('click', () => { if (st.run) st.run.stop(); });
+
+  /* ---- Code | Graph | Both ------------------------------------------------- */
+  D.querySelectorAll('#views button').forEach((b) => b.addEventListener('click', () => {
+    D.querySelectorAll('#views button').forEach((x) => x.classList.toggle('on', x === b));
+    $('codeBody').className = b.dataset.view;
+  }));
+
+  /* ---- the trace run ----------------------------------------------------------
+     The program is generated with OodTraceFilter: a probe before each statement
+     of every event and form method calls window.oodTrace with the method, the
+     block, the thread and the variables.  The steps are kept; the slider walks
+     them, showing the method's code and graph with the block lit. */
+  const trace = { on: false, steps: [], at: -1, where: {} };
+  window.oodTrace = (where, node, thread, vars) => {
+    const step = { where: String(where), node: +node, thread: String(thread), vars: String(vars).split('\t').filter(Boolean).map((v) => { const i = v.indexOf('='); return [v.slice(0, i), v.slice(i + 1)]; }) };
+    trace.steps.push(step);
+    $('tStep').max = trace.steps.length - 1;
+    if (trace.follow) { $('tStep').value = trace.steps.length - 1; traceGo(trace.steps.length - 1); }
+    else $('tWhere').textContent = 'step ' + (trace.at + 1) + ' of ' + trace.steps.length;
+  };
+  // the method a step is in -> where it is in the tree
+  function traceTarget(where) {
+    const w = where.toLowerCase();
+    for (const e of st.snap.events) if (methodName(e.control, e.event).toLowerCase() === w) return { type: 'event', ctl: e.control, ev: e.event };
+    for (const m of st.snap.methods) if (m.toLowerCase() === w) return { type: 'method', name: m };
+    return null;
+  }
+  const sameCur = (a, b) => a && b && a.type === b.type && (a.type === 'method'
+    ? a.name.toLowerCase() === b.name.toLowerCase()
+    : a.ctl.toLowerCase() === b.ctl.toLowerCase() && a.ev === b.ev);
+  async function traceGo(i) {
+    trace.at = i; const step = trace.steps[i]; if (!step) return;
+    const target = traceTarget(step.where);
+    if (target && !sameCur(target, st.cur)) { st.cur = target; drawTree(); await showCode(); }
+    else traceShowStep();
+  }
+  function traceShowStep() {
+    if (!trace.on) return;
+    const step = trace.steps[trace.at];
+    if (!step) { $('tWhere').textContent = trace.steps.length ? '' : 'waiting for the first step…'; return; }
+    $('tWhere').textContent = 'step ' + (trace.at + 1) + ' of ' + trace.steps.length + ':  ' + step.where +
+      ', block ' + step.node + (step.thread === 'background' ? '  (its own thread)' : step.thread === 'caller' ? '' : '  (the dialog\'s thread)');
+    // only highlight when the code shown is the code that was traced
+    if (sameCur(traceTarget(step.where), st.cur) && !codeDirty) OxGraph.highlight(step.node);
+    const before = {}; const prev = trace.steps[trace.at - 1];
+    if (prev && prev.where === step.where) for (const [n, v] of prev.vars) before[n] = v;
+    const body = $('tVars').tBodies[0]; body.textContent = '';
+    for (const [n, v] of step.vars) {
+      const tr = D.createElement('tr'); if (prev && prev.where === step.where && before[n] !== v) tr.className = 'changed';
+      tr.append(Object.assign(D.createElement('td'), { textContent: n }), Object.assign(D.createElement('td'), { textContent: v }));
+      body.appendChild(tr);
+    }
+  }
+  $('tStep').addEventListener('input', () => { trace.follow = false; traceGo(+$('tStep').value); });
+  $('tPrev').addEventListener('click', () => { trace.follow = false; if (trace.at > 0) { $('tStep').value = trace.at - 1; traceGo(trace.at - 1); } });
+  $('tNext').addEventListener('click', () => { trace.follow = false; if (trace.at < trace.steps.length - 1) { $('tStep').value = trace.at + 1; traceGo(trace.at + 1); } });
+  $('tClose').addEventListener('click', () => { trace.on = false; $('traceBar').hidden = true; OxGraph.highlight(0); });
+  $('btnTrace').addEventListener('click', async () => {
+    await flushCode();
+    const src = await rx(async () => st.d.generate(await st.sess.eval('return .OodTraceFilter~new'))).then(String).catch(() => null);
+    if (src === null) return;
+    trace.on = true; trace.steps = []; trace.at = -1; trace.follow = true;
+    $('tStep').max = 0; $('tStep').value = 0; $('traceBar').hidden = false; traceShowStep();
+    if ($('codeBody').className === 'code') D.querySelector('#views [data-view="both"]').click();
+    st.runProgram(src, 'Tracing');
+  });
 
   boot();
 })();

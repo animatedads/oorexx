@@ -3,7 +3,7 @@
 Architecture: Tom Dyer.  Code: Claude (Opus 5.5).
 
 usage: python3 tools/dztest.py [scenario ...]     (after rexx tools/build.rex)
-Scenarios: hand, calculator, threads, refuse, saveopen, views, gadgets, libraries (default: all).
+Scenarios: hand, calculator, threads, refuse, saveopen, views, gadgets, libraries, graph, trace (default: all).
 Python is used here only because this tool drives a browser (Playwright);
 the designer's model, generator and reader are ooRexx (src/OodDesigner.cls)
 and are tested without a browser by tests/t01_model.rex.  Progress is logged
@@ -219,7 +219,103 @@ def sc_libraries(pg):
     pg.screenshot(path=str(SHOTS / 'libraries_run.png'))
     press(pg, 'Close'); expect('closed', wait_end(pg)['rc'], 2)
 
-SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views, 'gadgets': sc_gadgets, 'libraries': sc_libraries}
+def wait_graph(pg):
+    settle(pg, 150); pg.wait_for_function("document.getElementById('graph').dataset.ready === '1'", timeout=20000); settle(pg, 150)
+def js_drag(pg, src, dst):
+    """HTML5 drag and drop by events, for a target out of view: Playwright's
+    mouse drag scrolls the target into view after pressing the mouse, so the
+    drag would start on whatever block has scrolled under the pointer."""
+    pg.evaluate("""([src, dst]) => {
+        const a = document.querySelector(src), b = document.querySelector(dst), dt = new DataTransfer();
+        a.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
+        b.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
+        b.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+        a.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: dt }));
+    }""", [src, dst])
+def pick_method(pg, name):
+    pg.click(f'#tree [data-method="{name}"]'); wait_graph(pg)
+def code_lines(pg): return pg.input_value('#code').split('\n')
+def blocks(pg, kind): return pg.locator(f'#graph .gb.k-{kind}').count()
+def block_with(pg, kind, text):
+    return pg.locator(f'#graph .gb.k-{kind} > .gh', has_text=text).last   # its own header, not a block inside it
+
+def sc_graph(pg):
+    """The graph beside the code: the calculator's operate method drawn as
+    blocks; drag a block from the palette in, change it, move it, delete it,
+    wrap a THEN in do...end; the caret lights its block; bad code is shown."""
+    ready(pg); open_example(pg, 'examples/Calculator.rex')
+    pick_method(pg, 'operate')
+    original = pg.input_value('#code')
+    expect('three IFs drawn', blocks(pg, 'if'), 3)
+    expect('a SELECT with three WHENs and an OTHERWISE', [blocks(pg, 'select'), blocks(pg, 'when'), blocks(pg, 'otherwise')], [1, 3, 1])
+    SHOTS.mkdir(exist_ok=True); pg.screenshot(path=str(SHOTS / 'graph_operate.png'))
+    # a block selects its code
+    block_with(pg, 'select', 'select').click(); settle(pg)
+    sel = pg.evaluate("(() => { const c = document.getElementById('code'); return c.value.slice(c.selectionStart, c.selectionEnd); })()")
+    expect('the select block selects its code', sel.split('\n')[0].strip(), 'select')
+    expect_in('it explains itself', 'SELECT', pg.inner_text('#gExplain'))
+    # drag a SAY from the palette in after USE STRICT ARG (top level, place 2)
+    pg.drag_and_drop('#gPalette .gpal:text-is("say")', '#graph .gdrop[data-parent="0"][data-index="2"]'); wait_graph(pg)
+    expect('say inserted as line 2', code_lines(pg)[1].strip(), 'say "text"')
+    # double-click it to change it
+    block_with(pg, 'say', 'say "text"').dblclick(); pg.fill('#graph .gedit', 'say "op is" op'); pg.keyboard.press('Enter'); wait_graph(pg)
+    expect('say changed', code_lines(pg)[1].strip(), 'say "op is" op')
+    # move it down, past the first two IFs
+    js_drag(pg, '#graph .gb.k-say', '#graph > .gslot > .gdrop[data-index="5"]'); wait_graph(pg)
+    lines = [l.strip() for l in code_lines(pg)]
+    expect('moved: second line is the first IF again', lines[1], 'if self~entry \\== "" then self~enter')
+    expect('and it sits just before b = ...', lines[lines.index('b = self~stack~pull') - 1], 'say "op is" op')
+    # delete it: back to the original
+    pg.click('#graph .gb.k-say > .gh'); pg.click('#gDelete'); wait_graph(pg)
+    expect('deleted: the code is as it was', pg.input_value('#code').rstrip('\n'), original.rstrip('\n'))
+    # the caret lights the innermost block
+    pg.evaluate("(() => { const c = document.getElementById('code'); const i = c.value.indexOf('answer = a + b'); c.focus(); c.setSelectionRange(i, i); c.dispatchEvent(new KeyboardEvent('keyup')); })()"); settle(pg)
+    expect_in('caret lights the assignment', 'answer = a + b', pg.inner_text('#graph .gb.sel > .gh'))
+    # wrap the THEN of the first IF in do...end
+    block_with(pg, 'message', 'self~enter').click(); settle(pg)
+    expect('wrap offered for a THEN', pg.is_enabled('#gWrap'), True)
+    pg.click('#gWrap'); wait_graph(pg)
+    expect_in('wrapped', 'then do', pg.input_value('#code'))
+    expect_in('the design took it', 'then do', program_text(pg))
+    # code that does not parse: shown, graph left as it was
+    pg.fill('#code', original.rstrip('\n') + '\nif then\n'); settle(pg, 1200)
+    expect('parse error shown', pg.is_visible('#gError'), True)
+    pg.screenshot(path=str(SHOTS / 'graph_error.png'))
+    pg.fill('#code', original); settle(pg, 1200)
+    expect('error gone when mended', pg.is_visible('#gError'), False)
+    # Code | Graph | Both
+    pg.click('#views [data-view="code"]'); expect('code only', pg.is_visible('#graph'), False)
+    pg.click('#views [data-view="graph"]'); expect('graph only', pg.is_visible('#code'), False)
+    pg.click('#views [data-view="both"]'); expect('both', [pg.is_visible('#code'), pg.is_visible('#graph')], [True, True])
+
+def sc_trace(pg):
+    """The trace run: run the calculator with probes, do 1 Enter 2 +, and walk the
+    steps: the method shown, the block lit, the variables and what changed."""
+    ready(pg); open_example(pg, 'examples/Calculator.rex')
+    pg.click('#btnTrace'); pg.wait_for_selector('.ood-dlg', timeout=60000); settle(pg, 500)
+    for k in ['1', 'Enter', '2', '+']: press(pg, k); settle(pg, 300)
+    settle(pg, 800)
+    expect('the traced program still sums', pg.input_value('.ood-dlg input'), '3')
+    n = pg.evaluate("+document.getElementById('tStep').max") + 1
+    if n < 10: raise Fail(f'only {n} steps recorded')
+    log('  ok', n, 'steps recorded')
+    expect_in('following: the last step is in operate', 'operate', pg.inner_text('#tWhere'))
+    expect_in('operate is shown', 'method operate', pg.inner_text('#codeTitle'))
+    expect('a block is lit', pg.locator('#graph .gb.run').count(), 1)
+    expect_in('variables shown', 'ANSWER', pg.inner_text('#tVars'))
+    vars = dict(r.split('\t', 1) for r in pg.inner_text('#tVars tbody').split('\n') if '\t' in r)
+    expect('ANSWER is 3', vars.get('ANSWER'), '3')
+    pg.screenshot(path=str(SHOTS / 'trace_operate.png'))
+    # the first step: the INIT event
+    pg.evaluate("(() => { const s = document.getElementById('tStep'); s.value = 0; s.dispatchEvent(new Event('input')); })()"); settle(pg, 900)
+    expect_in('step 1 is the INIT event', 'on_form_init', pg.inner_text('#tWhere'))
+    expect_in('its event is shown', 'form · INIT', pg.inner_text('#codeTitle'))
+    press(pg, 'Close'); expect('closed', wait_end(pg)['rc'], 2)
+    pg.click('#tNext'); settle(pg, 900)
+    expect_in('step 2, after the run', 'step 2 of', pg.inner_text('#tWhere'))
+    pg.click('#tClose'); expect('trace closed', pg.is_visible('#traceBar'), False)
+
+SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views, 'gadgets': sc_gadgets, 'libraries': sc_libraries, 'graph': sc_graph, 'trace': sc_trace}
 def main():
     names = sys.argv[1:] or list(SCENARIOS)
     srv = subprocess.Popen(['node', str(SITE / 'serve.mjs'), str(SITE), '--port', str(PORT)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

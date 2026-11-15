@@ -19,11 +19,11 @@
 
 ::class OodModule public mixinclass Object
 ::method module_version class
-  return "0.4.0"
+  return "0.5.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::method module_version
-  return "0.4.0"
+  return "0.5.0"
 ::method module_lastChanged
   return "2026-11-14"
 
@@ -990,8 +990,11 @@
 
 /* ---- the program ----------------------------------------------------------- */
 
+-- The program.  filter (optional) may change each method's code before it
+-- is written: a trace run's probes (OodTraceFilter, OodGraph.cls).
 ::method generate
   expose form controls vars events methods requires shared
+  use strict arg filter = .nil
   nm = form["NAME"]
   out = .array~new
   out~append("/*" nm".rex -- an ooDialog program made with the ooDialog Designer" self~module_version)
@@ -1197,7 +1200,9 @@
   -- the form's own methods
   do m over methods
     out~append("::method" m["NAME"] "unguarded")
-    do l over m["CODE"]~makeArray("0a"x)
+    code = m["CODE"]
+    if filter \== .nil then code = filter~filter(m["NAME"], code, "caller")
+    do l over code~makeArray("0a"x)
       if l == "" then out~append("")
       else out~append("  "l)
     end
@@ -1208,13 +1213,29 @@
     e = events[key]
     m = self~methodName(e["CONTROL"], e["EVENT"])
     out~append("::method" m "unguarded")
-    if e["THREAD"] == "background" then out~append(.OodDesign~replyLine)
-    do l over e["CODE"]~makeArray("0a"x)
+    code = e["CODE"]
+    if filter \== .nil then code = filter~filter(m, code, e["THREAD"])
+    codeLines = code~makeArray("0a"x)
+    -- background: reply at once; after EXPOSE, which must come first
+    replyAt = 0
+    if e["THREAD"] == "background" then do
+      replyAt = 1
+      if codeLines~items > 0 then do
+        if codeLines[1]~strip~word(1)~caselessEquals("expose") then replyAt = 2
+      end
+    end
+    if replyAt = 1 then out~append(.OodDesign~replyLine)
+    do i = 1 to codeLines~items
+      l = codeLines[i]
       if l == "" then out~append("")
       else out~append("  "l)
+      if replyAt = 2 & i = 1 then out~append(.OodDesign~replyLine)
     end
     if m == "ok" | m == "cancel" then out~append(.OodDesign~superLine)
     out~append("")
+  end
+  if filter \== .nil then do l over filter~extraLines
+    out~append(l)
   end
   out~append("::resource oodDesign")
   do l over self~resourceLines
@@ -1421,8 +1442,12 @@
     end
   end
   if \found then return .nil
-  if body~items > 0 then do
-    if body[1] == .OodDesign~replyLine then body~delete(1)
+  -- the reply line of a background event: first, or after EXPOSE
+  do i = 1 to min(2, body~items)
+    if body[i] == .OodDesign~replyLine then do
+      body~delete(i)
+      leave
+    end
   end
   do while body~items > 0
     if body~lastItem~strip \== "" then leave

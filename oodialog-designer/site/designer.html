@@ -19,6 +19,7 @@
   <button id="btnSave" title="Download the program (it carries its design)">Save .rex</button>
   <button id="btnProgram" title="Show the ooRexx this design writes">Program</button>
   <button id="btnLibraries" title="Connect to a source of ooRexx libraries and use one">Libraries…</button>
+  <button id="btnTrace" title="Run it, recording each step of the event code with its variables">▶ Trace</button>
   <button id="btnRun" class="go" title="Run it with ooDialog on ooRexx/WASM">▶ Run</button>
   <button id="btnStop" disabled>Stop</button>
   <input id="file" type="file" accept=".rex,.txt" hidden>
@@ -44,8 +45,27 @@
     <div id="codeHead"><span id="codeTitle">Pick an event or a method</span>
       <label id="threadBox" hidden>Runs on <select id="thread"><option value="ui">the dialog's thread</option><option value="background">its own thread (background)</option></select></label>
       <button id="btnInsert" title="Insert an action on a control">Insert…</button>
+      <span id="views" role="group" aria-label="Show the code as">
+        <button data-view="code">Code</button><button data-view="graph">Graph</button><button data-view="both" class="on">Both</button></span>
     </div>
+    <div id="traceBar" hidden>
+      <button id="tPrev" title="Previous step">◀</button>
+      <input id="tStep" type="range" min="0" max="0" value="0" aria-label="Trace step">
+      <button id="tNext" title="Next step">▶</button>
+      <span id="tWhere"></span>
+      <button id="tClose" title="Leave the trace">Close trace</button>
+      <table id="tVars"><thead><tr><th>Variable</th><th>Value</th></tr></thead><tbody></tbody></table>
+    </div>
+    <div id="codeBody" class="both">
     <textarea id="code" spellcheck="false" disabled placeholder="Rexx for this event.  Controls are methods of self: self~lcd~setText(&quot;0&quot;).  Drag a control from the list on the left onto this pane for its actions."></textarea>
+    <div id="graphSide">
+      <div id="gPalette" aria-label="Blocks to drag into the graph"></div>
+      <div id="gTools"><button id="gWrap" title="A THEN or ELSE holds one instruction: wrap it in DO...END to hold more" disabled>Wrap in do…end</button>
+        <button id="gDelete" disabled>Delete</button> <span id="gExplain"></span></div>
+      <div id="gError" hidden></div>
+      <div id="graph" aria-label="The event code as blocks"></div>
+    </div>
+    </div>
     <pre id="out" aria-label="Program output"></pre>
   </div>
 </section>
@@ -53,8 +73,9 @@
 <div id="programView" hidden><div class="panel"><div class="panelHead"><strong id="programName"></strong>
   <button id="btnCopy">Copy</button><button id="btnProgramClose">Close</button></div><pre id="programText"></pre></div></div>
 <footer>Architecture: Tom Dyer.  Designer code: Claude (Opus 5.5).  ooDialog/WASM: Claude (Fable 5.2).
-ooRexx/WASM runtime: Josep Maria Blasco.  ooDialog: the ooRexx project (CPL 1.0).</footer>
+ooRexx/WASM runtime and the Rexx Parser (graph view): Josep Maria Blasco.  ooDialog: the ooRexx project (CPL 1.0).</footer>
 <script src="ooRexx.js"></script>
 <script src="libraries.js"></script>
+<script src="graph.js"></script>
 <script src="designer.js"></script>
 </body></html>

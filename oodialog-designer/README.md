@@ -1,8 +1,10 @@
-# ooDialog Designer — v0.4.0
+# ooDialog Designer — v0.5.0
 
 Architecture: Tom Dyer. Code: Claude (Opus 5.5). README written by Claude (Opus 5.5).
 It runs on ooDialog/WASM v0.7.0 (code: Claude (Fable 5.2)) and on Josep Maria
-Blasco's ooRexx/WASM 0.2.4 runtime.
+Blasco's ooRexx/WASM 0.2.4 runtime. The graph view parses event code with Josep
+Maria Blasco's Rexx Parser (beta 0.7, Apache License 2.0), shipped unchanged in
+`site/rexx-parser/` with its `LICENSE`, `NOTICE` and `VERSION`.
 
 A drag-and-drop designer that writes ooDialog programs in ooRexx. You drop
 controls on a form, select an event and type a few lines of Rexx; the
@@ -98,6 +100,27 @@ one `kind` line; a new code-insertion action is one `action` line.
   insert the Rexx. `Insert…` does the same without dragging. When an event's
   method receives arguments, a new event starts with `use arg` and the
   argument names (for a list view's SELECTCHANGED: `id, item, state, list`).
+- **Graph view (Code | Graph | Both):** the selected event's or method's
+  code drawn as blocks beside the code. IF has its THEN and ELSE side by
+  side; DO, LOOP and SELECT hold their blocks; each kind has its own colour
+  and a one-line explanation, for teaching. Drag a block from the palette into
+  a gap, drag a block to move it, double-click to change its line, Delete,
+  or wrap a THEN's single instruction in `do…end`. A control dragged onto a
+  gap offers its actions, as on the code pane. Selecting a block selects its
+  code; the caret in the code selects the innermost block. The code is the
+  truth: every graph edit is an `OodGraph` operation (`src/OodGraph.cls`) that
+  answers new code, which then goes through `setEventCode`/`setMethod` like
+  typing does. Edits keep the code valid Rexx: a THEN, ELSE or WHEN keeps an
+  instruction (deleting it leaves `nop`), WHEN and OTHERWISE stay in their
+  SELECT, nothing goes before EXPOSE. Code that does not parse is reported
+  and the graph waits until it does.
+- **▶ Trace:** runs the program with a probe before each statement of every
+  event and form method (`OodTraceFilter`; the saved program has none). Each
+  step reaches the page with its method, block, thread and variables. The
+  slider walks the steps: the method is shown, its block lit, the variables
+  listed with those changed since the step before highlighted. While the
+  dialog runs, its modal backdrop covers the page; the steps can be walked
+  when it ends.
 - **Program:** shows the ooRexx that will be written. **Save .rex**
   downloads it. **▶ Run** runs it with ooDialog/WASM in the same page.
 
@@ -110,18 +133,19 @@ Needs Node 22 and `npm i oorexxwasm`. The `oorexxwasm-web-0.2.4` release must
 be unpacked somewhere, and ooDialog/WASM's `dist/` must be available. The
 browser tests also need Python Playwright with Chromium.
 
-    rexx tools/build.rex RUNTIME_DIR OODIALOG_WASM_DIST OBJECT_EDITOR_DIR
+    rexx tools/build.rex RUNTIME_DIR OODIALOG_WASM_DIST OBJECT_EDITOR_DIR REXX_PARSER_DIR
     node site/serve.mjs site --port 8080
 
 Then open `http://localhost:8080/designer.html`.
 
     REXX_PATH=src:tests rexx tests/t01_model.rex
+    REXX_PATH=src:tests:PARSER_PARENT rexx tests/t02_graph.rex
     python3 tools/dztest.py
 
 Python drives the browser in the second command only; everything the
 designer decides is in ooRexx.
 
-## State (2026-11-14, v0.4.0)
+## State (2026-11-15, v0.5.0)
 
 - `tests/t01_model.rex`: 69 of 69 checks pass under ooRexx/WASM in Node. They
   cover generation, a byte-identical round trip through the `::RESOURCE`,
@@ -129,7 +153,12 @@ designer decides is in ooRexx.
   tab's pages), fifteen refusals, the tab page handler, list-view columns and
   rows, the menu bar, tree depth and expansion, track bar and date picker,
   actions, and `module_version`.
-- `tools/dztest.py`: 8 of 8 scenarios pass in headless Chromium:
+- `tests/t02_graph.rex`: 37 of 37 checks pass. They cover block kinds,
+  nesting and labels; insert, delete, move (within and between slots),
+  replace and wrap; the refusals (into a THEN's single instruction, a block
+  into itself, a WHEN or OTHERWISE out of its SELECT, a SELECT's last WHEN);
+  `nop` left behind; the probes; the traced Calculator; a bad parse.
+- `tools/dztest.py`: 10 of 10 scenarios pass in headless Chromium:
   1. **hand:** a dialog built with the mouse (drop, rename, styles,
      variable, drag-an-action, move and resize), then run. The event code sees
      the variable and the field, and INIT's text survives `execute`.
@@ -153,6 +182,13 @@ designer decides is in ooRexx.
      installed and used, and `logging = .LogService~new("calculator")` goes
      into the shared scope. In the run, the INIT event shows
      "Logging service: calculator" through `expose sharedScope`.
+  9. **graph:** the Calculator's `operate` drawn (3 IFs, a SELECT with 3
+     WHENs and an OTHERWISE); a SAY dragged in, changed, moved, deleted
+     (the code back as it was); the caret lights its block; a THEN wrapped
+     and saved; bad code reported and recovered; the three views.
+  10. **trace:** the Calculator traced: `1 Enter 2 +` still gives 3; 31 steps
+     recorded; the last is in `operate` with its block lit and ANSWER = 3;
+     step 1 is the INIT event; the steps walk after the run.
 - `tests/gen/Calculator.rex`, `Contacts.rex` and `Gadgets.rex` (generated)
   also pass the ooDialog/WASM harness, `oodtest.py`, with their `.steps`
   files.
@@ -177,6 +213,9 @@ designer decides is in ooRexx.
   hidden; the tab strip is a strip, with its controls placed beside it, not
   over it (Windows draws controls over a tab control in z-order).
 - Undo, copy and paste, and alignment tools.
+- Graph: no drop into a THEN or ELSE holding one instruction (wrap it
+  first); no live stepping while the dialog's backdrop is up; a trace's
+  variables are shown as strings (objects by `objectName`).
 - Exporting `.rc` for RcDialog users.
 - A rename does not rewrite the text of strings, only `self~name` references.
 - In the runtime, item text may not contain `|`, and text properties are one

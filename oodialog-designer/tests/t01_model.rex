@@ -82,7 +82,7 @@ call check "actions name the control", acts~pos("self~lcd~setText(") > 0
 call check "list actions for a list only", acts~pos("~add(") == 0
 
 -- 8. versions
-call check "module_version", .OodDesign~module_version == "0.4.0" & d~module_version == "0.4.0"
+call check "module_version", .OodDesign~module_version == "0.5.0" & d~module_version == "0.5.0"
 call check "module_lastChanged", .OodCatalog~module_lastChanged \== ""
 
 -- 9. v0.2: tab pages, list view, menu bar
