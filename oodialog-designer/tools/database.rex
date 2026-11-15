@@ -10,7 +10,8 @@ if estate = "" | destination = "" then do
   say "usage: rexx tools/database.rex ESTATE_PACKAGES_DIR OUTPUT_DIRECTORY"
   exit 2
 end
-lab = estate || "/oorexx_oodialog_database_lab_v0.1/src/OodDatabaseLab.cls"
+lab = estate || "/oorexx_oodialog_database_lab_v0.1.2/src/OodDatabaseLab.cls"
+if stream(lab, "c", "query exists") = "" then lab = estate || "/oorexx_oodialog_database_lab_v0.1/src/OodDatabaseLab.cls"
 if stream(lab, "c", "query exists") = "" then do
   say "database: Alchemy oorexx_oodialog_database_lab_v0.1 not yet installed; panel will explain"
   exit 0
@@ -20,6 +21,7 @@ manifest = .array~new
 -- Package locations pin the supported versions; files come entirely from
 -- transitive ::requires, not a hand-maintained dependency file list.
 roots = .array~of( -
+  estate || "/oorexx_oodialog_database_lab_v0.1.2/src", -
   estate || "/oorexx_oodialog_database_lab_v0.1/src", -
   estate || "/nosqlserver_v0.92-dev1/src", -
   estate || "/alchemy_objects_v0.8/src", -
