@@ -34,5 +34,9 @@ The Windows x64 DLL compiles and the standalone HWND subset (empty island,
 [43729428411](https://github.com/animatedads/oorexx/actions/runs/43729428411)
 also runs a genuine ooRexx 5.2.0 `UserDialog`, creating both controls through
 the **diagnostic opt-in same-process UI-thread broker** and closing them from
-Rexx with exit 0. This does not qualify unrestricted broker use, modal dialogs,
-complex template shutdown, event delivery, focus, or the full catalogue.
+Rexx with exit 0. CI run
+[43730544432](https://github.com/animatedads/oorexx/actions/runs/43730544432)
+further qualifies the `Toggled` property-driven native-to-Rexx event and clean
+asynchronous join **3/3 independent processes**. This does not qualify
+unrestricted broker use, modal/resource dialogs, physical input, accessibility,
+complex template shutdown, or the full catalogue.
