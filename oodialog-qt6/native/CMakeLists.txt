@@ -1,0 +1,16 @@
+# oodqt: the Qt6 renderer library behind ooDialog's oodWeb.cls.
+# Architecture: Tom Dyer.  Coding: Claude (Opus 5.5), 2026-11-14.
+#   cmake -S native -B build -DOOREXX_PREFIX=/usr     (where include/oorexxapi.h and lib/librexx.so are)
+cmake_minimum_required(VERSION 3.16)
+project(oodqt CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_AUTOMOC OFF)
+set(OOREXX_PREFIX "/usr" CACHE PATH "ooRexx install prefix")
+find_package(Qt6 REQUIRED COMPONENTS Widgets)
+find_path(OOREXX_INCLUDE oorexxapi.h HINTS ${OOREXX_PREFIX}/include ${OOREXX_PREFIX}/include/ooRexx REQUIRED)
+find_library(OOREXX_LIB rexx HINTS ${OOREXX_PREFIX}/lib ${OOREXX_PREFIX}/lib64 REQUIRED)
+find_library(OOREXXAPI_LIB rexxapi HINTS ${OOREXX_PREFIX}/lib ${OOREXX_PREFIX}/lib64 REQUIRED)
+add_library(oodqt SHARED oodqt.cpp)
+target_include_directories(oodqt PRIVATE ${OOREXX_INCLUDE})
+target_link_libraries(oodqt PRIVATE Qt6::Widgets ${OOREXX_LIB} ${OOREXXAPI_LIB})

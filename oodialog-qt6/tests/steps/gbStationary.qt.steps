@@ -1,0 +1,9 @@
+# Qt dialect of oodialog-wasm tests/up7/gbStationary.steps (v0.17.0).
+wait .ood-dlg
+sleep 500
+marklayout .ood-dlg
+expect limits ==> 60 * >300 *
+resize .ood-dlg => +120 +60
+sleep 600
+shot gbStationary_larger
+click .ood-dlg button.ood-def
