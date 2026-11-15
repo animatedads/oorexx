@@ -13,7 +13,6 @@ examples/addManyRows.rex	7
 examples/browsePrinters.rex	5	
 examples/fileNameDialog_demo.rex	7	
 examples/genGUID.rex	1	
-examples/imageButton.rex	1	error 97.1 Object "an ImageList" does not understand message "IMAGELIST".
 examples/openSaveFileDemo.rex	8	
 examples/publicRoutines_demo.rex	7	
 examples/saveFileWithFilter.rex	6	
@@ -28,11 +27,11 @@ oodStandardDialogs.rex	8
 oodStandardRoutines.rex	8	
 oodpbar.rex	3	
 oodraw.rex	2	
+oograph.rex	6	
 oophil.rex	9	
 oowalker.rex	7	
 propertySheet.tabControls/PropertySheetDemo.rex	10	event-not-produced
 propertySheet.tabControls/UserTabDemo.rex	5	
-propertySheet.tabControls/oodListViews.rex	1	error 97.1 Object "The NIL object" does not understand message "ADDNEWATTRIBUTE". ; event-not-produced ; unhandled msg TAB 0x1331
 propertySheet.tabControls/ticketWizard.rex	3	
 resizableDialogs/DialogAreaU/dlgAreaUDemo.rex	9	
 resizableDialogs/DialogAreaU/dlgAreaUDemoThree.rex	9	event-not-produced
@@ -40,7 +39,7 @@ resizableDialogs/DialogAreaU/dlgAreaUDemoTwo.rex	9
 resizableDialogs/ResizingAdmin/PropertySheetDemo.rex	10	event-not-produced
 resizableDialogs/ResizingAdmin/augmentedResize.rex	7	
 resizableDialogs/ResizingAdmin/basicResize.rex	5	
-sample.rex	11	native:DLGEXT_GETBITMAPSIZE ; native:RI_INIT
+sample.rex	11	native:RI_INIT
 simple/ChangeFont.rex	3	
 simple/SimpleUpDown.rex	2	
 tutorial/drawing1.rex	4	

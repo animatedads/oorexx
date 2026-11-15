@@ -24,7 +24,7 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.13.1"
+  return "0.14.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute key unguarded
@@ -102,7 +102,7 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.13.1"
+  return "0.14.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute rexxSelf unguarded
@@ -131,7 +131,7 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.13.1"
+  return "0.14.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute dlg unguarded             -- its dialog's OodDlg
@@ -149,7 +149,7 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.13.1"
+  return "0.14.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::method module_version unguarded
@@ -283,6 +283,7 @@
     when kind == "CTX" then self~contextMenu(key, id, code, extra)
     when kind == "KEY" then self~keyPress(key, id, code)
     when kind == "WM" then self~wmEvent(key, code, extra)
+    when kind == "MOUSE" then self~mouseEvent(key, id, code, extra)
     otherwise nop
   end
 
@@ -2212,9 +2213,9 @@ noPackage:
   stream~close
   kind = "bmp"
   ext = filespec("EXTENSION", file)~lower
-  if "png gif jpg jpeg ico svg"~wordPos(ext) > 0 then kind = ext
+  if "png gif jpg jpeg ico cur svg"~wordPos(ext) > 0 then kind = ext
   if kind == "jpg" then kind = "jpeg"
-  if kind == "ico" then kind = "x-icon"
+  if kind == "ico" | kind == "cur" then kind = "x-icon"
   if kind == "svg" then kind = "svg+xml"
   self~web~image(file, "data:image/"kind";base64,"bytes~encodeBase64)
   return file
@@ -3211,6 +3212,185 @@ noPackage:
   if a~hasIndex(1) then return self~gdiRedraw(self~gdiTarget(a[1]), erase)
   return self~gdiRedraw(.array~of(self_~oodPeer, 0), erase)
 
+
+/* ---- The Mouse class ----
+   .Mouse~new(dialog | control).  Its events come from the page's pointer events
+   (oodialog-web.js, mouseSub).  The method is invoked on the dialog, as ooDialog does:
+     (keyState, point, mouse)          the buttons, MOUSEMOVE, MOUSEHOVER; point in the window's client area
+     (keyState, point, mouse, delta)   MOUSEWHEEL; point in the page
+     (mouse)                           MOUSELEAVE
+   The page cannot move or confine the pointer: setCursorPos and clipCursor do nothing. */
+::method mouse_init unguarded
+  use arg self_, msg, a
+  owner = a[1]
+  if \owner~hasMethod("oodPeer") then raise syntax 93.900 array("the owner of a Mouse must be a dialog or a dialog control")
+  target = self~gdiTargetOf(owner)
+  p = .directory~new
+  p~owner = owner
+  p~d = target[1]
+  p~id = target[2]
+  self_~oodPeer = p
+  return 0
+::method mouseNames unguarded      -- the events and the methods they go to when none is named
+  names = .directory~new
+  events = "MOUSEMOVE MOUSEWHEEL MOUSELEAVE MOUSEHOVER LBUTTONDOWN LBUTTONUP LBUTTONDBLCLK MBUTTONDOWN MBUTTONUP" -
+           "MBUTTONDBLCLK RBUTTONDOWN RBUTTONUP RBUTTONDBLCLK CAPTURECHANGED NCMOUSELEAVE NCMOUSEHOVER"
+  methods = "onMouseMove onMouseWheel onMouseLeave onMouseHover onLButtonDown onLButtonUp onLButtonDblClk onMButtonDown onMButtonUp" -
+            "onMButtonDblClk onRButtonDown onRButtonUp onRButtonDblClk onCaptureChanged onNcMouseLeave onNcMouseHover"
+  do i = 1 to events~words
+    names[events~word(i)] = methods~word(i)
+  end
+  return names
+::method mouse_connectEvent unguarded  -- connectEvent(event, method, willReply, opts)
+  use arg self_, msg, a
+  p = self_~oodPeer
+  event = self~opt(a, 1)~upper
+  names = self~mouseNames
+  if \names~hasIndex(event) then raise syntax 93.900 array("connectEvent: """a[1]""" is not a mouse event")
+  method = names[event]
+  if a~hasIndex(2) then if a[2] \== "" then method = a[2]
+  toDialog = (self~opt(a, 4)~upper == "SENDTODLG")
+  p~d~store["MOUSE" p~id event] = .array~of(method, self_, toDialog)
+  if p~d~live then self~ctlOp(p~d, p~id, "mouseSub", event)
+  return .true
+::method mouseEvent unguarded
+  use arg key, id, event, extra
+  d = self~dialogOf(key)
+  if d == .nil then return
+  entry = d~store["MOUSE" id event]
+  if entry == .nil then return
+  if entry[3] then do                 -- SENDTODLG: the control hands the event to its dialog
+    entry = d~store["MOUSE" 0 event]
+    if entry == .nil then return
+  end
+  parse var extra state x y delta .
+  state = state~translate(" ", ",")
+  point = self~classOf("Point")~new(x, y)
+  select
+    when event == "MOUSELEAVE" | event == "NCMOUSELEAVE" then args = .array~of(entry[2])
+    when event == "MOUSEWHEEL" then args = .array~of(state, point, entry[2], delta)
+    otherwise args = .array~of(state, point, entry[2])
+  end
+  self~invoke(d~rexxSelf, entry[1], args)
+::method mouseHandle unguarded     -- "key id" of the page as a window handle; 0 for none
+  use arg answer
+  parse var answer key id .
+  if key == "" then return 0
+  return "0x"d2x(key * 65536 + id)~right(16, "0")
+::method mouse_capture unguarded   -- capture: the window that had the mouse before, 0 if none
+  use arg self_
+  p = self_~oodPeer
+  if \p~d~live then return 0
+  return self~mouseHandle(self~ctlOp(p~d, p~id, "mouse", "capture"))
+::method mouse_get_release_capture unguarded
+  use arg self_, msg
+  p = self_~oodPeer
+  if \p~d~live then return 0
+  if msg == "RELEASECAPTURE" then do
+    self~ctlOp(p~d, p~id, "mouse", "release")
+    return 0
+  end
+  return self~mouseHandle(self~ctlOp(p~d, p~id, "mouse", "getCapture"))
+::method mousePageState unguarded  -- x, y and the buttons now (bit 1 left, 2 right, 4 middle)
+  use arg self_
+  p = self_~oodPeer
+  if \p~d~live then return "0 0 0"
+  answer = self~ctlOp(p~d, p~id, "mouse", "state")
+  if answer == "" then return "0 0 0"
+  return answer
+::method mouse_getCursorPos unguarded  -- a .Point in the page
+  use arg self_
+  parse value self~mousePageState(self_) with x y .
+  return self~classOf("Point")~new(x, y)
+::method mouse_isButtonDown unguarded  -- isButtonDown(LEFT | RIGHT | MIDDLE)
+  use arg self_, msg, a
+  parse value self~mousePageState(self_) with . . buttons
+  which = self~opt(a, 1)~upper
+  if which == "" then which = "LEFT"
+  bit = 1
+  if which~abbrev("R") then bit = 2
+  if which~abbrev("M") then bit = 4
+  return (buttons // (bit * 2) >= bit)
+/* dragDetect(point): Windows waits until the left button is released (.false) or the
+   pointer has moved a few pixels (.true).  The same here, in steps of 20 ms. */
+::method mouse_dragDetect unguarded
+  use arg self_
+  parse value self~mousePageState(self_) with startX startY buttons
+  if buttons // 2 == 0 then return .false
+  do 250
+    call SysSleep 0.02
+    parse value self~mousePageState(self_) with x y buttons
+    if buttons // 2 == 0 then return .false
+    if abs(x - startX) > 4 | abs(y - startY) > 4 then return .true
+  end
+  return .false
+::method mouseCursor unguarded     -- a cursor handle for a CSS cursor name or a cursor file's key
+  expose cursors
+  use arg css
+  if \var("CURSORS") then cursors = .directory~new
+  handle = self~gdiNew(.array~of("CURSOR", css))
+  return handle
+::method mouse_loadCursor_cls unguarded     -- .Mouse~loadCursor(name)
+  use arg self_, msg, a
+  names = "APPSTARTING ARROW CROSS HAND HELP IBEAM NO SIZEALL SIZENESW SIZENS SIZENWSE SIZEWE UPARROW WAIT"
+  css = "progress default crosshair pointer help text not-allowed move nesw-resize ns-resize nwse-resize ew-resize default wait"
+  at = names~wordPos(self~opt(a, 1)~upper)
+  if at == 0 then return 0
+  return self~mouseCursor(css~word(at))
+::method mouse_loadCursorFromFile_cls unguarded
+  use arg self_, msg, a
+  key = self~imageKey(a[1])
+  if key == "" then return 0
+  return self~mouseCursor(key)
+::method mouse_setCursor unguarded -- setCursor(handle), arrow, appStarting, cross, no, wait: the cursor before
+  use arg self_, msg, a
+  p = self_~oodPeer
+  select
+    when msg == "SETCURSOR" then do
+      entry = self~gdiGet(a[1])
+      css = "default"
+      if entry \== .nil then if entry~isA(.array) then if entry[1] == "CURSOR" then css = entry[2]
+    end
+    when msg == "APPSTARTING" then css = "progress"
+    when msg == "CROSS" then css = "crosshair"
+    when msg == "NO" then css = "not-allowed"
+    when msg == "WAIT" then css = "wait"
+    otherwise css = "default"
+  end
+  if \p~d~live then return 0
+  old = self~ctlOp(p~d, p~id, "mouse", "cursor", css)
+  if old == "" then old = "default"
+  return self~mouseCursor(old)
+::method mouse_restoreCursor unguarded
+  use arg self_, msg, a
+  p = self_~oodPeer
+  css = "default"
+  if a~hasIndex(1) then do
+    entry = self~gdiGet(a[1])
+    if entry \== .nil then if entry~isA(.array) then if entry[1] == "CURSOR" then css = entry[2]
+  end
+  if p~d~live then self~ctlOp(p~d, p~id, "mouse", "cursor", css)
+  return 0
+::method mouse_trackEvent unguarded    -- hover and leave are always produced once connected
+  return .true
+::method mouse_doubleClickTime_cls unguarded
+  return 500
+::method mouse_setDoubleClickTime_cls unguarded
+  return .true
+::method mouse_swapButton_cls unguarded
+  return .false
+::method mouse_setCursorPos unguarded
+  return .false
+::method mouse_clipCursor unguarded
+  return 1
+::method mouse_releaseClipCursor unguarded
+  return 0
+::method mouse_getClipCursor unguarded
+  use arg self_, msg, a
+  return 1
+::method mouse_showCursor unguarded
+  return 0
+
 ::method winex_deleteObject unguarded
   return 0
 ::method winex_deleteFont unguarded
@@ -3546,6 +3726,24 @@ noPackage:
   if a~hasIndex(2) then sub = a[2]
   if self~op(self_, "lv.setCell", a[1], sub, a[3]) == 1 then return 0
   return -1
+::method lv_getItemInfo unguarded  -- getItemInfo(index, directory, subItem): the text, image and state of an item go into the directory
+  use arg self_, msg, a
+  index = a[1]
+  info = a[2]
+  if \info~isA(.directory) then raise syntax 93.948 array(2, "Directory")
+  sub = 0
+  if a~hasIndex(3) then sub = a[3]
+  if index < 0 | self~op(self_, "lv.uid", index) == 0 then return .false
+  info~text = self~op(self_, "lv.cell", index, sub)
+  info~image = -1
+  if sub == 0 then do
+    state = ""
+    words = self~op(self_, "lv.itemState", index)~upper
+    if words~wordPos("FOCUSED") > 0 then state = state "Focused"
+    if words~wordPos("SELECTED") > 0 then state = state "Selected"
+    info~state = state~strip
+  end
+  return .true
 ::method lv_itemText unguarded
   use arg self_, msg, a
   sub = 0
@@ -3912,6 +4110,59 @@ noPackage:
   parse var answer left top right bottom
   if left == "" then return .Rect~new
   return .Rect~new(left, top, right, bottom)
+::method lv_hitTestInfo unguarded  -- hitTestInfo(point | x, y [, info]): the index of the item there, -1 for none
+  use arg self_, msg, a
+  if \a~hasIndex(1) then return -1
+  at = 2
+  if a[1]~isA(.String) then do
+    x = a[1]
+    y = 0
+    if a~hasIndex(2) then y = a[2]
+    at = 3
+  end
+  else do
+    x = a[1]~x
+    y = a[1]~y
+  end
+  parse value self~op(self_, "lv.hit", x, y) with row col .
+  if row == "" then row = -1
+  if a~hasIndex(at) then if a[at]~isA(.directory) then do
+    info = a[at]
+    info~info = "OnLabel OnItem"
+    if row < 0 then info~info = "NoWhere"
+    info~infoEx = ""
+    info~subItem = col
+    info~group = -1
+  end
+  return row
+::method wb_mapWindowPoints unguarded   -- mapWindowPoints(hwndTo, point | rect): from this window's client area to that one's (0: the page)
+  use arg self_, msg, a
+  parse value self~op(self_, "rect") with fromLeft fromTop .
+  if fromLeft == "" then return .false
+  toLeft = 0
+  toTop = 0
+  handle = 0
+  if a~hasIndex(1) then if a[1] \== .nil then handle = self~number(a[1])
+  if handle \== 0 then do
+    owner = self~dialogOf(handle % 65536)
+    if owner == .nil then return .false
+    parse value self~ctlOp(owner, handle // 65536, "rect") with toLeft toTop .
+    if toLeft == "" then return .false
+  end
+  dx = fromLeft - toLeft
+  dy = fromTop - toTop
+  what = a[2]
+  if what~isA(.Rect) then do
+    what~left = what~left + dx
+    what~right = what~right + dx
+    what~top = what~top + dy
+    what~bottom = what~bottom + dy
+  end
+  else do
+    what~x = what~x + dx
+    what~y = what~y + dy
+  end
+  return .true
 ::method wb_clientRect unguarded    -- of this window, or of the window whose handle is given
   use arg self_, msg, a
   if a~hasIndex(1) then do

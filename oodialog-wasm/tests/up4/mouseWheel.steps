@@ -1,0 +1,11 @@
+wait .ood-dlg
+sleep 600
+expect document.querySelector('.ood-dlg textarea').scrollTop ==> 0
+mouse wheel .ood-dlg textarea @ 40 40 300
+sleep 600
+expect (() => { const t = document.querySelector('.ood-dlg textarea').scrollTop; return t > 8 && t < 40; })() ==> True
+mouse wheel .ood-dlg textarea @ 40 40 -300
+sleep 600
+expect document.querySelector('.ood-dlg textarea').scrollTop ==> 0
+expect (window.oodOut.join('').match(/(native function \w+|Error \d+\.\d+[^\n]*)/g) || []).length ==> 0
+eval (() => { const b = [...document.querySelectorAll(".ood-dlg button.ood-c")].find(x => x.textContent.trim() === "OK"); b.click(); return "ok"; })()

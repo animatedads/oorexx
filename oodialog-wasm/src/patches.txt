@@ -5,6 +5,7 @@
 
 --@drop PlainBaseDialog new
 --@drop DialogControl new
+--@drop Mouse new
 
 --@replace PlainBaseDialog init
 -- pbdlg_init of ooDialog.cpp, in Rexx: the object variables it sets belong to this scope.

@@ -1,4 +1,4 @@
-# ooDialog for ooRexx/WASM — v0.13.1
+# ooDialog for ooRexx/WASM — v0.14.0
 
 Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: Josep Maria Blasco's
 ooRexx/WASM (`oorexxwasm` 0.2.4, ooRexx 5.3.0) and its `js.cls`.
@@ -48,11 +48,11 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
     python3 tools/oodtest.py --poke upstream/examples 0 24
     python3 tools/oodtest.py --tree upstream/examples tests/t*.rex tests/up/calculator.rex tests/up/oodpbar.rex tests/up/oodStandardRoutines.rex
 
-## State on 2026-11-15 (v0.13.1)
+## State on 2026-11-15 (v0.14.0)
 
-- Natives ported: 566 of 1,184 (47.8%). (The total fell from 1,196 because 12
+- Natives ported: 589 of 1,182 (49.8%). (The total fell from 1,196 because 12
   natives are now plain Rexx in `src/patches.txt`.)
-- Tests: 31 of 31 pass in headless Chromium (`tests/t01`..`t17` with expected
+- Tests: 33 of 33 pass in headless Chromium (`tests/t01`..`t17` with expected
   output, the binary resource hand-off test `tests/res/t07_resdialog_binary`,
   four unmodified upstream samples: `calculator.rex`,
   `oodpbar.rex`, `oodStandardRoutines.rex`, and the tutorial
@@ -60,12 +60,14 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
   an employee is added and then found on the list page, and
   `ticketWizard.rex`, a Wizard 97 walked with Next, a refusal and Back,
   `oodraw.rex` (each of its seven drawings started and interrupted),
-  `oowalker.rex` (the sprite walks), `oograph.rex` (bitmaps scrolled in) and the
+  `oowalker.rex` (the sprite walks), `oograph.rex` (bitmaps scrolled in),
+  `mouse/dragNdrop.rex` (a row dragged with a real mouse from one list-view to
+  another), `mouse/mouseWheel.rex` (the wheel scrolls the edit control) and the
   tutorial's `drawing3.rex` and `drawing5.rex`; and the three
   programs written by ooDialog Designer v0.3.0, in `tests/designer`).
 - Sweep of all 140 upstream example programs (`oodtest.py --sweep`, results in
-  `sweep.tsv`), each run from its own directory: 66 show their dialog, 7 run to
-  the end, 9 show only a message box, 16 stop at a native not ported yet, 11
+  `sweep.tsv`), each run from its own directory: 70 show their dialog, 7 run to
+  the end, 9 show only a message box, 13 stop at a native not ported yet, 10
   stop on an error (8 need a reader of binary resources, which is another
   task's work; `oovideo.rex` is broken upstream), 24 are components: parts of
   the user guide's Order Manager, which name their files from the program's
@@ -81,13 +83,13 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
 - Depth probe (`oodtest.py --poke`, results in `poke.tsv`): the 70 examples
   that show a dialog or a message box are used automatically (tabs, rows,
   check boxes, lists, edits, menus, every button, then closed; last run at
-  v0.12.0). Of 76, 63 come
-  through with no error, no unhandled Windows message and a clean end. 6 more
-  have no fault except connecting an event this layer does not produce. 7 have
-  a problem, each named in `poke.tsv`: 2 are components started alone (not a
-  fault), the others are sub-item editing (`setParent`), list tabulators,
-  bitmap drawing and single faults. Every program ends. `oovideo.rex` fails on
-  an unmatched `/*` at line 44 of the upstream file itself (r13513).
+  v0.13.1). Of 75, 64 come through with no error, no unhandled Windows message
+  and a clean end. 6 more have no fault except connecting an event this layer
+  does not produce. 5 have a problem, each named in `poke.tsv`: 2 are
+  components started alone (not a fault), the others are sub-item editing
+  (`setParent`), list tabulators and a ResourceImage. Every program ends.
+  `oovideo.rex` fails on an unmatched `/*` at line 44 of the upstream file
+  itself (r13513).
   The probe proves the absence of errors, not that results are right.
 - Working, each asserted by a test: UserDialog; RcDialog (upstream's own .rc
   parser); push button, check box, radio button, group box, static text and
@@ -144,8 +146,20 @@ leave a thin rim; a bitmap brush is a plain colour.
 Bitmaps: setBitmapPosition / getBitmapPosition (the AnimatedButton class walks
 its sprite with them), getBitmapSize (from the file's header), drawBitmap,
 scrollButton, scroll, scrollBitmapFromTo, resizeControl, moveControl and
-winTimer. Not done: dimBitmap, the bitmap of a button that came from a binary
-resource, and the Mouse class.
+winTimer. Not done: dimBitmap and the bitmap of a button that came from a
+binary resource.
+
+## The Mouse class
+
+`.Mouse~new(dialog | control)`; connectEvent for the button, move, wheel, hover
+and leave events with ooDialog's arguments (key state, point, mouse, delta);
+capture and releaseCapture (moves and releases anywhere on the page then go to
+the capturing window); dragDetect; getCursorPos; isButtonDown; loadCursor,
+loadCursorFromFile and setCursor (CSS cursors and .cur files). A connected
+MOUSEWHEEL takes the wheel from the browser, so the program scrolls. The page
+cannot move or confine the pointer: setCursorPos and clipCursor do nothing.
+Also new with it: mapWindowPoints, the list-view's hitTestInfo and getItemInfo,
+the edit control's scrollCommand.
 
 ## Event methods and msSleep
 
@@ -199,7 +213,7 @@ WASM file system as bytes.
 
 ## Not yet (the sweep's order of need)
 
-The Mouse class; sub-item editing (setParent); month calendar; tool bar, status
+Sub-item editing (setParent); month calendar; tool bar, status
 bar, re-bar; custom draw; ResizingAdmin's size limits; connectActivate,
 connectHelp, connectPosChanged and connectResizing (accepted, not produced);
 drawing the icons of image lists; a modeless property sheet; wizard header and

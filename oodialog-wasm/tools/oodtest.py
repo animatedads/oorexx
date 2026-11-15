@@ -263,6 +263,16 @@ def main():
                             elif verb == 'select':
                                 sel, _, text = rest.partition(' => '); pg.select_option(sel, label=text, timeout=15000)
                             elif verb == 'press': pg.keyboard.press(rest)
+                            elif verb == 'mouse':             # mouse move|down|up|wheel: at "selector @ dx dy" (from the element's top left); wheel takes the delta last
+                                what, _, where = rest.partition(' ')
+                                sel, _, offs = where.rpartition(' @ ')
+                                nums = [float(n) for n in offs.split()]
+                                box = pg.locator(sel).first.bounding_box()
+                                x, y = box['x'] + nums[0], box['y'] + nums[1]
+                                if what == 'move': pg.mouse.move(x, y, steps=6)
+                                elif what == 'down': pg.mouse.move(x, y); pg.mouse.down()
+                                elif what == 'up': pg.mouse.move(x, y, steps=6); pg.mouse.up()
+                                elif what == 'wheel': pg.mouse.move(x, y); pg.mouse.wheel(0, nums[2])
                             elif verb == 'sleep': time.sleep(int(rest) / 1000)
                             elif verb == 'eval': log('  eval ->', pg.evaluate(rest))
                             elif verb == 'expect':

@@ -1,0 +1,18 @@
+wait .ood-dlg >> text=Tom Brady
+sleep 500
+expect [...document.querySelectorAll('.ood-lv')].map(l => l.querySelectorAll('tbody tr').length).join(',') ==> 73,0,0
+mouse down .ood-lv >> nth=0 @ 30 34
+mouse move .ood-lv >> nth=0 @ 60 50
+sleep 300
+expect document.body.style.cursor ==> not-allowed
+mouse move .ood-lv >> nth=1 @ 60 40
+sleep 300
+expect document.body.style.cursor.startsWith('url("data:image/x-icon') ==> True
+shot dragNdrop
+mouse up .ood-lv >> nth=1 @ 70 45
+sleep 600
+expect [...document.querySelectorAll('.ood-lv')].map(l => l.querySelectorAll('tbody tr').length).join(',') ==> 72,1,0
+expect [...document.querySelectorAll('.ood-lv')][1].querySelector('tbody tr').innerText.replace(/\s+/g, ' ').trim() ==> Tom Brady New England Patriots QB *****
+expect document.querySelector('.ood-lv tbody tr').cells[0].textContent ==> Cam Newton
+expect (window.oodOut.join('').match(/(native function \w+|Error \d+\.\d+[^\n]*)/g) || []).length ==> 0
+click .ood-dlg >> text=OK

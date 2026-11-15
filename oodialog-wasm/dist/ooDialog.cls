@@ -440,8 +440,6 @@
 ::attribute oodPeer unguarded
 ::constant HOVER_DEFAULT           4294967295
 
-::method new class
-  forward to (.oodn) message "mouse_new_cls" arguments (.array~of(self, "NEW", arg(1, "A")))
 ::method init 
   forward to (.oodn) message "mouse_init" arguments (.array~of(self, "INIT", arg(1, "A")))
 

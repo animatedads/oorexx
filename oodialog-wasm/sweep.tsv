@@ -26,7 +26,7 @@ examples/addManyRows.rex	shows
 examples/browsePrinters.rex	shows
 examples/fileNameDialog_demo.rex	message:REMEMBER, FileNameDialog does NOT actually open or save your specified file, it simply pro
 examples/genGUID.rex	shows
-examples/imageButton.rex	error:Error 97.1 Object "an ImageList" does not understand message "IMAGELIST".
+examples/imageButton.rex	shows +error
 examples/openSaveFileDemo.rex	shows
 examples/publicRoutines_demo.rex	shows
 examples/saveFileWithFilter.rex	shows
@@ -38,8 +38,8 @@ menus/BinaryMenuBar.rex	error:Error 98.900 ooDialog/WASM: a BinaryMenuBar needs 
 menus/ContextMenu.rex	shows
 menus/ScriptMenuBar.rex	shows
 menus/UserMenuBar.rex	shows
-mouse/dragNdrop.rex	native:MOUSE_LOADCURSORFROMFILE_CLS
-mouse/mouseWheel.rex	native:MOUSE_NEW_CLS
+mouse/dragNdrop.rex	shows
+mouse/mouseWheel.rex	shows
 oleinfo/oleinfo.rex	outside:WINSYSTM.CLS
 ooRexxTry/ooRexxTry.rex	outside:winsystm.cls
 oobandit.rex	shows
@@ -72,7 +72,7 @@ samplesSetup.rex	ended
 simple/ChangeFont.rex	shows
 simple/SimpleMonthCalendar.rex	native:MC_GETMINRECT
 simple/SimpleUpDown.rex	shows
-sysinfo/sysinfo.rex	native:MOUSE_NEW_CLS
+sysinfo/sysinfo.rex	shows +error
 tutorial/drawing1.rex	shows
 tutorial/drawing2.rex	shows
 tutorial/drawing3.rex	shows

@@ -602,7 +602,6 @@ mouse_init
 mouse_isButtonDown
 mouse_loadCursorFromFile_cls
 mouse_loadCursor_cls
-mouse_new_cls
 mouse_releaseClipCursor
 mouse_restoreCursor
 mouse_setCursor

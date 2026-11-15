@@ -677,6 +677,10 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
           case 0xCC: if (m.tagName === 'INPUT') m.type = w === 0 ? 'text' : 'password'; return '0'; // EM_SETPASSWORDCHAR
           case 0xD2: return m.type === 'password' ? '42' : '0';                        // EM_GETPASSWORDCHAR
           case 0xCF: m.readOnly = w !== 0; return '1';                                 // EM_SETREADONLY
+          case 0xB5: {                                                                 // EM_SCROLL: line up, line down, page up, page down
+            const lh = parseFloat(getComputedStyle(m).lineHeight) || 16, before = m.scrollTop;
+            m.scrollTop += [-lh, lh, -m.clientHeight, m.clientHeight][Number(w)] || 0;
+            return String(65536 + Math.round((m.scrollTop - before) / lh)); }
           case 0xB7: m.scrollTop = m.scrollHeight; return '0';                         // EM_SCROLLCARET
           case 0x303: m.setRangeText(''); return '0';                                  // WM_CLEAR
         }
@@ -934,6 +938,76 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
     return '';
   }
 
+  /* ---- The mouse ----
+     mouseSub connects one Windows mouse event of a dialog (id 0) or a control.  The event
+     goes to Rexx as ('MOUSE', id, NAME, "state x y delta"): state is the words of
+     getMouseArgs() joined with commas, x and y are in the window's client area (in the
+     page for MOUSEWHEEL, as Windows gives the screen), delta is the wheel's +-120. */
+  const mouse = { x: 0, y: 0, buttons: 0, capture: null, cursor: '' };
+  D.addEventListener('pointermove', (e) => { mouse.x = Math.round(e.clientX); mouse.y = Math.round(e.clientY); mouse.buttons = e.buttons; }, true);
+  D.addEventListener('pointerdown', (e) => { mouse.buttons = e.buttons; }, true);
+  D.addEventListener('pointerup', (e) => { mouse.buttons = e.buttons; }, true);
+  function mouseState(e) {
+    const w = [];
+    if (e.ctrlKey) w.push('Control');
+    if (e.buttons & 1) w.push('lButton');
+    if (e.buttons & 4) w.push('mButton');
+    if (e.buttons & 2) w.push('rButton');
+    if (e.shiftKey) w.push('Shift');
+    return w.length ? w.join(',') : 'None';
+  }
+  function mouseFire(dlg, id, host, name, e, delta) {
+    const r = host.getBoundingClientRect();
+    const sx = host.offsetWidth ? r.width / host.offsetWidth : 1, sy = host.offsetHeight ? r.height / host.offsetHeight : 1;   // a dialog scaled to fit
+    const x = name === 'MOUSEWHEEL' ? Math.round(e.clientX) : Math.round((e.clientX - r.left) / (sx || 1));
+    const y = name === 'MOUSEWHEEL' ? Math.round(e.clientY) : Math.round((e.clientY - r.top) / (sy || 1));
+    fire(dlg.key, 'MOUSE', id, name, mouseState(e) + ' ' + x + ' ' + y + ' ' + (delta || 0));
+  }
+  function mouseSub(dlg, c, el, name) {
+    const id = c ? c.id : 0, host = c ? el : dlg.client;
+    dlg.mouseSubs = dlg.mouseSubs || new Set();
+    const tag = id + '.' + name;
+    if (dlg.mouseSubs.has(tag)) return '1';
+    dlg.mouseSubs.add(tag);
+    const mine = (e) => !mouse.capture || mouse.capture.host === host;     // a captured mouse belongs to the capturing window
+    const button = { L: 0, M: 1, R: 2 }[name[0]];
+    const on = (type, f) => host.addEventListener(type, (e) => { if (mine(e)) f(e); });
+    if (name === 'MOUSEMOVE') { let last = 0; on('pointermove', (e) => { const t = performance.now(); if (t - last < 30) return; last = t; mouseFire(dlg, id, host, name, e); }); }
+    else if (name === 'MOUSEWHEEL') host.addEventListener('wheel', (e) => { e.preventDefault(); e.stopPropagation(); mouseFire(dlg, id, host, name, e, e.deltaY < 0 ? 120 : -120); }, { passive: false });   // the program scrolls, not the browser
+    else if (name === 'MOUSELEAVE') on('pointerleave', (e) => mouseFire(dlg, id, host, name, e));
+    else if (name === 'MOUSEHOVER') { let t = 0; on('pointerenter', (e) => { clearTimeout(t); t = setTimeout(() => mouseFire(dlg, id, host, name, e), 400); }); host.addEventListener('pointerleave', () => clearTimeout(t)); }
+    else if (/BUTTONDOWN$/.test(name)) on('pointerdown', (e) => { if (e.button === button) mouseFire(dlg, id, host, name, e); });
+    else if (/BUTTONUP$/.test(name)) on('pointerup', (e) => { if (e.button === button) mouseFire(dlg, id, host, name, e); });
+    else if (/BUTTONDBLCLK$/.test(name)) on(button === 0 ? 'dblclick' : 'auxclick', (e) => { if (e.button === button && (button === 0 || e.detail === 2)) mouseFire(dlg, id, host, name, e); });
+    else return '0';
+    return '1';
+  }
+  // While a window has captured the mouse, moves and button releases anywhere on the page are its own.
+  for (const [type, names] of [['pointermove', ['MOUSEMOVE']], ['pointerup', ['LBUTTONUP', 'MBUTTONUP', 'RBUTTONUP']]]) {
+    D.addEventListener(type, (e) => {
+      const cap = mouse.capture;
+      if (!cap || cap.host.contains(e.target)) return;
+      const name = type === 'pointermove' ? names[0] : names[e.button] || names[0];
+      if (cap.dlg.mouseSubs && cap.dlg.mouseSubs.has(cap.id + '.' + name)) mouseFire(cap.dlg, cap.id, cap.host, name, e);
+    }, true);
+  }
+  function mouseOp(dlg, c, el, verb, a) {
+    const host = c ? el : dlg.client, id = c ? c.id : 0;
+    switch (verb) {
+      case 'capture': { const old = mouse.capture; mouse.capture = { dlg, id, host }; return old ? old.dlg.key + ' ' + old.id : ''; }
+      case 'release': { const old = mouse.capture; mouse.capture = null; return old ? old.dlg.key + ' ' + old.id : ''; }
+      case 'getCapture': return mouse.capture ? mouse.capture.dlg.key + ' ' + mouse.capture.id : '';
+      case 'state': return mouse.x + ' ' + mouse.y + ' ' + mouse.buttons;
+      case 'cursor': {                                         // a CSS cursor name, or the key of a cursor file known to the page
+        const old = mouse.cursor; mouse.cursor = String(a);
+        const url = ood.images.get(String(a));
+        D.body.style.cursor = url ? 'url("' + url + '"), auto' : String(a);
+        for (const d of ood.dialogs.values()) d.el.style.cursor = D.body.style.cursor;
+        return old; }
+    }
+    return '';
+  }
+
   ood.op = function (key, id, name, a, b, c2) {
     const dlg = ood.dialogs.get(Number(key)); if (!dlg) return '';
     id = Number(id);
@@ -952,7 +1026,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       case 'setText':
         a = String(a);
         if (!c) { dlg.capEl.textContent = a; return '1'; }
-        if (c.kind === 'EDIT') { m.value = a; cmd(dlg, c, 0x400); cmd(dlg, c, 0x300); return '1'; }   // as WM_SETTEXT: EN_UPDATE, EN_CHANGE
+        if (c.kind === 'EDIT') { m.value = a; if (m.tagName === 'TEXTAREA') { try { m.setSelectionRange(0, 0); } catch (e) { } m.scrollTop = 0; } cmd(dlg, c, 0x400); cmd(dlg, c, 0x300); return '1'; }   // (WM_SETTEXT leaves the caret at the start)   // as WM_SETTEXT: EN_UPDATE, EN_CHANGE
         if (c.kind === 'COMBO' && !c.droplist) { m.value = a; return '1'; }
         if (c.kind === 'GROUP' && !c.textEl.parentNode && a !== '') el.appendChild(c.textEl);
         c.rawText = a; label(c.textEl || m, a); return '1';
@@ -1015,6 +1089,8 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       if (c.kind === 'BUTTON') { c.main.textContent = ''; paintButton(c); }
       return '1';
     }
+    if (name === 'mouseSub') return mouseSub(dlg, c, el, String(a));
+    if (name === 'mouse') return mouseOp(dlg, c, el, String(a), b);
     if (c && name === 'bitmapPos') { c.bmpPos = [Number(a) || 0, Number(b) || 0]; paintButton(c); return '1'; }
     if (c && name === 'image') {                              // a static's image
       const url = ood.images.get(String(a));
@@ -1042,6 +1118,17 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
         c.rows.forEach((r) => { if (r.cells.length > at) r.cells.splice(at, 0, ''); });
         later(c, lvRender); return String(at); }
       case 'delCol': if (!c.cols[i]) return '0'; c.cols.splice(i, 1); c.rows.forEach((r) => r.cells.splice(i, 1)); later(c, lvRender); return '1';
+      case 'hit': {                                            // the row and column at a point of the client area: "row col", row -1 for none
+        const o = c.el.getBoundingClientRect(), x = o.left + Number(a), y = o.top + Number(b);
+        const trs = [...c.el.querySelectorAll('tbody tr')];
+        for (let r = 0; r < trs.length; r++) {
+          const q = trs[r].getBoundingClientRect();
+          if (y < q.top || y >= q.bottom || x < q.left || x >= q.right) continue;
+          const tds = [...trs[r].children]; let col = 0;
+          tds.forEach((td, k) => { const t = td.getBoundingClientRect(); if (x >= t.left && x < t.right) col = k; });
+          return r + ' ' + col;
+        }
+        return '-1 0'; }
       case 'colCount': return String(c.cols.length);
       case 'colInfo': return c.cols[i] ? c.cols[i].text + SEP + c.cols[i].w + SEP + c.cols[i].fmt : '';
       case 'setColWidth': if (!c.cols[i]) return '0'; c.cols[i].w = Number(b); later(c, lvRender); return '1';
