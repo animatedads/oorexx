@@ -23,6 +23,7 @@
 #include "OodFluentIsland.h"
 
 #include <cstdio>
+#include <cstring>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -86,6 +87,7 @@ struct OodfWinHost {
     OodfComApartment apartmentScope;
     OodfBootstrapScope bootstrapScope;
     DWORD uiThread{};
+    HWND parentWindow{};
     OodfSession *model{}; // borrowed: ooRexx/native package owns the model
     ui::Dispatching::DispatcherQueueController queue{nullptr};
     hosting::WindowsXamlManager manager{nullptr};
@@ -94,7 +96,7 @@ struct OodfWinHost {
     std::map<uint64_t, xaml::FrameworkElement> children;
 
     explicit OodfWinHost(HWND parent, OodfSession *session)
-        : uiThread(GetCurrentThreadId()), model(session) {
+        : uiThread(GetCurrentThreadId()), parentWindow(parent), model(session) {
         APTTYPE apartment{};
         APTTYPEQUALIFIER qualifier{};
         const HRESULT apartmentStatus = CoGetApartmentType(&apartment, &qualifier);
@@ -120,13 +122,34 @@ struct OodfWinHost {
     ~OodfWinHost() {
         // Native event delegates live on the XAML controls and are detached with them.
         // No Rexx callback is invoked during destruction.
+        // Probe alternatives for complex templated WinUI controls that fail in
+        // DesktopWindowXamlSource.Close on the Windows runner. These diagnostics
+        // are opt-in, never the shipping/default teardown contract.
+        char cleanup[32]{};
+        (void)GetEnvironmentVariableA("OODF_CLOSE_EXPERIMENT", cleanup, sizeof(cleanup));
+        const bool retain = strcmp(cleanup, "retain") == 0;
+        const bool quiesce = strcmp(cleanup, "quiesce") == 0;
+        if (quiesce) {
+            lifecycleTrace("QUIESCE_BEGIN");
+            const HWND focused = GetFocus();
+            if (focused && IsChild(parentWindow, focused)) SetFocus(parentWindow);
+            for (auto const &[uid, child] : children) {
+                (void)uid;
+                if (auto bar = child.try_as<controls::InfoBar>()) bar.IsOpen(false);
+                if (auto number = child.try_as<controls::NumberBox>()) number.IsEnabled(false);
+            }
+            lifecycleTrace("QUIESCE_DONE");
+        }
         lifecycleTrace("CLEAR_CHILDREN_BEGIN");
-        children.clear();
-        if (root) root.Children().Clear();
+        if (!retain) {
+            children.clear();
+            if (root) root.Children().Clear();
+        }
         lifecycleTrace("CLEAR_CHILDREN_DONE");
         lifecycleTrace("CLOSE_ISLAND_BEGIN");
         if (island) island.Close();
         lifecycleTrace("CLOSE_ISLAND_INVOKED");
+        children.clear();
         root = nullptr;
         island = nullptr;
         lifecycleTrace("CLOSE_ISLAND_DONE");

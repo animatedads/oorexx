@@ -122,7 +122,7 @@ int wmain(int argc, wchar_t **argv) {
     }
     stage("PUMP_OK");
     if (wantButton && FAILED(result = oodf_win_remove(host, button))) goto cleanup;
-    printf("PASS native HWND/XAML island mode=%ls properties, remove, close\n", mode);
+    stage("OPERATIONS_OK");
 cleanup:
     stage("TEARDOWN_BEGIN");
     if (FAILED(result)) fail("native host operation", result);
@@ -131,5 +131,6 @@ cleanup:
     DestroyWindow(hwnd);
     oodf_close(model);
     stage("TEARDOWN_DONE");
+    if (!FAILED(result) && !FAILED(closed)) printf("PASS native HWND/XAML island mode=%ls properties, remove, close\n", mode);
     return FAILED(result) || FAILED(closed) ? 1 : 0;
 }

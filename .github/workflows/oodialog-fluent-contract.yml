@@ -63,19 +63,25 @@ jobs:
           $catalogue = (Resolve-Path "oodialog-fluent/catalogue/controls.tsv").Path
           $results = @()
           $failureCount = 0
-          foreach ($mode in @('empty', 'button', 'toggle', 'info', 'number', 'no-number', 'all')) {
+          $cases = @('empty:baseline', 'button:baseline', 'toggle:baseline',
+                     'info:baseline', 'number:baseline', 'no-number:baseline', 'all:baseline',
+                     'info:retain', 'number:retain', 'all:retain',
+                     'info:quiesce', 'number:quiesce', 'all:quiesce')
+          foreach ($case in $cases) {
+            $mode, $experiment = $case.Split(':')
             $env:OODF_SMOKE_MODE = $mode
-            $stdout = "$binary/runtime-$mode-stdout.txt"
-            $stderr = "$binary/runtime-$mode-stderr.txt"
+            $env:OODF_CLOSE_EXPERIMENT = $experiment
+            $stdout = "$binary/runtime-$mode-$experiment-stdout.txt"
+            $stderr = "$binary/runtime-$mode-$experiment-stderr.txt"
             $process = Start-Process -FilePath "$binary/OodFluentSmoke.exe" -ArgumentList $catalogue -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
             if (-not $process.WaitForExit(30000)) {
               Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-              $results += "MODE $mode RUNTIME_TIMEOUT after 30 seconds"
+              $results += "MODE $case RUNTIME_TIMEOUT after 30 seconds"
               $failureCount++
               continue
             }
             $process.Refresh()
-            $results += "MODE $mode exit=$($process.ExitCode)"
+            $results += "MODE $case exit=$($process.ExitCode)"
             $results += (Get-Content $stdout -Raw)
             $results += (Get-Content $stderr -Raw)
             if ($process.ExitCode -ne 0) { $failureCount++ }
