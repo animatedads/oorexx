@@ -63,15 +63,19 @@ jobs:
           $supportedFailures = 0
           $diagnosticFailures = 0
           # Exhaustive teardown experiments are preserved in run 43725003804.
-          # Existing qualified modes stay mandatory; the new family is
-          # isolated until its own creation/update/teardown exits qualify.
+          # New native CheckBox, ToggleButton, Slider and their combined
+          # five-control island pass run 43761232423 individually; keep the
+          # combined qualified mode mandatory. TextBox, ProgressBar, InfoBar
+          # and NumberBox are crash-only diagnostics until teardown is fixed.
           $cases = @('empty:baseline', 'button:baseline', 'toggle:baseline',
                      'guard:default', 'check:baseline', 'togglebutton:baseline',
-                     'slider:baseline', 'textbox:baseline', 'progress:baseline',
+                     'slider:baseline', 'qualified:baseline',
+                     'textbox:baseline', 'progress:baseline',
                      'expanded:baseline', 'info:baseline', 'number:baseline', 'all:baseline')
           foreach ($case in $cases) {
             $mode, $experiment = $case.Split(':')
-            $supported = $mode -in @('empty', 'button', 'toggle', 'guard')
+            $supported = $mode -in @('empty', 'button', 'toggle', 'check',
+                                      'togglebutton', 'slider', 'qualified', 'guard')
             $env:OODF_SMOKE_MODE = $mode
             if ($mode -eq 'guard') { $env:OODF_ALLOW_UNQUALIFIED_NATIVE = '0' }
             else { $env:OODF_ALLOW_UNQUALIFIED_NATIVE = '1' }
@@ -106,7 +110,8 @@ jobs:
           path: ${{ runner.temp }}/oorexx-verified-5.2.0-portable.zip
           key: oorexx-official-portable-windows-x64-5.2.0-13156-v1
       - name: Qualify real ooDialog Rexx session on Windows
-        # Required for the narrowly supported Button/ToggleSwitch subset.
+        # Required for the five supported Button/ToggleSwitch/CheckBox/
+        # ToggleButton/Slider control subset.
         # The cross-thread hook remains diagnostic opt-in, not released API.
         shell: pwsh
         timeout-minutes: 10
@@ -179,6 +184,9 @@ jobs:
                 $output -notmatch 'REXX_SMOKE_STAGE=CONTROLS_READY' -or
                 $output -notmatch 'REXX_SMOKE_STAGE=FLUENT_CLOSED' -or
                 $output -notmatch 'REXX_SMOKE_EVENT=toggle' -or
+                $output -notmatch 'REXX_SMOKE_EVENT=check' -or
+                $output -notmatch 'REXX_SMOKE_EVENT=toggleButton' -or
+                $output -notmatch 'REXX_SMOKE_EVENT=slider' -or
                 $output -notmatch 'REXX_SMOKE_PASS=1') {
               $failedTrials++
               Write-Output "REXX_PROBE_TRIAL_FAILED=$trial"

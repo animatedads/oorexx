@@ -255,11 +255,13 @@ static HRESULT oodf_win_add_impl(OodfWinHost *host, int64_t resourceId,
             type != "CheckBox" && type != "ToggleButton" &&
             type != "Slider" && type != "TextBox" && type != "ProgressBar" &&
             type != "InfoBar" && type != "NumberBox") winrt::throw_hresult(E_NOTIMPL);
-        // Both complex templates currently trigger an access violation in
-        // Windows App SDK 2.6.5 during DesktopWindowXamlSource.Close, even
-        // after removal and dispatcher settling (CI run 43725003804).
-        // Do not expose known-crashing paths to ordinary ooDialog callers.
-        if (type == "InfoBar" || type == "NumberBox") {
+        // Several templated controls trigger a Windows App SDK 2.6.5
+        // access violation at DesktopWindowXamlSource.Close even after
+        // explicit child removal: InfoBar/NumberBox (run 43725003804),
+        // TextBox/ProgressBar (run 43761232423). Never expose these through
+        // the default API until runtime teardown is qualified.
+        if (type == "InfoBar" || type == "NumberBox" ||
+            type == "TextBox" || type == "ProgressBar") {
             char optIn[2]{};
             if (GetEnvironmentVariableA("OODF_ALLOW_UNQUALIFIED_NATIVE", optIn,
                                        sizeof(optIn)) != 1 || optIn[0] != '1')

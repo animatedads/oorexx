@@ -78,25 +78,26 @@ int wmain(int argc, wchar_t **argv) {
     const bool textBoxOnly = wcscmp(mode, L"textbox") == 0;
     const bool progressOnly = wcscmp(mode, L"progress") == 0;
     const bool expanded = wcscmp(mode, L"expanded") == 0;
+    const bool qualified = wcscmp(mode, L"qualified") == 0;
     const bool infoOnly = wcscmp(mode, L"info") == 0;
     const bool numberOnly = wcscmp(mode, L"number") == 0;
     const bool noNumber = wcscmp(mode, L"no-number") == 0;
     const bool guard = wcscmp(mode, L"guard") == 0;
     if (!(all || empty || buttonOnly || toggleOnly || checkOnly || toggleButtonOnly ||
-          sliderOnly || textBoxOnly || progressOnly || expanded ||
+          sliderOnly || textBoxOnly || progressOnly || expanded || qualified ||
           infoOnly || numberOnly || noNumber || guard)) return 2;
     fprintf(stderr, "STAGE MODE_%s\n", all ? "all" : empty ? "empty" :
             buttonOnly ? "button" : toggleOnly ? "toggle" : checkOnly ? "check" :
             toggleButtonOnly ? "togglebutton" : sliderOnly ? "slider" :
             textBoxOnly ? "textbox" : progressOnly ? "progress" :
-            expanded ? "expanded" : infoOnly ? "info" :
+            expanded ? "expanded" : qualified ? "qualified" : infoOnly ? "info" :
             numberOnly ? "number" : noNumber ? "no-number" : "guard");
     fflush(stderr);
-    const bool wantButton = all || buttonOnly || noNumber || expanded;
-    const bool wantToggle = all || toggleOnly || noNumber || expanded;
-    const bool wantCheck = all || checkOnly || expanded;
-    const bool wantToggleButton = all || toggleButtonOnly || expanded;
-    const bool wantSlider = all || sliderOnly || expanded;
+    const bool wantButton = all || buttonOnly || noNumber || expanded || qualified;
+    const bool wantToggle = all || toggleOnly || noNumber || expanded || qualified;
+    const bool wantCheck = all || checkOnly || expanded || qualified;
+    const bool wantToggleButton = all || toggleButtonOnly || expanded || qualified;
+    const bool wantSlider = all || sliderOnly || expanded || qualified;
     const bool wantTextBox = all || textBoxOnly || expanded;
     const bool wantProgress = all || progressOnly || expanded;
     const bool wantInfo = all || infoOnly || noNumber;
@@ -152,7 +153,10 @@ int wmain(int argc, wchar_t **argv) {
         uint64_t denied = 0;
         const HRESULT infoDenied = oodf_win_add(host, 4103, L"InfoBar", L"Blocked", &denied);
         const HRESULT numberDenied = oodf_win_add(host, 4104, L"NumberBox", L"Blocked", &denied);
-        if (infoDenied != E_NOTIMPL || numberDenied != E_NOTIMPL || denied != 0) {
+        const HRESULT textDenied = oodf_win_add(host, 4113, L"TextBox", L"Blocked", &denied);
+        const HRESULT progressDenied = oodf_win_add(host, 4114, L"ProgressBar", L"Blocked", &denied);
+        if (infoDenied != E_NOTIMPL || numberDenied != E_NOTIMPL ||
+            textDenied != E_NOTIMPL || progressDenied != E_NOTIMPL || denied != 0) {
             result = E_UNEXPECTED;
             goto cleanup;
         }
