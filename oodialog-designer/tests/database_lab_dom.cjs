@@ -18,6 +18,22 @@ const { document } = window;
 const databases = new Map();
 let current = '';
 let labLanguage = '';
+const graphFixture = [
+  'TABLE\taddress\t0',
+  'COLUMN\taddress\tid\tINTEGER\t0\t1\t0',
+  'COLUMN\taddress\tcity\tTEXT\t1\t0\t0',
+  'TABLE\tperson\t1',
+  'COLUMN\tperson\tid\tINTEGER\t0\t1\t0',
+  'COLUMN\tperson\tname\tTEXT\t0\t0\t1',
+  'TABLE\tperson_address\t0',
+  'COLUMN\tperson_address\tid\tINTEGER\t0\t1\t0',
+  'COLUMN\tperson_address\tperson_id\tINTEGER\t0\t0\t0',
+  'COLUMN\tperson_address\taddress_id\tINTEGER\t0\t0\t0',
+  'FK\tperson_address\tperson_id\tperson\tid\tCASCADE',
+  'FK\tperson_address\taddress_id\taddress\tid\tRESTRICT',
+  'TABLE\tperson_ext\t0',
+  'COLUMN\tperson_ext\tid\tINTEGER\t0\t1\t0'
+].join('\n').replace(/\\t/g, '\t');
 const model = {
   async language(lang) { labLanguage = lang; return lang; },
   async databaseNames() { return [...databases.keys()].join('\n'); },
@@ -25,6 +41,7 @@ const model = {
   async createDatabase(name) { assert.match(name, /^[A-Za-z_][A-Za-z0-9_]*$/); databases.set(name, new Map()); current = name; return true; },
   async openDatabase(name) { assert(databases.has(name)); current = name; return true; },
   async tableNames() { return [...databases.get(current).keys()].join('\n'); },
+  async graphLines(extra) { assert.equal(typeof extra, 'string'); return graphFixture + (extra ? '\n' + extra : ''); },
   async schema(name) { return databases.get(current).get(name).columns; },
   async createTable(name, columns) { assert(columns.includes('id\tINTEGER\t0\t1\t0')); databases.get(current).set(name, { columns, rows: [] }); return 'SUCCESS'; },
   async replaceEmptyTable(name, columns) {
@@ -38,7 +55,11 @@ const model = {
     table.columns = columns; return 'SUCCESS';
   },
   async dropTable(name) { databases.get(current).delete(name); return 'SUCCESS'; },
-  async previewJSON(name) { return this.executeJSON('SELECT * FROM ' + name); },
+  async previewJSON(name) {
+    const table = databases.get(current).get(name);
+    return JSON.stringify({ status: 'SUCCESS', error: 'SUCCESS', message: '', rowCount: table.rows.length,
+      affectedRows: 0, rows: table.rows, truncated: false });
+  },
   async executeJSON(sql) {
     const table = databases.get(current).get('customers');
     if (/^INSERT /i.test(sql)) table.rows.push({ id: 1, name: 'Ada' });
@@ -61,7 +82,8 @@ window.fetch = async (url) => {
   return { ok: true, async text() { return fs.readFileSync(resolved, 'utf8'); } };
 };
 window.confirm = () => true;
-window.OodNlsPage = { lang: 'en', has() { return false; }, apply() {} };
+window.OodNlsPage = { lang: 'en', has(key) { return key === 'db.graphDelete'; }, apply() {} };
+window.OodT = (key) => key === 'db.graphDelete' ? (window.OodNlsPage.lang === 'de' ? 'BEI LÖSCHEN' : 'ON DELETE') : key;
 window.eval(fs.readFileSync(path.join(root, 'site/database-lab.js'), 'utf8'));
 window.OodDatabaseLabPage.setup(runtime);
 const click = (id) => document.getElementById(id).click();
@@ -75,6 +97,10 @@ async function until(predicate, message) {
   click('btnDatabaseLab');
   await until(() => window.OodDatabaseLabPage.state.ready, 'model loaded');
   assert(!document.getElementById('dbOverlay').hidden);
+  click('dbTabGraph');
+  await until(() => document.querySelector('#dbGraph p'), 'empty graph without an open database');
+  assert(!document.getElementById('dbNotice').classList.contains('bad'), 'empty graph does not raise an error');
+  click('dbTabSql');
   document.getElementById('dbNew').value = 'TestBrowser';
   click('dbCreate');
   await until(() => document.getElementById('dbCurrent').textContent === 'TestBrowser', 'database created');
@@ -103,7 +129,43 @@ async function until(predicate, message) {
   await until(() => databases.get('TestBrowser').get('customers').columns.includes('active\tBOOLEAN'), 'empty schema replaced');
   click('dbDrop');
   await until(() => databases.get('TestBrowser').size === 0, 'table dropped');
+  // The UI model is a transport mock: graph lines are a catalogue fixture,
+  // not inferred from DOM or parsed SQL in the browser.
+  for (const name of ['address', 'person', 'person_ext', 'person_address']) {
+    databases.get('TestBrowser').set(name, { columns: 'id\tINTEGER\t0\t1\t0', rows: [] });
+  }
+  click('dbOpen');
+  await until(() => document.querySelector('#dbTables option[value="person"]'), 'graph fixtures selected');
+  click('dbTabGraph');
+  await until(() => document.querySelector('.db-graph-svg'), 'SVG graph rendered');
+  assert.equal(document.querySelectorAll('.db-graph-table').length, 3, 'three ordinary table boxes');
+  assert.equal(document.querySelectorAll('.db-graph-junction').length, 1, 'link table is a compact junction');
+  assert.equal(document.querySelectorAll('.db-graph-edges path[marker-end]').length, 2, 'two FK arrows');
+  assert(document.getElementById('dbGraph').textContent.includes('BEI LÖSCHEN CASCADE'), 'German FK label');
+  const stableSvg = document.querySelector('.db-graph-svg').outerHTML;
+  click('dbGraphRefresh');
+  await until(() => document.querySelector('.db-graph-svg')?.outerHTML === stableSvg, 'stable layout');
+  const objectLines = [
+    'OBJECT\tPERSON\tENT.person',
+    'PART\tPERSON\t-\tEXT\tENT.person_ext\t-\tOWNED',
+    'PART\tPERSON\taddresses\tLINK\tENT.address\tENT.person_address\tSHARED',
+    'FUTURE\tunknown'
+  ].join('\n').replace(/\\t/g, '\t');
+  document.getElementById('dbObjectLines').value = objectLines;
+  click('dbGraphRefresh');
+  await until(() => document.querySelector('.db-graph-objects rect'), 'object outline rendered');
+  assert(document.getElementById('dbGraph').textContent.includes('addresses 1..n'), 'PART association caption');
+  assert(!document.getElementById('dbGraph').textContent.includes('FUTURE'), 'unknown kinds ignored');
+  const personBox = document.querySelector('.db-graph-table[data-table="person"]');
+  const extBox = document.querySelector('.db-graph-table[data-table="person_ext"]');
+  const personRect = personBox.querySelector('rect'), extRect = extBox.querySelector('rect');
+  assert.equal(personRect.getAttribute('y'), extRect.getAttribute('y'), 'EXT beside its main table');
+  personBox.dispatchEvent(new window.Event('click', { bubbles: true }));
+  await until(() => document.getElementById('dbTableName').value === 'person', 'table click selects schema editor');
+  assert(document.getElementById('dbTabGraph').classList.contains('on'), 'graph tab remains active');
+  click('dbTabSql');
+  assert(!document.getElementById('dbSqlPanel').hidden, 'SQL tab restored');
   click('dbClose');
   assert(document.getElementById('dbOverlay').hidden);
-  console.log('DATABASE LAB DOM: 11 interaction checks PASS');
+  console.log('DATABASE LAB DOM: 24 interaction checks PASS');
 })().catch((error) => { console.error(error); process.exitCode = 1; });
