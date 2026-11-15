@@ -26,7 +26,7 @@ examples/addManyRows.rex	shows
 examples/browsePrinters.rex	shows
 examples/fileNameDialog_demo.rex	message:REMEMBER, FileNameDialog does NOT actually open or save your specified file, it simply pro
 examples/genGUID.rex	shows
-examples/imageButton.rex	shows +error
+examples/imageButton.rex	error:Error 97.1 Object "an ImageList" does not understand message "IMAGELIST".
 examples/openSaveFileDemo.rex	shows
 examples/publicRoutines_demo.rex	shows
 examples/saveFileWithFilter.rex	shows
@@ -48,7 +48,7 @@ oodStandardDialogs.rex	shows
 oodStandardRoutines.rex	shows
 oodpbar.rex	shows
 oodraw.rex	shows
-oograph.rex	native:DLGEXT_GETBITMAPSIZE
+oograph.rex	shows
 oophil.rex	shows
 oovideo.rex	error:Error 6.1 Unmatched comment delimiter ("/*") on line 44.
 oowalk2.rex	error:Error 98.900 ooDialog/WASM: a dialog from a resource file needs a reader of binary Windows resources; set .ood
@@ -57,7 +57,7 @@ propertySheet.tabControls/PropertySheetDemo.rex	shows
 propertySheet.tabControls/TabDemo.rex	error:Error 98.900 ooDialog/WASM: a dialog from a resource file needs a reader of binary Windows resources; set .ood
 propertySheet.tabControls/TabOwnerDemo.rex	native:CDI_INIT
 propertySheet.tabControls/UserTabDemo.rex	shows
-propertySheet.tabControls/oodListViews.rex	shows +error
+propertySheet.tabControls/oodListViews.rex	error:Error 97.1 Object "The NIL object" does not understand message "ADDNEWATTRIBUTE".
 propertySheet.tabControls/ticketWizard.rex	shows
 resizableDialogs/DialogAreaU/dlgAreaUDemo.rex	shows
 resizableDialogs/DialogAreaU/dlgAreaUDemoThree.rex	shows

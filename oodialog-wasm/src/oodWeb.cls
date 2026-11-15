@@ -24,7 +24,7 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.12.0"
+  return "0.13.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute key unguarded
@@ -102,7 +102,7 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.12.0"
+  return "0.13.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute rexxSelf unguarded
@@ -131,7 +131,7 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.12.0"
+  return "0.13.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute dlg unguarded             -- its dialog's OodDlg
@@ -149,7 +149,7 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.12.0"
+  return "0.13.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::method module_version unguarded
@@ -474,6 +474,41 @@ syntax:
   end
   return found
 
+/* winTimer("START", ms) answers a timer; winTimer("WAIT", timer) returns at its next
+   tick; winTimer("STOP", timer).  The wait takes the page's events, as msSleep does. */
+::method winTimer_rtn unguarded
+  expose timers
+  use arg , , a
+  numeric digits 20
+  if \var("TIMERS") then timers = .directory~new
+  mode = self~opt(a, 1)~upper
+  select
+    when mode~abbrev("STA") then do
+      ms = 0
+      if a~hasIndex(2) then if a[2]~datatype("N") then ms = a[2]
+      id = timers~items + 1
+      do while timers~hasIndex(id)
+        id = id + 1
+      end
+      timers[id] = .array~of(ms, time("F") + ms * 1000)
+      return id
+    end
+    when mode~abbrev("STO") then do
+      if a~hasIndex(2) then timers~remove(a[2])
+      return 0
+    end
+    when mode~abbrev("W") then do
+      if \a~hasIndex(2) then return 1
+      t = timers[a[2]]
+      if t == .nil then return 1
+      left = (t[2] - time("F")) / 1000
+      if left > 0 then self~msSleep_rtn(.nil, "", .array~of(left))
+      t[2] = max(t[2] + t[1] * 1000, time("F"))
+      return 0
+    end
+    otherwise return 1
+  end
+
 ::method handlerOutlivedDialogs unguarded
   expose handlerDepth dialogs
   if \var("HANDLERDEPTH") then return .false
@@ -630,9 +665,24 @@ syntax:
   return .true
 ::method app_requiredOS unguarded
   return .true
+/* .application~srcDir: the directory of the program that was started, not of this
+   file (PARSE SOURCE here names oodWeb.cls; in the browser both sit in one directory,
+   on another system they do not).  The program is the bottom of the call stack. */
 ::method app_srcDir_atr unguarded
-  parse source . . program
-  return filespec("LOCATION", program)
+  expose appSrcDir
+  if var("APPSRCDIR") then return appSrcDir
+  frames = .context~stackFrames
+  bottom = frames[frames~items]
+  program = ""
+  signal on syntax name noPackage
+  program = bottom~executable~package~name
+noPackage:
+  if program == "" then do
+    parse source . . program
+    return filespec("LOCATION", program)
+  end
+  appSrcDir = filespec("LOCATION", program)
+  return appSrcDir
 
 ::method dlgutil_loWord_cls unguarded
   use arg self_, msg, a
@@ -2178,6 +2228,7 @@ syntax:
   use arg self_, id, normal, focused, selected, disabled, style
   sep = self~sep
   other = self~imageKey(focused) || sep || self~imageKey(selected) || sep || self~imageKey(disabled)
+  self_~oodPeer~store["BMP" id] = self~imageKey(normal)       -- (getBitmapSize, drawBitmap)
   self~ctlOpWhenLive(self_~oodPeer, id, "bitmap", self~imageKey(normal), other, style~upper)
   return 0
 ::method argOr unguarded
@@ -3225,7 +3276,115 @@ syntax:
   return 500
 ::method bc_setStyle unguarded
   return ""
-::method dlgext_setBitmapPosition unguarded
+::method dlgext_setBitmapPosition unguarded -- setBitmapPosition(id, x, y | point): where the button's bitmap is drawn
+  use arg self_, msg, a
+  id = self~resolveId(self_, a[1])
+  if id < 1 then return -1
+  if \a~hasIndex(2) then return 1
+  if a[2]~isA(.String) then do
+    x = a[2]
+    y = 0
+    if a~hasIndex(3) then y = a[3]
+  end
+  else do
+    x = a[2]~x
+    y = a[2]~y
+  end
+  self_~oodPeer~store["BMPPOS" id] = .array~of(x, y)
+  self~ctlOpWhenLive(self_~oodPeer, id, "bitmapPos", x, y)
+  return 0
+::method dlgext_getBitmapPosition unguarded -- getBitmapPosition(id, point): the point is filled in
+  use arg self_, msg, a
+  id = self~resolveId(self_, a[1])
+  if id < 1 then return .false
+  pos = self_~oodPeer~store["BMPPOS" id]
+  if pos == .nil then pos = .array~of(0, 0)
+  if a~hasIndex(2) then do
+    a[2]~x = pos[1]
+    a[2]~y = pos[2]
+  end
+  return .true
+::method imageSize unguarded       -- width and height of an image known to the page, from the file's header; .nil if unknown
+  use arg key
+  if key == "" then return .nil
+  if \SysIsFile(key) then return .nil
+  stream = .stream~new(key)
+  if stream~open("READ") \== "READY:" then return .nil
+  head = stream~charIn(1, 32)
+  stream~close
+  if head~left(2) == "BM" then return .array~of(self~le32(head~substr(19, 4)), self~le32(head~substr(23, 4))~abs)
+  if head~substr(2, 3) == "PNG" then return .array~of(head~substr(17, 4)~c2x~x2d, head~substr(21, 4)~c2x~x2d)
+  if head~left(3) == "GIF" then return .array~of(self~le32(head~substr(7, 2)), self~le32(head~substr(9, 2)))
+  return .nil
+::method le32 unguarded            -- a little-endian number of up to four bytes (signed when four)
+  use arg bytes
+  v = bytes~reverse~c2x~x2d
+  if bytes~length == 4 then if v > 2147483647 then v = v - 4294967296
+  return v
+::method dlgext_getBitmapSize unguarded     -- getBitmapSize(id), getBitmapSizeX(id), getBitmapSizeY(id)
+  use arg self_, msg, a
+  id = self~resolveId(self_, a[1])
+  if id < 1 then return -1
+  size = self~imageSize(self_~oodPeer~store["BMP" id])
+  if size == .nil then return -1
+  if msg == "GETBITMAPSIZEX" then return size[1]
+  if msg == "GETBITMAPSIZEY" then return size[2]
+  return self~classOf("Size")~new(size[1], size[2])
+::method dlgext_drawBitmap unguarded        -- drawBitmap(hwnd, id, x, y, xSource, ySource, width, height): onto the button
+  use arg self_, msg, a
+  id = self~resolveId(self_, a[2])
+  if id < 1 then return -1
+  d = self_~oodPeer
+  key = d~store["BMP" id]
+  if key == .nil then return 1
+  v = .array~of(key, 0, 0, 0, 0, 0, 0)
+  do i = 3 to 8
+    if a~hasIndex(i) then v[i - 1] = a[i]
+  end
+  self~ctlOp(d, id, "gdi", "image", v~makeString("L", self~sep), "")
+  return 0
+::method dlgext_resizeMoveControl unguarded -- resizeControl(id, width, height | size, opts), moveControl(id, x, y | point, opts): pixels
+  use arg self_, msg, a
+  id = self~resolveId(self_, a[1])
+  if id < 1 then return -1
+  if \a~hasIndex(2) then return 1
+  if a[2]~isA(.String) then do
+    first = a[2]
+    second = 0
+    if a~hasIndex(3) then second = a[3]
+  end
+  else if msg~left(1) == "R" then do
+    first = a[2]~width
+    second = a[2]~height
+  end
+  else do
+    first = a[2]~x
+    second = a[2]~y
+  end
+  if msg~left(1) == "R" then self~ctlOp(self_~oodPeer, id, "size", first, second)
+  else self~ctlOp(self_~oodPeer, id, "move", first, second)
+  return 0
+::method dlgext_scrollButton unguarded      -- scrollButton(id, dx, dy, left, top, right, bottom): that part of what is drawn on the button moves
+  use arg self_, msg, a
+  id = self~resolveId(self_, a[1])
+  if id < 1 then return 1
+  v = .array~of(a[2], a[3], a[4], a[5], a[6], a[7])
+  self~ctlOp(self_~oodPeer, id, "gdi", "scroll", v~makeString("L", self~sep), "")
+  return 0
+::method winex_scroll unguarded    -- scroll(dx, dy | size): what is drawn on the window moves
+  use arg self_, msg, a
+  if \a~hasIndex(1) then return 1
+  if a[1]~isA(.String) then do
+    dx = a[1]
+    dy = 0
+    if a~hasIndex(2) then dy = a[2]
+  end
+  else do
+    dx = a[1]~width
+    dy = a[1]~height
+  end
+  target = self~gdiTargetOf(self_)
+  self~ctlOp(target[1], target[2], "gdi", "scroll", dx || self~sep || dy, "")
   return 0
 ::method dlgutil_getGuid_cls unguarded
   hex = ""

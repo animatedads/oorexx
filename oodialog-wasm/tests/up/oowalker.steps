@@ -1,0 +1,8 @@
+wait .ood-dlg
+sleep 1500
+eval (() => { const b = [...document.querySelectorAll('.ood-dlg button')].find(e => e.style.backgroundImage && e.style.backgroundImage !== 'none'); window.__p = b.style.backgroundPosition + b.style.backgroundImage.length; return window.__p.slice(0, 20); })()
+sleep 900
+expect (() => { const b = [...document.querySelectorAll('.ood-dlg button')].find(e => e.style.backgroundImage && e.style.backgroundImage !== 'none'); return (b.style.backgroundPosition + b.style.backgroundImage.length) !== window.__p; })() ==> True
+shot oowalker
+expect (window.oodOut.join('').match(/(native function \w+|Error \d+\.\d+[^\n]*)/g) || []).length ==> 0
+click .ood-dlg >> text=OK

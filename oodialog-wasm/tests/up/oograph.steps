@@ -1,0 +1,7 @@
+wait .ood-dlg
+sleep 4500
+expect [...document.querySelectorAll('.ood-dlg button.ood-c')].filter(x => x.textContent.trim() === 'Cancel' && !x.disabled).length ==> 1
+expect (() => { const cv = [...document.querySelectorAll('canvas.ood-gdi')]; let n = 0; for (const c of cv) { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; } return n > 5000; })() ==> True
+expect (window.oodOut.join('').match(/(native function \w+|Error \d+\.\d+[^\n]*)/g) || []).length ==> 0
+shot oograph
+click .ood-dlg >> text=Cancel

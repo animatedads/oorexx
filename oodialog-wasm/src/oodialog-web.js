@@ -906,6 +906,29 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
         g.putImageData(img, 0, 0);
         return '1'; }
       case 'ownerDraw': if (c) (c.textEl || c.main || el).style.color = 'transparent'; return '1';   // the program draws it: no text of its own
+      case 'image': {                                          // BitBlt(): key, x, y, xSource, ySource, width, height (0: all of it)
+        const url = ood.images.get(v[0]); if (!url) return '0';
+        ood.imgEls = ood.imgEls || new Map();
+        let img = ood.imgEls.get(v[0]);
+        if (!img) { img = new Image(); img.src = url; ood.imgEls.set(v[0], img); }
+        const put = () => {
+          const w = n(5) || img.naturalWidth, h = n(6) || img.naturalHeight;
+          const sw = Math.min(w, img.naturalWidth - n(3)), sh = Math.min(h, img.naturalHeight - n(4));
+          if (sw > 0 && sh > 0) g.drawImage(img, n(3), n(4), sw, sh, n(1), n(2), sw, sh);
+        };
+        if (img.complete && img.naturalWidth) put(); else img.addEventListener('load', put, { once: true });   // not decoded yet: drawn when it is
+        return '1'; }
+      case 'scroll': {                                         // ScrollWindow(): what is drawn moves by dx, dy
+        const dx = Math.round(n(0)), dy = Math.round(n(1));    // then left, top, right, bottom of the part that moves (all of it without)
+        const l = v[2] === undefined || v[2] === '' ? 0 : Math.max(0, n(2)), t = v[2] === undefined || v[2] === '' ? 0 : Math.max(0, n(3));
+        const r = v[2] === undefined || v[2] === '' ? cv.width : Math.min(cv.width, n(4)), b2 = v[2] === undefined || v[2] === '' ? cv.height : Math.min(cv.height, n(5));
+        const w = r - l, h = b2 - t;
+        if (w <= 0 || h <= 0) return '1';
+        const img = g.getImageData(l, t, w, h);
+        g.clearRect(l, t, w, h);
+        const ax = Math.abs(dx), ay = Math.abs(dy);
+        if (ax < w && ay < h) g.putImageData(img, l + dx, t + dy, dx < 0 ? ax : 0, dy < 0 ? ay : 0, w - ax, h - ay);   // what leaves the part is cut off
+        return '1'; }
       case 'size': return cv.width + ' ' + cv.height;
     }
     return '';
@@ -992,6 +1015,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       if (c.kind === 'BUTTON') { c.main.textContent = ''; paintButton(c); }
       return '1';
     }
+    if (c && name === 'bitmapPos') { c.bmpPos = [Number(a) || 0, Number(b) || 0]; paintButton(c); return '1'; }
     if (c && name === 'image') {                              // a static's image
       const url = ood.images.get(String(a));
       if (c.img) { c.img.src = url || ''; c.img.hidden = !url; if (b === 'STRETCH') c.img.style.cssText = 'width:100%;height:100%'; }
@@ -1237,7 +1261,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
     m.style.backgroundImage = url ? 'url("' + url + '")' : 'none';
     m.style.backgroundRepeat = 'no-repeat';
     m.style.backgroundSize = b.stretch ? '100% 100%' : 'auto';
-    m.style.backgroundPosition = b.stretch ? '0 0' : 'center';
+    m.style.backgroundPosition = b.stretch ? '0 0' : c.bmpPos ? c.bmpPos[0] + 'px ' + c.bmpPos[1] + 'px' : 'center';   // setBitmapPosition: from the top left
     if (!b.frame) { m.style.border = '0'; m.style.backgroundColor = 'transparent'; }
     if (url) m.classList.add('ood-bmp');
   }

@@ -1,4 +1,4 @@
-# ooDialog for ooRexx/WASM — v0.12.0
+# ooDialog for ooRexx/WASM — v0.13.0
 
 Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: Josep Maria Blasco's
 ooRexx/WASM (`oorexxwasm` 0.2.4, ooRexx 5.3.0) and its `js.cls`.
@@ -48,24 +48,25 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
     python3 tools/oodtest.py --poke upstream/examples 0 24
     python3 tools/oodtest.py --tree upstream/examples tests/t*.rex tests/up/calculator.rex tests/up/oodpbar.rex tests/up/oodStandardRoutines.rex
 
-## State on 2026-11-15 (v0.12.0)
+## State on 2026-11-15 (v0.13.0)
 
-- Natives ported: 559 of 1,184 (47.2%). (The total fell from 1,196 because 12
+- Natives ported: 566 of 1,184 (47.8%). (The total fell from 1,196 because 12
   natives are now plain Rexx in `src/patches.txt`.)
-- Tests: 28 of 28 pass in headless Chromium (`tests/t01`..`t16` with expected
+- Tests: 31 of 31 pass in headless Chromium (`tests/t01`..`t17` with expected
   output, the binary resource hand-off test `tests/res/t07_resdialog_binary`,
   four unmodified upstream samples: `calculator.rex`,
   `oodpbar.rex`, `oodStandardRoutines.rex`, and the tutorial
   `employee11tab.rex`, a four-page property sheet from an .rc file, in which
   an employee is added and then found on the list page, and
   `ticketWizard.rex`, a Wizard 97 walked with Next, a refusal and Back,
-  `oodraw.rex` (each of its seven drawings started and interrupted) and the
+  `oodraw.rex` (each of its seven drawings started and interrupted),
+  `oowalker.rex` (the sprite walks), `oograph.rex` (bitmaps scrolled in) and the
   tutorial's `drawing3.rex` and `drawing5.rex`; and the three
   programs written by ooDialog Designer v0.3.0, in `tests/designer`).
 - Sweep of all 140 upstream example programs (`oodtest.py --sweep`, results in
-  `sweep.tsv`), each run from its own directory: 67 show their dialog, 7 run to
-  the end, 9 show only a message box, 17 stop at a native not ported yet, 9
-  stop on an error (6 need a reader of binary resources, which is another
+  `sweep.tsv`), each run from its own directory: 66 show their dialog, 7 run to
+  the end, 9 show only a message box, 16 stop at a native not ported yet, 11
+  stop on an error (8 need a reader of binary resources, which is another
   task's work; `oovideo.rex` is broken upstream), 24 are components: parts of
   the user guide's Order Manager, which name their files from the program's
   directory and fail the same way on Windows when started alone, and 7 are
@@ -79,7 +80,8 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
   (`tests/t16_winnames`).
 - Depth probe (`oodtest.py --poke`, results in `poke.tsv`): the 70 examples
   that show a dialog or a message box are used automatically (tabs, rows,
-  check boxes, lists, edits, menus, every button, then closed). Of 76, 63 come
+  check boxes, lists, edits, menus, every button, then closed; last run at
+  v0.12.0). Of 76, 63 come
   through with no error, no unhandled Windows message and a clean end. 6 more
   have no fault except connecting an event this layer does not produce. 7 have
   a problem, each named in `poke.tsv`: 2 are components started alone (not a
@@ -137,9 +139,13 @@ redraw calls, and `connectDraw`: the draw method is asked when the dialog is
 shown and when the program redraws the control. Colours are the palette indexes
 ooDialog uses. Differences from Windows: what is drawn stays (Windows loses it
 when the window is repainted); lines are anti-aliased, so a flood fill can
-leave a thin rim; a bitmap brush is a plain colour. Not done: drawBitmap,
-scrollButton and the other bitmap animation calls (`oograph.rex`,
-`oowalker.rex`), and the Mouse class.
+leave a thin rim; a bitmap brush is a plain colour.
+
+Bitmaps: setBitmapPosition / getBitmapPosition (the AnimatedButton class walks
+its sprite with them), getBitmapSize (from the file's header), drawBitmap,
+scrollButton, scroll, scrollBitmapFromTo, resizeControl, moveControl and
+winTimer. Not done: dimBitmap, the bitmap of a button that came from a binary
+resource, and the Mouse class.
 
 ## Event methods and msSleep
 
@@ -149,6 +155,13 @@ a loop does not freeze its dialog, `msSleep` handles the other events while it
 waits: the Interrupt button of `oodraw.rex` works. A loop that never calls
 msSleep (or returns) still holds the dialog. Once a method's dialog has been
 closed, its msSleep returns at once, so the program can end.
+
+## .application~srcDir
+
+It is the directory of the program that was started (the bottom of the call
+stack), not of `oodWeb.cls`. Reported by the Qt6 renderer task, where the two
+differ; in the browser they are the same directory. Checked with the Node
+runtime on Linux, and by `tests/t17_srcdir`.
 
 ## Seam for system classes (winsystm.cls)
 
@@ -182,8 +195,7 @@ WASM file system as bytes.
 
 ## Not yet (the sweep's order of need)
 
-Bitmap drawing and animation (drawBitmap, getBitmapSize, scrollButton); the
-Mouse class; sub-item editing (setParent); month calendar; tool bar, status
+The Mouse class; sub-item editing (setParent); month calendar; tool bar, status
 bar, re-bar; custom draw; ResizingAdmin's size limits; connectActivate,
 connectHelp, connectPosChanged and connectResizing (accepted, not produced);
 drawing the icons of image lists; a modeless property sheet; wizard header and
