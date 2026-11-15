@@ -46,8 +46,19 @@ jobs:
           $binary = "oodialog-fluent/windows/x64/Release"
           $env:PATH = "$(Resolve-Path $binary);$env:PATH"
           $catalogue = (Resolve-Path "oodialog-fluent/catalogue/controls.tsv").Path
-          & "$binary/OodFluentSmoke.exe" $catalogue 2>&1 | Tee-Object -FilePath "$binary/runtime-smoke.txt"
-          if ($LASTEXITCODE -ne 0) { throw "Runtime host did not qualify (exit $LASTEXITCODE)" }
+          $stdout = "$binary/runtime-stdout.txt"
+          $stderr = "$binary/runtime-stderr.txt"
+          $process = Start-Process -FilePath "$binary/OodFluentSmoke.exe" -ArgumentList $catalogue -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          if (-not $process.WaitForExit(30000)) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            "RUNTIME_TIMEOUT after 30 seconds (WinUI activation or dispatch blocked)" | Set-Content "$binary/runtime-smoke.txt"
+            throw "Runtime HWND probe timed out; NOT QUALIFIED"
+          }
+          $process.Refresh()
+          $output = @("exit=$($process.ExitCode)", (Get-Content $stdout -Raw), (Get-Content $stderr -Raw))
+          $output | Set-Content "$binary/runtime-smoke.txt"
+          $output | ForEach-Object { Write-Output $_ }
+          if ($process.ExitCode -ne 0) { throw "Runtime host did not qualify (exit $($process.ExitCode))" }
       - name: Preserve Windows test candidate
         uses: actions/upload-artifact@v4
         with:
@@ -60,5 +71,7 @@ jobs:
             oodialog-fluent/rexx/OodFluent.cls
             oodialog-fluent/windows/x64/Release/OodFluentSmoke.exe
             oodialog-fluent/windows/x64/Release/runtime-smoke.txt
+            oodialog-fluent/windows/x64/Release/runtime-stdout.txt
+            oodialog-fluent/windows/x64/Release/runtime-stderr.txt
           if-no-files-found: error
           retention-days: 7
