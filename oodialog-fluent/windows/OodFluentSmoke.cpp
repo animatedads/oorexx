@@ -32,6 +32,26 @@ int wmain(int argc, wchar_t **argv) {
         fprintf(stderr, "usage: OodFluentSmoke <absolute-controls.tsv>\n");
         return 2;
     }
+    // Each mode runs in its own process. An access violation in one WinUI
+    // control's teardown must not prevent probing the other control families.
+    wchar_t mode[32]{};
+    if (!GetEnvironmentVariableW(L"OODF_SMOKE_MODE", mode, 32)) wcscpy_s(mode, L"all");
+    const bool all = wcscmp(mode, L"all") == 0;
+    const bool empty = wcscmp(mode, L"empty") == 0;
+    const bool buttonOnly = wcscmp(mode, L"button") == 0;
+    const bool toggleOnly = wcscmp(mode, L"toggle") == 0;
+    const bool infoOnly = wcscmp(mode, L"info") == 0;
+    const bool numberOnly = wcscmp(mode, L"number") == 0;
+    const bool noNumber = wcscmp(mode, L"no-number") == 0;
+    if (!(all || empty || buttonOnly || toggleOnly || infoOnly || numberOnly || noNumber)) return 2;
+    fprintf(stderr, "STAGE MODE_%s\n", all ? "all" : empty ? "empty" :
+            buttonOnly ? "button" : toggleOnly ? "toggle" : infoOnly ? "info" :
+            numberOnly ? "number" : "no-number");
+    fflush(stderr);
+    const bool wantButton = all || buttonOnly || noNumber;
+    const bool wantToggle = all || toggleOnly || noNumber;
+    const bool wantInfo = all || infoOnly || noNumber;
+    const bool wantNumber = all || numberOnly;
     const std::wstring path = argv[1];
     const int needed = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS,
                                            path.c_str(), -1, nullptr, 0, nullptr, nullptr);
@@ -74,21 +94,23 @@ int wmain(int argc, wchar_t **argv) {
     uint64_t button = 0, toggle = 0, info = 0, number = 0;
     stage("CREATE_CONTROLS_BEGIN");
     if (FAILED(result = oodf_win_move(host, 4, 4, 600, 400))) goto cleanup;
-    if (FAILED(result = oodf_win_add_authored(host, 4101, L"Button", L"Hello ooRexx", 71001, &button))) goto cleanup;
-    if (button != 71001) { result = E_UNEXPECTED; goto cleanup; }
-    if (FAILED(result = oodf_win_add(host, 4102, L"ToggleSwitch", L"Dark mode", &toggle))) goto cleanup;
-    if (FAILED(result = oodf_win_add(host, 4103, L"InfoBar", L"WinUI 3 is alive", &info))) goto cleanup;
-    if (FAILED(result = oodf_win_add(host, 4104, L"NumberBox", L"Quantity", &number))) goto cleanup;
+    if (wantButton) {
+        if (FAILED(result = oodf_win_add_authored(host, 4101, L"Button", L"Hello ooRexx", 71001, &button))) goto cleanup;
+        if (button != 71001) { result = E_UNEXPECTED; goto cleanup; }
+    }
+    if (wantToggle && FAILED(result = oodf_win_add(host, 4102, L"ToggleSwitch", L"Dark mode", &toggle))) goto cleanup;
+    if (wantInfo && FAILED(result = oodf_win_add(host, 4103, L"InfoBar", L"WinUI 3 is alive", &info))) goto cleanup;
+    if (wantNumber && FAILED(result = oodf_win_add(host, 4104, L"NumberBox", L"Quantity", &number))) goto cleanup;
     stage("CREATE_CONTROLS_OK");
-    if (oodf_bind(model, button, "click", "onButton") != OODF_OK) {
+    if (wantButton && oodf_bind(model, button, "click", "onButton") != OODF_OK) {
         fprintf(stderr, "FAIL event binding: %s\n", oodf_last_error());
         result = E_FAIL;
         goto cleanup;
     }
-    if (FAILED(result = oodf_win_set(host, button, L"text", L"Updated from native API"))) goto cleanup;
-    if (FAILED(result = oodf_win_set(host, toggle, L"isOn", L"true"))) goto cleanup;
-    if (FAILED(result = oodf_win_set(host, number, L"value", L"42"))) goto cleanup;
-    if (FAILED(result = oodf_win_set(host, info, L"message", L"Property updates work"))) goto cleanup;
+    if (wantButton && FAILED(result = oodf_win_set(host, button, L"text", L"Updated from native API"))) goto cleanup;
+    if (wantToggle && FAILED(result = oodf_win_set(host, toggle, L"isOn", L"true"))) goto cleanup;
+    if (wantNumber && FAILED(result = oodf_win_set(host, number, L"value", L"42"))) goto cleanup;
+    if (wantInfo && FAILED(result = oodf_win_set(host, info, L"message", L"Property updates work"))) goto cleanup;
     // Pump a bounded burst of input/layout messages, not an infinite GUI loop.
     for (int i = 0; i < 40; ++i) {
         MSG message{};
@@ -99,8 +121,8 @@ int wmain(int argc, wchar_t **argv) {
         Sleep(20);
     }
     stage("PUMP_OK");
-    if (FAILED(result = oodf_win_remove(host, button))) goto cleanup;
-    printf("PASS native Windows HWND/XAML island, 4 controls, properties, remove, close\n");
+    if (wantButton && FAILED(result = oodf_win_remove(host, button))) goto cleanup;
+    printf("PASS native HWND/XAML island mode=%ls properties, remove, close\n", mode);
 cleanup:
     stage("TEARDOWN_BEGIN");
     if (FAILED(result)) fail("native host operation", result);
