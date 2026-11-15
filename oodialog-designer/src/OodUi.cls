@@ -491,6 +491,18 @@ db.run = Execute SQL
 db.confirmDrop = Permanently drop this test table
 db.dropped = Dropped table
 db.removeColumn = Remove column
+db.graph = Database graph
+db.graphHint = Tables, columns and foreign keys come from the NoSQLServer catalogue. Select a box to edit its schema above.
+db.graphObjects = ObjectStore graph lines (optional; OBJECT and PART records)
+db.graphObjectPlaceholder = Paste ObjectStore~graphLines here: OBJECT, PART…
+db.graphRefresh = Refresh graph
+db.graphEmpty = There are no tables in this database yet
+db.graphPK = PK
+db.graphUQ = UNIQUE
+db.graphDelete = ON DELETE
+db.graphVia = via
+db.graphSelect = Select table
+db.graphRows = rows
 ::END
 
 ::resource strings.de
@@ -938,4 +950,16 @@ db.run = SQL ausführen
 db.confirmDrop = Diese Testtabelle endgültig löschen
 db.dropped = Tabelle gelöscht
 db.removeColumn = Spalte entfernen
+db.graph = Datenbankdiagramm
+db.graphHint = Tabellen, Spalten und Fremdschlüssel stammen aus dem NoSQLServer-Katalog. Tabelle anklicken, um oben ihr Schema zu bearbeiten.
+db.graphObjects = ObjectStore-Diagrammzeilen (optional; OBJECT- und PART-Einträge)
+db.graphObjectPlaceholder = ObjectStore~graphLines hier einfügen: OBJECT, PART…
+db.graphRefresh = Diagramm aktualisieren
+db.graphEmpty = Diese Datenbank enthält noch keine Tabellen
+db.graphPK = PK
+db.graphUQ = EINDEUTIG
+db.graphDelete = BEI LÖSCHEN
+db.graphVia = über
+db.graphSelect = Tabelle auswählen
+db.graphRows = Zeilen
 ::END
