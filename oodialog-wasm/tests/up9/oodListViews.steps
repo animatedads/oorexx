@@ -1,0 +1,21 @@
+wait .ood-dlg
+sleep 1200
+expect (() => { const o = document.querySelector('.ood-dlg .ood-client').getBoundingClientRect(), t = document.querySelector('.ood-tab').getBoundingClientRect(), l = document.querySelector('.ood-lv').getBoundingClientRect(), b = document.querySelector('.ood-tabbtn').getBoundingClientRect(); return l.top >= b.bottom && l.left >= t.left && l.right <= t.right && l.bottom <= t.bottom && l.width > 300; })() ==> True
+expect [...document.querySelectorAll('.ood-lv tbody tr')].map(r => r.cells[0].textContent).join('|') ==> Miller, Mike|Thaxton, Sue|Hewitt, Dave
+expect document.querySelectorAll('.ood-lv th').length ==> 0
+expect (() => { const w = [...document.querySelectorAll('.ood-tabbtn')].map(b => b.offsetWidth); return w.every(x => x >= 80 && x === w[0]); })() ==> True
+click .ood-dlg >> text=Report
+sleep 500
+expect [...document.querySelectorAll('.ood-lv th')].map(h => h.textContent).join('|') ==> Name|Street|City|State|Zip Code|Age
+expect [...document.querySelectorAll('.ood-dlg button')].filter(b => /ward/.test(b.textContent)).map(b => b.disabled).join(' ') ==> false false
+click .ood-dlg >> text=Forward
+sleep 500
+expect document.querySelector('.ood-tabbtn.ood-cur').textContent ==> Icon
+expect [...document.querySelectorAll('.ood-dlg button')].find(b => b.textContent === 'Edit Record').disabled ==> True
+click .ood-dlg >> text=Report
+sleep 400
+click .ood-lv >> text=Thaxton, Sue
+sleep 500
+expect [...document.querySelectorAll('.ood-dlg button')].find(b => b.textContent === 'Edit Record').disabled ==> False
+expect (window.oodOut.join('').match(/(native function \w+|Error \d+\.\d+[^\n]*)/g) || []).length ==> 0
+click .ood-dlg >> text=Cancel

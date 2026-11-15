@@ -1,4 +1,4 @@
-# ooDialog for ooRexx/WASM — v0.18.0
+# ooDialog for ooRexx/WASM — v0.19.0
 
 Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: Josep Maria Blasco's
 ooRexx/WASM (`oorexxwasm` 0.2.4, ooRexx 5.3.0) and its `js.cls`.
@@ -48,13 +48,13 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
     python3 tools/oodtest.py --poke upstream/examples 0 24
     python3 tools/oodtest.py --tree upstream/examples tests/t*.rex tests/up/calculator.rex tests/up/oodpbar.rex tests/up/oodStandardRoutines.rex
 
-## State on 2026-11-15 (v0.18.0)
+## State on 2026-11-15 (v0.19.0)
 
-- Natives ported: 686 of 1,182 (58.0%); 12 of the 43 added in v0.18.0 accept
+- Natives ported: 688 of 1,182 (58.2%); 12 of the 43 added in v0.18.0 accept
   their call and do nothing (see "Tool tips"). (The total was given as 1,181
   in v0.16.0 and v0.17.0; `dist/natives.txt` has 1,182 lines. It fell from 1,196 because 12
   natives are now plain Rexx in `src/patches.txt`.)
-- Tests: 45 of 45 pass in headless Chromium (`tests/t01`..`t17` with expected
+- Tests: 47 of 47 pass in headless Chromium (`tests/t01`..`t17` with expected
   output, the binary resource hand-off test `tests/res/t07_resdialog_binary`,
   four unmodified upstream samples: `calculator.rex`,
   `oodpbar.rex`, `oodStandardRoutines.rex`, and the tutorial
@@ -91,13 +91,19 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
   (`tests/t16_winnames`).
 - Depth probe (`oodtest.py --poke`, results in `poke.tsv`): the 70 examples
   that show a dialog or a message box are used automatically (tabs, rows,
-  check boxes, lists, edits, menus, every button, then closed; last run at
-  v0.16.0, before ResizingAdmin). Of 81, 66 come through with no error, no unhandled Windows message
-  and a clean end. 10 more have no fault except connecting an event this layer
-  does not produce. 5 have a problem, each named in `poke.tsv`, and none of
-  them is a fault of this layer's own code: 2 are components started alone,
-  `BinaryMenuBar.rex` and `sample.rex` (ResourceImage) need a reader of binary
-  resources, and `sysinfo.rex` needs OLE and so does not end. `oovideo.rex`
+  check boxes, lists, edits, menus, every button, then closed; last full run
+  at v0.19.0, before its last two fixes, which were then checked on their two
+  examples alone). Of 88, 73 come through with no error, no unhandled Windows
+  message and a clean end. 11 more have no fault except connecting an event
+  this layer does not produce. 4 have a problem, each named in `poke.tsv`, and
+  none of them is a fault of this layer's own code: 2 are components started
+  alone, `sample.rex` (ResourceImage) needs a reader of binary resources, and
+  `sysinfo.rex` needs OLE and so does not end. The run at v0.19.0 found four
+  faults of this layer, all fixed in it: a ControlDialog did not take its
+  owner from its init argument; calcDisplayRect did not adjust the rectangle
+  it was given, so pages placed the Windows way sat at the dialog's corner
+  (`oodListViews.rex`, a "shows" of the sweep); a button's getImageList
+  answered the list instead of a directory; a button's state was not ported. `oovideo.rex`
   fails on an unmatched `/*` at line 44 of the upstream file itself (r13513).
   The probe proves the absence of errors, not that results are right.
 - Working, each asserted by a test: UserDialog; RcDialog (upstream's own .rc
@@ -168,7 +174,11 @@ types PROPORTIONAL, STATIONARY, MYLEFT, MYTOP, the edges LEFT, TOP, RIGHT,
 BOTTOM, XCENTER, YCENTER, pinning to the dialog or to another control,
 minSize and maxSize (the minimum is the initial size unless changed),
 noMinSize, noMaxSize, wantSizeEnded. The arithmetic is upstream's, done in the
-page. Not done: pagedTab (the pages of a tab control are not resized with it).
+page. pagedTab (since v0.19.0): the ControlDialogs named as pages of a tab
+control take its display area whenever it changes size, and a page that has
+its own sizing definition is laid out too (`tests/t18_pagedtab`, a program of
+this project: upstream's only user of pagedTab, `TabDemo.rex`, needs a reader
+of binary resources).
 Until v0.17.0 this class was not ported at all: its examples showed their
 dialog, which the sweep counted, but the dialog could not be resized by its
 rules. Resizing with DlgAreaU and connectResize (`tests/t13_resize`) is a
@@ -303,7 +313,7 @@ WASM file system as bytes.
 ## Not yet (the sweep's order of need)
 
 Tool bar, status
-bar, re-bar; custom draw; ResizingAdmin's pagedTab; the parts of a combo box
+bar, re-bar; custom draw; the parts of a combo box
 as windows (getComboBoxInfo); connectActivate,
 connectHelp, connectPosChanged and connectResizing (accepted, not produced);
 drawing the icons of image lists; a modeless property sheet; wizard header and

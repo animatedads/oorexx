@@ -21,8 +21,9 @@ return 0
 ::method initDialog
   tab = self~newTab(100)
   tab~addSequence("Address", "Delivery")
-  area = .Rect~new
+  area = tab~windowRect              -- (as on Windows: the tab's rectangle becomes its display area)
   tab~calcDisplayRect(area)
+  self~screen2client(area)
   self~pages = .array~of(.AddressPage~new, .DeliveryPage~new)
   do page over self~pages
     page~ownerDialog = self

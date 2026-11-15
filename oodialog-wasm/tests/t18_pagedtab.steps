@@ -1,0 +1,18 @@
+wait .ood-dlg
+sleep 800
+eval (() => { window.__cl = [...document.querySelectorAll('.ood-dlg *')].find(x => x.style.resize === 'both'); window.__g = () => { const o = window.__cl.getBoundingClientRect(), rel = (e) => { const r = e.getBoundingClientRect(); return [r.left - o.left, r.top - o.top, r.width, r.height].map(Math.round); }; const tab = document.querySelector('.ood-tab'), btn = document.querySelector('.ood-tabbtn'); const pages = [...document.querySelectorAll('.ood-child')]; return { tab: rel(tab), pages: pages.map(rel), strip: Math.round(btn.getBoundingClientRect().bottom - tab.getBoundingClientRect().top), lb: (() => { const p = pages[1], l = p.querySelector('.ood-c'), v = p.style.visibility, d = p.style.display; return [l.offsetLeft, l.offsetTop, p.clientWidth - l.offsetLeft - l.offsetWidth, p.clientHeight - l.offsetTop - l.offsetHeight]; })(), ed: (() => { const e = pages[0].querySelector('.ood-c'); return [e.offsetLeft, e.offsetTop, e.offsetWidth, e.offsetHeight]; })() }; }; window.__a = window.__g(); window.__w = window.__cl.clientWidth; window.__h = window.__cl.clientHeight; return JSON.stringify(window.__a); })()
+expect window.__a.pages.length ==> 2
+expect JSON.stringify(window.__a.pages[0]) === JSON.stringify(window.__a.pages[1]) ==> True
+click .ood-dlg >> text=Two
+sleep 300
+eval (() => { window.__a = window.__g(); window.__cl.style.width = (window.__w + 200) + 'px'; window.__cl.style.height = (window.__h + 120) + 'px'; return 'grown'; })()
+sleep 600
+eval JSON.stringify(window.__g())
+expect (() => { const a = window.__a, b = window.__g(); return b.tab[2] - a.tab[2] === 200 && b.tab[3] - a.tab[3] === 120; })() ==> True
+expect (() => { const a = window.__a, b = window.__g(); return b.pages.every((p, i) => p[0] === a.pages[i][0] && p[1] === a.pages[i][1] && p[2] - a.pages[i][2] === 200 && p[3] - a.pages[i][3] === 120); })() ==> True
+expect (() => { const b = window.__g(), p = b.pages[1], t = b.tab; return p[0] > t[0] && p[1] >= t[1] + b.strip && p[0] + p[2] < t[0] + t[2] && p[1] + p[3] < t[1] + t[3]; })() ==> True
+expect JSON.stringify(window.__g().lb) === JSON.stringify(window.__a.lb) ==> True
+expect JSON.stringify(window.__g().ed) === JSON.stringify(window.__a.ed) ==> True
+shot pagedTab_grown
+expect (window.oodOut.join('').match(/(native function \w+|Error \d+\.\d+[^\n]*)/g) || []).length ==> 0
+click .ood-dlg button.ood-def

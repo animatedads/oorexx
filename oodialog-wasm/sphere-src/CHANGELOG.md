@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4
+- State article brought to port v0.19.0 (pagedTab; four faults found by the probe and fixed).
+- Renderer contract: ra.page, tab.outer, BM_SETSTATE, TCM_SETMINTABWIDTH.
+- Written by Claude (Fable 5.2).
+
 ## 0.3
 - State article brought to port v0.18.0 (tool tips).
 - Renderer contract: the tip.* operations, the event kind TT, tv.hit, tv.rect, the notification GETINFOTIP. The op named tip is gone.

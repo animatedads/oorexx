@@ -3,10 +3,14 @@ calculator.rex	11
 controls/ComboBox/comboBoxTypes.rex	8	
 controls/ListBox/incrementalSearch.rex	1	
 controls/ListView/columnClickListView.rex	3	
+controls/ListView/subitem.editing/dropDownComboBox.rex	3	event-not-produced
 controls/ListView/subitem.editing/dropDownListComboBox.rex	3	event-not-produced
 controls/ListView/subitem.editing/editControl.rex	3	event-not-produced
 controls/ListView/subitem.editing/importList.rex	4	event-not-produced
-controls/ToolTip/toolTip.rex	2	event-not-produced
+controls/PaidHolidays.rex	1	
+controls/ToolTip/customPositionToolTip.rex	3	
+controls/ToolTip/manageControlTool.rex	3	
+controls/ToolTip/toolTip.rex	2	
 controls/TreeView/treeViewCustomDraw.rex	0	
 controls/fiscalReports.rex	8	event-not-produced
 controls/upDown.rex	10	
@@ -15,12 +19,12 @@ examples/addManyRows.rex	7
 examples/browsePrinters.rex	5	
 examples/fileNameDialog_demo.rex	7	
 examples/genGUID.rex	1	
+examples/imageButton.rex	4	
 examples/openSaveFileDemo.rex	8	
 examples/publicRoutines_demo.rex	7	
 examples/saveFileWithFilter.rex	6	
 examples/simpleFolderBrowse.rex	5	
 examples/useTools.rex	10	
-menus/BinaryMenuBar.rex	1	error 98.900 ooDialog/WASM: a BinaryMenuBar needs a reader of binary Windows resour
 menus/ContextMenu.rex	3	
 menus/ScriptMenuBar.rex	7	
 menus/UserMenuBar.rex	7	
@@ -36,7 +40,8 @@ oograph.rex	6
 oophil.rex	9	
 oowalker.rex	7	
 propertySheet.tabControls/PropertySheetDemo.rex	10	event-not-produced
-propertySheet.tabControls/UserTabDemo.rex	5	
+propertySheet.tabControls/UserTabDemo.rex	14	
+propertySheet.tabControls/oodListViews.rex	11	event-not-produced
 propertySheet.tabControls/ticketWizard.rex	3	
 resizableDialogs/DialogAreaU/dlgAreaUDemo.rex	9	
 resizableDialogs/DialogAreaU/dlgAreaUDemoThree.rex	9	event-not-produced
@@ -44,8 +49,10 @@ resizableDialogs/DialogAreaU/dlgAreaUDemoTwo.rex	9
 resizableDialogs/ResizingAdmin/PropertySheetDemo.rex	10	event-not-produced
 resizableDialogs/ResizingAdmin/augmentedResize.rex	7	
 resizableDialogs/ResizingAdmin/basicResize.rex	5	
+resizableDialogs/ResizingAdmin/gbStationary.rex	7	
 sample.rex	11	native:RI_INIT
 simple/ChangeFont.rex	3	
+simple/SimpleMonthCalendar.rex	1	
 simple/SimpleUpDown.rex	2	
 sysinfo/sysinfo.rex	2	did-not-end, left open: dialog: System Information ; error 97.1 Object ".OLEOBJECT" does not understand message "GETOBJECT".
 tutorial/drawing1.rex	4	

@@ -42,6 +42,15 @@ return 0
   if menu~isChecked(id) then menu~unCheck(id)
   else menu~check(id)
   self~log = self~log "toggle" id menu~isChecked(id)
+  -- show the state in the dialog too: the check mark alone is only seen when the menu is open
+  names = .array~of("Toolbar", "Status bar", "Ruler")
+  ids = .array~of(211, 212, 213)
+  text = ""
+  do i = 1 to 3
+    if menu~isChecked(ids[i]) then text = text || names[i]": on, "
+    else text = text || names[i]": off, "
+  end
+  self~newStatic(100)~setText(text~strip~strip("T", ","))
 ::method onExit unguarded
   self~log = self~log "exit"
   return self~ok

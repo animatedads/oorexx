@@ -1,8 +1,8 @@
 # Articles of the oodialog-wasm sphere. Architecture: Tom Dyer. Written by Claude (Fable 5.2).
 # Each article: id, title, summary, section, topics, and lists of plain sentences.
 S = "oodialog-wasm"
-VERSION = "0.3"            # the sphere's version; raise it for a material change
-PORT = "0.18.0"             # the version of the port the articles were checked against
+VERSION = "0.4"            # the sphere's version; raise it for a material change
+PORT = "0.19.0"             # the version of the port the articles were checked against
 REPO = "animatedads/oorexx, branch oodialog-wasm, directory oodialog-wasm/"
 
 def art(id, title, summary, section, topics, **lists):
@@ -86,6 +86,8 @@ art("ref.oodialog-wasm.renderer-contract",
         "ra.init and ra.limits: ResizingAdmin. ra.init takes one JSON text: def (the four default edges), ctrls (rows of id and four edges), min, max, ended. An edge is [pinType, pinToEdge, pinToID] with pinType S, P, ML or MT. The renderer keeps each control's first rectangle and, whenever the dialog's client area changes size, places every control by the arithmetic of raLayout in the reference source.",
         "lv.* list-view, tv.* tree-view, tab.* tab control, ud.* up-down, dtp.* date-time picker, mc.* month calendar.",
         "gdi: drawing on a window. op(key, id, \"gdi\", verb, values, style). Verbs: line rect arc angleArc pixel getPixel fillRect clear extent text flood image scroll size ownerDraw.",
+        "ra.page, since v0.19.0: op(key, tabId, \"ra.page\", childKey) names an embedded dialog as a page of that tab control. After every ResizingAdmin layout of the dialog, each page is moved and sized to the tab's display area; if the page has its own ra.init definition, it is laid out too. An embedded dialog that is sized by the size op and has a definition is laid out at once.",
+        "tab.outer: the whole tab control as \"l t r b\" in the dialog's client area. tab.rect is its display area in the same coordinates. Rexx computes calcDisplayRect from the difference of the two. Control messages new in v0.19.0: BM_SETSTATE (0xF3), bit 4 of BM_GETSTATE (pushed), TCM_SETMINTABWIDTH (0x1331, answers the width before or -1).",
         "mouseSub and mouse: the Mouse class. mouse verbs: capture release getCapture state cursor.",
         "tip.*: tool tips, since v0.18.0. The id is the tool tip's ID, not a control's: route tip.* before looking the id up as a control. tip.add takes one JSON text {key, host, rect, text}: host is a control's id or 0 for the dialog; rect is null (the whole window) or [l, t, r, b] in that window's client area; text null means the text is asked from the program. Others: tip.del(key), tip.text(key, text; one separator character means asked), tip.relay(hostId, 1|0), tip.count, tip.delay(ms), tip.maxWidth(px), tip.title(text), tip.active(1|0), tip.events(words), tip.show(text), tip.pos(x, y in screen pixels), tip.pop, tip.shown (toolKey, separator, text; empty if no tip), tip.tree(treeViewId).",
         "The renderer decides when a tip is due: the pointer rests on a tool for the delay. Fixed text: show the box, then send TT SHOW if tip.events names SHOW. Asked text: send TT NEEDTEXT; the program answers with tip.show. An empty text shows nothing. tip.pop ends the tip; if the pointer is still on the tool, the tip is due again after the delay. A tree-view named by tip.tree asks the text of the item under the pointer with NOTIFY GETINFOTIP (extra: the item); the answer is tip.show on tool tip ID 60000 + the tree-view's id.",
@@ -139,7 +141,7 @@ art("ops.oodialog-wasm.differences",
         "File and folder dialogs browse the WASM machine's file system. COM calls answer S_OK and do nothing. A refused file (onFileOk) closes the dialog and shows it again.",
         "There are no printers. A printer root in BrowseForFolder is ignored.",
         "The month calendar shows one month and selects one day.",
-        "ResizingAdmin: pagedTab is accepted and does nothing, so the pages of a tab control are not resized with their dialog. A dialog made larger than the browser window is not scaled down again.",
+        "ResizingAdmin: A dialog made larger than the browser window is not scaled down again.",
         "Tool tips are drawn by the page since v0.18.0. Only the INITIAL delay acts: a tip stays until the pointer leaves its tool. Balloon style, icon, margins, colours and tracking tool tips are accepted and not shown. LINKCLICK is never sent. RELAY is sent for pointer moves only. A touch screen shows no tips.",
         "The dropped list of a combo box belongs to the browser and is not a window. getComboBoxInfo is not ported.",
         "A list box entry cannot show a tab character. With tab stops set, the entry is shown filled out to each stop; its text stays as the program gave it.",
@@ -207,18 +209,18 @@ art("ref.oodialog-wasm.state",
     "This article is a snapshot. The current figures are always in README.md of the project, with the version they were measured on; sweep.tsv and poke.tsv hold the per-example results.",
     "reference", ["state", "coverage", "not-done"],
     snapshot=[
-        "Version 0.18.0, 15 November 2026.",
-        "Natives ported: 686 of 1,182. 12 of the 43 added in v0.18.0 accept their call and do nothing.",
-        "Tests: 45 of 45 pass in headless Chromium. 32 of them are upstream examples or the designer's programs, run unchanged.",
+        "Version 0.19.0, 15 November 2026.",
+        "Natives ported: 688 of 1,182. 12 of the 43 added in v0.18.0 accept their call and do nothing.",
+        "Tests: 47 of 47 pass in headless Chromium. 33 of them are upstream examples or the designer's programs, run unchanged.",
         "Sweep of the 140 upstream examples: 79 show their dialog, 7 run to the end, 9 show only a message box, 5 stop at a native not ported, 9 stop on an error (8 of them wait for a reader of binary resources), 24 are components, 7 are outside ooDialog.",
-        "Probe at v0.16.0, 81 examples: 66 clean, 10 connect an event that is not produced, 5 with a problem, none of them in the port's own code.",
+        "Probe at v0.19.0, 88 examples: 73 clean, 11 connect an event that is not produced, 4 with a problem, none of them in the port's own code. This run found four faults of the port in examples the sweep called shows; all four are fixed in v0.19.0.",
         "\"shows\" in the sweep means a dialog appeared. It does not mean every feature of the example works. Only an example that is a test (with steps and assertions) is known to work.",
     ],
     done=[
         "Dialogs: UserDialog, RcDialog (.rc and .h files), ResDialog through the resource provider, ControlDialog, property sheets and wizards, owned dialogs, message boxes, standard dialogs and routines.",
         "Controls: buttons, check boxes, radio buttons, group boxes, statics, images, edits, list boxes, combo boxes, progress bars, list-views, tree-views, tabs, up-downs, track bars, date-time pickers, month calendars.",
         "Menus: menu bars and popup menus, from scripts and through the resource provider.",
-        "Resizing: ResizingAdmin (pin definitions, size limits, wantSizeEnded) since v0.17.0; DlgAreaU with connectResize since v0.9.",
+        "Resizing: ResizingAdmin (pin definitions, size limits, wantSizeEnded) since v0.17.0, pagedTab since v0.19.0; DlgAreaU with connectResize since v0.9.",
         "Drawing, bitmap buttons and animation, the Mouse class, in-place editing in a list-view (edit, drop-down list, editable combo box), list box tab stops, fonts.",
         "Tool tips since v0.18.0: tools that are windows or rectangles, fixed and asked text, NEEDTEXT SHOW POP RELAY, ToolInfo, manageAtypicalTool, a tree-view's getToolTips with GETINFOTIP.",
         "File dialogs and shell dialogs over the WASM machine's file system.",
@@ -226,7 +228,7 @@ art("ref.oodialog-wasm.state",
     not_done=[
         "Tool bar, status bar, re-bar; custom draw; scroll bars as controls.",
         "getComboBoxInfo (the parts of a combo box as windows); tracking tool tips.",
-        "ResizingAdmin's pagedTab; ControlDlgInfo and the tab owner dialogs.",
+        "ControlDlgInfo and the tab owner dialogs.",
         "connectActivate, connectHelp, connectPosChanged, connectResizing (accepted, not produced).",
         "Image-list icons are not drawn; ResourceImage needs images from a binary resource.",
         "A modeless property sheet; wizard header and watermark images.",
@@ -279,7 +281,7 @@ EVIDENCE = [
     ("ref.oodialog-wasm.seams", "src/oodWeb.cls", "::method app_srcDir_atr unguarded", 16, "srcDir is taken from the bottom frame of the call stack."),
     ("ops.oodialog-wasm.differences", "src/oodWeb.cls", "::method msSleep_rtn unguarded", 24, "msSleep handles events only on the event thread; other threads sleep."),
     ("ops.oodialog-wasm.differences", "src/oodWeb.cls", "::method finishOwned unguarded", 10, "An owned dialog is finished with its owner."),
-    ("ops.oodialog-wasm.differences", "src/oodWeb.cls", "::method ra_pagedTab unguarded", 4, "pagedTab is accepted and does nothing."),
+    ("ref.oodialog-wasm.renderer-contract", "src/oodialog-web.js", "  function raPages(dlg)", 12, "The pages of a paged tab take its display area after each layout."),
     ("ref.oodialog-wasm.harness", "tools/oodtest.py", "raise Exception('unknown step: '", 1, "An unknown step fails the test."),
     ("ref.oodialog-wasm.harness", "tools/oodtest.py", "outside = re.search(", 10, "The sweep verdicts outside and component."),
     ("ops.oodialog-wasm.port-a-native", "README.md", "## What it is", 14, "The generator redirects every external native to .oodn."),

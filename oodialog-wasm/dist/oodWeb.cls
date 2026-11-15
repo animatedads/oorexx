@@ -24,7 +24,7 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.18.0"
+  return "0.19.0"
 ::method module_lastChanged class
   return "2026-11-15"
 ::attribute key unguarded
@@ -102,7 +102,7 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.18.0"
+  return "0.19.0"
 ::method module_lastChanged class
   return "2026-11-15"
 ::attribute rexxSelf unguarded
@@ -131,7 +131,7 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.18.0"
+  return "0.19.0"
 ::method module_lastChanged class
   return "2026-11-15"
 ::attribute dlg unguarded             -- its dialog's OodDlg
@@ -149,7 +149,7 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.18.0"
+  return "0.19.0"
 ::method module_lastChanged class
   return "2026-11-15"
 ::method module_version unguarded
@@ -747,6 +747,17 @@ noPackage:
   return 0
 
 /*---- PlainBaseDialog ---------------------------------------------------------*/
+/* The fifth argument of a dialog's init (checkDlgType of ooDialog.cpp).  For a ControlDialog
+   it is the owner dialog.  A ControlDlgInfo or TabOwnerDlgInfo is not ported: it is kept. */
+::method dialogOwnerData
+  use arg dlg, ownerData
+  if ownerData == .nil then return
+  if dlg~isA(self~classOf("ControlDialog")) then do
+    if ownerData~isA(self~classOf("PlainBaseDialog")) then dlg~oodPeer~ownerDialog = ownerData
+    else if ownerData~isA(self~classOf("ControlDlgInfo")) then dlg~oodPeer~store["ownerData"] = ownerData
+    else raise syntax 93.900 array("argument 5 must be a PlainBaseDialog or a ControlDialogInfo object; found" ownerData)
+  end
+  else dlg~oodPeer~store["ownerData"] = ownerData
 ::method dialogInit                -- from PlainBaseDialog~init (patches.txt)
   expose defFontName defFontSize
   use arg dlg, library, resource
@@ -1502,6 +1513,7 @@ noPackage:
   d~embed = .array~of(od~key, left, top)
   if \self~dyndlg_startParentDialog(self_, "", .array~new) then return 0
   self~ctlInfoOf(self_)~wasActivated = .true
+  self~raPage(self_)
   self~web~show(d~key, "NORMAL")
   return d~hwnd
 ::method dyndlg_startChildDialog unguarded
@@ -2610,8 +2622,51 @@ noPackage:
 ::method tab_setImageList unguarded
   use arg self_, msg, a
   return self~setImageListOf(self_, a[1])
-::method bc_setImageList unguarded
+/* state / state=: CHECKED UNCHECKED INDETERMINATE (check boxes and radio buttons), PUSHED
+   NOTPUSHED, FOCUS (bc_getState and bc_setState of oodControl.cpp). */
+::method bc_getState unguarded
+  use arg self_
+  p = self_~oodPeer
+  kind = p~dlg~kinds[p~id]~word(1)
+  state = ""
+  if kind == "CHECK" | kind == "RADIO" then do
+    check = self~winMsg(p~dlg, p~id, 240)
+    if check == 1 then state = "CHECKED "
+    else if check == 2 then state = "INDETERMINATE "
+    else state = "UNCHECKED "
+  end
+  bits = self~winMsg(p~dlg, p~id, 242)
+  if bits~datatype("W") then do
+    if bits // 8 >= 4 then state = state"PUSHED "
+    if bits // 16 >= 8 then state = state"FOCUS "
+  end
+  return state~strip
+::method bc_setState unguarded
   use arg self_, msg, a
+  p = self_~oodPeer
+  kind = p~dlg~kinds[p~id]~word(1)
+  boxes = (kind == "CHECK" | kind == "RADIO")
+  do token over self~opt(a, 1)~upper~makeArray(" ")
+    select
+      when token == "CHECKED" then if boxes then self~winMsg(p~dlg, p~id, 241, 1)
+      when token == "UNCHECKED" then if boxes then self~winMsg(p~dlg, p~id, 241, 0)
+      when token == "INDETERMINATE" then if kind == "CHECK" then self~winMsg(p~dlg, p~id, 241, 2)
+      when token == "FOCUS" then self~op(self_, "focus")
+      when token == "PUSHED" then self~winMsg(p~dlg, p~id, 243, 1)
+      when token == "NOTPUSHED" then self~winMsg(p~dlg, p~id, 243, 0)
+      otherwise nop
+    end
+  end
+  return 0
+::method bc_setImageList unguarded     -- setImageList(imageList, margin, align)
+  use arg self_, msg, a
+  p = self_~oodPeer
+  if a~hasIndex(2) then p~dlg~store[p~id "imagelist margin"] = a[2]
+  align = self~opt(a, 3)~upper
+  if align \== "" then do
+    if "LEFT RIGHT TOP BOTTOM CENTER"~wordPos(align) == 0 then raise syntax 93.900 array('setImageList: the alignment "'a[3]'" is not LEFT, RIGHT, TOP, BOTTOM or CENTER')
+    p~dlg~store[p~id "imagelist align"] = align
+  end
   return self~setImageListOf(self_, a[1])
 ::method getImageListOf unguarded
   use arg self_
@@ -2619,9 +2674,20 @@ noPackage:
   list = p~dlg~store[p~id "imagelist"]
   if list == .nil then return .nil
   return list
-::method bc_getImageList unguarded
+::method bc_getImageList unguarded     -- a directory: imageList, rect (the margins), alignment, alignmentKeyword; .nil if none
   use arg self_
-  return self~getImageListOf(self_)
+  p = self_~oodPeer
+  list = self~getImageListOf(self_)
+  if list == .nil then return .nil
+  info = .directory~new
+  info~imageList = list
+  info~rect = p~dlg~store[p~id "imagelist margin"]
+  if info~rect == .nil then info~rect = self~classOf("Rect")~new
+  keyword = p~dlg~store[p~id "imagelist align"]
+  if keyword == .nil then keyword = "LEFT"
+  info~alignmentKeyword = keyword
+  info~alignment = "LEFT RIGHT TOP BOTTOM CENTER"~wordPos(keyword) - 1
+  return info
 ::method lv_getImageList unguarded
   use arg self_
   return self~getImageListOf(self_)
@@ -4079,10 +4145,13 @@ noPackage:
   ra~min = "initial"
   ra~max = .nil
   ra~ended = .nil
+  ra~tabs = .array~new             -- pagedTab: rows of tab id and the pages' dialog IDs
+  ra~defined = .false
   d~store["RA"] = ra
   self_~constDir["IDC_DEFAULT_PINTO_WINDOW"] = 0
   self_~initResizing(.nil)
   self_~defineSizing
+  ra~defined = .true
 ::method raState unguarded
   use arg self_
   ra = self_~oodPeer~store["RA"]
@@ -4224,10 +4293,33 @@ noPackage:
   self~raState(self_)~ended = method
   self_~oodPeer~wmTable~append(.array~of("RASIZEENDED", method))
   return .true
-::method ra_pagedTab unguarded     -- (the pages of a tab are not resized with it yet)
-  use arg self_
-  self~raState(self_)
+/* pagedTab(tabID, dlgIDs): the ControlDialogs with these dlgID values are pages of that tab
+   control.  When the tab control changes size, each page takes its display area. */
+::method ra_pagedTab unguarded
+  use arg self_, msg, a
+  ra = self~raState(self_)
+  if ra~defined == .true then raise syntax 93.900 array("pagedTab can only be invoked during the defineSizing method")
+  tabId = self~resolveId(self_, a[1])
+  if tabId < 1 then return -1
+  if \a~hasIndex(2) then raise syntax 93.903 array(2)
+  if \a[2]~isA(.Array) then raise syntax 93.948 array(2, "Array")
+  if ra~tabs~items >= 4 then raise syntax 93.900 array("the number of paged tabs has reached the maximum (4)")
+  ids = .array~new
+  do id over a[2]
+    ids~append(self~resolveId(self_, id))
+  end
+  ra~tabs~append(.array~of(tabId, ids))
   return 0
+::method raPage unguarded          -- a ControlDialog went live in its owner: is it a page of a paged tab?
+  use arg self_
+  d = self_~oodPeer
+  if d~ownerDialog == .nil then return
+  od = d~ownerDialog~oodPeer
+  ra = od~store["RA"]
+  if ra == .nil then return
+  do row over ra~tabs
+    if row[2]~hasItem(self_~dlgID) then self~ctlOp(od, row[1], "ra.page", d~key)
+  end
 
 ::method winex_deleteObject unguarded
   return 0
@@ -4814,12 +4906,22 @@ noPackage:
   current = self~wb_sendWinIntMsg(self_, "", .array~of(4875, 0, 0))
   if current < 0 then return ""
   return self~op(self_, "tab.text", current)
-::method tab_calcRect unguarded    -- calcDisplayRect(rect): the area for the pages, in the dialog's client pixels
+::method tab_calcRect unguarded    -- calcDisplayRect(rect) / calcWindowRect(rect), as TCM_ADJUSTRECT
   use arg self_, msg, a
+  /* calcDisplayRect: the rect is the tab control's rectangle in any coordinates (programs give
+     windowRect); it becomes the area for the pages in the same coordinates.  calcWindowRect is
+     the reverse.  The page answers the display area in the dialog's client pixels. */
   parse value self~op(self_, "tab.rect") with left top right bottom
   if left == "" then return .false
+  parse value self~op(self_, "tab.outer") with tabLeft tabTop tabRight tabBottom
+  if tabLeft == "" then return .false
+  sign = 1
+  if msg == "CALCWINDOWRECT" then sign = -1
   r = a[1]
-  r~left = left; r~top = top; r~right = right; r~bottom = bottom
+  r~left += sign * (left - tabLeft)
+  r~top += sign * (top - tabTop)
+  r~right -= sign * (tabRight - right)
+  r~bottom -= sign * (tabBottom - bottom)
   return .true
 ::method tab_setItemSize unguarded
   return .Size~new
@@ -6152,6 +6254,7 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
 .ood-frame{pointer-events:none}
 .ood-todo{border:1px dashed #a33;color:#a33;font-size:.85em;overflow:hidden;padding:2px}
 .ood-u{text-decoration:underline}
+.ood-pushed{border-style:inset;background:#cce4f7}
 .ood-tip{position:fixed;z-index:100000;background:#fff;color:#333;border:1px solid #767676;border-radius:3px;padding:3px 7px;font:12px 'Segoe UI',Tahoma,sans-serif;box-shadow:2px 2px 4px rgba(0,0,0,.25);pointer-events:none}
 .ood-tip b{display:block;margin-bottom:2px}
 .ood-mc{background:#fff;border:1px solid #7a7a7a;box-sizing:border-box;padding:4px 6px;cursor:default;outline:none;user-select:none;overflow:hidden}
@@ -6349,6 +6452,23 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       const s = it.c.el.style;
       s.left = it.cur.left + 'px'; s.top = it.cur.top + 'px';
       s.width = Math.max(0, it.cur.right - it.cur.left) + 'px'; s.height = Math.max(0, it.cur.bottom - it.cur.top) + 'px';
+    }
+    raPages(dlg);
+  }
+  /* pagedTab: op(key, tabId, 'ra.page', childKey) names an embedded dialog as a page of that tab
+     control.  After each layout every page takes the tab's display area (handleChildDialogs of
+     oodResizableDialog.cpp); a page that has its own ResizingAdmin definition is laid out too. */
+  function raPages(dlg) {
+    for (const c of dlg.ctrls.values()) {
+      if (!c.raPages || !c.page) continue;
+      const o = dlg.client.getBoundingClientRect(), r = c.page.getBoundingClientRect();
+      const l = Math.round(r.left - o.left + 2), t = Math.round(r.top - o.top + 2), w = Math.round(r.width - 4), h = Math.round(r.height - 4);
+      for (const k of c.raPages) {
+        const page = ood.dialogs.get(k); if (!page) continue;
+        page.el.style.left = l + 'px'; page.el.style.top = t + 'px';
+        page.client.style.width = Math.max(0, w) + 'px'; page.client.style.height = Math.max(0, h) + 'px';
+        if (page.ra) raLayout(page);
+      }
     }
   }
 
@@ -6888,6 +7008,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
     c.strip.textContent = '';
     c.tabs.forEach((t, i) => {
       const b = D.createElement('button'); b.type = 'button'; b.className = 'ood-tabbtn'; b.tabIndex = i === c.cur ? 0 : -1;
+      if (c.minTab != null) b.style.minWidth = c.minTab + 'px';
       label(b, t.text); if (i === c.cur) b.classList.add('ood-cur'); c.strip.appendChild(b);
     });
   }
@@ -6971,7 +7092,8 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
           case 0xF5: m.click(); return '0';                                   // BM_CLICK
           case 0xF0: return String(c.tri ? (c.state || 0) : (m.checked ? 1 : 0)); // BM_GETCHECK
           case 0xF1: if (c.tri) c.state = w; m.checked = w === 1; m.indeterminate = w === 2; return '0'; // BM_SETCHECK
-          case 0xF2: return String((m.checked ? 1 : 0) | (D.activeElement === m ? 8 : 0)); // BM_GETSTATE
+          case 0xF2: return String((m.checked ? 1 : 0) | (c.pushed ? 4 : 0) | (D.activeElement === m ? 8 : 0)); // BM_GETSTATE
+          case 0xF3: c.pushed = (w !== 0); m.classList.toggle('ood-pushed', c.pushed); return '0';   // BM_SETSTATE: drawn pushed or not
         }
         break;
       case 'EDIT':
@@ -7081,6 +7203,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       case 0x132F: return String(c.cur);                                               // TCM_GETCURFOCUS
       case 0x1330: if (w >= 0 && w < c.tabs.length) { c.cur = w; tabRender(c); } return '0'; // TCM_SETCURFOCUS
       case 0x132C: return '1';                                                         // TCM_GETROWCOUNT
+      case 0x1331: { const old = c.minTab == null ? -1 : c.minTab; c.minTab = l < 0 ? null : l; tabRender(c); return String(old); }   // TCM_SETMINTABWIDTH: the width before
     }
     ood.log.push('msg ' + c.kind + ' 0x' + msg.toString(16));
     return '0';
@@ -7493,7 +7616,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
         return '1'; }
       case 'size':
         if (c) { el.style.width = Number(a) + 'px'; if (c.kind !== 'COMBO' || c.simple) el.style.height = Number(b) + 'px'; }   // (a drop-down combo's height is that of its list)
-        else { dlg.client.style.width = Number(a) + 'px'; dlg.client.style.height = Math.max(0, Number(b) - dlg.titleEl.offsetHeight) + 'px'; }
+        else { dlg.client.style.width = Number(a) + 'px'; dlg.client.style.height = Math.max(0, Number(b) - dlg.titleEl.offsetHeight) + 'px'; if (dlg.child && dlg.ra) raLayout(dlg); }   // (an embedded dialog has no observer: lay it out now)
         return '1';
       case 'closeBox': { const x = dlg.titleEl.querySelector('.ood-x'); if (x) { x.disabled = (a === '0'); x.style.opacity = a === '0' ? '.35' : ''; } dlg.noClose = (a === '0'); return '1'; }
       case 'top': el.style.zIndex = ++ood.z; return '1';
@@ -7534,6 +7657,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
     }
     if (c && name === 'isDropList') return c.droplist ? '1' : '0';
     if (name === 'ra.init') return raInit(dlg, String(a));
+    if (name === 'ra.page') { if (!c) return '0'; (c.raPages = c.raPages || []).push(Number(a)); return '1'; }
     if (name === 'ra.limits') { if (!dlg.ra) return '0'; raLimits(dlg, JSON.parse(String(a)), JSON.parse(String(b))); return '1'; }
     if (name === 'mouseSub') return mouseSub(dlg, c, el, String(a));
     if (name === 'mouse') return mouseOp(dlg, c, el, String(a), b);
@@ -7686,6 +7810,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       case 'text': return c.tabs[i] ? c.tabs[i].text : '';
       case 'setText': if (!c.tabs[i]) return '0'; c.tabs[i].text = String(b); tabRender(c); return '1';
       case 'selectText': { const t = String(a).toLowerCase(), k = c.tabs.findIndex((x) => plain(x.text).toLowerCase() === t || x.text.toLowerCase() === t); if (k >= 0) { c.cur = k; tabRender(c); } return String(k); }
+      case 'outer': { const o = dlg.client.getBoundingClientRect(), r = c.el.getBoundingClientRect(); return [r.left - o.left, r.top - o.top, r.right - o.left, r.bottom - o.top].map(Math.round).join(' '); }   // the whole control, in the dialog's client area
       case 'rect': { const o = dlg.client.getBoundingClientRect(), r = c.page.getBoundingClientRect(); return [r.left - o.left + 2, r.top - o.top + 2, r.right - o.left - 2, r.bottom - o.top - 2].map(Math.round).join(' '); }
     }
     return '';
