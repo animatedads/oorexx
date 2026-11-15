@@ -182,10 +182,28 @@ int wmain(int argc, wchar_t **argv) {
     }
     if (wantButton && FAILED(result = oodf_win_set(host, button, L"text", L"Updated from native API"))) goto cleanup;
     if (wantToggle && FAILED(result = oodf_win_set(host, toggle, L"isOn", L"true"))) goto cleanup;
+    if (wantToggle && oodf_win_set(host, toggle, L"isOn", L"not-a-boolean") != E_INVALIDARG) {
+        result = E_UNEXPECTED;
+        goto cleanup;
+    }
     if (wantCheck && FAILED(result = oodf_win_set(host, check, L"isChecked", L"true"))) goto cleanup;
     if (wantCheck && FAILED(result = oodf_win_set(host, check, L"isThreeState", L"true"))) goto cleanup;
+    if (wantCheck && oodf_win_set(host, check, L"isChecked", L"unknown") != E_INVALIDARG) {
+        result = E_UNEXPECTED;
+        goto cleanup;
+    }
+    if (wantCheck && FAILED(result = oodf_win_set(host, check, L"isChecked", L"null"))) goto cleanup;
     if (wantToggleButton && FAILED(result = oodf_win_set(host, toggleButton, L"isChecked", L"true"))) goto cleanup;
     if (wantSlider && FAILED(result = oodf_win_set(host, slider, L"value", L"42.5"))) goto cleanup;
+    if (wantSlider && (oodf_win_set(host, slider, L"value", L"not-a-number") != E_INVALIDARG ||
+                       oodf_win_set(host, slider, L"value", L"NaN") != E_INVALIDARG)) {
+        result = E_UNEXPECTED;
+        goto cleanup;
+    }
+    if (wantSlider && oodf_win_set(host, slider, L"unknownProperty", L"42") != E_NOTIMPL) {
+        result = E_UNEXPECTED;
+        goto cleanup;
+    }
     if (wantTextBox && FAILED(result = oodf_win_set(host, textBox, L"text", L"Unicode Stra\u00DFe"))) goto cleanup;
     if (wantProgress && FAILED(result = oodf_win_set(host, progress, L"value", L"65"))) goto cleanup;
     if (wantNumber && FAILED(result = oodf_win_set(host, number, L"value", L"42"))) goto cleanup;
@@ -222,6 +240,11 @@ int wmain(int argc, wchar_t **argv) {
     }
     if (wantButton && FAILED(result = oodf_win_remove(host, button))) goto cleanup;
     if (wantCheck && FAILED(result = oodf_win_remove(host, check))) goto cleanup;
+    if (wantCheck && oodf_win_set(host, check, L"isChecked", L"false") !=
+                     HRESULT_FROM_WIN32(ERROR_NOT_FOUND)) {
+        result = E_UNEXPECTED;
+        goto cleanup;
+    }
     if (wantToggleButton && FAILED(result = oodf_win_remove(host, toggleButton))) goto cleanup;
     if (wantSlider && FAILED(result = oodf_win_remove(host, slider))) goto cleanup;
     if (wantTextBox && FAILED(result = oodf_win_remove(host, textBox))) goto cleanup;

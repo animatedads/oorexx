@@ -30,13 +30,17 @@ The Designer may author an optional `fluentType` and its properties in a resourc
 ## Provenance and status
 
 The Windows x64 DLL compiles and the standalone HWND subset (empty island,
-`Button`, `ToggleSwitch`) runs through clean teardown. GitHub CI run
-[43729428411](https://github.com/animatedads/oorexx/actions/runs/43729428411)
-also runs a genuine ooRexx 5.2.0 `UserDialog`, creating both controls through
-the **diagnostic opt-in same-process UI-thread broker** and closing them from
-Rexx with exit 0. CI run
-[43730544432](https://github.com/animatedads/oorexx/actions/runs/43730544432)
-further qualifies the `Toggled` property-driven native-to-Rexx event and clean
-asynchronous join **3/3 independent processes**. This does not qualify
-unrestricted broker use, modal/resource dialogs, physical input, accessibility,
-complex template shutdown, or the full catalogue.
+`Button`, `ToggleSwitch`, `CheckBox`, `ToggleButton`, `Slider`) runs through
+clean teardown both individually and all together. GitHub CI run
+[43761615206](https://github.com/animatedads/oorexx/actions/runs/43761615206)
+also runs a real ooRexx 5.2.0 `UserDialog` three times through the
+**diagnostic opt-in same-process UI-thread broker**. Each process creates five
+native controls, dispatches four property-triggered native events to distinct
+Rexx methods, closes through `endAsyncExecution`, and exits with code 0.
+The ABI event queue and retained buffer-retry envelope use one session lock
+to protect operations across GUI and Rexx threads (300-event concurrency test).
+`InfoBar`, `NumberBox`, `TextBox` and `ProgressBar` are disabled by default:
+they trigger `0xC0000005` on island close even after native removal in this
+host. This does not qualify unrestricted broker use, modal/resource dialogs,
+physical input, accessibility, complex-template shutdown, or the other 78
+catalogue targets.
