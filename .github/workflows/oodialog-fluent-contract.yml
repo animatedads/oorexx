@@ -106,12 +106,19 @@ jobs:
         timeout-minutes: 5
         run: |
           $ErrorActionPreference = 'Stop'
-          $url = 'https://sourceforge.net/projects/oorexx/files/oorexx/5.2.0/portable/oorexx-5.2.0-13156.windows.x86_64-portable-release.zip/download'
+          # Use SourceForge's binary redirector, not the /download HTML
+          # landing page (which can return a small non-ZIP response in CI).
+          $url = 'https://downloads.sourceforge.net/project/oorexx/oorexx/5.2.0/portable/oorexx-5.2.0-13156.windows.x86_64-portable-release.zip'
           $archive = Join-Path $env:RUNNER_TEMP 'oorexx-5.2.0-portable.zip'
           $unpack = Join-Path $env:RUNNER_TEMP 'oorexx-portable'
           Write-Output 'REXX_PROBE_STAGE=DOWNLOAD_PORTABLE_5_2'
           Invoke-WebRequest -Uri $url -OutFile $archive -MaximumRedirection 10 -TimeoutSec 100
-          if ((Get-Item $archive).Length -lt 5000000) { throw 'Invalid or incomplete ooRexx portable archive' }
+          $bytes = [IO.File]::ReadAllBytes($archive)
+          $signature = [Convert]::ToHexString($bytes[0..([Math]::Min(3, $bytes.Length - 1))])
+          Write-Output "REXX_DOWNLOAD_BYTES=$($bytes.Length) SIGNATURE=$signature"
+          if ($bytes.Length -lt 5000000 -or -not $signature.StartsWith('504B0304')) {
+            throw 'Invalid or incomplete ooRexx portable ZIP from binary redirector'
+          }
           Expand-Archive -Path $archive -DestinationPath $unpack -Force
           $rexx = Get-ChildItem $unpack -Recurse -File -Filter 'rexx.exe' | Select-Object -First 1
           $dialogClass = Get-ChildItem $unpack -Recurse -File -Filter 'ooDialog.cls' | Select-Object -First 1
