@@ -38,6 +38,10 @@ typedef enum OodfStatus {
 // The application must never treat the native session as its business model.
 OODF_API OodfStatus oodf_open(const char *cataloguePath, int enableExperimental, OodfSession **out);
 OODF_API OodfStatus oodf_create(OodfSession *session, int64_t resourceId, const char *type, uint64_t *uid);
+// Preserve a resource author's stable occurrence identity across renderers and reopens.
+// UID 0 and any previously-issued UID in this session are rejected, even after removal.
+OODF_API OodfStatus oodf_create_authored(OodfSession *session, int64_t resourceId,
+                                        const char *type, uint64_t authoredUid, uint64_t *uid);
 OODF_API OodfStatus oodf_set(OodfSession *session, uint64_t uid, const char *property, const char *value);
 OODF_API OodfStatus oodf_bind(OodfSession *session, uint64_t uid, const char *event, const char *handler);
 OODF_API OodfStatus oodf_raise(OodfSession *session, uint64_t uid, const char *event, const char *value, int *queued);

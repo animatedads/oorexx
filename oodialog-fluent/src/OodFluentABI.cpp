@@ -78,6 +78,15 @@ OodfStatus oodf_create(OodfSession *session, int64_t resourceId, const char *typ
     });
 }
 
+OodfStatus oodf_create_authored(OodfSession *session, int64_t resourceId, const char *type,
+                               uint64_t authoredUid, uint64_t *uid) {
+    return safe([&] {
+        if (bad(session) || bad(type) || bad(uid)) return OODF_INVALID_ARGUMENT;
+        *uid = session->model->createWithUid(resourceId, type, authoredUid);
+        return OODF_OK;
+    });
+}
+
 OodfStatus oodf_set(OodfSession *session, uint64_t uid, const char *property, const char *value) {
     return safe([&] {
         if (bad(session) || bad(property) || bad(value)) return OODF_INVALID_ARGUMENT;

@@ -67,6 +67,7 @@ class Session final {
 public:
     explicit Session(const Catalogue &catalogue, bool enableExperimental = false);
     std::uint64_t create(std::int64_t resourceId, const std::string &type);
+    std::uint64_t createWithUid(std::int64_t resourceId, const std::string &type, std::uint64_t authoredUid);
     void set(std::uint64_t uid, const std::string &property, const std::string &value);
     void bind(std::uint64_t uid, const std::string &event, const std::string &handler);
     bool raise(std::uint64_t uid, const std::string &event, const std::string &value);
@@ -81,6 +82,8 @@ private:
     bool experimental_;
     std::uint64_t nextUid_ = 1;
     std::unordered_map<std::uint64_t, Control> controls_;
+    // An authored UID must not be reassigned to a distinct lifecycle in one session.
+    std::unordered_set<std::uint64_t> issuedUids_;
     std::deque<Event> events_;
 };
 

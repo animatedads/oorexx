@@ -24,7 +24,8 @@ Copy `OodFluentWindows.dll` and `OodFluent.cls` into the ooRexx library/path sea
 /* Inside an ooDialog instance; full GUI demo integration remains pending. */
 fluent = .OodFluentHost~attach(self, 'C:\\catalogue\\controls.tsv')
 fluent~move(8, 8, 480, 260)
-save = fluent~newButton(1001, 'Save')
+/* Optional third argument is an authored occurrence UID from the Designer. */
+save = fluent~newButton(1001, 'Save', 71001)
 save~connectEvent('click', 'onFluentSave')
 status = fluent~newInfoBar(1002, 'Ready')
 /* Called periodically from the ooDialog UI-thread's event dispatch: */
@@ -33,7 +34,7 @@ fluent~dispatchPending
 fluent~close
 ```
 
-The dialog event callback `onFluentSave(resourceId, uid, eventValue)` is executed only while the ooDialog thread calls `dispatchPending`; the initial WinUI callback merely queues an event. `pollEvent` returns a Directory containing `RESOURCEID`, `UID`, `REVISION`, `NAME`, `VALUE`, `HANDLER`, or `.nil` if empty. `dispatchPending(limit)` defaults to 64 events to bound processing on a busy UI thread. Existing ooDialog controls and their resource IDs are not replaced. The WinUI host has separate occurrence UIDs so repeated Windows static resource IDs are safe.
+The dialog event callback `onFluentSave(resourceId, uid, eventValue)` is executed only while the ooDialog thread calls `dispatchPending`; the initial WinUI callback merely queues an event. `pollEvent` returns a Directory containing `RESOURCEID`, `UID`, `REVISION`, `NAME`, `VALUE`, `HANDLER`, or `.nil` if empty. `dispatchPending(limit)` defaults to 64 events to bound processing on a busy UI thread. Existing ooDialog controls and their resource IDs are not replaced. The authored occurrence UID survives different backends/reopens and is distinct from a Windows resource ID. A UID cannot be reassigned in the same native session, even after removing its old control; for dynamically created controls, the host assigns a session-local UID. `uid=0` is invalid.
 
 This is an **explicit-pump preview**, not automatic ooDialog `WM_NOTIFY` routing. Focus/keyboard bridging and timer-message integration still require testing. Call `close` before the HWND is destroyed; do not rely on garbage collection to tear down XAML objects on the correct UI thread. The four implemented control types only support the documented subset in `OodFluentIsland.cpp`.
 

@@ -58,6 +58,18 @@ int main(int argc, char **argv) {
         CHECK(first.size() == 2);
         CHECK(first.control(a).type == "Button");
         CHECK(first.control(a).revision == 0);
+        const auto authored = first.createWithUid(-1, "Button", 881005);
+        CHECK(authored == 881005);
+        CHECK(first.control(authored).resourceId == -1);
+        expects(ErrorCode::StaleOccurrence, [&] { first.createWithUid(9, "Button", 881005); });
+        expects(ErrorCode::StaleOccurrence, [&] { first.createWithUid(9, "Button", 0); });
+        first.bind(authored, "click", "onAuthored");
+        CHECK(first.raise(authored, "click", "proof"));
+        Event authoredEvent{};
+        CHECK(first.take(authoredEvent));
+        CHECK(authoredEvent.uid == 881005);
+        first.remove(authored);
+        expects(ErrorCode::StaleOccurrence, [&] { first.createWithUid(9, "Button", 881005); });
         first.set(a, "text", "OK");
         CHECK(first.control(a).properties.at("text") == "OK");
         CHECK(first.control(a).revision == 1);
@@ -155,6 +167,12 @@ int main(int argc, char **argv) {
         CHECK(std::string(value) == "échec");
         CHECK(std::string(handler) == "onInfoBarClosed");
         CHECK(oodf_poll(abi, &eventBuffer) == OODF_NO_EVENT);
+        uint64_t stableUid = 0;
+        CHECK(oodf_create_authored(abi, -1, "Button", 99887766, &stableUid) == OODF_OK);
+        CHECK(stableUid == 99887766);
+        CHECK(oodf_create_authored(abi, 70, "Button", 99887766, &stableUid) == OODF_STALE_OCCURRENCE);
+        CHECK(oodf_remove(abi, 99887766) == OODF_OK);
+        CHECK(oodf_create_authored(abi, 70, "Button", 99887766, &stableUid) == OODF_STALE_OCCURRENCE);
         CHECK(oodf_raise(abi, abiUid, "closed", "cancelled", &queued) == OODF_OK);
         CHECK(oodf_poll(abi, &eventBuffer) == OODF_OK); // already popped
         CHECK(oodf_raise(abi, abiUid, "closed", "drop-before-delivery", &queued) == OODF_OK);

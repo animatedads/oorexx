@@ -121,8 +121,9 @@ HRESULT __stdcall oodf_win_open(HWND parent, OodfSession *model, OodfWinHost **o
     });
 }
 
-HRESULT __stdcall oodf_win_add(OodfWinHost *host, int64_t resourceId,
-                               const wchar_t *kind, const wchar_t *caption, uint64_t *uid) {
+static HRESULT oodf_win_add_impl(OodfWinHost *host, int64_t resourceId,
+                                 const wchar_t *kind, const wchar_t *caption,
+                                 bool authored, uint64_t authoredUid, uint64_t *uid) {
     if (!host || !kind || !caption || !uid) return E_INVALIDARG;
     if (wrongThread(host)) return RPC_E_WRONG_THREAD;
     return safe([&] {
@@ -131,7 +132,9 @@ HRESULT __stdcall oodf_win_add(OodfWinHost *host, int64_t resourceId,
         if (type != "Button" && type != "ToggleSwitch" &&
             type != "InfoBar" && type != "NumberBox") winrt::throw_hresult(E_NOTIMPL);
         uint64_t id = 0;
-        winrt::check_hresult(status(oodf_create(host->model, resourceId, type.c_str(), &id)));
+        auto created = authored ? oodf_create_authored(host->model, resourceId, type.c_str(), authoredUid, &id)
+                               : oodf_create(host->model, resourceId, type.c_str(), &id);
+        winrt::check_hresult(status(created));
         try {
             xaml::FrameworkElement element{nullptr};
             if (type == "Button") {
@@ -176,6 +179,18 @@ HRESULT __stdcall oodf_win_add(OodfWinHost *host, int64_t resourceId,
             throw;
         }
     });
+}
+
+HRESULT __stdcall oodf_win_add(OodfWinHost *host, int64_t resourceId,
+                               const wchar_t *kind, const wchar_t *caption, uint64_t *uid) {
+    return oodf_win_add_impl(host, resourceId, kind, caption, false, 0, uid);
+}
+
+HRESULT __stdcall oodf_win_add_authored(OodfWinHost *host, int64_t resourceId,
+                                        const wchar_t *kind, const wchar_t *caption,
+                                        uint64_t authoredUid, uint64_t *uid) {
+    if (!authoredUid) return E_INVALIDARG;
+    return oodf_win_add_impl(host, resourceId, kind, caption, true, authoredUid, uid);
 }
 
 HRESULT __stdcall oodf_win_set(OodfWinHost *host, uint64_t uid,

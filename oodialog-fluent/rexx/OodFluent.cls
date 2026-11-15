@@ -20,27 +20,28 @@
 
 ::method newControl
   expose token controls
-  use strict arg resourceId, kind, caption = ''
-  uid = OodfNativeCreate(token, resourceId, kind, caption)
+  use strict arg resourceId, kind, caption = '', authoredUid = ''
+  if authoredUid == '' then uid = OodfNativeCreate(token, resourceId, kind, caption)
+  else uid = OodfNativeCreateAuthored(token, resourceId, kind, caption, authoredUid)
   control = .OodFluentControl~new(self, resourceId, uid, kind)
   controls[uid] = control
   return control
 
 ::method newButton
-  use strict arg resourceId, caption = ''
-  return self~newControl(resourceId, 'Button', caption)
+  use strict arg resourceId, caption = '', authoredUid = ''
+  return self~newControl(resourceId, 'Button', caption, authoredUid)
 
 ::method newToggleSwitch
-  use strict arg resourceId, caption = ''
-  return self~newControl(resourceId, 'ToggleSwitch', caption)
+  use strict arg resourceId, caption = '', authoredUid = ''
+  return self~newControl(resourceId, 'ToggleSwitch', caption, authoredUid)
 
 ::method newNumberBox
-  use strict arg resourceId, caption = ''
-  return self~newControl(resourceId, 'NumberBox', caption)
+  use strict arg resourceId, caption = '', authoredUid = ''
+  return self~newControl(resourceId, 'NumberBox', caption, authoredUid)
 
 ::method newInfoBar
-  use strict arg resourceId, message = ''
-  return self~newControl(resourceId, 'InfoBar', message)
+  use strict arg resourceId, message = '', authoredUid = ''
+  return self~newControl(resourceId, 'InfoBar', message, authoredUid)
 
 ::method setProperty
   expose token
@@ -135,6 +136,7 @@
 
 ::routine OodfNativeOpen external "LIBRARY OodFluentWindows OodfNativeOpen"
 ::routine OodfNativeCreate external "LIBRARY OodFluentWindows OodfNativeCreate"
+::routine OodfNativeCreateAuthored external "LIBRARY OodFluentWindows OodfNativeCreateAuthored"
 ::routine OodfNativeSet external "LIBRARY OodFluentWindows OodfNativeSet"
 ::routine OodfNativeBind external "LIBRARY OodFluentWindows OodfNativeBind"
 ::routine OodfNativeMove external "LIBRARY OodFluentWindows OodfNativeMove"

@@ -62,7 +62,8 @@ int wmain(int argc, wchar_t **argv) {
     }
     uint64_t button = 0, toggle = 0, info = 0, number = 0;
     if (FAILED(result = oodf_win_move(host, 4, 4, 600, 400))) goto cleanup;
-    if (FAILED(result = oodf_win_add(host, 4101, L"Button", L"Hello ooRexx", &button))) goto cleanup;
+    if (FAILED(result = oodf_win_add_authored(host, 4101, L"Button", L"Hello ooRexx", 71001, &button))) goto cleanup;
+    if (button != 71001) { result = E_UNEXPECTED; goto cleanup; }
     if (FAILED(result = oodf_win_add(host, 4102, L"ToggleSwitch", L"Dark mode", &toggle))) goto cleanup;
     if (FAILED(result = oodf_win_add(host, 4103, L"InfoBar", L"WinUI 3 is alive", &info))) goto cleanup;
     if (FAILED(result = oodf_win_add(host, 4104, L"NumberBox", L"Quantity", &number))) goto cleanup;

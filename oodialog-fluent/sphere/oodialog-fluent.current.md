@@ -13,6 +13,7 @@ Project lane: `oodialog_fluent_controls` (Rasen Falcon). Source: `animatedads/oo
 - Windows x64 C++/WinRT native provider DLL **prior BUILD_PASS** (GitHub CI run 43719132986), with HWND-hosted WinUI 3 island and four control creation paths.
 - **New unqualified bridge candidate**: `windows/OodFluentRexx.cpp` exports the ooRexx `RexxGetPackage` routine table from the provider DLL; `rexx/OodFluent.cls` provides `.OodFluentHost` and `.OodFluentControl` compatible proxies. Native functions accept ooDialog's 0x-prefixed HWND and tokenised session/occurrence identities. The owner UI thread explicitly drains events into dialog methods.
 - **New runtime probe**: `windows/OodFluentSmoke.cpp` creates a real Win32 HWND, XAML island, four controls, changes properties and tears them down. Windows CI attempts it as a separately recorded probe; headless CI limitations must not become a false PASS.
+- **Stable authored UID**: new `Session::createWithUid`, `oodf_create_authored`, `oodf_win_add_authored`, and `OodfNativeCreateAuthored` maintain authored occurrence UID across backend recreation/reopen; duplicates and zero are rejected. Dynamic controls retain a noncolliding auto UID. 101/101 local native-independent checks.
 
 ## What does not exist
 
@@ -24,6 +25,8 @@ Project lane: `oodialog_fluent_controls` (Rasen Falcon). Source: `animatedads/oo
 ## Continuation instructions
 
 Read `docs/WINDOWS_HOST_CONTRACT.md`, `windows/README.md` and the upstream `DialogControls.cls`/`oodialog.dll` package entry first. Compile the separate WinUI host DLL against Windows App SDK 2.6.5 and qualify Button, ToggleSwitch, InfoBar and NumberBox as a real Windows proof before adding control families. Bind ooRexx objects to the C ABI, with no hand-coded Python orchestration and no changes to the other lanes' files.
+
+**Qt6 lane review REQ-00003661**: keep all Rexx proxy classes prefixed (`.OodFluent*`) and do not subclass upstream `DialogControl`; `connectEvent` is local to these proxies. Authored UID support is now implemented in the model and native APIs, but namespace collisions across renderer providers and long-lived IDs remain a parity test. Define typed complex property codecs before implementing list/date/color control families. A portable Rexx provider seam for WinUI, Qt6 and Web is under design, not a claim of Linux WinUI availability. The overlap between `oodialog_linux` and Claude's native `oodialog-qt6-v0.7` remains an owner/architecture decision; do not claim either lane merged.
 
 Old ooDialog runs unchanged; Linux/Qt6, browser/WASM and Wire follow their own authority boundaries. The Designer may import this catalogue after its owner agrees the extension seam; preserving resource ID, UID and event names is mandatory. Experimental WinUI controls must be gated.
 

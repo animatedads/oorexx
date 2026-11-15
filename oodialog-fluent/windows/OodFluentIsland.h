@@ -21,6 +21,8 @@ extern "C" {
 OODF_WIN_API HRESULT __stdcall oodf_win_open(HWND parent, OodfSession *model, OodfWinHost **out);
 OODF_WIN_API HRESULT __stdcall oodf_win_add(OodfWinHost *host, int64_t resourceId,
     const wchar_t *kind, const wchar_t *caption, uint64_t *uid);
+OODF_WIN_API HRESULT __stdcall oodf_win_add_authored(OodfWinHost *host, int64_t resourceId,
+    const wchar_t *kind, const wchar_t *caption, uint64_t authoredUid, uint64_t *uid);
 OODF_WIN_API HRESULT __stdcall oodf_win_set(OodfWinHost *host, uint64_t uid,
     const wchar_t *property, const wchar_t *value);
 OODF_WIN_API HRESULT __stdcall oodf_win_move(OodfWinHost *host, int x, int y, int width, int height);

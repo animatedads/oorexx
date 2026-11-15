@@ -138,6 +138,25 @@ RexxRoutine4(RexxObjectPtr, OodfNativeCreate,
     } catch (const std::exception &e) { return error(context, e.what()); }
 }
 
+RexxRoutine5(RexxObjectPtr, OodfNativeCreateAuthored,
+             CSTRING, token, CSTRING, resourceId, CSTRING, kind,
+             CSTRING, caption, CSTRING, authoredUidText) {
+    std::lock_guard<std::mutex> lock(sessionsMutex);
+    Session *session = get(context, token);
+    if (!session) return NULLOBJECT;
+    int64_t id = 0;
+    uint64_t authoredUid = 0;
+    if (!decimal(resourceId, id)) return error(context, "resource ID must be a signed 64-bit integer");
+    if (!occurrence(context, authoredUidText, authoredUid)) return NULLOBJECT;
+    try {
+        const std::wstring type = wide(kind), label = wide(caption);
+        uint64_t uid = 0;
+        HRESULT result = oodf_win_add_authored(session->host, id, type.c_str(), label.c_str(), authoredUid, &uid);
+        if (FAILED(result)) return error(context, "authored occurrence creation failed: " + hex(result));
+        return context->String(std::to_string(uid).c_str());
+    } catch (const std::exception &e) { return error(context, e.what()); }
+}
+
 RexxRoutine4(RexxObjectPtr, OodfNativeSet,
              CSTRING, token, CSTRING, uidText, CSTRING, property, CSTRING, value) {
     std::lock_guard<std::mutex> lock(sessionsMutex);
@@ -232,6 +251,7 @@ RexxRoutine1(RexxObjectPtr, OodfNativeClose, CSTRING, token) {
 RexxRoutineEntry oodfluent_routines[] = {
     REXX_TYPED_ROUTINE(OodfNativeOpen, OodfNativeOpen),
     REXX_TYPED_ROUTINE(OodfNativeCreate, OodfNativeCreate),
+    REXX_TYPED_ROUTINE(OodfNativeCreateAuthored, OodfNativeCreateAuthored),
     REXX_TYPED_ROUTINE(OodfNativeSet, OodfNativeSet),
     REXX_TYPED_ROUTINE(OodfNativeBind, OodfNativeBind),
     REXX_TYPED_ROUTINE(OodfNativeMove, OodfNativeMove),

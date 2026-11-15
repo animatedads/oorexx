@@ -39,7 +39,7 @@ bar = host~newInfoBar(2402, 'Saved')
 host~dispatchPending  /* call from the dialog UI event pump, not a busy loop */
 ```
 
-`attach` must preserve `self` as the existing ooDialog object. Each new proxy holds an ooDialog resource ID and a unique occurrence UID; repeated legacy `IDC_STATIC` IDs remain distinguishable. `getText`, `setText`, `show`, `hide`, `enable`, `disable`, `setFocus`, value/selection methods and `connectEvent` follow upstream ooDialog conventions. New methods are additive; existing `newButton` etc. remain unchanged. All property/event types require validation against the catalogue and each native WinUI API.
+`attach` must preserve `self` as the existing ooDialog object. Each new proxy holds an ooDialog resource ID and a unique occurrence UID; repeated legacy `IDC_STATIC` IDs remain distinguishable. Resource-authored UIDs can be passed as the optional third argument of the four `new*` methods (the fourth for `newControl`), preserving identity across renderer implementations and reopens. Automatic UIDs remain session-local; every UID is single-use within one native session. The proxies are prefixed `.OodFluent*`, do not inherit legacy `DialogControl`, and their event method is isolated from the legacy ooDialog event vocabulary. `getText`, `show`, `hide`, `enable`, `disable`, `setFocus` and richer value/selection methods are **planned**, not implemented; the preview exposes `setText`, `setValue`, `setOn`, `setOpen` and `connectEvent`. New methods are additive; legacy `newButton` etc. remain unchanged. All property/event types require validation against the catalogue and each native WinUI API.
 
 The real native provider will queue events on the UI thread and deliver them through ooDialog's own message/dispatch mechanism; it must not invoke Rexx arbitrarily from a XAML callback. The dialog must keep its message pump and source of behavioral truth. Add/update/remove operations are addressed by occurrence UID; callback envelopes include resource ID, UID, event, and value.
 
@@ -51,7 +51,7 @@ From this directory:
 sh tests/run_tests.sh
 ```
 
-Tests compile the native-independent core and its C-compatible ABI with a C++17 compiler, load and validate every catalogue entry, and exercise resource-ID collisions, bound/unbound events, property validation, experimental gating, destruction, stale-event suppression and a lossless event-buffer retry. No Python runtime is used in the product. These are *not* Windows visual or ooRexx compatibility tests.
+Tests compile the native-independent core and its C-compatible ABI with a C++17 compiler, load and validate every catalogue entry, and exercise resource-ID collisions, authored occurrence UIDs, bound/unbound events, property validation, experimental gating, destruction, stale-event suppression and a lossless event-buffer retry. Current local count: **101/101 PASS**. No Python runtime is used in the product. These are *not* Windows visual or ooRexx compatibility tests.
 
 ## Platform and fallback contract
 
