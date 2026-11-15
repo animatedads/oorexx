@@ -124,6 +124,10 @@ int wmain(int argc, wchar_t **argv) {
     }
     stage("ISLAND_OPEN_OK");
     uint64_t button = 0, toggle = 0, info = 0, number = 0;
+    wchar_t preUnload[32]{};
+    (void)GetEnvironmentVariableW(L"OODF_PREUNLOAD", preUnload, 32);
+    const bool unload = wcscmp(preUnload, L"unload") == 0 ||
+                        wcscmp(preUnload, L"unload-pump") == 0;
     stage("CREATE_CONTROLS_BEGIN");
     if (FAILED(result = oodf_win_move(host, 4, 4, 600, 400))) goto cleanup;
     if (wantButton) {
@@ -153,6 +157,26 @@ int wmain(int argc, wchar_t **argv) {
         Sleep(20);
     }
     stage("PUMP_OK");
+    if (unload) {
+        stage("PREUNLOAD_BEGIN");
+        if (wantInfo && FAILED(result = oodf_win_remove(host, info))) goto cleanup;
+        if (wantNumber && FAILED(result = oodf_win_remove(host, number))) goto cleanup;
+        if (wantToggle && FAILED(result = oodf_win_remove(host, toggle))) goto cleanup;
+        stage("PREUNLOAD_DONE");
+        if (wcscmp(preUnload, L"unload-pump") == 0) {
+            // Deliberately outside the provider's destructor: pumping the
+            // ooDialog UI thread while its close mutex is held is unsafe.
+            for (int i = 0; i < 40; ++i) {
+                MSG message{};
+                while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+                    TranslateMessage(&message);
+                    DispatchMessageW(&message);
+                }
+                Sleep(20);
+            }
+            stage("PREUNLOAD_PUMP_OK");
+        }
+    }
     if (wantButton && FAILED(result = oodf_win_remove(host, button))) goto cleanup;
     stage("OPERATIONS_OK");
 cleanup:

@@ -66,11 +66,15 @@ jobs:
           $cases = @('empty:baseline', 'button:baseline', 'toggle:baseline',
                      'info:baseline', 'number:baseline', 'no-number:baseline', 'all:baseline',
                      'info:retain', 'number:retain', 'all:retain',
-                     'info:quiesce', 'number:quiesce', 'all:quiesce')
+                     'info:quiesce', 'number:quiesce', 'all:quiesce',
+                     'info:unload', 'number:unload', 'all:unload',
+                     'info:unload-pump', 'number:unload-pump', 'all:unload-pump')
           foreach ($case in $cases) {
             $mode, $experiment = $case.Split(':')
             $env:OODF_SMOKE_MODE = $mode
-            $env:OODF_CLOSE_EXPERIMENT = $experiment
+            if ($experiment -in @('retain', 'quiesce')) { $env:OODF_CLOSE_EXPERIMENT = $experiment }
+            else { $env:OODF_CLOSE_EXPERIMENT = 'baseline' }
+            $env:OODF_PREUNLOAD = $experiment
             $env:OODF_CRASH_DUMP = Join-Path (Resolve-Path $binary).Path "runtime-$mode-$experiment.dmp"
             $stdout = "$binary/runtime-$mode-$experiment-stdout.txt"
             $stderr = "$binary/runtime-$mode-$experiment-stderr.txt"
