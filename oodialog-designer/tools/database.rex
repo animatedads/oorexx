@@ -1,5 +1,6 @@
 /* Stage the Alchemy Database Lab in the editor's isolated WASM session.
- * This is an explicit, versioned dependency set, not an SQL implementation.
+ * Architecture: Tom Dyer. Code: ChatGPT (GPT-6).
+ * This is a dependency closure, not an SQL implementation.
  * The editor's own interpreter is never loaded with DatabaseRow/Error etc.
  *
  * rexx tools/database.rex ESTATE_PACKAGES_DIR OUTPUT_DIRECTORY
@@ -16,22 +17,58 @@ if stream(lab, "c", "query exists") = "" then do
 end
 call SysMkDir destination
 manifest = .array~new
-source = .array~new
-source~append(lab)
-source~append(estate || "/nosqlserver_v0.92-dev1/src/NoSQLServer.cls")
-source~append(estate || "/alchemy_objects_v0.8/src/AlchemyObject.cls")
-source~append(estate || "/alchemy_objects_v0.8/src/AlchemySecurity.cls")
-source~append(estate || "/alchemy_objects_v0.8/src/AlchemyLockedMethod.cls")
-source~append(estate || "/alchemy_objects_v0.8/src/AlchemyEvidence.cls")
-source~append(estate || "/oorexx_crypto_v0.1/src/crypto.cls")
-do entry over source
+-- Package locations pin the supported versions; files come entirely from
+-- transitive ::requires, not a hand-maintained dependency file list.
+roots = .array~of( -
+  estate || "/oorexx_oodialog_database_lab_v0.1/src", -
+  estate || "/nosqlserver_v0.92-dev1/src", -
+  estate || "/alchemy_objects_v0.8/src", -
+  estate || "/oorexx_crypto_v0.1/src", -
+  estate || "/oorexx_oodialog_designer_v0.8/src")
+todo = .queue~new
+todo~queue(lab)
+seen = .directory~new
+do while todo~items > 0
+  entry = todo~pull
   name = entry~substr(entry~lastPos("/") + 1)
+  if seen~hasIndex(name~upper) then do
+    if seen[name~upper] \== entry then raise syntax 93.900 array("database: dependency collision" name)
+    iterate
+  end
+  seen[name~upper] = entry
   call copy entry, destination || "/" || name
   manifest~append(name)
+  do req over requiresOf(entry)
+    parse var req reqName reqKind
+    if reqKind~caselessEquals("LIBRARY") | wordpos(reqName~upper, "JSON.CLS CSVSTREAM.CLS YAML.CLS") > 0 then iterate
+    from = ""
+    do root over roots while from == ""
+      if SysIsFile(root || "/" || reqName) then from = root || "/" || reqName
+    end
+    if from == "" then raise syntax 93.900 array("database: missing dependency" reqName "from" entry)
+    todo~queue(from)
+  end
 end
-call write destination || "/manifest.txt", manifest~makeString("L", "0a"x) || "0a"x
+call write destination || "/manifest.txt", manifest~sort~makeString("L", "0a"x) || "0a"x
 say "database: staged" manifest~items "Alchemy library files"
 exit 0
+
+requiresOf: procedure
+  use arg file
+  rqOut = .array~new
+  sourceFile = .stream~new(file)
+  if sourceFile~query("exists") == "" then raise syntax 93.900 array("database: missing source" file)
+  do line over sourceFile~arrayIn
+    line = line~strip
+    if \line~left(10)~caselessEquals("::requires") then iterate
+    rest = line~substr(11)~strip
+    quote = rest~left(1)
+    if quote \== '"' & quote \== "'" then iterate
+    parse var rest (quote) reqName (quote) reqKind .
+    rqOut~append(reqName reqKind)
+  end
+  sourceFile~close
+  return rqOut
 
 copy: procedure
   use arg from, to

@@ -1,4 +1,5 @@
 /* Database Lab UI for the ooDialog Designer and Object Editor.
+ * Architecture: Tom Dyer. Code: ChatGPT (GPT-6).
  * Only DOM and transport live here. A separate ooRexx/WASM session loads
  * Alchemy's OodDatabaseLab + NoSQLServer; JS never owns a database or schema.
  */
@@ -10,7 +11,18 @@
   const state = { runtime: null, session: null, lab: null, pending: Promise.resolve(), ready: false };
   const types = ['INTEGER', 'VARCHAR', 'TEXT', 'DECIMAL', 'BOOLEAN', 'DATE', 'DATETIME', 'BLOB'];
 
-  function textError(error) { return String(error?.message || error).split('\n')[0]; }
+  // The worker's 93.900 wrapper is transport syntax, not part of the
+  // localized refusal that OodDatabaseLab raised (same contract as designer.js).
+  function textError(error) {
+    let message = String(error?.message || error);
+    const at = message.search(/Error 93\.900:\s*/);
+    if (at >= 0) {
+      message = message.slice(at).replace(/Error 93\.900:\s*/, '').split('\n')[0];
+      const inner = /^[^(]*\((.*)\.\)$/.exec(message);
+      return inner ? inner[1] : message;
+    }
+    return message.split('\n')[0];
+  }
   function note(message, bad) {
     $('dbNotice').textContent = message;
     $('dbNotice').classList.toggle('bad', !!bad);
@@ -76,6 +88,7 @@
     state.session = await state.runtime.start({ files, js: { page: true, worker: true } });
     await state.session.loadPackage('OodDatabaseLab.cls');
     state.lab = await state.session.eval('return .OodDatabaseLab~new()');
+    await state.lab.language(window.OodNlsPage?.lang || '');
     state.ready = true;
     note(T('db.sessionOnly'));
     await refreshDatabases();
@@ -147,6 +160,7 @@
   async function show() {
     $('dbOverlay').hidden = false;
     await run(boot);
+    if (state.ready) await run(() => state.lab.language(window.OodNlsPage?.lang || ''));
   }
   function hide() { $('dbOverlay').hidden = true; }
 
