@@ -1,7 +1,7 @@
 {
   "kind": "corpus",
   "id": "oodialog-wasm.facts",
-  "version": "0.3",
+  "version": "0.4",
   "sphere": "oodialog-wasm",
   "title": "ooDialog/WASM: every statement of the articles, one a record, for search",
   "records": [
@@ -264,6 +264,18 @@
       "topic": "renderer-contract",
       "article": "ref.oodialog-wasm.renderer-contract",
       "field": "op_families",
+      "rule": "ra.page, since v0.19.0: op(key, tabId, \"ra.page\", childKey) names an embedded dialog as a page of that tab control. After every ResizingAdmin layout of the dialog, each page is moved and sized to the tab's display area; if the page has its own ra.init definition, it is laid out too. An embedded dialog that is sized by the size op and has a definition is laid out at once."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "op_families",
+      "rule": "tab.outer: the whole tab control as \"l t r b\" in the dialog's client area. tab.rect is its display area in the same coordinates. Rexx computes calcDisplayRect from the difference of the two. Control messages new in v0.19.0: BM_SETSTATE (0xF3), bit 4 of BM_GETSTATE (pushed), TCM_SETMINTABWIDTH (0x1331, answers the width before or -1)."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "op_families",
       "rule": "mouseSub and mouse: the Mouse class. mouse verbs: capture release getCapture state cursor."
     },
     {
@@ -460,7 +472,7 @@
       "topic": "differences",
       "article": "ops.oodialog-wasm.differences",
       "field": "differences",
-      "rule": "ResizingAdmin: pagedTab is accepted and does nothing, so the pages of a tab control are not resized with their dialog. A dialog made larger than the browser window is not scaled down again."
+      "rule": "ResizingAdmin: A dialog made larger than the browser window is not scaled down again."
     },
     {
       "topic": "differences",
@@ -679,25 +691,25 @@
     {
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
-      "rule": "State at v0.18.0 and where the current state is recorded. This article is a snapshot. The current figures are always in README.md of the project, with the version they were measured on; sweep.tsv and poke.tsv hold the per-example results."
+      "rule": "State at v0.19.0 and where the current state is recorded. This article is a snapshot. The current figures are always in README.md of the project, with the version they were measured on; sweep.tsv and poke.tsv hold the per-example results."
     },
     {
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
       "field": "snapshot",
-      "rule": "Version 0.18.0, 15 November 2026."
+      "rule": "Version 0.19.0, 15 November 2026."
     },
     {
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
       "field": "snapshot",
-      "rule": "Natives ported: 686 of 1,182. 12 of the 43 added in v0.18.0 accept their call and do nothing."
+      "rule": "Natives ported: 688 of 1,182. 12 of the 43 added in v0.18.0 accept their call and do nothing."
     },
     {
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
       "field": "snapshot",
-      "rule": "Tests: 45 of 45 pass in headless Chromium. 32 of them are upstream examples or the designer's programs, run unchanged."
+      "rule": "Tests: 47 of 47 pass in headless Chromium. 33 of them are upstream examples or the designer's programs, run unchanged."
     },
     {
       "topic": "state",
@@ -709,7 +721,7 @@
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
       "field": "snapshot",
-      "rule": "Probe at v0.16.0, 81 examples: 66 clean, 10 connect an event that is not produced, 5 with a problem, none of them in the port's own code."
+      "rule": "Probe at v0.19.0, 88 examples: 73 clean, 11 connect an event that is not produced, 4 with a problem, none of them in the port's own code. This run found four faults of the port in examples the sweep called shows; all four are fixed in v0.19.0."
     },
     {
       "topic": "state",
@@ -739,7 +751,7 @@
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
       "field": "done",
-      "rule": "Resizing: ResizingAdmin (pin definitions, size limits, wantSizeEnded) since v0.17.0; DlgAreaU with connectResize since v0.9."
+      "rule": "Resizing: ResizingAdmin (pin definitions, size limits, wantSizeEnded) since v0.17.0, pagedTab since v0.19.0; DlgAreaU with connectResize since v0.9."
     },
     {
       "topic": "state",
@@ -775,7 +787,7 @@
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
       "field": "not_done",
-      "rule": "ResizingAdmin's pagedTab; ControlDlgInfo and the tab owner dialogs."
+      "rule": "ControlDlgInfo and the tab owner dialogs."
     },
     {
       "topic": "state",

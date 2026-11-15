@@ -1,7 +1,7 @@
 {
   "kind": "article",
   "id": "ref.oodialog-wasm.renderer-contract",
-  "version": "0.3",
+  "version": "0.4",
   "sphere": "oodialog-wasm",
   "title": "The renderer contract: what the native layer asks of the page, and what the page sends back",
   "summary": "oodWeb.cls talks to a renderer through one object, window.__ood in the browser. Any renderer (the browser page, the Qt6 renderer) that answers the same calls and sends the same events can run the same ooDialog programs. The reference implementation is src/oodialog-web.js. This article names the calls and the rules; the source is the authority for each argument.",
@@ -29,6 +29,8 @@
     "ra.init and ra.limits: ResizingAdmin. ra.init takes one JSON text: def (the four default edges), ctrls (rows of id and four edges), min, max, ended. An edge is [pinType, pinToEdge, pinToID] with pinType S, P, ML or MT. The renderer keeps each control's first rectangle and, whenever the dialog's client area changes size, places every control by the arithmetic of raLayout in the reference source.",
     "lv.* list-view, tv.* tree-view, tab.* tab control, ud.* up-down, dtp.* date-time picker, mc.* month calendar.",
     "gdi: drawing on a window. op(key, id, \"gdi\", verb, values, style). Verbs: line rect arc angleArc pixel getPixel fillRect clear extent text flood image scroll size ownerDraw.",
+    "ra.page, since v0.19.0: op(key, tabId, \"ra.page\", childKey) names an embedded dialog as a page of that tab control. After every ResizingAdmin layout of the dialog, each page is moved and sized to the tab's display area; if the page has its own ra.init definition, it is laid out too. An embedded dialog that is sized by the size op and has a definition is laid out at once.",
+    "tab.outer: the whole tab control as \"l t r b\" in the dialog's client area. tab.rect is its display area in the same coordinates. Rexx computes calcDisplayRect from the difference of the two. Control messages new in v0.19.0: BM_SETSTATE (0xF3), bit 4 of BM_GETSTATE (pushed), TCM_SETMINTABWIDTH (0x1331, answers the width before or -1).",
     "mouseSub and mouse: the Mouse class. mouse verbs: capture release getCapture state cursor.",
     "tip.*: tool tips, since v0.18.0. The id is the tool tip's ID, not a control's: route tip.* before looking the id up as a control. tip.add takes one JSON text {key, host, rect, text}: host is a control's id or 0 for the dialog; rect is null (the whole window) or [l, t, r, b] in that window's client area; text null means the text is asked from the program. Others: tip.del(key), tip.text(key, text; one separator character means asked), tip.relay(hostId, 1|0), tip.count, tip.delay(ms), tip.maxWidth(px), tip.title(text), tip.active(1|0), tip.events(words), tip.show(text), tip.pos(x, y in screen pixels), tip.pop, tip.shown (toolKey, separator, text; empty if no tip), tip.tree(treeViewId).",
     "The renderer decides when a tip is due: the pointer rests on a tool for the delay. Fixed text: show the box, then send TT SHOW if tip.events names SHOW. Asked text: send TT NEEDTEXT; the program answers with tip.show. An empty text shows nothing. tip.pop ends the tip; if the pointer is still on the tool, the tip is due again after the delay. A tree-view named by tip.tree asks the text of the item under the pointer with NOTIFY GETINFOTIP (extra: the item); the answer is tip.show on tool tip ID 60000 + the tree-view's id.",
@@ -52,58 +54,67 @@
   ],
   "provenance": [
     {
-      "artifact": "oodialog-wasm-2a76b8a.zip",
-      "sha256": "ea1f87a9de3331dd3ece1b4b75fe54b3d2de050a9a06c8bb7663f23b6354f3e2",
+      "artifact": "oodialog-wasm-a8690d6.zip",
+      "sha256": "51d32f29a2c0fc5cdeaadf4464477d88fdecdeee6038229e869fa4c23ed40ccc",
       "member": "oodialog-wasm/src/oodialog-web.js",
-      "line_start": 1324,
-      "line_end": 1329,
+      "line_start": 1345,
+      "line_end": 1350,
       "claim": "op(key, id, name, a, b, c) is the entry for everything that is not a Win32 message.",
-      "note": "git archive of animatedads/oorexx commit 2a76b8a (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit a8690d6 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-2a76b8a.zip",
-      "sha256": "ea1f87a9de3331dd3ece1b4b75fe54b3d2de050a9a06c8bb7663f23b6354f3e2",
+      "artifact": "oodialog-wasm-a8690d6.zip",
+      "sha256": "51d32f29a2c0fc5cdeaadf4464477d88fdecdeee6038229e869fa4c23ed40ccc",
       "member": "oodialog-wasm/src/oodialog-web.js",
-      "line_start": 849,
-      "line_end": 854,
+      "line_start": 868,
+      "line_end": 873,
       "claim": "msg(key, id, msg, w, l) is the entry for Win32 control messages.",
-      "note": "git archive of animatedads/oorexx commit 2a76b8a (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit a8690d6 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-2a76b8a.zip",
-      "sha256": "ea1f87a9de3331dd3ece1b4b75fe54b3d2de050a9a06c8bb7663f23b6354f3e2",
+      "artifact": "oodialog-wasm-a8690d6.zip",
+      "sha256": "51d32f29a2c0fc5cdeaadf4464477d88fdecdeee6038229e869fa4c23ed40ccc",
       "member": "oodialog-wasm/src/oodialog-web.js",
-      "line_start": 521,
-      "line_end": 521,
+      "line_start": 539,
+      "line_end": 539,
       "claim": "The separator character is hex 1F.",
-      "note": "git archive of animatedads/oorexx commit 2a76b8a (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit a8690d6 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-2a76b8a.zip",
-      "sha256": "ea1f87a9de3331dd3ece1b4b75fe54b3d2de050a9a06c8bb7663f23b6354f3e2",
+      "artifact": "oodialog-wasm-a8690d6.zip",
+      "sha256": "51d32f29a2c0fc5cdeaadf4464477d88fdecdeee6038229e869fa4c23ed40ccc",
       "member": "oodialog-wasm/src/oodialog-web.js",
-      "line_start": 1024,
-      "line_end": 1028,
+      "line_start": 1045,
+      "line_end": 1049,
       "claim": "The gdi verbs and the style fields.",
-      "note": "git archive of animatedads/oorexx commit 2a76b8a (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit a8690d6 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-2a76b8a.zip",
-      "sha256": "ea1f87a9de3331dd3ece1b4b75fe54b3d2de050a9a06c8bb7663f23b6354f3e2",
+      "artifact": "oodialog-wasm-a8690d6.zip",
+      "sha256": "51d32f29a2c0fc5cdeaadf4464477d88fdecdeee6038229e869fa4c23ed40ccc",
       "member": "oodialog-wasm/src/oodialog-web.js",
-      "line_start": 224,
-      "line_end": 248,
+      "line_start": 225,
+      "line_end": 249,
       "claim": "The ResizingAdmin arithmetic.",
-      "note": "git archive of animatedads/oorexx commit 2a76b8a (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit a8690d6 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-2a76b8a.zip",
-      "sha256": "ea1f87a9de3331dd3ece1b4b75fe54b3d2de050a9a06c8bb7663f23b6354f3e2",
+      "artifact": "oodialog-wasm-a8690d6.zip",
+      "sha256": "51d32f29a2c0fc5cdeaadf4464477d88fdecdeee6038229e869fa4c23ed40ccc",
       "member": "oodialog-wasm/src/oodialog-web.js",
-      "line_start": 1142,
-      "line_end": 1155,
+      "line_start": 1163,
+      "line_end": 1176,
       "claim": "The tool tip operations and events.",
-      "note": "git archive of animatedads/oorexx commit 2a76b8a (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit a8690d6 (branch oodialog-wasm)"
+    },
+    {
+      "artifact": "oodialog-wasm-a8690d6.zip",
+      "sha256": "51d32f29a2c0fc5cdeaadf4464477d88fdecdeee6038229e869fa4c23ed40ccc",
+      "member": "oodialog-wasm/src/oodialog-web.js",
+      "line_start": 252,
+      "line_end": 263,
+      "claim": "The pages of a paged tab take its display area after each layout.",
+      "note": "git archive of animatedads/oorexx commit a8690d6 (branch oodialog-wasm)"
     }
   ]
 }
