@@ -19,9 +19,9 @@ The extension is deliberately distinct from:
 
 | Layer | v0.1 evidence | Next qualification |
 | --- | --- | --- |
-| 70-control and pattern inventory | Catalogue and automated validation | Compare every entry with current Microsoft WinUI 3 Gallery |
+| 83-control and pattern inventory | Catalogue and automated validation | Compare every entry with current Microsoft WinUI 3 Gallery |
 | Resource occurrence identity, proxy properties, event routing and lifecycle | Native-independent C++ core and C ABI, executable tests | Bind to ooRexx objects and WinUI host |
-| Windows provider | Interface and host design | Build C++/WinRT Windows App SDK 2.x `DesktopWindowXamlSource`; first button, toggle, InfoBar and NumberBox; UI-thread tests |
+| Windows provider | Candidate `windows/OodFluentIsland.cpp` maps WinUI 3 Button, ToggleSwitch, InfoBar and NumberBox under an HWND | Build and run on Windows with real ooDialog, focus/keyboard and UI-thread tests |
 | ooDialog integration | API contract | `::requires`-loadable ooRexx classes, compatibility with `UserDialog`/`ResDialog`/`RcDialog` and resource IDs |
 | Full coverage | Classification for stable, optional and unsupported controls | Each control must pass functional and visual Windows tests |
 

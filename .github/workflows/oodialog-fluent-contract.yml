@@ -21,3 +21,10 @@ jobs:
         run: cmake --build build/oodfluent --config Release
       - name: Test
         run: ctest --test-dir build/oodfluent -C Release --output-on-failure
+  winui3-provider-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: microsoft/setup-msbuild@v2
+      - name: Compile native WinUI 3 provider
+        run: msbuild oodialog-fluent/windows/OodFluentWindows.vcxproj -restore -p:Configuration=Release -p:Platform=x64 -m
