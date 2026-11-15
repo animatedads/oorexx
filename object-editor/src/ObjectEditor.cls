@@ -149,7 +149,7 @@
       if g~owner~caselessEquals(cls) then at = i
     end
   end
-  if at = 0 then raise syntax 93.900 array("No class" cls "in this file")
+  if at = 0 then raise syntax 93.900 array(oxT("ox.err.noClassHere", cls))
   segments~insert(seg, at)
   return seg
 
@@ -215,7 +215,7 @@
   pkg = .nil
   lastError = ""
   caseMap = .directory~new
-  if \self~load then raise syntax 93.900 array("The file does not compile:" lastError)
+  if \self~load then raise syntax 93.900 array(oxT("ox.err.compile", lastError))
 
 -- a starting data object: two attributes and an init
 ::method template class
@@ -279,7 +279,7 @@ loadFailed:
   err = self~lastError
   source = .OxSource~new(before)
   self~load
-  raise syntax 93.900 array("Not done, it does not compile:" err)
+  raise syntax 93.900 array(oxT("ox.err.notDone", err))
 editRefused:
   source = .OxSource~new(before)
   self~load
@@ -304,8 +304,8 @@ editRefused:
   name = name~strip("L", ".")
   c = pkg~findClass(name)
   if c == .nil then c = .environment~at(name~upper)
-  if c == .nil then raise syntax 93.900 array("No class" name "is known here")
-  if \c~isA(.Class) then raise syntax 93.900 array(name "is not a class")
+  if c == .nil then raise syntax 93.900 array(oxT("ox.err.unknownClass", name))
+  if \c~isA(.Class) then raise syntax 93.900 array(oxT("ox.err.notClass", name))
   return c
 
 -- name, super, mixins, ismixin, public, abstract, package (tab separated)
@@ -582,11 +582,11 @@ editRefused:
 
 ::method checkSymbol
   use strict arg name, what
-  if name == "" then raise syntax 93.900 array("A" what "name is needed")
+  if name == "" then raise syntax 93.900 array(oxT("ox.err.name.needed", what))
   if name~left(1)~verify("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_!?") > 0 then
-    raise syntax 93.900 array("A" what "name starts with a letter:" name)
+    raise syntax 93.900 array(oxT("ox.err.name.start", what, name))
   if name~verify("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_!?0123456789.") > 0 then
-    raise syntax 93.900 array("Not a" what "name:" name)
+    raise syntax 93.900 array(oxT("ox.err.name.chars", what, name))
   return name
 
 -- the directive words for a member's options
@@ -595,10 +595,10 @@ editRefused:
   w = ""
   if scope~upper == "CLASS" then w = w "class"
   vis = vis~lower
-  if wordpos(vis, "public private package") = 0 then raise syntax 93.900 array("visibility is public, private or package")
+  if wordpos(vis, "public private package") = 0 then raise syntax 93.900 array(oxT("ox.err.visibility"))
   if vis \== "public" then w = w vis
   guard = guard~lower
-  if wordpos(guard, "guarded unguarded") = 0 then raise syntax 93.900 array("guard is guarded or unguarded")
+  if wordpos(guard, "guarded unguarded") = 0 then raise syntax 93.900 array(oxT("ox.err.guard"))
   if guard == "unguarded" then w = w "unguarded"
   if abstract == 1 then w = w "abstract"
   return w
@@ -608,7 +608,7 @@ editRefused:
   self~checkSymbol(name, "class")
   if self~classNames~caselessPos(name) > 0 then do
     do n over self~classNames~makeArray(" ")
-      if n~caselessEquals(name) then raise syntax 93.900 array("There is already a class" name)
+      if n~caselessEquals(name) then raise syntax 93.900 array(oxT("ox.err.classExists", name))
     end
   end
   return self~structural("doAddClass", .array~of(name, super, mixins, isPublic, isMixin))
@@ -643,7 +643,7 @@ editRefused:
   expose source
   use strict arg name, super, mixins, isPublic, isMixin
   g = source~find("CLASS", "", name)
-  if g == .nil then raise syntax 93.900 array("No class" name "in this file")
+  if g == .nil then raise syntax 93.900 array(oxT("ox.err.noClassHere2", name))
   g~header = self~classHeader(g~name, super, mixins, isPublic, isMixin)
   return 0
 
@@ -675,7 +675,7 @@ editRefused:
 ::method refuseTaken
   expose source
   use strict arg cls, name, scope
-  if source~findMember(cls, name, scope) \== .nil then raise syntax 93.900 array(cls "already has" name)
+  if source~findMember(cls, name, scope) \== .nil then raise syntax 93.900 array(oxT("ox.err.memberExists", cls, name))
   return 0
 
 ::method doAddMember
@@ -700,8 +700,8 @@ editRefused:
   expose source
   use strict arg cls, name, scope, newScope, vis, guard, abstract
   g = source~findMember(cls, name, scope)
-  if g == .nil then raise syntax 93.900 array(cls "has no own" name "on the" scope~lower "side")
-  if g~kind == "CONSTANT" then raise syntax 93.900 array("A constant has no options to change")
+  if g == .nil then raise syntax 93.900 array(oxT("ox.err.noOwnSide", cls, name, scope~lower))
+  if g~kind == "CONSTANT" then raise syntax 93.900 array(oxT("ox.err.constant"))
   parse value g~header with dir nm rest
   keep = ""
   do w over rest~makeArray(" ")
@@ -723,7 +723,7 @@ editRefused:
   expose source
   use strict arg cls, name, scope
   g = source~findMember(cls, name, scope)
-  if g == .nil then raise syntax 93.900 array(cls "has no own" name)
+  if g == .nil then raise syntax 93.900 array(oxT("ox.err.noOwn", cls, name))
   source~remove(g)
   return 0
 
@@ -743,7 +743,7 @@ editRefused:
   expose source
   use strict arg cls, name, scope
   g = source~findMember(cls, name, scope)
-  if g == .nil then raise syntax 93.900 array(cls "has no own" name)
+  if g == .nil then raise syntax 93.900 array(oxT("ox.err.noOwn", cls, name))
   body = .array~new
   do l over g~body
     body~append(l)
@@ -760,12 +760,12 @@ editRefused:
   expose source
   use strict arg cls, name, scope, code
   g = source~findMember(cls, name, scope)
-  if g == .nil then raise syntax 93.900 array(cls "has no own" name)
-  if g~kind \== "METHOD" then raise syntax 93.900 array(name "is not a method")
+  if g == .nil then raise syntax 93.900 array(oxT("ox.err.noOwn", cls, name))
+  if g~kind \== "METHOD" then raise syntax 93.900 array(oxT("ox.err.notMethod", name))
   lines = code~changeStr("0d0a"x, "0a"x)~makeArray("0a"x)
   body = .array~new
   do l over lines
-    if l~strip~left(2) == "::" then raise syntax 93.900 array("A line of a method cannot start with ::")
+    if l~strip~left(2) == "::" then raise syntax 93.900 array(oxT("ox.err.directive"))
     body~append(l~strip("T"))
   end
   do while body~items > 0
@@ -781,10 +781,10 @@ editRefused:
 ::method addRequires
   use strict arg file
   file = file~strip~strip("B", '"')~strip("B", "'")
-  if file == "" then raise syntax 93.900 array("Which file?")
+  if file == "" then raise syntax 93.900 array(oxT("ox.err.whichFile"))
   do g over self~source~segments
     if g~kind == "REQUIRES" then do
-      if g~name~caselessEquals(file) then raise syntax 93.900 array("It already requires" file)
+      if g~name~caselessEquals(file) then raise syntax 93.900 array(oxT("ox.err.requiresAlready", file))
     end
   end
   return self~structural("doAddRequires", .array~of(file))
@@ -801,7 +801,7 @@ editRefused:
   expose source
   use strict arg file
   g = source~find("REQUIRES", "", file)
-  if g == .nil then raise syntax 93.900 array("It does not require" file)
+  if g == .nil then raise syntax 93.900 array(oxT("ox.err.requiresNot", file))
   source~remove(g)
   return 0
 
@@ -1060,3 +1060,5 @@ editRefused:
     i = i - 1
   end
   return t~substr(i + 1)
+
+::requires "OxUi.cls"   -- the editor's texts (and OodNls)

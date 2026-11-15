@@ -47,6 +47,7 @@ call write "site/rexx-parser/manifest.txt", manifest~makeString("L", "0a"x) || "
 -- and the library providers, with the Alchemy index
 call copy objEd"/src/ObjectEditor.cls", "site/ObjectEditor.cls"
 call copy objEd"/src/LibraryProviders.cls", "site/LibraryProviders.cls"
+call copy objEd"/src/OxUi.cls", "site/OxUi.cls"
 call copy objEd"/site/libraries.js", "site/libraries.js"
 call copy objEd"/site/libraries.css", "site/libraries.css"
 call SysMkDir "site/catalogue"

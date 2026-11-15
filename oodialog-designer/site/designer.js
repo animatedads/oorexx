@@ -26,53 +26,20 @@
   };
   window.oodDesigner = st;                      // for tests
 
-  /* ---- the designer's own texts: ::RESOURCE strings.<language> of OodUi.cls,
-     loaded by OodNls (the same code the programs it writes use).  The page
-     asks the session once for the table in the chosen language; T(key, ...)
-     reads it.  %n: one pass, as OodNls~nls (this is its port to the page,
-     where a text must be had at once, not after a round trip). */
-  const ui = { table: {}, lang: '' };
-  function T(key, ...args) {
-    const text = ui.table[String(key).toUpperCase()];
-    if (text === undefined) return '<' + key + '>';
-    if (!args.length) return text;
-    let out = '', i = 0;
-    for (;;) {
-      const p = text.indexOf('%', i); if (p < 0) break;
-      const m = /^[0-9]*/.exec(text.slice(p + 1))[0], k = Number(m);
-      if (m && k > 0 && k <= args.length) { out += text.slice(i, p) + String(args[k - 1]); i = p + 1 + m.length; }
-      else { out += text.slice(i, p + 1); i = p + 1; }
-    }
-    return out + text.slice(i);
-  }
-  window.OodT = T;
-  // a text with `code` in it, as code elements (no markup from the table)
-  function setRich(el, text) {
-    el.textContent = '';
-    text.split('`').forEach((part, i) => el.append(i % 2 ? Object.assign(D.createElement('code'), { textContent: part }) : part));
-  }
-  function applyStatic() {
-    D.querySelectorAll('[data-nls]').forEach((e) => { e.textContent = T(e.dataset.nls); });
-    D.querySelectorAll('[data-nls-title]').forEach((e) => { e.title = T(e.dataset.nlsTitle); });
-    D.querySelectorAll('[data-nls-placeholder]').forEach((e) => { e.placeholder = T(e.dataset.nlsPlaceholder); });
-    D.querySelectorAll('[data-nls-aria]').forEach((e) => { e.setAttribute('aria-label', T(e.dataset.nlsAria)); });
-    D.querySelectorAll('[data-nls-rich]').forEach((e) => setRich(e, T(e.dataset.nlsRich)));
-    D.documentElement.lang = ui.lang;
-    D.title = T('ui.name');
-  }
+  /* ---- the designer's own texts: ::RESOURCE strings.<language> of OodUi.cls
+     (and OxUi.cls, the Libraries panel's), loaded by OodNls, the same code the
+     programs it writes use; oodnls.js gives the page T(key, ...). */
+  const T = window.OodT, NLS = window.OodNlsPage;
+  const ui = { get lang() { return NLS.lang; } };
   // the designer's language: the one chosen before, else the browser's
   async function loadUi(lang) {
-    ui.lang = String(await st.sess.eval('use arg l; return .OodUi~use(l)', lang));
-    ui.table = {};
-    for (const line of String(await st.sess.eval('return .OodUi~tableLines')).split('\n')) {
-      const t = line.indexOf('\t'); if (t > 0) ui.table[line.slice(0, t)] = line.slice(t + 1);
-    }
+    await NLS.load(st.sess, ['OodUi', 'OxUi'], lang);
     const sel = $('uiLang'); sel.textContent = '';
-    for (const l of String(await st.sess.eval('return .OodUi~languages')).split(' ').filter(Boolean))
-      sel.appendChild(Object.assign(D.createElement('option'), { value: l, textContent: l }));
-    sel.value = ui.lang;
-    applyStatic();
+    for (const l of NLS.languages) sel.appendChild(Object.assign(D.createElement('option'), { value: l, textContent: l }));
+    sel.value = NLS.lang;
+    NLS.apply(); D.title = T('ui.name');
   }
+
 
   /* ---- status ------------------------------------------------------------ */
   function status(text, isErr) {
@@ -146,7 +113,7 @@
       measure();
       st.rexx = await ooRexx.load();
       const files = {};
-      for (const f of ['OodNls.cls', 'OodUi.cls', 'OodDesigner.cls', 'OodGraph.cls', 'ObjectEditor.cls', 'LibraryProviders.cls']) files['/home/rexx/' + f] = await (await fetch(f)).text();
+      for (const f of ['OodNls.cls', 'OodUi.cls', 'OxUi.cls', 'OodDesigner.cls', 'OodGraph.cls', 'ObjectEditor.cls', 'LibraryProviders.cls']) files['/home/rexx/' + f] = await (await fetch(f)).text();
       // Josep Maria Blasco's Rexx Parser, which OodGraph.cls parses event code with
       for (const rel of (await (await fetch('rexx-parser/manifest.txt')).text()).split('\n').map((l) => l.trim()).filter(Boolean))
         files['/home/rexx/rexx-parser/' + rel] = await (await fetch('rexx-parser/' + rel)).text();
@@ -160,7 +127,7 @@
       await loadCatalog();
       await newDesign();
       status(T('st.ready')); st.ready = true;             // (tests wait for st.ready)
-    } catch (e) { status((ui.table['ST.NOSTART'] ? T('st.noStart') : 'Could not start:') + ' ' + errText(e), true); console.error(e); }
+    } catch (e) { status((NLS.has('st.noStart') ? T('st.noStart') : 'Could not start:') + ' ' + errText(e), true); console.error(e); }
   }
   async function loadCatalog() {
     const text = await st.sess.eval('return .OodCatalog~catalogText');
@@ -179,7 +146,7 @@
       box.appendChild(div);
     }
   }
-  const kindLabel = (t) => ui.table['KIND.' + t] || st.kinds[t].label;
+  const kindLabel = (t) => NLS.has('kind.' + t) ? T('kind.' + t) : st.kinds[t].label;
   async function newDesign(design) {
     st.d = design || await rx(() => st.sess.eval('return .OodDesign~new("MyDialog")'));
     st.sel = 'form'; st.cur = null;
@@ -484,7 +451,7 @@
     const id = D.createElement('div'); id.className = 'ro hint'; id.textContent = 'id ' + c.id + (c.role ? ' → ID' + c.role : ''); box.appendChild(id);
   }
   // a property's label: prop.<name> in the table, else the name itself
-  const propLabel = (key) => ui.table['PROP.' + key.toUpperCase()] || key;
+  const propLabel = (key) => NLS.has('prop.' + key) ? T('prop.' + key) : key;
   function propInput(name, key, value) {
     const l = D.createElement('label'); l.append(propLabel(key));
     const i = D.createElement('input'); i.type = 'text'; i.value = value == null ? '' : value; i.dataset.prop = key;
@@ -730,7 +697,7 @@
     for (const line of text.split('\n').filter(Boolean)) {
       const [label, code] = line.split('\t');
       const it = D.createElement('div'); it.dataset.action = label;
-      it.append(ui.table['ACTION.' + label.toUpperCase()] || label, Object.assign(D.createElement('small'), { textContent: code }));
+      it.append(NLS.has('action.' + label) ? T('action.' + label) : label, Object.assign(D.createElement('small'), { textContent: code }));
       it.addEventListener('click', () => { menu.hidden = true; then(code); });
       menu.appendChild(it);
     }

@@ -22,7 +22,7 @@ def expect_in(what, part, whole):
 def settle(pg, ms=500): time.sleep(ms / 1000)
 def ready(pg):
     pg.goto(f'http://localhost:{PORT}/objed.html')
-    pg.wait_for_function("document.getElementById('status').textContent.startsWith('Opened')", timeout=60000); settle(pg)
+    pg.wait_for_function("window.oxEditor && window.oxEditor.ready === true", timeout=60000); settle(pg)   # in any language
 def status(pg): return pg.inner_text('#status')
 def pick_class(pg, n): pg.click(f'#classes [data-cls="{n}"]'); settle(pg, 700)
 def member_rows(pg): return [r.get_attribute('data-member') for r in pg.query_selector_all('#members tbody tr')]
@@ -141,7 +141,24 @@ def sc_libraries(pg):
     pg.keyboard.press('Enter'); pg.keyboard.type('~new("person")\n  say log~serv')
     expect('log~ after log = .LogService~new knows serviceId', popup(pg), ['serviceId'])
 
-SCENARIOS = {'reflect': sc_reflect, 'edit': sc_edit, 'requires': sc_requires, 'complete': sc_complete, 'oodialog': sc_oodialog, 'libraries': sc_libraries}
+def sc_ui_de(pg):
+    """The editor in German (OxUi.cls ::RESOURCE strings.de): bar, panes, a
+    refusal from ObjectEditor.cls, the Libraries panel; then English again."""
+    ready(pg)
+    pg.select_option('#uiLang', 'de'); settle(pg, 900)
+    expect_in('it says so', 'Der Editor spricht jetzt de', status(pg))
+    expect('the bar', [pg.inner_text('#btnOpen'), pg.inner_text('#btnSource')], ['Öffnen…', 'Quelltext'])
+    expect('a column', pg.inner_text('#members th >> nth=2'), 'Sichtbarkeit')
+    pg.fill('#newClassName', '1x'); pg.click('#btnAddClass'); settle(pg, 900)
+    expect('a refusal from ObjectEditor.cls, in German', status(pg), 'Ein Name für class beginnt mit einem Buchstaben: 1x')
+    pg.click('#btnLibraries'); pg.wait_for_selector('#libPanel:not([hidden])'); settle(pg, 900)
+    expect('the Libraries panel', [pg.inner_text('#libPanel .lp-head strong'), pg.inner_text('#lpConnect')], ['Bibliotheken', 'GitHub-Repository verbinden'])
+    pg.screenshot(path=str(SHOTS / 'ui_de.png'))
+    pg.click('#lpClose')
+    pg.select_option('#uiLang', 'en'); settle(pg, 900)
+    expect('English again', pg.inner_text('#btnOpen'), 'Open…')
+
+SCENARIOS = {'reflect': sc_reflect, 'edit': sc_edit, 'requires': sc_requires, 'complete': sc_complete, 'oodialog': sc_oodialog, 'libraries': sc_libraries, 'ui_de': sc_ui_de}
 def main():
     names = sys.argv[1:] or list(SCENARIOS)
     SHOTS.mkdir(exist_ok=True)

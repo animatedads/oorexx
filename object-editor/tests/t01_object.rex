@@ -155,7 +155,13 @@ refuses: procedure expose fails checks w
   fails = fails + 1
   return
 rfRefused:
-  say "  ok   refuses" rfLabel "--" condition("O")~at("MESSAGE")~left(110)
+  -- the editor's own refusal: Error 93.900 with its message, not any error
+  if condition("O")~at("CODE") \== "93.900" | condition("O")~at("ADDITIONAL")~isA(.Array) = .false then do
+    say "  FAIL refused, but not by the editor:" rfLabel "--" condition("O")~at("MESSAGE")
+    fails = fails + 1
+    return
+  end
+  say "  ok   refuses" rfLabel "--" condition("O")~at("ADDITIONAL")[1]~left(110)
   return
 
 ::requires "ObjectEditor.cls"

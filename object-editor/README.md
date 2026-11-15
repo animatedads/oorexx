@@ -91,6 +91,17 @@ the ooDialog Designer:
   `rexx tools/libindex.rex ~/alchemy packages/ alchemy catalogue/alchemy.idx`.
   The one here lists 242 libraries from alchemy at 183da160.
 
+## The editor's language
+
+Every text of the editor and of the Libraries panel is in `src/OxUi.cls`,
+`::RESOURCE strings.en` and `strings.de`, read by `OodNls` (`OodNls.cls`,
+from the ooDialog Designer, which is also what the designer's generated
+programs use). The editor's and the providers' refusals go through
+`oxT(key, ...)`. The page reads the table once through `oodnls.js` (shared
+with the designer); the 🌐 chooser picks the language, kept with the
+designer's choice, and the browser's language is the default. The German is
+Claude's (Opus 5.5) and wants a German speaker's reading.
+
 ## Files
 
 | File | Role |
@@ -105,6 +116,7 @@ the ooDialog Designer:
 | `site/libraries.js`, `.css` | the Libraries panel, shared with the designer |
 | `catalogue/alchemy.idx`, `tools/libindex.rex` | the Alchemy index and the tool that writes it |
 | `tests/t02_libraries.rex` | providers, install, goodies and use, without a browser (fetches from raw.githubusercontent.com) |
+| `src/OxUi.cls` | the editor's and the Libraries panel's texts, English and German |
 
     rexx tools/build.rex RUNTIME_DIR OODIALOG_WASM_DIST DESIGNER_EXAMPLES_DIR
     node site/serve.mjs site --port 8080
@@ -116,13 +128,13 @@ Then open `http://localhost:8080/objed.html`.
     cd ..
     python3 tools/oxtest.py
 
-## State (2026-11-14)
+## State (2026-11-15)
 
 - `t01_object.rex`: 53 of 53 checks pass under ooRexx/WASM in Node. They
   cover the reflection results, lookup order, both sides, the edits and
   their reloads, the refusals, completion in every context above, and the
   prolog not being run.
-- `oxtest.py`: 6 of 6 scenarios pass in headless Chromium:
+- `oxtest.py`: 7 of 7 scenarios pass in headless Chromium:
   1. **reflect:** classes, hierarchy with mixin, own and inherited members,
      the class side.
   2. **edit:** add an attribute, make a method private, a refused class, a
@@ -143,7 +155,13 @@ Then open `http://localhost:8080/objed.html`.
 - `oxtest.py` scenario 6, **libraries:** Alchemy is connected and
   `oorexx_logging` found, installed and examined, then used. The
   `::requires` lands in the file, and `.LogSer` and `log~serv` complete.
-- Pitfall lint (Boston Crab `rexx_pitfalls.rex`): clean.
+- `oxtest.py` scenario 7, **ui_de:** the editor in German: the bar, a
+  column, a refusal from `ObjectEditor.cls` in German, the Libraries panel;
+  then English again.
+- The refusal checks of t01 and t02 demand Error 93.900 with the editor's
+  message (before, any error passed).
+- Pitfall lint (Boston Crab `rexx_pitfalls.rex`): clean on the code; in
+  `OxUi.cls` it reads words of the `::RESOURCE` text as names.
 
 ## Relation to `oorexx_source_editor` (estate, ChatGPT's lane)
 

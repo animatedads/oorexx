@@ -7,54 +7,55 @@
 </head>
 <body>
 <header id="bar">
-  <strong>ooRexx Object Editor</strong>
-  <select id="example" title="Open an example">
-    <option value="">New data object</option>
-    <option value="examples/Person.cls" selected>Person.cls (data objects)</option>
-    <option value="examples/Calculator.rex">Calculator.rex (an ooDialog program)</option>
+  <strong data-nls="ox.name">ooRexx Object Editor</strong>
+  <select id="example" title="Open an example" data-nls-title="ox.ex.tip">
+    <option value="" data-nls="ox.ex.new">New data object</option>
+    <option value="examples/Person.cls" selected data-nls="ox.ex.person">Person.cls (data objects)</option>
+    <option value="examples/Calculator.rex" data-nls="ox.ex.calculator">Calculator.rex (an ooDialog program)</option>
   </select>
-  <button id="btnOpen" title="Open a .cls or .rex">Open…</button>
-  <button id="btnSave" title="Download the file">Save</button>
-  <button id="btnSource" title="Show the whole file">Source</button>
-  <button id="btnLibraries" title="Connect to a source of ooRexx libraries and use one">Libraries…</button>
+  <button id="btnOpen" title="Open a .cls or .rex" data-nls="ox.open" data-nls-title="ox.open.tip">Open…</button>
+  <button id="btnSave" title="Download the file" data-nls="ox.save" data-nls-title="ox.save.tip">Save</button>
+  <button id="btnSource" title="Show the whole file" data-nls="ox.source" data-nls-title="ox.source.tip">Source</button>
+  <button id="btnLibraries" title="Connect to a source of ooRexx libraries and use one" data-nls="ox.libraries" data-nls-title="ox.libraries.tip">Libraries…</button>
+  <label id="uiLangBox" title="The editor's own language" data-nls-title="ox.lang.tip"><span aria-hidden="true">🌐</span> <select id="uiLang"></select></label>
   <span id="status" role="status">Loading ooRexx…</span>
   <input id="file" type="file" accept=".cls,.rex,.txt" hidden>
 </header>
 <main id="work">
   <aside id="left">
-    <h2>Classes <span class="hint" id="fileName"></span></h2>
+    <h2><span data-nls="ox.classes">Classes</span> <span class="hint" id="fileName"></span></h2>
     <div id="classes"></div>
-    <div class="add"><input id="newClassName" placeholder="new class"><input id="newClassSuper" placeholder="subclass of" list="knownList"><button id="btnAddClass">+</button></div>
-    <h2>Hierarchy</h2>
+    <div class="add"><input id="newClassName" placeholder="new class" data-nls-placeholder="ox.newClass"><input id="newClassSuper" placeholder="subclass of" list="knownList" data-nls-placeholder="ox.subclassOf"><button id="btnAddClass">+</button></div>
+    <h2 data-nls="ox.hierarchy">Hierarchy</h2>
     <div id="hierarchy"></div>
-    <h2>::requires <span class="hint">(their public classes complete too)</span></h2>
+    <h2>::requires <span class="hint" data-nls="ox.requires.hint">(their public classes complete too)</span></h2>
     <div id="requires"></div>
     <div class="add"><input id="newRequires" placeholder="file.cls"><button id="btnAddRequires">+</button></div>
   </aside>
   <section id="centre">
     <div id="classCard"></div>
-    <div id="sideTabs"><button data-side="INSTANCE" class="cur">Instance side</button><button data-side="CLASS">Class side</button>
-      <label><input type="checkbox" id="showInherited"> show inherited</label></div>
-    <table id="members"><thead><tr><th>name</th><th>kind</th><th>visibility</th><th>guard</th><th>abstract</th><th>defined in</th><th></th></tr></thead><tbody></tbody></table>
-    <div class="add" id="addMember"><input id="newMemberName" placeholder="new member name">
+    <div id="sideTabs"><button data-side="INSTANCE" class="cur" data-nls="ox.side.instance">Instance side</button><button data-side="CLASS" data-nls="ox.side.class">Class side</button>
+      <label><input type="checkbox" id="showInherited"> <span data-nls="ox.showInherited">show inherited</span></label></div>
+    <table id="members"><thead><tr><th data-nls="ox.col.name">name</th><th data-nls="ox.col.kind">kind</th><th data-nls="ox.col.visibility">visibility</th><th data-nls="ox.col.guard">guard</th><th data-nls="ox.col.abstract">abstract</th><th data-nls="ox.col.definedIn">defined in</th><th></th></tr></thead><tbody></tbody></table>
+    <div class="add" id="addMember"><input id="newMemberName" placeholder="new member name" data-nls-placeholder="ox.newMember">
       <select id="newMemberKind"><option value="METHOD">method</option><option value="ATTRIBUTE">attribute</option><option value="CONSTANT">constant</option></select>
-      <input id="newConstValue" placeholder="value" hidden>
+      <input id="newConstValue" placeholder="value" hidden data-nls-placeholder="ox.value">
       <select id="newMemberVis"><option>public</option><option>private</option><option>package</option></select>
       <select id="newMemberGuard"><option>guarded</option><option>unguarded</option></select>
-      <button id="btnAddMember">Add</button></div>
+      <button id="btnAddMember" data-nls="ox.add">Add</button></div>
   </section>
 </main>
 <section id="editor">
-  <div id="edHead"><span id="edTitle">Pick a method</span><span id="edState"></span></div>
-  <textarea id="code" spellcheck="false" disabled placeholder="The method's body.  ~ after self, .Name, a variable or a string lists what it answers; . lists the classes; Ctrl+Space anywhere."></textarea>
+  <div id="edHead"><span id="edTitle" data-nls="ox.pickMethod">Pick a method</span><span id="edState"></span></div>
+  <textarea id="code" spellcheck="false" disabled data-nls-placeholder="ox.code.placeholder" placeholder="The method's body.  ~ after self, .Name, a variable or a string lists what it answers; . lists the classes; Ctrl+Space anywhere."></textarea>
 </section>
 <div id="pop" hidden></div>
 <datalist id="knownList"></datalist>
 <div id="sourceView" hidden><div class="panel"><div class="panelHead"><strong id="sourceName"></strong>
-  <button id="btnCopy">Copy</button><button id="btnSourceClose">Close</button></div><pre id="sourceText"></pre></div></div>
-<footer>Architecture: Tom Dyer.  Code: Claude (Opus 5.5).  ooRexx/WASM runtime: Josep Maria Blasco.
-Everything shown is found by examining the loaded classes (ooRexx reflection), not by reading the text.</footer>
+  <button id="btnCopy" data-nls="ox.copy">Copy</button><button id="btnSourceClose" data-nls="ox.close">Close</button></div><pre id="sourceText"></pre></div></div>
+<footer data-nls="ox.footer">Architecture: Tom Dyer.  Code: Claude (Opus 5.5).  ooRexx/WASM runtime: Josep Maria Blasco.  Everything shown is found by examining the loaded classes (ooRexx reflection), not by reading the text.</footer>
 <script src="ooRexx.js"></script>
+<script src="oodnls.js"></script>
 <script src="libraries.js"></script>
 <script src="objed.js"></script>
 </body></html>

@@ -162,7 +162,7 @@ one `kind` line; a new code-insertion action is one `action` line.
   still needs no file but its own. Inherited, `.resources` would be
   `OodNls.cls`'s own, so the designer passes `OodUi`'s tables; in a program
   the copy's default, `.resources`, is the program's. The page reads the
-  table in the chosen language once (`.OodUi~tableLines`); its `T(key, ...)`
+  table in the chosen language once (`.OodUi~tableLines`, and `.OxUi`'s for the Libraries panel, through `site/oodnls.js`, shared with the Object Editor); its `T(key, ...)`
   is `nls`'s one-pass `%n`, ported to JavaScript because a page text is needed
   at once, not after a round trip. The language: the one chosen before (kept
   in the browser), else the browser's (`de-DE` → `de`), else English. A
@@ -311,8 +311,7 @@ Alchemy Autobuild runs them; `vendor/` holds the Rexx Parser in the
   hidden; the tab strip is a strip, with its controls placed beside it, not
   over it (Windows draws controls over a tab control in z-order).
 - Undo, copy and paste, and alignment tools.
-- The designer's language: the Libraries panel (`libraries.js`, shared with
-  the Object Editor) and the Object Editor are still English only; a new
+- The designer's language: a new
   dialog's title and a new control's text ("My Dialog", "Button") are
   English.
 - Languages: tree nodes and list-view rows are data and are not translated;

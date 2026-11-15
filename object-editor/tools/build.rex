@@ -23,6 +23,11 @@ end
 call copy "src/ObjectEditor.cls", "site/ObjectEditor.cls"
 call copy "src/LibraryProviders.cls", "site/LibraryProviders.cls"
 call copy designerExamples"/../../src/OodDesigner.cls", "site/OodDesigner.cls"
+call copy "src/OxUi.cls", "site/OxUi.cls"
+-- from the ooDialog Designer: its texts and the language support, shared
+call copy designerExamples"/../../src/OodNls.cls", "site/OodNls.cls"
+call copy designerExamples"/../../src/OodUi.cls", "site/OodUi.cls"
+call copy designerExamples"/../oodnls.js", "site/oodnls.js"
 call SysMkDir "site/catalogue"
 call copy "catalogue/alchemy.idx", "site/catalogue/alchemy.idx"
 call SysMkDir "site/examples"

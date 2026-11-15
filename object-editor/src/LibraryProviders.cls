@@ -98,11 +98,11 @@ noReadme:
   if where~left(5)~caselessEquals("http:") | where~left(6)~caselessEquals("https:") then do
     address fetch "TIMEOUT 30"
     address fetch "GET" where "INTO body"
-    if rc \= 0 then raise syntax 93.900 array("HTTP" rc "for" where)
+    if rc \= 0 then raise syntax 93.900 array(oxT("ox.err.http", rc, where))
     return body
   end
   s = .stream~new(where)
-  if s~query("exists") == "" then raise syntax 93.900 array("No file" where)
+  if s~query("exists") == "" then raise syntax 93.900 array(oxT("ox.err.noFile", where))
   s~open("read")
   t = s~charIn(1, s~chars)
   s~close
@@ -214,7 +214,7 @@ apiRefused:
   address fetch "TIMEOUT 30"
   address fetch "HEADER Accept application/vnd.github+json"
   address fetch "GET https://api.github.com/repos/"owner"/"repo"/git/trees/"branch"?recursive=1 INTO body"
-  if rc \= 0 then raise syntax 93.900 array("GitHub API answered" rc "for" owner"/"repo)
+  if rc \= 0 then raise syntax 93.900 array(oxT("ox.err.github", rc, owner"/"repo))
   address fetch "JSON tree INTO tree"
   paths = .array~new
   do e over tree
@@ -278,7 +278,7 @@ apiRefused:
   expose root
   use strict arg relPath, text
   relPath = relPath~changeStr("\", "/")~strip("L", "/")
-  if relPath~pos("..") > 0 then raise syntax 93.900 array("Not a path inside the folder:" relPath)
+  if relPath~pos("..") > 0 then raise syntax 93.900 array(oxT("ox.err.path", relPath))
   full = root"/"relPath
   call oxMakeDirs full~left(full~lastPos("/") - 1)
   call oxWriteFile full, text
@@ -303,7 +303,7 @@ apiRefused:
   expose providers
   use strict arg p
   do q over providers
-    if q~id~caselessEquals(p~id) then raise syntax 93.900 array("A provider" p~id "is already registered")
+    if q~id~caselessEquals(p~id) then raise syntax 93.900 array(oxT("ox.err.providerExists", p~id))
   end
   providers~append(p)
   return p~id
@@ -313,7 +313,7 @@ apiRefused:
   do q over providers
     if q~id~caselessEquals(id) then return q
   end
-  raise syntax 93.900 array("No provider" id)
+  raise syntax 93.900 array(oxT("ox.err.noProvider", id))
 -- "id<tab>kind<tab>title" lines
 ::method providerLines
   expose providers
@@ -343,7 +343,7 @@ apiRefused:
   do lib over self~provider(pid)~catalogue
     if lib~name~caselessEquals(name) then return lib
   end
-  raise syntax 93.900 array("No library" libId)
+  raise syntax 93.900 array(oxT("ox.err.noLibrary", libId))
 
 -- name, version, dir, description (read now if needed), main, then the files
 ::method details
@@ -375,7 +375,7 @@ apiRefused:
   lib = self~library(libId)
   p = self~provider(lib~provider)
   if file == "" then file = lib~main
-  if lib~files~index(file) == .nil then raise syntax 93.900 array(file "is not a file of" libId)
+  if lib~files~index(file) == .nil then raise syntax 93.900 array(oxT("ox.err.notLibFile", file, libId))
   dir = self~installDir(p~id)
   call oxMakeDirs dir
   notes = .array~new
@@ -443,7 +443,7 @@ apiRefused:
 ::method goodies
   use strict arg path
   s = .stream~new(path)
-  if s~query("exists") == "" then raise syntax 93.900 array("Not installed:" path)
+  if s~query("exists") == "" then raise syntax 93.900 array(oxT("ox.err.notInstalled", path))
   s~open("read")
   text = s~charIn(1, s~chars)
   s~close
@@ -591,3 +591,4 @@ apiRefused:
 ::requires "fetch.cls"
 ::requires "ObjectEditor.cls"
 ::requires "OodDesigner.cls"
+::requires "OxUi.cls"

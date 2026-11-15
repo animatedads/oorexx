@@ -414,6 +414,9 @@ def sc_ui_de(pg):
     pg.click('#btnStrings'); pg.wait_for_selector('#stringsView:not([hidden])')
     expect('the Strings panel', pg.inner_text('#sOn'), 'Übersetzbar machen')
     pg.click('#sClose')
+    pg.click('#btnLibraries'); pg.wait_for_selector('#libPanel:not([hidden])'); settle(pg, 900)
+    expect('the Libraries panel (OxUi.cls), in German', pg.inner_text('#libPanel .lp-head strong'), 'Bibliotheken')
+    pg.click('#lpClose')
     pg.screenshot(path=str(SHOTS / 'ui_de.png'))
     # kept over a reload, then back
     ready(pg)
