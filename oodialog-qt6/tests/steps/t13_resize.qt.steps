@@ -1,0 +1,7 @@
+wait .ood-dlg textarea
+resize .ood-dlg => 500 300
+sleep 700
+expect size .ood-dlg textarea ==> 476 220
+drag .ood-dlg .ood-track => 30
+sleep 300
+click .ood-dlg >> text=Close
