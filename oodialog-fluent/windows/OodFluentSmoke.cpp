@@ -192,7 +192,10 @@ int wmain(int argc, wchar_t **argv) {
         result = E_UNEXPECTED;
         goto cleanup;
     }
-    if (wantCheck && FAILED(result = oodf_win_set(host, check, L"isChecked", L"null"))) goto cleanup;
+    if (wantCheck && oodf_win_set(host, check, L"isChecked", L"null") != E_NOTIMPL) {
+        result = E_UNEXPECTED;
+        goto cleanup;
+    }
     if (wantToggleButton && FAILED(result = oodf_win_set(host, toggleButton, L"isChecked", L"true"))) goto cleanup;
     if (wantSlider && FAILED(result = oodf_win_set(host, slider, L"value", L"42.5"))) goto cleanup;
     if (wantSlider && (oodf_win_set(host, slider, L"value", L"not-a-number") != E_INVALIDARG ||

@@ -411,8 +411,12 @@ HRESULT __stdcall oodf_win_set(OodfWinHost *host, uint64_t uid,
             auto check = control.as<controls::CheckBox>();
             if (name == "text") check.Content(winrt::box_value(winrt::hstring(value)));
             if (name == "isChecked") {
-                if (utf8 == "null") check.IsChecked(nullptr);
-                else check.IsChecked(winrt::box_value(parseBoolean(utf8)).as<winrt::Windows::Foundation::IReference<bool>>());
+                // Windows App SDK 2.6.5 HWND test rejects a programmatic
+                // nullptr IsChecked state with E_INVALIDARG, even when
+                // IsThreeState was just enabled (CI 43762114741). Keep
+                // ternary write unqualified until reproduced/resolved.
+                if (utf8 == "null") winrt::throw_hresult(E_NOTIMPL);
+                check.IsChecked(winrt::box_value(parseBoolean(utf8)).as<winrt::Windows::Foundation::IReference<bool>>());
             }
             if (name == "isThreeState") check.IsThreeState(parseBoolean(utf8));
         }

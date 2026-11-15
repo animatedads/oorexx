@@ -27,6 +27,8 @@ The extension is deliberately distinct from:
 
 `catalogue/controls.tsv` is a **target coverage catalogue, not an implementation claim**. Availability `stable` means Microsoft's API is available in the Windows App SDK stable channel, *not* that this project has implemented it. Experimental entries remain gated off by default. Existing Win32-compatible controls can retain their old ooDialog object behavior with a Fluent alternative selected explicitly.
 
+Native `CheckBox.isChecked` currently supports programmatic `true` and `false`; the proposed tri-state write `null` remains **unqualified** and returns `E_NOTIMPL`. `isThreeState=true` is available, but programmatic indeterminate-state assignment was rejected by the Windows App SDK 2.6.5 host probe ([run 43762114741](https://github.com/animatedads/oorexx/actions/runs/43762114741)). The Rexx `setChecked(.nil)` convenience method will therefore raise an explicit native error until resolved.
+
 ## API preview (limited `UserDialog` native runtime qualification)
 
 ```rexx
