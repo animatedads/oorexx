@@ -302,6 +302,11 @@
     if (target) commitGraphLink(target);
     else { clearGraphSource(); note(T('db.graphDropColumn'), true); }
   }
+  function cancelGraphPointer() {
+    state.graphPointer?.line?.remove();
+    state.graphPointer = null;
+    clearGraphSource();
+  }
   function graphColumnActivate(event) {
     const column = graphColumn(event.target);
     if (!column || state.graphSuppressClick) return;
@@ -519,8 +524,8 @@
     });
     window.addEventListener('pointermove', graphPointerMove);
     window.addEventListener('pointerup', graphPointerUp);
-    window.addEventListener('pointercancel', () => { state.graphPointer = null; clearGraphSource(); });
-    window.addEventListener('keydown', (e) => { if (e.key === 'Escape') { state.graphPointer = null; clearGraphSource(); } });
+    window.addEventListener('pointercancel', cancelGraphPointer);
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape') cancelGraphPointer(); });
     $('dbAddCol').addEventListener('click', () => makeColumn());
     $('dbNewTable').addEventListener('click', () => { $('dbTables').value = ''; $('dbTableName').value = ''; setExampleColumns(); });
     $('dbMakeTable').addEventListener('click', () => run(() => createTable(false)).catch(() => {}));
