@@ -70,6 +70,7 @@
     const box = D.getElementById('graph'); box.textContent = '';
     box.appendChild(renderSlot(0, 'body'));
     if (selected) mark(selected);
+    if (flagged.length) flagLines(flagged);
     box.dataset.ready = '1';
   }
   function renderSlot(parent, slot) {
@@ -196,5 +197,16 @@
   if (D.readyState !== 'loading') wire();
   // the designer's language changed: draw the blocks and tools again
   function relabel() { toolsFor(selected ? nodes[selected] : 0); if (lastCode !== null) show(lastCode); }
-  window.OxGraph = { attach, show, highlight, relabel, nodes: () => nodes };
+  // the blocks of lines a plugin found something on (the innermost block of each)
+  let flagged = [];
+  function flagLines(ls) {
+    flagged = ls;
+    D.querySelectorAll('#graph .gb.flag').forEach((x) => x.classList.remove('flag'));
+    for (const line of ls) {
+      let best = null;
+      for (const n of nodes) if (n && n.l1 <= line && line <= n.l2) best = n;      // later nodes are inner
+      if (best) { const b = D.querySelector('#graph .gb[data-id="' + best.id + '"]'); if (b) b.classList.add('flag'); }
+    }
+  }
+  window.OxGraph = { attach, show, highlight, relabel, flagLines, nodes: () => nodes };
 })();

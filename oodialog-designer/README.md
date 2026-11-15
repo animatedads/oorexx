@@ -171,6 +171,21 @@ one `kind` line; a new code-insertion action is one `action` line.
   added to `OodUi.cls`; `tests/t04_ui.rex` checks it has every key, with the
   same `%n`. The German is Claude's (Opus 5.5) and wants a German speaker's
   reading.
+- **Plugins… (optional extras):** `src/OodPlugins.cls` is the host; a
+  plugin is an ooRexx class (a subclass of `OodPlugin`) in its own files,
+  listed in `plugins/index.txt`, and none is loaded until it is switched on
+  (the choice is kept in the browser). A plugin says what it provides
+  (`diagnose`, `fix`, `assist`, `scm`), has its own texts (`::RESOURCE
+  strings.<language>`, in the designer's language) and its settings; a
+  setting of kind `secret` goes to the host's `OodSecrets` (this page's
+  memory only, never saved, never shown again) and the plugin asks for it by
+  name. Findings show under the code, with **Fix** where the plugin has
+  one, and the graph marks their blocks. The Object Editor has the same
+  panel and strip (`site/plugins.js`, shared).
+  First plugin, **Boston Crab** (`plugins/bostoncrab/`): Boston Crab's own
+  ooRexx pitfall checks, `RexxPitfallChecker` (oorexx_slam_bostoncrab v0.23,
+  `tests/PitfallChecker.cls`, copied into the site by the build, not into
+  this source), P1–P4, with the fix for P1 and P2.
 - **Program:** shows the ooRexx that will be written. **Save .rex**
   downloads it. **▶ Run** runs it with ooDialog/WASM in the same page.
 
@@ -183,7 +198,7 @@ Needs Node 22 and `npm i oorexxwasm`. The `oorexxwasm-web-0.2.4` release must
 be unpacked somewhere, and ooDialog/WASM's `dist/` must be available. The
 browser tests also need Python Playwright with Chromium.
 
-    rexx tools/build.rex RUNTIME_DIR OODIALOG_WASM_DIST OBJECT_EDITOR_DIR REXX_PARSER_DIR
+    rexx tools/build.rex RUNTIME_DIR OODIALOG_WASM_DIST OBJECT_EDITOR_DIR REXX_PARSER_DIR BOSTONCRAB_DIR
     node site/serve.mjs site --port 8080
 
 Then open `http://localhost:8080/designer.html`.
@@ -230,13 +245,18 @@ Alchemy Autobuild runs them; `vendor/` holds the Rexx Parser in the
   table (the files are read); every control kind and all 38 actions have
   their label; `de-DE` gives German, `fr` English; refusals from the model
   and from the graph come in the language chosen.
+- `tests/t06_plugins.rex`: 20 of 20 checks pass: the index, nothing loaded
+  until switched on, refusals, Boston Crab's findings in order with line,
+  rule and fix, the fixes, a fix that no longer applies, messages and the
+  catalogue in German, secrets held and only their names shown, switching
+  off. `REXX_PATH` needs Boston Crab's `tests/` for `PitfallChecker.cls`.
 - `tests/t05_fresh.rex`: the model used with nothing set up, as a program
   outside the page uses it: the first refusal comes in German under
   `LANG=de_DE.UTF-8`. (It found an `::attribute` never set answering its own
   name, not `.nil`. The refusal checks of t01–t03 now also demand Error
   93.900 with the designer's message; before, any error passed. With the
   bug put back they fail 19 times.)
-- `tools/dztest.py`: 12 of 12 scenarios pass in headless Chromium:
+- `tools/dztest.py`: 13 of 13 scenarios pass in headless Chromium:
   1. **hand:** a dialog built with the mouse (drop, rename, styles,
      variable, drag-an-action, move and resize), then run. The event code sees
      the variable and the field, and INIT's text survives `execute`.
@@ -277,6 +297,10 @@ Alchemy Autobuild runs them; `vendor/` holds the Rexx Parser in the
      `%1`, the properties, a refusal from `OodDesigner.cls` in German, the
      action menu, the graph's explanation and block kind, the Strings
      panel; still German after a reload; then English again.
+  13. **plugins:** Boston Crab switched on in the Plugins panel; a P1 trap
+     typed into an event is found, its graph block flagged, fixed with Fix
+     and saved; still on after a reload (a P2 found); the message in
+     German; switched off.
 - `tests/gen/Calculator.rex`, `Contacts.rex` and `Gadgets.rex` (generated)
   also pass the ooDialog/WASM harness, `oodtest.py`, with their `.steps`
   files.

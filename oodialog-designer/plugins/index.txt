@@ -1,0 +1,13 @@
+-- The plugins of the ooDialog Designer and the ooRexx Object Editor: optional
+-- extras, none loaded until it is switched on (OodPlugins.cls reads this).
+-- Architecture: Tom Dyer.  Code: Claude (Opus 5.5).
+
+plugin bostoncrab
+  class = BostonCrabPlugin
+  main = bostoncrab/BostonCrabPlugin.cls
+  files = bostoncrab/BostonCrabPlugin.cls bostoncrab/PitfallChecker.cls
+  provides = diagnose fix
+  title.en = Boston Crab: ooRexx pitfalls
+  title.de = Boston Crab: ooRexx-Fallen
+  summary.en = Boston Crab's checks for the ooRexx traps that have cost runs (P1-P4), on the code as it is written, with the fix where one is certain.
+  summary.de = Die Prüfungen von Boston Crab auf die ooRexx-Fallen, die schon Läufe gekostet haben (P1-P4), am Code beim Schreiben, mit der Abhilfe, wo eine sicher ist.

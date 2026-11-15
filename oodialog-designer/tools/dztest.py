@@ -3,7 +3,7 @@
 Architecture: Tom Dyer.  Code: Claude (Opus 5.5).
 
 usage: python3 tools/dztest.py [scenario ...]     (after rexx tools/build.rex)
-Scenarios: hand, calculator, threads, refuse, saveopen, views, gadgets, libraries, graph, trace, languages, ui_de (default: all).
+Scenarios: hand, calculator, threads, refuse, saveopen, views, gadgets, libraries, graph, trace, languages, ui_de, plugins (default: all).
 Python is used here only because this tool drives a browser (Playwright);
 the designer's model, generator and reader are ooRexx (src/OodDesigner.cls)
 and are tested without a browser by tests/t01_model.rex.  Progress is logged
@@ -425,7 +425,41 @@ def sc_ui_de(pg):
     expect('back in English', pg.inner_text('#btnOpen'), 'Open…')
     expect('the palette in English', pg.inner_text('#kinds div >> nth=0'), 'Push button')
 
-SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views, 'gadgets': sc_gadgets, 'libraries': sc_libraries, 'graph': sc_graph, 'trace': sc_trace, 'languages': sc_languages, 'ui_de': sc_ui_de}
+def sc_plugins(pg):
+    """Plugins: Boston Crab switched on in the Plugins panel; a P1 trap typed
+    into an event is found, flagged in the graph and fixed with Fix; still on
+    after a reload; its message follows the designer's language; switched off."""
+    ready(pg); pg.evaluate("localStorage.removeItem('oodDesigner.plugins')"); ready(pg)
+    pg.click('#btnPlugins'); pg.wait_for_selector('#plugPanel:not([hidden])'); settle(pg, 600)
+    expect_in('the catalogue lists Boston Crab', 'Boston Crab: ooRexx pitfalls', pg.inner_text('#ppList'))
+    expect('off until switched on', pg.is_checked('#pp-bostoncrab'), False)
+    pg.check('#pp-bostoncrab'); settle(pg, 1500)
+    expect_in('switched on', 'switched on', status(pg))
+    pg.click('#ppClose')
+    drop_kind(pg, 'Push button', 40, 30)
+    pick_event(pg, 'btn1', 'CLICKED')
+    pg.fill('#code', "say '\"'(1 + 1)'\"'\nsay 'done'"); settle(pg, 1600); wait_graph(pg); settle(pg, 600)
+    expect('a finding shown', pg.locator('#diag .dg').count(), 1)
+    expect_in('it is P1, on line 1', 'line 1', pg.inner_text('#diag .dg'))
+    expect('the graph flags its block', pg.locator('#graph .gb.flag').count(), 1)
+    pg.screenshot(path=str(SHOTS / 'plugins_finding.png'))
+    pg.click('#diag .dg-fix'); settle(pg, 1600)
+    expect('fixed in the code', pg.input_value('#code').split('\n')[0], "say '\"' || (1 + 1)'\"'")
+    expect('the finding is gone', pg.is_visible('#diag'), False)
+    expect_in('the event code took it', "say '\"' || (1 + 1)", program_text(pg))
+    # kept over a reload, and in the designer's language
+    ready(pg)
+    drop_kind(pg, 'Push button', 40, 30); pick_event(pg, 'btn1', 'CLICKED')
+    pg.fill('#code', "x = 'zz'x"); settle(pg, 1600)
+    expect('still on after a reload: P2 found', pg.get_attribute('#diag .dg', 'data-rule'), 'P2')
+    pg.select_option('#uiLang', 'de'); settle(pg, 1500); pg.evaluate('window.oodDesigner.diagnoseNow()'); settle(pg, 900)
+    expect_in('the message in German', 'Hexadezimal', pg.inner_text('#diag'))
+    pg.select_option('#uiLang', 'en'); settle(pg, 1200)
+    pg.click('#btnPlugins'); pg.wait_for_selector('#plugPanel:not([hidden])'); settle(pg, 600)
+    pg.uncheck('#pp-bostoncrab'); settle(pg, 1200); pg.click('#ppClose'); settle(pg, 900)
+    expect('switched off: nothing shown', pg.is_visible('#diag'), False)
+
+SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views, 'gadgets': sc_gadgets, 'libraries': sc_libraries, 'graph': sc_graph, 'trace': sc_trace, 'languages': sc_languages, 'ui_de': sc_ui_de, 'plugins': sc_plugins}
 def main():
     names = sys.argv[1:] or list(SCENARIOS)
     srv = subprocess.Popen(['node', str(SITE / 'serve.mjs'), str(SITE), '--port', str(PORT)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

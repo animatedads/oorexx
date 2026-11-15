@@ -113,16 +113,18 @@
       measure();
       st.rexx = await ooRexx.load();
       const files = {};
-      for (const f of ['OodNls.cls', 'OodUi.cls', 'OxUi.cls', 'OodDesigner.cls', 'OodGraph.cls', 'ObjectEditor.cls', 'LibraryProviders.cls']) files['/home/rexx/' + f] = await (await fetch(f)).text();
+      for (const f of ['OodNls.cls', 'OodUi.cls', 'OxUi.cls', 'OodPlugins.cls', 'OodDesigner.cls', 'OodGraph.cls', 'ObjectEditor.cls', 'LibraryProviders.cls']) files['/home/rexx/' + f] = await (await fetch(f)).text();
       // Josep Maria Blasco's Rexx Parser, which OodGraph.cls parses event code with
       for (const rel of (await (await fetch('rexx-parser/manifest.txt')).text()).split('\n').map((l) => l.trim()).filter(Boolean))
         files['/home/rexx/rexx-parser/' + rel] = await (await fetch('rexx-parser/' + rel)).text();
       st.sess = await st.rexx.start({ js: { page: true, worker: true }, files });
       await st.sess.loadPackage('LibraryProviders.cls');   // with OodDesigner.cls and ObjectEditor.cls
       await st.sess.loadPackage('OodGraph.cls');           // with the Rexx Parser
+      await st.sess.loadPackage('OodPlugins.cls');         // the optional extras' host
       let chosen = ''; try { chosen = localStorage.getItem('oodDesigner.ui') || ''; } catch (e) { /* storage may be off */ }
       await loadUi(chosen || navigator.language || '');
       await OxLibraries.setup(st.sess);
+      await OodPluginsPage.setup(st.sess, { status, rx, onChange: () => diagnoseSoon(0) });   // plugins switched on before
       OxGraph.attach({ sess: st.sess, rx, status, setCode, actionsMenu });
       await loadCatalog();
       await newDesign();
@@ -632,6 +634,7 @@
     }
     code.disabled = false; codeDirty = false;
     await OxGraph.show(code.value);
+    diagnoseSoon(0);
     traceShowStep();
   }
   function methodName(ctl, ev) {
@@ -650,7 +653,7 @@
       if (ok) cur.fresh = false;
     }
     if (ok) await refresh();
-    if (st.cur === cur) await OxGraph.show(text);
+    if (st.cur === cur) { await OxGraph.show(text); diagnoseSoon(0); }
   }
   // a graph edit answers the new code: it becomes the event's code
   async function setCode(text) {
@@ -884,6 +887,32 @@
     if (ok) { $('sNewKey').value = ''; $('sNewText').value = ''; await refresh(); await drawStrings(); status(T('strings.keyAdded', key)); }
   });
 
+  /* ---- plugins: optional extras; what they find in the code, and their fixes ---- */
+  $('btnPlugins').addEventListener('click', () => OodPluginsPage.open());
+  let diagTimer = null;
+  function diagnoseSoon(ms) { clearTimeout(diagTimer); diagTimer = setTimeout(diagnoseNow, ms == null ? 500 : ms); }
+  async function diagnoseNow() {
+    if (!st.cur) { OodPluginsPage.show($('diag'), [], {}); OxGraph.flagLines([]); return; }
+    const text = $('code').value, cur = st.cur;
+    const found = await OodPluginsPage.diagnose(text);
+    if (st.cur !== cur || $('code').value !== text) return;          // the code moved on
+    OodPluginsPage.show($('diag'), found, {
+      onLine: (f) => {                                               // the line in the code
+        const ls = $('code').value.split('\n'); const a = ls.slice(0, f.line - 1).reduce((n, l) => n + l.length + 1, 0);
+        $('code').focus(); $('code').setSelectionRange(a, a + (ls[f.line - 1] || '').length);
+      },
+      onFix: async (f) => {
+        const fixed = await OodPluginsPage.fix(f.plugin, $('code').value, f.fixId).catch(() => null);
+        if (fixed === null) return;
+        await setCode(fixed);
+        status(T('plug.fixed', f.rule, f.line));
+      },
+    });
+    OxGraph.flagLines(found.map((f) => f.line));
+  }
+  st.diagnoseNow = diagnoseNow;
+  $('code').addEventListener('input', () => diagnoseSoon());
+
   /* ---- the designer's own language --------------------------------------------- */
   $('uiLang').addEventListener('change', async () => {
     await flushCode();
@@ -895,6 +924,7 @@
   // everything drawn from the table again: the palette, panels, tree, code title
   async function relabel() {
     D.querySelectorAll('#kinds div').forEach((d) => { d.textContent = kindLabel(d.dataset.kind); });
+    await OodPluginsPage.setLanguage(NLS.lang);
     OxGraph.relabel();
     await refresh();
     const was = $('code').value; await showCode(); if (!st.cur) $('code').value = was;

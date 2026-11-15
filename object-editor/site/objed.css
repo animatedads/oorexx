@@ -43,7 +43,7 @@ h2{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#56606b;ma
 #members td.nm{font-family:ui-monospace,Menlo,Consolas,monospace}
 #members select{padding:0 2px}
 #members button{padding:0 6px}
-#editor{display:grid;grid-template-rows:auto 1fr;height:280px;background:#fff;border-top:1px solid #c3cbd4}
+#editor{display:grid;grid-template-rows:auto 1fr auto;height:280px;background:#fff;border-top:1px solid #c3cbd4}
 #edHead{display:flex;gap:12px;padding:5px 10px;border-bottom:1px solid #e1e6eb;align-items:center}
 #edTitle{font-weight:600;font-family:ui-monospace,Menlo,Consolas,monospace}
 #edState{font-size:12px}

@@ -4,6 +4,7 @@
 <title>ooRexx Object Editor</title>
 <link rel="stylesheet" href="objed.css">
 <link rel="stylesheet" href="libraries.css">
+<link rel="stylesheet" href="plugins.css">
 </head>
 <body>
 <header id="bar">
@@ -16,6 +17,7 @@
   <button id="btnOpen" title="Open a .cls or .rex" data-nls="ox.open" data-nls-title="ox.open.tip">Open…</button>
   <button id="btnSave" title="Download the file" data-nls="ox.save" data-nls-title="ox.save.tip">Save</button>
   <button id="btnSource" title="Show the whole file" data-nls="ox.source" data-nls-title="ox.source.tip">Source</button>
+  <button id="btnPlugins" data-nls="plug.btn" data-nls-title="plug.btn.tip">Plugins…</button>
   <button id="btnLibraries" title="Connect to a source of ooRexx libraries and use one" data-nls="ox.libraries" data-nls-title="ox.libraries.tip">Libraries…</button>
   <label id="uiLangBox" title="The editor's own language" data-nls-title="ox.lang.tip"><span aria-hidden="true">🌐</span> <select id="uiLang"></select></label>
   <span id="status" role="status">Loading ooRexx…</span>
@@ -48,6 +50,7 @@
 <section id="editor">
   <div id="edHead"><span id="edTitle" data-nls="ox.pickMethod">Pick a method</span><span id="edState"></span></div>
   <textarea id="code" spellcheck="false" disabled data-nls-placeholder="ox.code.placeholder" placeholder="The method's body.  ~ after self, .Name, a variable or a string lists what it answers; . lists the classes; Ctrl+Space anywhere."></textarea>
+  <div id="diag" hidden role="status"></div>
 </section>
 <div id="pop" hidden></div>
 <datalist id="knownList"></datalist>
@@ -57,5 +60,6 @@
 <script src="ooRexx.js"></script>
 <script src="oodnls.js"></script>
 <script src="libraries.js"></script>
+<script src="plugins.js"></script>
 <script src="objed.js"></script>
 </body></html>

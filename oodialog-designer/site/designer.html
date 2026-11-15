@@ -4,6 +4,7 @@
 <title>ooDialog Designer</title>
 <link rel="stylesheet" href="designer.css">
 <link rel="stylesheet" href="libraries.css">
+<link rel="stylesheet" href="plugins.css">
 </head>
 <body>
 <header id="bar">
@@ -20,6 +21,7 @@
   <button id="btnSave" data-nls="btn.save" data-nls-title="btn.save.tip" title="Download the program (it carries its design)">Save .rex</button>
   <button id="btnProgram" data-nls="btn.program" data-nls-title="btn.program.tip" title="Show the ooRexx this design writes">Program</button>
   <button id="btnLibraries" data-nls="btn.libraries" data-nls-title="btn.libraries.tip" title="Connect to a source of ooRexx libraries and use one">Libraries…</button>
+  <button id="btnPlugins" data-nls="plug.btn" data-nls-title="plug.btn.tip">Plugins…</button>
   <button id="btnStrings" data-nls="btn.strings" data-nls-title="btn.strings.tip" title="The texts in each language: ::RESOURCE strings.&lt;language&gt;">Strings…</button>
   <label id="langBox" hidden data-nls-title="lang.tip" title="Show the design, and run it, in this language"><span data-nls="lang.label">Language</span> <select id="lang"></select></label>
   <button id="btnTrace" data-nls="btn.trace" data-nls-title="btn.trace.tip" title="Run it, recording each step of the event code with its variables">▶ Trace</button>
@@ -70,6 +72,7 @@
       <div id="graph" aria-label="The event code as blocks" data-nls-aria="graph.aria"></div>
     </div>
     </div>
+    <div id="diag" hidden role="status"></div>
     <pre id="out" aria-label="Program output" data-nls-aria="out.aria"></pre>
   </div>
 </section>
@@ -93,6 +96,7 @@
 <script src="ooRexx.js"></script>
 <script src="oodnls.js"></script>
 <script src="libraries.js"></script>
+<script src="plugins.js"></script>
 <script src="graph.js"></script>
 <script src="designer.js"></script>
 </body></html>

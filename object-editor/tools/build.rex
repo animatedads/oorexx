@@ -28,6 +28,15 @@ call copy "src/OxUi.cls", "site/OxUi.cls"
 call copy designerExamples"/../../src/OodNls.cls", "site/OodNls.cls"
 call copy designerExamples"/../../src/OodUi.cls", "site/OodUi.cls"
 call copy designerExamples"/../oodnls.js", "site/oodnls.js"
+-- the plugins (optional extras), as the designer's site has them
+call copy designerExamples"/../OodPlugins.cls", "site/OodPlugins.cls"
+call copy designerExamples"/../plugins.js", "site/plugins.js"
+call copy designerExamples"/../plugins.css", "site/plugins.css"
+call SysMkDir "site/plugins"
+call SysMkDir "site/plugins/bostoncrab"
+do f over .array~of("index.txt", "bostoncrab/BostonCrabPlugin.cls", "bostoncrab/PitfallChecker.cls")
+  call copy designerExamples"/../plugins/"f, "site/plugins/"f
+end
 call SysMkDir "site/catalogue"
 call copy "catalogue/alchemy.idx", "site/catalogue/alchemy.idx"
 call SysMkDir "site/examples"

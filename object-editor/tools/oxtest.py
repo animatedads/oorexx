@@ -158,7 +158,24 @@ def sc_ui_de(pg):
     pg.select_option('#uiLang', 'en'); settle(pg, 900)
     expect('English again', pg.inner_text('#btnOpen'), 'Open…')
 
-SCENARIOS = {'reflect': sc_reflect, 'edit': sc_edit, 'requires': sc_requires, 'complete': sc_complete, 'oodialog': sc_oodialog, 'libraries': sc_libraries, 'ui_de': sc_ui_de}
+def sc_plugins(pg):
+    """Plugins in the Object Editor: Boston Crab on, a P2 trap typed into a
+    method is found and fixed, and the method compiles; then switched off."""
+    ready(pg); pg.evaluate("localStorage.removeItem('oodDesigner.plugins')"); ready(pg)
+    pg.click('#btnPlugins'); pg.wait_for_selector('#plugPanel:not([hidden])'); settle(pg, 600)
+    pg.check('#pp-bostoncrab'); settle(pg, 1500); pg.click('#ppClose')
+    open_method(pg, 'Employee', 'describe')
+    body = pg.input_value('#code')
+    pg.fill('#code', "tag = 'zz'x\n" + body); settle(pg, 1800)
+    expect('the finding: P2', pg.get_attribute('#diag .dg', 'data-rule'), 'P2')
+    pg.click('#diag .dg-fix'); settle(pg, 1800)
+    expect('fixed', pg.input_value('#code').split('\n')[0], "tag = 'zz' || x")
+    expect('and the method compiles', pg.inner_text('#edState'), 'compiles')
+    expect('no findings left', pg.is_visible('#diag'), False)
+    pg.click('#btnPlugins'); pg.wait_for_selector('#plugPanel:not([hidden])'); settle(pg, 600)
+    pg.uncheck('#pp-bostoncrab'); settle(pg, 1200); pg.click('#ppClose')
+
+SCENARIOS = {'reflect': sc_reflect, 'edit': sc_edit, 'requires': sc_requires, 'complete': sc_complete, 'oodialog': sc_oodialog, 'libraries': sc_libraries, 'ui_de': sc_ui_de, 'plugins': sc_plugins}
 def main():
     names = sys.argv[1:] or list(SCENARIOS)
     SHOTS.mkdir(exist_ok=True)

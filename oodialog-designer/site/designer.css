@@ -75,7 +75,7 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#56606b;ma
 #tree .ev.cur{background:#2f6fb3;color:#fff}
 #tree .newm{display:flex;gap:4px;margin:4px 0 0 14px}
 #tree .newm input{width:120px;padding:1px 4px;border:1px solid #b7c0ca}
-#codeSide{display:grid;grid-template-rows:auto auto 1fr 74px;min-width:0;min-height:0}
+#codeSide{display:grid;grid-template-rows:auto auto 1fr auto 74px;min-width:0;min-height:0}
 #codeHead{display:flex;gap:10px;align-items:center;padding:5px 8px;border-bottom:1px solid #e1e6eb;flex-wrap:wrap}
 #codeTitle{font-weight:600}
 #btnInsert{margin-left:auto}
@@ -151,6 +151,7 @@ footer{font-size:11px;color:#56606b;padding:4px 10px;background:#f7f9fb;border-t
 .gdrop{height:5px;margin:0 2px;border-radius:3px}
 .gdrop.empty{height:auto;padding:3px 6px;font-size:11px;color:#9aa4b0;border:1px dashed #c3cbd4}
 .gdrop.over{background:#2f6fb3;min-height:5px}
+.gb.flag>.gh{background:#fff1e0;box-shadow:inset 3px 0 0 #d9480f}
 /* the trace */
 #traceBar{display:grid;grid-template-columns:auto 1fr auto auto auto;gap:6px;align-items:center;padding:4px 8px;background:#fffbe8;border-bottom:1px solid #e8dca6;font-size:12px}
 #tWhere{font:12px ui-monospace,Menlo,Consolas,monospace;white-space:nowrap}

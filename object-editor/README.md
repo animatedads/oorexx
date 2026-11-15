@@ -134,7 +134,7 @@ Then open `http://localhost:8080/objed.html`.
   cover the reflection results, lookup order, both sides, the edits and
   their reloads, the refusals, completion in every context above, and the
   prolog not being run.
-- `oxtest.py`: 7 of 7 scenarios pass in headless Chromium:
+- `oxtest.py`: 8 of 8 scenarios pass in headless Chromium:
   1. **reflect:** classes, hierarchy with mixin, own and inherited members,
      the class side.
   2. **edit:** add an attribute, make a method private, a refused class, a
@@ -158,6 +158,9 @@ Then open `http://localhost:8080/objed.html`.
 - `oxtest.py` scenario 7, **ui_de:** the editor in German: the bar, a
   column, a refusal from `ObjectEditor.cls` in German, the Libraries panel;
   then English again.
+- `oxtest.py` scenario 8, **plugins:** the designer's plugin host
+  (`OodPlugins.cls`, `plugins.js`) in the editor: Boston Crab on, a P2 trap
+  typed into a method found and fixed, the method compiling again.
 - The refusal checks of t01 and t02 demand Error 93.900 with the editor's
   message (before, any error passed).
 - Pitfall lint (Boston Crab `rexx_pitfalls.rex`): clean on the code; in

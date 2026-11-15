@@ -1,0 +1,19 @@
+/* plugins.css -- the Plugins panel and the findings strip (plugins.js).
+   Architecture: Tom Dyer.  Code: Claude (Opus 5.5). */
+#plugPanel{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:8500;display:flex;align-items:center;justify-content:center}
+#plugPanel .pp-box{background:#fff;border-radius:4px;width:min(760px,94vw);max-height:86vh;display:flex;flex-direction:column;overflow:hidden;font-size:13px}
+#plugPanel .pp-head{display:flex;gap:10px;align-items:center;padding:8px 10px;border-bottom:1px solid #ddd}
+#plugPanel .pp-hint{color:#56606b;font-size:12px;margin-right:auto}
+#ppList{overflow:auto;padding:4px 10px 10px}
+.pp-plugin{border-bottom:1px solid #eef1f4;padding:8px 0}
+.pp-name small{color:#7a838d;font-family:ui-monospace,Menlo,Consolas,monospace;margin-left:4px}
+.pp-sum{color:#4c5662;margin:2px 0 0 22px}
+.pp-sub{font-weight:600;font-size:12px;margin:6px 0 2px 22px}
+.pp-settings{display:grid;grid-template-columns:max-content 1fr;gap:4px 8px;margin-left:22px}
+.pp-settings label{display:contents}
+.pp-settings input{font:12px system-ui,sans-serif;padding:2px 4px}
+#diag{max-height:110px;overflow:auto;border-top:1px solid #f0d9c4;background:#fff8f1;font-size:12px;padding:2px 8px}
+#diag .dg-head{font-weight:600;color:#a14b0f;margin:2px 0}
+#diag .dg{padding:1px 0}
+#diag .dg-line{font-family:ui-monospace,Menlo,Consolas,monospace;color:#2f6fb3;text-decoration:none}
+#diag .dg-fix{font-size:11px;padding:0 6px;margin-left:4px}

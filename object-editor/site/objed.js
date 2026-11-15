@@ -42,19 +42,21 @@
       for (const f of ['ooDialog.cls', 'oodWeb.cls', 'ooShapes.cls']) {
         const r = await fetch('ood/' + f); if (r.ok) files['/home/rexx/' + f] = await r.text();
       }
-      for (const f of ['OodNls.cls', 'OxUi.cls', 'OodUi.cls', 'ObjectEditor.cls', 'OodDesigner.cls', 'LibraryProviders.cls']) files['/home/rexx/' + f] = await (await fetch(f)).text();
+      for (const f of ['OodNls.cls', 'OxUi.cls', 'OodUi.cls', 'OodPlugins.cls', 'ObjectEditor.cls', 'OodDesigner.cls', 'LibraryProviders.cls']) files['/home/rexx/' + f] = await (await fetch(f)).text();
       st.sess = await st.rexx.start({ js: { page: true, worker: true }, files });
       await st.sess.loadPackage('LibraryProviders.cls');   // requires ObjectEditor.cls and OodDesigner.cls
+      await st.sess.loadPackage('OodPlugins.cls');         // the optional extras' host
       let chosen = ''; try { chosen = localStorage.getItem('oodDesigner.ui') || ''; } catch (e) { /* storage may be off */ }
       await loadUi(chosen || navigator.language || '');   // the designer's choice is the editor's too
       await OxLibraries.setup(st.sess);
+      await OodPluginsPage.setup(st.sess, { status, rx, onChange: () => diagnoseSoon(0) });
       const first = $('example').value;
       if (first) await openUrl(first); else await openText('MyObject.cls', '');
       st.ready = true;                                  // (tests wait for st.ready)
     } catch (e) { status((NLS.has('ox.noStart') ? T('ox.noStart') : 'Could not start:') + ' ' + errText(e), true); console.error(e); }
   }
   async function loadUi(lang) {
-    await NLS.load(st.sess, ['OxUi'], lang);
+    await NLS.load(st.sess, ['OxUi', 'OodUi'], lang);       // OodUi: the Plugins panel's texts
     const sel = $('uiLang'); sel.textContent = '';
     for (const l of NLS.languages) sel.appendChild(Object.assign(D.createElement('option'), { value: l, textContent: l }));
     sel.value = NLS.lang;
@@ -65,6 +67,7 @@
     await flushCode();
     try { localStorage.setItem('oodDesigner.ui', $('uiLang').value); } catch (e) { /* storage may be off */ }
     await rx(() => loadUi($('uiLang').value));
+    await OodPluginsPage.setLanguage(NLS.lang);
     await refresh(); await showCode();
     status(T('ox.lang.now', NLS.lang));
   });
@@ -217,6 +220,7 @@
     $('edTitle').textContent = st.cls + (st.side === 'CLASS' ? ' class' : '') + ' ~' + st.cur.name;
     c.value = String(await rx(() => st.w.getBody(st.cls, st.cur.name, st.side)).catch(() => ''));
     c.disabled = false; dirty = false; state('', '');
+    diagnoseSoon(0);
   }
   function state(text, cls) { $('edState').textContent = text; $('edState').className = cls; }
   async function flushCode() {
@@ -225,6 +229,7 @@
     const cur = st.cur, cls = st.cls, side = st.side, text = $('code').value;
     const err = String(await rx(() => st.w.setBody(cls, cur.name, side, text)).catch((e) => errText(e)));
     if (err) state(err, 'err'); else { state(T('ox.compiles'), 'ok'); await drawMembers(); }
+    diagnoseSoon(0);
   }
   $('code').addEventListener('input', () => { dirty = true; clearTimeout(timer); timer = setTimeout(flushCode, 700); popupUpdate(); });
   $('code').addEventListener('blur', () => setTimeout(() => { if (!popOpen()) flushCode(); }, 150));
@@ -317,6 +322,32 @@
     },
   }));
   $('btnCopy').addEventListener('click', () => navigator.clipboard && navigator.clipboard.writeText($('sourceText').textContent).then(() => status(T('ox.copied'))));
+
+  /* ---- plugins: optional extras; what they find in the method, and their fixes -- */
+  $('btnPlugins').addEventListener('click', () => OodPluginsPage.open());
+  let diagTimer = null;
+  function diagnoseSoon(ms) { clearTimeout(diagTimer); diagTimer = setTimeout(diagnoseNow, ms == null ? 500 : ms); }
+  async function diagnoseNow() {
+    const c = $('code');
+    if (c.disabled) { OodPluginsPage.show($('diag'), [], {}); return; }
+    const text = c.value;
+    const found = await OodPluginsPage.diagnose(text);
+    if (c.value !== text) return;
+    OodPluginsPage.show($('diag'), found, {
+      onLine: (f) => {
+        const ls = c.value.split('\n'); const a = ls.slice(0, f.line - 1).reduce((n, l) => n + l.length + 1, 0);
+        c.focus(); c.setSelectionRange(a, a + (ls[f.line - 1] || '').length);
+      },
+      onFix: async (f) => {
+        const fixed = await OodPluginsPage.fix(f.plugin, c.value, f.fixId).catch(() => null);
+        if (fixed === null) return;
+        c.value = fixed; dirty = true; await flushCode();
+        status(T('plug.fixed', f.rule, f.line));
+      },
+    });
+  }
+  st.diagnoseNow = diagnoseNow;
+  $('code').addEventListener('input', () => diagnoseSoon());
 
   boot();
 })();

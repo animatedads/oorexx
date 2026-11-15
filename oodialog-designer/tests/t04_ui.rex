@@ -38,7 +38,7 @@ html = readFile(site"/designer.html")
 do attr over .array~of('data-nls="', 'data-nls-title="', 'data-nls-placeholder="', 'data-nls-aria="', 'data-nls-rich="')
   call collect html, attr, '"', used
 end
-do f over .array~of("designer.js", "graph.js")
+do f over .array~of("designer.js", "graph.js", "plugins.js")
   js = readFile(site"/"f)
   call collect js, "T('", "'", used
   do m over .array~of("graph.moved", "graph.inserted", "graph.insertedAction", "graph.changed", "graph.deleted", "graph.wrapped")
