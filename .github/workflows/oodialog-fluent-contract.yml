@@ -59,6 +59,7 @@ jobs:
         run: |
           $binary = "oodialog-fluent/windows/x64/Release"
           $env:PATH = "$(Resolve-Path $binary);$env:PATH"
+          $env:OODF_LIFECYCLE_TRACE = "1"
           $catalogue = (Resolve-Path "oodialog-fluent/catalogue/controls.tsv").Path
           $stdout = "$binary/runtime-stdout.txt"
           $stderr = "$binary/runtime-stderr.txt"

@@ -22,6 +22,7 @@
 #include <winrt/Windows.Graphics.h>
 #include "OodFluentIsland.h"
 
+#include <cstdio>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -33,9 +34,20 @@ namespace xaml = winrt::Microsoft::UI::Xaml;
 namespace controls = winrt::Microsoft::UI::Xaml::Controls;
 namespace hosting = winrt::Microsoft::UI::Xaml::Hosting;
 
+static void lifecycleTrace(const char *stage) noexcept {
+    char enabled[2]{};
+    if (!GetEnvironmentVariableA("OODF_LIFECYCLE_TRACE", enabled, sizeof(enabled))) return;
+    fprintf(stderr, "HOST_STAGE %s\n", stage);
+    fflush(stderr);
+}
+
 struct OodfComApartment {
     bool owned = false;
-    ~OodfComApartment() { if (owned) winrt::uninit_apartment(); }
+    ~OodfComApartment() {
+        lifecycleTrace("COM_UNINIT_BEGIN");
+        if (owned) winrt::uninit_apartment();
+        lifecycleTrace("COM_UNINIT_DONE");
+    }
 };
 
 struct OodfBootstrapScope {
@@ -61,7 +73,9 @@ struct OodfBootstrapScope {
     ~OodfBootstrapScope() {
         if (!owned) return;
         std::lock_guard<std::mutex> lock(mutex);
+        lifecycleTrace("BOOTSTRAP_RELEASE_BEGIN");
         if (--references == 0) MddBootstrapShutdown();
+        lifecycleTrace("BOOTSTRAP_RELEASE_DONE");
     }
 };
 
@@ -106,10 +120,19 @@ struct OodfWinHost {
     ~OodfWinHost() {
         // Native event delegates live on the XAML controls and are detached with them.
         // No Rexx callback is invoked during destruction.
+        lifecycleTrace("CLEAR_CHILDREN_BEGIN");
         children.clear();
         if (root) root.Children().Clear();
+        lifecycleTrace("CLEAR_CHILDREN_DONE");
+        if (island) island.Content(xaml::UIElement{nullptr});
+        root = nullptr;
+        lifecycleTrace("CLOSE_ISLAND_BEGIN");
         if (island) island.Close();
+        island = nullptr;
+        lifecycleTrace("CLOSE_ISLAND_DONE");
         if (manager) manager.Close();
+        manager = nullptr;
+        lifecycleTrace("CLOSE_MANAGER_DONE");
         // If we created a DispatcherQueue, it is owned by this UI thread and may
         // still be needed by other islands; its shutdown belongs to thread teardown.
     }
