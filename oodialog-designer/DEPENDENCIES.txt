@@ -1,4 +1,4 @@
-ooDialog Designer v0.8 -- dependencies
+ooDialog Designer v0.9 -- dependencies
 Architecture: Tom Dyer.  Code: Claude (Opus 5.5).
 
 Model, generator, graph and language support (src/, the Autobuild tests):
@@ -28,5 +28,11 @@ The plugins (plugins/, optional, none loaded until switched on):
 - ooRexx/WASM's fetch.cls and json.cls for every call out; git's cli way
   needs git and ooRexx outside a browser
 - their tests (t07-t09) need node for the stand-in servers in tests/fixtures/
+
+Bound dialogs (a design whose form names an object): the program needs
+oorexx_mapped_objects v0.1 (MappedObjects.cls) and what it requires:
+nosqlserver_v0.92-dev1 (NoSQLServer.cls), alchemy_objects v0.8 (AlchemyObject,
+AlchemySecurity, AlchemyLockedMethod, AlchemyEvidence) and oorexx_crypto v0.1
+(crypto.cls). tools/data.rex lays them out for the page (site/data).
 
 tests/wincheck.rex needs Windows ooDialog: sent to CODEX-PC (REQ-00003595).

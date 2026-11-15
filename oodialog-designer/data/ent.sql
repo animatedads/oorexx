@@ -1,0 +1,18 @@
+-- ent.sql -- the example database ent, for examples/People.rex (one statement a line).
+-- Architecture: Tom Dyer.  Code: Claude (Opus 5.5).
+CREATE TABLE com (com_id INTEGER PRIMARY KEY, com_name VARCHAR NOT NULL)
+CREATE TABLE per (per_id INTEGER PRIMARY KEY, per_name VARCHAR NOT NULL, per_active INTEGER, per_company INTEGER REFERENCES com(com_id))
+CREATE TABLE per_ext (per_id INTEGER PRIMARY KEY REFERENCES per(per_id), phone VARCHAR)
+CREATE TABLE addr (addr_id INTEGER PRIMARY KEY, addr_street VARCHAR, addr_town VARCHAR)
+CREATE TABLE per_addr (per_id INTEGER NOT NULL REFERENCES per(per_id), addr_id INTEGER NOT NULL REFERENCES addr(addr_id))
+CREATE TABLE note (note_id INTEGER PRIMARY KEY, per_id INTEGER REFERENCES per(per_id), note_text VARCHAR)
+INSERT INTO com (com_id, com_name) VALUES (10, 'Anduin')
+INSERT INTO per (per_id, per_name, per_active, per_company) VALUES (1, 'Tom Dyer', 1, 10)
+INSERT INTO per (per_id, per_name, per_active) VALUES (2, 'Rony Flatscher', 1)
+INSERT INTO per_ext (per_id, phone) VALUES (1, '0141 555 0100')
+INSERT INTO addr (addr_id, addr_street, addr_town) VALUES (100, 'Byres Road', 'Glasgow')
+INSERT INTO addr (addr_id, addr_street, addr_town) VALUES (101, 'Augasse 2-6', 'Wien')
+INSERT INTO per_addr (per_id, addr_id) VALUES (1, 100)
+INSERT INTO per_addr (per_id, addr_id) VALUES (1, 101)
+INSERT INTO per_addr (per_id, addr_id) VALUES (2, 101)
+INSERT INTO note (note_id, per_id, note_text) VALUES (500, 1, 'Architect of Alchemy')

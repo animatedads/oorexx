@@ -88,11 +88,12 @@
     return f;
   }
   function parseSnapshot(text) {
-    const snap = { form: {}, vars: [], controls: [], events: [], methods: [], requires: [], shared: [], languages: [], strings: [] };
+    const snap = { form: {}, binding: null, vars: [], controls: [], events: [], methods: [], requires: [], shared: [], languages: [], strings: [] };
     for (const line of text.split('\n')) {
       if (!line.trim()) continue;
       const f = fields(line);
       if (f['*'] === 'form') snap.form = f;
+      else if (f['*'] === 'binding') snap.binding = f;
       else if (f['*'] === 'var') snap.vars.push(f);
       else if (f['*'] === 'control') snap.controls.push(f);
       else if (f['*'] === 'event') snap.events.push(f);
@@ -430,6 +431,10 @@
       $('propTitle').textContent = T('prop.form');
       const f = st.snap.form;
       for (const k of ['name', 'title', 'w', 'h']) box.appendChild(propInput('form', k, f[k]));
+      // the binding: the object this dialog edits (oorexx_mapped_objects)
+      const b = st.snap.binding || {};
+      const head = D.createElement('div'); head.className = 'hint bindHead'; head.textContent = T('prop.binding.hint'); box.appendChild(head);
+      for (const [k, v] of [['object', b.object], ['objectfile', b.file], ['objectkey', b.key], ['databases', b.databases]]) box.appendChild(propInput('form', k, v));
       return;
     }
     const c = findCtl(name); if (!c) return;
@@ -591,7 +596,7 @@
       if (evs.length) o.appendChild(row);
       box.appendChild(o);
     };
-    obj('form', st.snap.form.name, st.formEvents);
+    obj('form', st.snap.form.name, st.formEvents.filter((ev) => ev !== 'SAVED' || st.snap.binding));   // SAVED: after a bound dialog's commit
     for (const c of st.snap.controls) obj(c.name, c.type, c.role ? [] : String(st.kinds[c.type].events || '').split(/\s+/).filter(Boolean));
     // the form's methods: DrDialog's global procedures
     const o = D.createElement('div'); o.className = 'obj';
@@ -781,7 +786,7 @@
         st.oodFiles = {};
         for (const f of ['ooDialog.cls', 'oodWeb.cls', 'ooShapes.cls']) st.oodFiles['/home/rexx/' + f] = await (await fetch('ood/' + f)).text();
       }
-      const files = Object.assign({}, st.oodFiles, await OxLibraries.installedFiles(st.sess), { ['/home/rexx/' + name]: src });
+      const files = Object.assign({}, st.oodFiles, await OxLibraries.installedFiles(st.sess), st.snap.binding ? await dataFiles() : {}, { ['/home/rexx/' + name]: src });
       const add = (t) => { $('out').textContent += t; $('out').scrollTop = $('out').scrollHeight; };
       status(T(verb, name));
       st.run = st.rexx.run({ args: st.lang ? [name, st.lang] : [name], files, js: { page: true, worker: true }, onOut: add, onErr: add });
@@ -794,6 +799,22 @@
     $('btnRun').disabled = false; $('btnTrace').disabled = false; $('btnStop').disabled = true; st.run = null;
   }
   st.runProgram = runProgram;
+  // a bound design's run: the object layer (MappedObjects, NoSQLServer) and the
+  // example databases and classes, as tools/data.rex laid them out in data/.
+  // Each run starts from them: what a run commits lasts as long as the run.
+  async function dataFiles() {
+    if (!st.dataFiles) {
+      const r = await fetch('data/files.txt');
+      if (!r.ok) throw new Error(T('st.noData'));
+      st.dataFiles = {};
+      for (const rel of (await r.text()).split('\n').map((l) => l.trim()).filter(Boolean))
+        st.dataFiles['/home/rexx/' + rel.replace(/^lib\//, '')] = await fetch('data/' + rel).then((f) => {
+          if (!f.ok) throw new Error(T('st.noData') + ': ' + rel);
+          return f.text();
+        });
+    }
+    return st.dataFiles;
+  }
   $('btnStop').addEventListener('click', () => { if (st.run) st.run.stop(); });
 
   /* ---- the Strings panel: one column per language ------------------------------ */

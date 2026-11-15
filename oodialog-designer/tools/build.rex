@@ -69,6 +69,11 @@ call write "site/examples/Threads.rex", .threadsDesign~build~generate
 call write "site/examples/Contacts.rex", .viewsDesign~build~generate
 call write "site/examples/Gadgets.rex", .gadgetsDesign~build~generate
 call write "site/examples/ContactsDE.rex", .contactsDeDesign~build~generate
+call write "site/examples/People.rex", .peopleDesign~build~generate
+-- the data a bound design (People) runs with: the object layer, the example
+-- classes and database (tools/data.rex)
+address system 'rexx tools/data.rex . "'estate~strip'" site/data'
+if rc \= 0 then raise syntax 93.900 array("build: tools/data.rex failed:" rc)
 call log "build: done"
 return 0
 
@@ -112,3 +117,4 @@ write: procedure
 ::requires "views.rex"
 ::requires "gadgets.rex"
 ::requires "languages.rex"
+::requires "people.rex"

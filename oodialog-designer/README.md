@@ -1,4 +1,4 @@
-# ooDialog Designer — v0.8.0
+# ooDialog Designer — v0.9.0
 
 Architecture: Tom Dyer. Code: Claude (Opus 5.5). README written by Claude (Opus 5.5).
 It runs on ooDialog/WASM v0.7.0 (code: Claude (Fable 5.2)) and on Josep Maria
@@ -224,6 +224,33 @@ one `kind` line; a new code-insertion action is one `action` line.
   then. The build lays the estate files out under `site/plugins/estate/`
   as the estate does, following each plugin's `::requires`, and lists them
   in its `files.txt`.
+- **Bound dialogs (v0.9):** a dialog can edit one object instead of one
+  table. The object is an instance of a class mapped over several tables
+  with `::ANNOTATE` (oorexx_mapped_objects; its README explains why Access
+  and Delphi were weak at this).
+  - The form's properties name the object: its class and class file, the
+    key it opens (none: a new object; the program's argument overrides it),
+    and its databases (`ent=ent`: name=folder, beside the program unless
+    absolute).
+  - A control's **bound to** names an attribute:
+    - an entry field (edits it);
+    - a check box (a flag);
+    - a text (shows it, and may follow a path such as `employer.name`);
+    - a list view (`addresses:street,town`: one row per part, one
+      attribute per column).
+  - The program opens the object in a unit of work. OK puts the fields back
+    and commits them in one transaction. A refusal from the database (a NOT
+    NULL, a foreign key) is shown in a message, and the dialog stays open
+    with the user's edits. A form event, **SAVED**, runs after a commit.
+  - The example **A person over five tables** is Tom Dyer's Person:
+    - its name from `ent.per`;
+    - its phone from `ent.per_ext`;
+    - its employer from `ent.com`;
+    - its addresses through `ent.per_addr`.
+  - In the page a run starts from the example database each time
+    (`tools/data.rex` lays out the object layer, `data/People.cls` and
+    `data/ent.sql` as `site/data`). What a run commits lasts as long as the
+    run.
 - **Program:** shows the ooRexx that will be written. **Save .rex**
   downloads it. **▶ Run** runs it with ooDialog/WASM in the same page.
 
@@ -242,7 +269,10 @@ browser tests also need Python Playwright with Chromium.
 `ESTATE_PACKAGES_DIR` holds the estate packages the plugins use, by their
 folder names: oorexx_slam_bostoncrab_v0.24, alchemy_objects_v0.8,
 oorexx_crypto_v0.1, oorexx_secret_broker_v0.2, oorexx_ai_access_v0.6,
-oorexx_ai_provider_anthropic_v0.5, oorexx_ai_provider_openai_compat_v0.6.
+oorexx_ai_provider_anthropic_v0.5, oorexx_ai_provider_openai_compat_v0.6;
+and, for bound dialogs, oorexx_mapped_objects_v0.1 and nosqlserver_v0.92-dev1
+(`REXX_PATH` must reach NoSQLServer's `src` while the build makes the example
+database).
 `tools/make.sh` and `tools/test.sh` run the build and `tests/run_all.rex`
 with one machine's paths: a shell line only because `REXX_PATH` must be set
 before ooRexx starts.
@@ -268,7 +298,7 @@ a built `site/plugins`, or skips them and says so. t07–t09 start their own
 stand-in servers with node; under native ooRexx (no ADDRESS FETCH) their
 network checks say SKIP, and t08's git-command checks still run.
 
-## State (2026-11-15, v0.8.0)
+## State (2026-11-15, v0.9.0)
 
 - `tests/t01_model.rex`: 69 of 69 checks pass under ooRexx/WASM in Node. They
   cover generation, a byte-identical round trip through the `::RESOURCE`,
@@ -327,7 +357,20 @@ network checks say SKIP, and t08's git-command checks still run.
   name, not `.nil`. The refusal checks of t01–t03 now also demand Error
   93.900 with the designer's message; before, any error passed. With the
   bug put back they fail 19 times.)
-- `tools/dztest.py`: 15 of 15 scenarios pass in headless Chromium:
+- `tests/t10_binding.rex`: 25 of 25 checks pass, covering:
+  - the program a bound design writes: the store, the session, the object
+    opened by key, the fields' first values, a flag, a path shown, a list of
+    parts, and validate with its one commit, the SAVED event and the
+    refusal message;
+  - the round trip;
+  - what is refused (a class name that is not a symbol, a database not
+    name=folder, a path on an entry field, a list bound without its
+    attributes);
+  - the problems listed (columns against attributes, no databases, bound
+    controls with no object);
+  - an unbound design written as before;
+  - German.
+- `tools/dztest.py`: 16 of 16 scenarios pass in headless Chromium:
   1. **hand:** a dialog built with the mouse (drop, rename, styles,
      variable, drag-an-action, move and resize), then run. The event code sees
      the variable and the field, and INIT's text survives `execute`.
@@ -381,6 +424,14 @@ network checks say SKIP, and t08's git-command checks still run.
      as a new file, changed (the change shown) and committed again, its
      history, the first version opened back; a commit after someone else's
      refused.
+  16. **bound:** the People example:
+     - its round trip and its binding in the form's properties;
+     - run, with Tom's name, phone, employer and both addresses from five
+       tables;
+     - an emptied name refused in a message ("NOT NULL constraint failed:
+       per_name"), with the dialog still open;
+     - a new name and phone saved in one commit, closing with OK, with the
+       SAVED event saying so.
 - `tests/gen/Calculator.rex`, `Contacts.rex` and `Gadgets.rex` (generated)
   also pass the ooDialog/WASM harness, `oodtest.py`, with their `.steps`
   files.
@@ -406,6 +457,14 @@ network checks say SKIP, and t08's git-command checks still run.
   `addRow`, `addSequence`, `TreeView~add`, `initRange`).
 
 ## Not yet
+
+- Bound dialogs:
+  - a list's parts cannot be added or removed from the dialog;
+  - there is no picker for a reference (`one`): the employer is shown,
+    not chosen;
+  - the designer does not check a binding against the class (the program
+    does, when it opens the object: every problem at once);
+  - a combo box and a date picker cannot be bound yet.
 
 - Controls: up-down (it must follow its buddy), month calendar and images.
 - Track bar events: ooDialog/WASM has none yet.

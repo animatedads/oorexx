@@ -26,7 +26,7 @@ if root == "" then do
 end
 root = .File~new(root)~absolutePath       -- the tests run in a scratch directory
 tests = .array~new
-if names~strip == "" then names = "t01_model t02_graph t03_nls t04_ui t05_fresh t06_plugins t07_assist t08_git t09_ssc"
+if names~strip == "" then names = "t01_model t02_graph t03_nls t04_ui t05_fresh t06_plugins t07_assist t08_git t09_ssc t10_binding"
 do t over names~space~makeArray(" ")
   tests~append(t)
 end

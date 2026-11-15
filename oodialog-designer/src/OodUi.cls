@@ -60,6 +60,7 @@ ex.threads = Threads and a timer
 ex.contacts = Tabs, list view and menu
 ex.gadgets = Tree view, track bar, date picker
 ex.contactsDE = Contacts in English and German (Strings…)
+ex.people = A person over five tables (bound to an object)
 btn.open = Open…
 btn.open.tip = Open a .rex made with the designer
 btn.save = Save .rex
@@ -160,6 +161,21 @@ prop.grayed = grayed
 prop.min = min
 prop.max = max
 prop.pos = position
+prop.binding.hint = The object it edits (oorexx_mapped_objects): OK saves it
+prop.object = object class
+prop.objectfile = class file
+prop.objectkey = key (none: a new one)
+prop.databases = databases (ent=data/ent …)
+prop.bind = bound to (attribute; part:a,b for a list)
+err.bind.class = %1 is not a class name
+err.bind.databases = %1: a database is name=folder
+err.bind.list = %1: a list view binds part:attribute,attribute
+err.bind.attr = %1 is not an attribute name
+err.bind.path = %1: %2 can only be shown, not edited: bind it to a text
+err.bind.noObject = Controls are bound, but the form names no object class
+err.bind.noDatabases = The form's object needs its databases (ent=data/ent)
+err.bind.columns = %1: its bound attributes and its columns differ in number
+st.noData = The data for bound dialogs is not in this site (data/files.txt)
 var.new = new variable
 var.first = first value
 var.value.tip = First value: a Rexx expression
@@ -465,6 +481,7 @@ ex.threads = Threads und ein Zeitgeber
 ex.contacts = Registerkarten, Listenansicht und Menü
 ex.gadgets = Strukturansicht, Schieberegler, Datumsauswahl
 ex.contactsDE = Kontakte auf Englisch und Deutsch (Texte…)
+ex.people = Eine Person über fünf Tabellen (an ein Objekt gebunden)
 btn.open = Öffnen…
 btn.open.tip = Eine mit dem Designer erstellte .rex öffnen
 btn.save = .rex speichern
@@ -565,6 +582,21 @@ prop.grayed = grau
 prop.min = Minimum
 prop.max = Maximum
 prop.pos = Position
+prop.binding.hint = Das Objekt, das er bearbeitet (oorexx_mapped_objects): OK speichert es
+prop.object = Objektklasse
+prop.objectfile = Klassendatei
+prop.objectkey = Schlüssel (keiner: ein neues)
+prop.databases = Datenbanken (ent=data/ent …)
+prop.bind = gebunden an (Attribut; teil:a,b für eine Liste)
+err.bind.class = %1 ist kein Klassenname
+err.bind.databases = %1: eine Datenbank ist name=ordner
+err.bind.list = %1: eine Listenansicht bindet teil:attribut,attribut
+err.bind.attr = %1 ist kein Attributname
+err.bind.path = %1: %2 kann nur gezeigt, nicht bearbeitet werden: an einen Text binden
+err.bind.noObject = Steuerelemente sind gebunden, aber das Formular nennt keine Objektklasse
+err.bind.noDatabases = Das Objekt des Formulars braucht seine Datenbanken (ent=data/ent)
+err.bind.columns = %1: gebundene Attribute und Spalten unterscheiden sich in der Zahl
+st.noData = Die Daten für gebundene Dialoge sind nicht in dieser Seite (data/files.txt)
 var.new = neue Variable
 var.first = Anfangswert
 var.value.tip = Anfangswert: ein Rexx-Ausdruck

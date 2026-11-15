@@ -3,7 +3,7 @@
 Architecture: Tom Dyer.  Code: Claude (Opus 5.5).
 
 usage: python3 tools/dztest.py [scenario ...]     (after rexx tools/build.rex)
-Scenarios: hand, calculator, threads, refuse, saveopen, views, gadgets, libraries, graph, trace, languages, ui_de, plugins, assist, source (default: all).
+Scenarios: hand, calculator, threads, refuse, saveopen, views, gadgets, libraries, graph, trace, languages, ui_de, plugins, assist, source, bound (default: all).
 Python is used here only because this tool drives a browser (Playwright);
 the designer's model, generator and reader are ooRexx (src/OodDesigner.cls)
 and are tested without a browser by tests/t01_model.rex.  Progress is logged
@@ -584,7 +584,45 @@ def sc_source(pg):
     finally:
         mock.terminate()
 
-SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views, 'gadgets': sc_gadgets, 'libraries': sc_libraries, 'graph': sc_graph, 'trace': sc_trace, 'languages': sc_languages, 'ui_de': sc_ui_de, 'plugins': sc_plugins, 'assist': sc_assist, 'source': sc_source}
+def sc_bound(pg):
+    """Bound: the People example, a dialog bound to one object over five
+    tables (oorexx_mapped_objects on NoSQLServer). It opens Tom's Person,
+    with his phone from per_ext, his employer from com and his addresses
+    through per_addr; Save commits a changed name and phone in one
+    transaction (the SAVED event says so); an emptied name (NOT NULL) is
+    refused in a message, and the dialog stays open."""
+    ready(pg); open_example(pg, 'examples/People.rex')
+    src = program_text(pg)
+    expect('round trip in the browser is byte-identical', src, (SITE / 'examples/People.rex').read_text())
+    expect('the form names its object', snap(pg)['binding']['object'], 'Person')
+    pg.click('#formTitle'); settle(pg)
+    expect('the binding in the form\'s properties', pg.input_value('#props [data-prop="databases"]'), 'ent=ent')
+    expect_in('SAVED among the form\'s events', 'SAVED', pg.inner_text('#tree'))
+    pg.screenshot(path=str(SHOTS / 'bound_design.png'))
+    run(pg)
+    pg.wait_for_selector('.ood-dlg', timeout=60000); settle(pg, 1500)
+    fields = pg.locator('.ood-dlg input[type="text"], .ood-dlg input:not([type])')
+    expect('the name, from per', fields.nth(0).input_value(), 'Tom Dyer')
+    expect('the phone, from per_ext', fields.nth(1).input_value(), '0141 555 0100')
+    t = dlg_text(pg)
+    expect_in('the employer, through per_company', 'Anduin', t)
+    expect_in('the addresses, through per_addr', 'Byres Road', t)
+    expect_in('  both of them', 'Augasse 2-6', t)
+    pg.screenshot(path=str(SHOTS / 'bound_run.png'))
+    fields.nth(0).fill(''); settle(pg, 200)
+    press(pg, 'Save'); settle(pg, 1500)
+    expect_in('an empty name: refused, in a message', 'NOT NULL', pg.inner_text('body'))
+    pg.screenshot(path=str(SHOTS / 'bound_refused.png'))
+    press(pg, 'OK'); settle(pg, 500)
+    expect('the dialog stays open', pg.locator('.ood-dlg').count() >= 1, True)
+    fields = pg.locator('.ood-dlg input[type="text"], .ood-dlg input:not([type])')
+    fields.nth(0).fill('Tom Dyer (Alchemy)'); fields.nth(1).fill('0141 555 0199'); settle(pg, 200)
+    press(pg, 'Save')
+    r = wait_end(pg)
+    expect('saved: closed with OK', r['rc'], 1)
+    expect_in('the SAVED event ran after the commit', 'saved: Tom Dyer (Alchemy) (0141 555 0199)', pg.inner_text('#out'))
+
+SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views, 'gadgets': sc_gadgets, 'libraries': sc_libraries, 'graph': sc_graph, 'trace': sc_trace, 'languages': sc_languages, 'ui_de': sc_ui_de, 'plugins': sc_plugins, 'assist': sc_assist, 'source': sc_source, 'bound': sc_bound}
 def main():
     names = sys.argv[1:] or list(SCENARIOS)
     srv = subprocess.Popen(['node', str(SITE / 'serve.mjs'), str(SITE), '--port', str(PORT)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

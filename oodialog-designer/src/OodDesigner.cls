@@ -21,11 +21,11 @@
 
 ::class OodModule public mixinclass Object
 ::method module_version class
-  return "0.8.0"
+  return "0.9.0"
 ::method module_lastChanged class
   return "2026-11-15"
 ::method module_version
-  return "0.8.0"
+  return "0.9.0"
 ::method module_lastChanged
   return "2026-11-15"
 
@@ -183,7 +183,7 @@
 
 /* A design: the form, its controls, its variables and its event code. */
 ::class OodDesign public inherit OodModule
-::attribute form            -- .Directory  NAME TITLE W H STYLE
+::attribute form            -- .Directory  NAME TITLE W H STYLE, and its binding: OBJECT OBJECTFILE OBJECTKEY DATABASES
 ::attribute controls        -- .Array of OodControl, in creation (tab) order
 ::attribute vars            -- .Array of .Directory  NAME VALUE
 ::attribute events          -- .Directory  "CTL.EVENT" -> .Directory CONTROL EVENT THREAD CODE
@@ -206,6 +206,7 @@
   form["W"] = 200
   form["H"] = 120
   form["STYLE"] = "CENTER"
+  form["OBJECT"] = ""; form["OBJECTFILE"] = ""; form["OBJECTKEY"] = ""; form["DATABASES"] = ""
   controls = .array~new
   vars = .array~new
   events = .directory~new
@@ -398,7 +399,7 @@
 -- The property names of a control, its kind's props plus the geometry.
 ::method propNames
   use strict arg name
-  if name~caselessEquals("form") then return "name title w h"
+  if name~caselessEquals("form") then return "name title w h object objectfile objectkey databases"
   c = self~control(name)
   if c~kind~nonvisual then return ("name" c~kind~props)~space
   names = "name x y w h" c~kind~props
@@ -461,6 +462,23 @@
         form["NAME"] = value
       end
       when key == "title" then form["TITLE"] = value
+      -- the binding: the dialog edits one object of a mapped class
+      -- (oorexx_mapped_objects): its class, the file it is in, the key it
+      -- opens unless the program is given one, the databases ("ent=data/ent ...")
+      when key == "object" then do
+        value = value~strip
+        if value \== "", \oodIsSymbol(value) then raise syntax 93.900 array(oodT("err.bind.class", value))
+        form["OBJECT"] = value
+      end
+      when key == "objectfile" then form["OBJECTFILE"] = value~strip
+      when key == "objectkey" then form["OBJECTKEY"] = value~strip
+      when key == "databases" then do
+        do d over value~space~makeArray(" ")
+          parse var d sch "=" path
+          if sch == "" | path == "" | \oodIsSymbol(sch) then raise syntax 93.900 array(oodT("err.bind.databases", d))
+        end
+        form["DATABASES"] = value~space
+      end
       when key == "w" | key == "h" then do
         value = self~toUnit(value)
         if value < 20 then value = 20
@@ -485,6 +503,7 @@
     end
     when c~kind~props~wordpos(key) = 0 then
       raise syntax 93.900 array(oodT("err.prop", c~type, key))
+    when key == "bind" then c~setProp(key, self~checkBind(c, value))
     when key == "opts" then do
       allowed = c~kind~opts
       value = value~upper~space
@@ -1257,6 +1276,7 @@
   out = .array~new
   out~append("designer version="self~module_version)
   out~append("form name="oodQ(form["NAME"]) "title="oodQ(form["TITLE"]) "w="form["W"] "h="form["H"] "style="oodQ(form["STYLE"]))
+  if self~isBound then out~append("binding object="oodQ(form["OBJECT"]) "file="oodQ(form["OBJECTFILE"]) "key="oodQ(form["OBJECTKEY"]) "databases="oodQ(form["DATABASES"]))
   if languages~items > 0 then out~append("languages list="oodQ(languages~makeString("L", " ")))
   do r over requires
     out~append("requires file="oodQ(r))
@@ -1270,7 +1290,9 @@
   do c over controls
     line = "control type="c~type "name="c~name "id="c~id "x="c~x "y="c~y "w="c~w "h="c~h
     do p over c~kind~props~makeArray(" ")
-      if p \== "" then line = line p"="oodQ(c~prop(p))
+      if p == "" then iterate
+      if p == "bind", c~prop(p) == "" then iterate       -- not bound: as before the binding came
+      line = line p"="oodQ(c~prop(p))
     end
     if c~prop("page") \== "" then line = line "page="c~prop("page")
     out~append(line)
@@ -1349,6 +1371,12 @@
         d~form["STYLE"] = oodAt(f, "STYLE")
       end
       when f["*"] == "var" then d~setVar(f["NAME"], oodAt(f, "VALUE"))
+      when f["*"] == "binding" then do
+        d~setProp("form", "object", oodAt(f, "OBJECT"))
+        d~setProp("form", "objectfile", oodAt(f, "FILE"))
+        d~setProp("form", "objectkey", oodAt(f, "KEY"))
+        d~setProp("form", "databases", oodAt(f, "DATABASES"))
+      end
       when f["*"] == "requires" then d~addRequire(f["FILE"])
       when f["*"] == "shared" then d~setShared(f["NAME"], oodAt(f, "VALUE"))
       when f["*"] == "control" then d~readControl(f)
@@ -1427,15 +1455,23 @@
   out~append("   Design: the ::RESOURCE oodDesign at the end.  The designer writes this")
   out~append("   whole file; what you type is the body of each event method.")
   out~append("   ooDialog Designer -- architecture: Tom Dyer; code: Claude (Opus 5.5). */")
-  if nls then do
-    out~append("parse arg lang                     -- the language: de, fr_CA, ...")
-    out~append("."nm"~nlsChosen = lang~strip")
+  bound = self~isBound
+  if bound then do
+    if nls then out~append("parse arg key lang                 -- the key of the" form["OBJECT"] "to edit; the language: de, fr_CA, ...")
+    else out~append("parse arg key                      -- the key of the" form["OBJECT"] "to edit (none: the design's)")
   end
-  out~append("dlg = ."nm"~new")
+  else if nls then out~append("parse arg lang                     -- the language: de, fr_CA, ...")
+  if nls then out~append("."nm"~nlsChosen = lang~strip")
+  if bound then out~append("dlg = ."nm"~new(key~strip)")
+  else out~append("dlg = ."nm"~new")
   out~append("if dlg~initCode \= 0 then return dlg~initCode")
   out~append("return dlg~execute(""SHOWTOP"")")
   out~append("")
   out~append("::requires ""ooDialog.cls""")
+  if bound then do
+    out~append("::requires ""MappedObjects.cls""        -- the object over its tables (oorexx_mapped_objects)")
+    if form["OBJECTFILE"] \== "", requires~index(form["OBJECTFILE"]) == .nil then out~append("::requires" oodRx(form["OBJECTFILE"]))
+  end
   do r over requires
     out~append("::requires" oodRx(r))
   end
@@ -1443,6 +1479,11 @@
   out~append("::class" nm "subclass UserDialog")
   out~append("")
   if shared~items > 0 then out~append("::attribute sharedScope        -- reach it in any method with: expose sharedScope")
+  if bound then do
+    out~append("::attribute store                    -- the databases (an ObjectStore)")
+    out~append("::attribute session                  -- the unit of work: committed by OK")
+    out~append("::attribute object                   -- the" form["OBJECT"] "this dialog edits")
+  end
   do v over vars
     out~append("::attribute" v["NAME"])
   end
@@ -1452,7 +1493,11 @@
   out~append("")
   -- init: variables, the dialog template, data attributes' first values
   out~append("::method init")
-  out~append("  forward class (super) continue")
+  if bound then do
+    out~append("  use strict arg key = """"")
+    out~append("  forward class (super) arguments (.array~new) continue")
+  end
+  else out~append("  forward class (super) continue")
   if nls then out~append("  self~nlsUse(self~class~nlsChosen," oodRx(self~baseLanguage)")")
   if shared~items > 0 then do
     out~append("  self~sharedScope = .directory~new")
@@ -1468,8 +1513,14 @@
     if c~type == "TIMER" then out~append("  self~"c~name"_enabled =" oodBool(c~prop("enabled")))
   end
   out~append("  self~create(0, 0," form["W"]"," form["H"]"," self~textExpr("form", "title", form["TITLE"])"," oodRx(form["STYLE"])")")
+  if bound then self~generateOpen(out, nls)
   do c over controls
     if c~kind~args~wordpos("attr") = 0 then iterate
+    if bound, c~prop("bind") \== "" then do
+      if c~type == "EDIT" then out~append("  self~"c~name"_data = oodValueOf(self~object," oodRx(c~prop("bind"))")")
+      if c~type == "CHECKBOX" then out~append("  self~"c~name"_data = (oodValueOf(self~object," oodRx(c~prop("bind"))") == 1)")
+      iterate
+    end
     if c~type == "EDIT" then out~append("  self~"c~name"_data =" oodRx(c~prop("text")))
     if c~type == "CHECKBOX" | c~type == "RADIOBUTTON" then out~append("  self~"c~name"_data =" oodNum(c~prop("checked")))
   end
@@ -1518,6 +1569,8 @@
         end
       end
     end
+    if c~type == "STATIC", bound, c~prop("bind") \== "" then
+      out~append("  self~"c~name"~setText(oodValueOf(self~object," oodRx(c~prop("bind"))"))")
     if c~type == "PROGRESSBAR" then do
       out~append("  self~"c~name"~setRange("c~prop("min")"," c~prop("max")")")
       out~append("  self~"c~name"~setPos("c~prop("pos")")")
@@ -1539,6 +1592,16 @@
         if width == "" then width = 50
         out~append("  self~"c~name"~insertColumn("i"," oodRx(title)"," width")")
         i = i + 1
+      end
+      if bound, c~prop("bind") \== "" then do
+        parse value c~prop("bind") with part ":" attrs
+        out~append("  do part over oodPartsOf(self~object," oodRx(part)")")
+        line = "    self~"c~name"~addRow( , "
+        do a over attrs~makeArray(",")
+          line = line"," "oodValueOf(part," oodRx(a)")"
+        end
+        out~append(line")")
+        out~append("  end")
       end
       if c~prop("rows") \== "" then do
         do row over c~prop("rows")~makeArray("|")
@@ -1648,6 +1711,7 @@
     out~append("")
   end
   if nls then self~nlsMethods(out)
+  if bound then self~generateValidate(out)
   -- the form's own methods
   do m over methods
     out~append("::method" m["NAME"] "unguarded")
@@ -1688,6 +1752,7 @@
   if filter \== .nil then do l over filter~extraLines
     out~append(l)
   end
+  if bound then self~generateBindRoutines(out)
   if nls then do
     self~nlsRoutine(out)
     do lang over languages
@@ -1704,6 +1769,93 @@
   end
   out~append("::END")
   return out~makeString("L", "0a"x) || "0a"x
+
+-- init, for a bound design: the store, its databases, the session and the
+-- object (the key given, else the design's; none: a new one)
+::method generateOpen
+  expose form
+  use strict arg out, nls
+  cls = form["OBJECT"]
+  lang = """en"""
+  if nls then lang = "self~class~nlsChosen"
+  out~append("  -- the" cls "it edits: its tables, a unit of work, the object")
+  out~append("  self~store = .ObjectStore~new("lang")")
+  do d over form["DATABASES"]~makeArray(" ")
+    parse var d sch "=" path
+    out~append("  self~store~attach("oodRx(sch)", oodBeside("oodRx(path)"))")
+  end
+  out~append("  self~session = self~store~session")
+  if form["OBJECTKEY"] \== "" then out~append("  if key == """" then key =" oodRx(form["OBJECTKEY"]))
+  out~append("  if key == """" then self~object = self~session~new(."cls")")
+  out~append("  else self~object = self~session~find(."cls", key)")
+  out~append("  if self~object == .nil then do")
+  out~append("    say ""There is no"" "oodRx(cls)" ""with key"" key")
+  out~append("    self~initCode = 1")
+  out~append("    return")
+  out~append("  end")
+  return
+
+-- validate, for a bound design: the fields into the object, then the commit;
+-- a refusal is shown and the dialog stays open
+::method generateValidate
+  expose controls events
+  use strict arg out
+  out~append("::method validate unguarded")
+  out~append("  self~getData")
+  do c over controls
+    b = c~prop("bind")
+    if b == "" | b~pos(".") > 0 then iterate
+    if c~type == "EDIT" then out~append("  self~object~" || b "= oodFromText(self~"c~name"_data)")
+    if c~type == "CHECKBOX" then out~append("  self~object~" || b "= self~"c~name"_data")
+  end
+  out~append("  signal on syntax name refused")
+  out~append("  self~session~commit")
+  if events~hasIndex("FORM.SAVED") then out~append("  self~on_form_saved")
+  out~append("  return .true")
+  out~append("refused:")
+  out~append("  c = condition(""O"")")
+  out~append("  msg = c~at(""MESSAGE"")")
+  out~append("  if c~at(""CODE"") == ""93.900"", c~at(""ADDITIONAL"")~isA(.Array) then msg = c~at(""ADDITIONAL"")[1]")
+  out~append("  call errorDialog msg")
+  out~append("  return .false")
+  out~append("")
+  return
+
+::method generateBindRoutines
+  use strict arg out
+  -- each routine's comment inside it: what is between the last event
+  -- method and the next directive is read back as that method's code
+  out~append("::routine oodValueOf")
+  out~append("  -- a value of the object: an attribute, or a path of them (employer.name); """" for none")
+  out~append("  use strict arg obj, path")
+  out~append("  v = obj")
+  out~append("  do a over path~makeArray(""."")")
+  out~append("    if v == .nil then return """"")
+  out~append("    v = v~send(a)")
+  out~append("  end")
+  out~append("  if v == .nil then return """"")
+  out~append("  return v")
+  out~append("")
+  out~append("::routine oodBeside")
+  out~append("  -- a database's folder: as given if absolute, else beside this program")
+  out~append("  use strict arg path")
+  out~append("  if path~left(1) == ""/"" | path~left(1) == ""\"" | path~substr(2, 1) == "":"" then return path")
+  out~append("  return .File~new(.context~package~name)~parent || .File~separator || path")
+  out~append("")
+  out~append("::routine oodPartsOf")
+  out~append("  -- the objects of a many-part (an empty array for none)")
+  out~append("  use strict arg obj, attr")
+  out~append("  v = obj~send(attr)")
+  out~append("  if v == .nil then return .array~new")
+  out~append("  return v")
+  out~append("")
+  out~append("::routine oodFromText")
+  out~append("  -- an entry field's text for the object: empty is no value (NULL)")
+  out~append("  use strict arg t")
+  out~append("  if t == """" then return .nil")
+  out~append("  return t")
+  out~append("")
+  return
 
 -- the controls on the pages of tab strip t, in creation order
 ::method pageMembers
@@ -1776,6 +1928,29 @@
 /* ---- checks ---------------------------------------------------------------- */
 
 -- Problems a designer should show but need not refuse: one per line.
+-- the dialog edits an object (form OBJECT set)
+::method isBound
+  expose form
+  return oodAt(form, "OBJECT") \== ""
+
+-- a control's bind, checked: "attr" or "a.b" (static text only: read only);
+-- a list view's "part:attr,attr" (one attribute a column)
+::method checkBind
+  use strict arg c, value
+  value = value~strip
+  if value == "" then return ""
+  if c~type == "LISTVIEW" then do
+    parse var value part ":" attrs
+    if \oodIsSymbol(part) | attrs~strip == "" then raise syntax 93.900 array(oodT("err.bind.list", value))
+    do a over attrs~makeArray(",")
+      if \oodIsPath(a~strip) then raise syntax 93.900 array(oodT("err.bind.list", value))
+    end
+    return part":"attrs~space(0)
+  end
+  if \oodIsPath(value) then raise syntax 93.900 array(oodT("err.bind.attr", value))
+  if value~pos(".") > 0, c~type \== "STATIC" then raise syntax 93.900 array(oodT("err.bind.path", c~name, value))
+  return value
+
 ::method problems
   expose form controls
   out = .array~new
@@ -1786,6 +1961,17 @@
     if c~x + c~w > form["W"] | c~y + c~h > form["H"] then out~append(c~name "is outside the form")
   end
   if \hasClose then out~append("No button has role OK or CANCEL: the dialog closes only with its X")
+  bound = .false
+  do c over controls
+    if c~prop("bind") \== "" then bound = .true
+  end
+  if bound, \self~isBound then out~append(oodT("err.bind.noObject"))
+  if self~isBound, oodAt(form, "DATABASES") == "" then out~append(oodT("err.bind.noDatabases"))
+  do c over controls
+    if c~type \== "LISTVIEW" | c~prop("bind") == "" then iterate
+    parse value c~prop("bind") with . ":" attrs
+    if attrs~makeArray(",")~items \= c~prop("columns")~makeArray("|")~items then out~append(oodT("err.bind.columns", c~name))
+  end
   return out~makeString("L", "0a"x)
 
 
@@ -1829,6 +2015,22 @@
   return f
 
 -- a field of a directory, "" when it is not there
+-- a Rexx symbol (a name of a class, an attribute, a schema)
+::routine oodIsSymbol public
+  use strict arg s
+  if s == "" then return .false
+  if s~verify("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_!?") > 0 then return .false
+  return \datatype(s~left(1), "W")
+
+-- attribute names joined with dots: "name", "employer.name"
+::routine oodIsPath public
+  use strict arg s
+  if s == "" | s~left(1) == "." | s~right(1) == "." then return .false
+  do w over s~makeArray(".")
+    if \oodIsSymbol(w) then return .false
+  end
+  return .true
+
 ::routine oodAt public
   use strict arg f, key
   v = f~at(key)
@@ -1947,22 +2149,22 @@
    (types: kinds it applies to, * for every visual kind; %n: the name). */
 ::resource oodKinds
 kind type=PUSHBUTTON label="Push button" prefix=btn create=createPushButton access=newPushButton args=text w=50 h=14 text=Button events=CLICKED connect=connectButtonEvent opts="DEFAULT GROUP NOTAB DISABLED HIDDEN" props="text role opts"
-kind type=STATIC label=Text prefix=lbl create=createStaticText access=newStatic args=text w=60 h=10 text=Text opts="LEFT RIGHT CENTER GROUP DISABLED HIDDEN" props="text opts"
-kind type=EDIT label="Entry field" prefix=txt create=createEdit access=newEdit args=attr w=80 h=12 events="CHANGE UPDATE" connect=connectEditEvent opts="READONLY RIGHT CENTER PASSWORD MULTILINE NUMBER UPPER GROUP NOTAB DISABLED HIDDEN" props="text opts"
-kind type=CHECKBOX label="Check box" prefix=chk create=createCheckBox access=newCheckBox args="text attr" w=60 h=10 text=Check events=CLICKED connect=connectButtonEvent opts="GROUP NOTAB DISABLED HIDDEN" props="text checked opts"
+kind type=STATIC label=Text prefix=lbl create=createStaticText access=newStatic args=text w=60 h=10 text=Text opts="LEFT RIGHT CENTER GROUP DISABLED HIDDEN" props="text bind opts"
+kind type=EDIT label="Entry field" prefix=txt create=createEdit access=newEdit args=attr w=80 h=12 events="CHANGE UPDATE" connect=connectEditEvent opts="READONLY RIGHT CENTER PASSWORD MULTILINE NUMBER UPPER GROUP NOTAB DISABLED HIDDEN" props="text bind opts"
+kind type=CHECKBOX label="Check box" prefix=chk create=createCheckBox access=newCheckBox args="text attr" w=60 h=10 text=Check events=CLICKED connect=connectButtonEvent opts="GROUP NOTAB DISABLED HIDDEN" props="text checked bind opts"
 kind type=RADIOBUTTON label="Radio button" prefix=opt create=createRadioButton access=newRadioButton args="text attr" w=60 h=10 text=Option events=CLICKED connect=connectButtonEvent opts="GROUP NOTAB DISABLED HIDDEN" props="text checked groupstart opts"
 kind type=GROUPBOX label="Group box" prefix=grp create=createGroupBox access=newGroupBox args=text w=100 h=50 text=Group opts="HIDDEN" props="text opts"
 kind type=LISTBOX label="List box" prefix=lst create=createListBox access=newListBox args=attr w=80 h=50 events="SELCHANGE DBLCLK" connect=connectListBoxEvent opts="SORT MULTI GROUP NOTAB DISABLED HIDDEN" props="items opts"
 kind type=COMBOBOX label="Combo box" prefix=cbo create=createComboBox access=newComboBox args=attr w=80 h=60 events=SELCHANGE connect=connectComboBoxEvent opts="LIST SIMPLE SORT GROUP NOTAB DISABLED HIDDEN" defopts=LIST props="items opts"
 kind type=PROGRESSBAR label="Progress bar" prefix=prg create=createProgressBar access=newProgressBar args="" w=100 h=10 opts="SMOOTH VERTICAL HIDDEN" props="min max pos opts"
-kind type=LISTVIEW label="List view" prefix=lv create=createListView access=newListView args="" w=120 h=60 events="SELECTCHANGED COLUMNCLICK CHECKBOXCHANGED" connect=connectListViewEvent opts="REPORT LIST ICON SMALLICON SINGLESEL SHOWSELALWAYS GROUP NOTAB DISABLED HIDDEN" defopts="REPORT SHOWSELALWAYS" exopts="FULLROWSELECT GRIDLINES CHECKBOXES" props="columns rows exstyles opts"
+kind type=LISTVIEW label="List view" prefix=lv create=createListView access=newListView args="" w=120 h=60 events="SELECTCHANGED COLUMNCLICK CHECKBOXCHANGED" connect=connectListViewEvent opts="REPORT LIST ICON SMALLICON SINGLESEL SHOWSELALWAYS GROUP NOTAB DISABLED HIDDEN" defopts="REPORT SHOWSELALWAYS" exopts="FULLROWSELECT GRIDLINES CHECKBOXES" props="columns rows bind exstyles opts"
 kind type=TAB label="Tab strip" prefix=tab create=createTab access=newTab args="" w=120 h=14 events=SELCHANGE connect=connectTabEvent opts="BUTTONS MULTILINE GROUP NOTAB DISABLED HIDDEN" props="tabs opts"
 kind type=TREEVIEW label="Tree view" prefix=tv create=createTreeView access=newTreeView args="" w=100 h=60 events=SELCHANGED connect=connectTreeViewEvent opts="LINES BUTTONS ATROOT SHOWSELALWAYS GROUP NOTAB DISABLED HIDDEN" defopts="LINES BUTTONS ATROOT SHOWSELALWAYS" props="nodes opts"
 kind type=TRACKBAR label="Track bar" prefix=trk create=createTrackBar access=newTrackBar args="" w=100 h=16 opts="HORIZONTAL VERTICAL AUTOTICKS NOTICKS BOTH TOP BOTTOM GROUP NOTAB DISABLED HIDDEN" defopts="HORIZONTAL AUTOTICKS" props="min max pos opts"
 kind type=DATETIME label="Date picker" prefix=dtp create=createDateTimePicker access=newDateTimePicker args="" w=80 h=12 events=DATETIMECHANGE connect=connectDateTimePickerEvent opts="SHORT LONG TIME SHOWNONE UPDOWN GROUP NOTAB DISABLED HIDDEN" defopts=SHORT props="opts"
 kind type=MENUITEM label="Menu item" prefix=mnu nonvisual=1 events=CLICKED props="popup text checked grayed"
 kind type=TIMER label="Timer thread" prefix=tmr nonvisual=1 events=TICK props="interval enabled"
-form events="INIT OK CANCEL"
+form events="INIT OK CANCEL SAVED"
 evargs type=LISTVIEW event=SELECTCHANGED args="id, item, state, list"
 evargs type=LISTVIEW event=COLUMNCLICK args="id, column, list"
 evargs type=LISTVIEW event=CHECKBOXCHANGED args="id, item, state, list"
