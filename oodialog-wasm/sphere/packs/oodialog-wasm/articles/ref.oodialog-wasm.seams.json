@@ -1,0 +1,67 @@
+{
+  "kind": "article",
+  "id": "ref.oodialog-wasm.seams",
+  "version": "0.1",
+  "sphere": "oodialog-wasm",
+  "title": "Seams: the places where other work plugs in",
+  "summary": "Four seams let other tasks build on the port without editing it: a resource provider for binary Windows resources, the list of live dialogs for system classes, the Windows file-name helper for loaders, and the file dialog class.",
+  "authority": "implementation-record",
+  "section": "reference",
+  "topics": [
+    "seams",
+    "resources",
+    "designer",
+    "winsystm",
+    "files"
+  ],
+  "seams": [
+    "Binary resources (.dll, .res): the port does not read them. Set .oodn~resourceProvider to an object that answers dialogTemplate(library, id) and menuTemplate(library, id). The shapes are in the comment above the attribute resourceProvider in src/oodWeb.cls. Test: tests/res/t07_resdialog_binary.",
+    "Live dialogs: .oodn~windows answers an array of the ooDialog objects of the dialogs now shown, oldest first. A system-classes file (WindowsManager, WindowObject, MenuObject for this machine) builds on it and on ooDialog's own API. Test: tests/t14_owned.",
+    "Windows file names: site/oodfiles.js, function oodFiles.windowsNames(files), called by the page before rexx.run. For every ::requires or CALL name written with a backslash it adds the file again under that literal name, in each directory from which the name resolves the Windows way. Programs are not changed. Test: tests/t16_winnames.",
+    "File dialog: class OodFileDialog in src/oodExtras.cls, over the WASM machine's file system. FileNameDialog, OpenFileDialog, SaveFileDialog and BrowseForFolder all use it.",
+    ".application~srcDir is the directory of the program that was started (the bottom of the call stack), also when oodWeb.cls is in another directory. Test: tests/t17_srcdir.",
+    "The browser clipboard is reached through .js~page of the runtime's js.cls. The port itself does not use it."
+  ],
+  "invariants": [
+    "winsystm.cls and OLE are Windows system libraries, not ooDialog. The port does not provide them. The sweep marks programs that need them as outside.",
+    "The designer and the Qt6 renderer are other tasks' work. Their programs in tests/designer are copies kept as a contract test; they are not edited here."
+  ],
+  "provenance": [
+    {
+      "artifact": "oodialog-wasm-39a1eec.zip",
+      "sha256": "182237b600c6e2dfff5b15f7a9ee780a25b3f45cea13189778822d17547076e8",
+      "member": "oodialog-wasm/src/oodWeb.cls",
+      "line_start": 1404,
+      "line_end": 1404,
+      "claim": "The resourceProvider attribute; the shapes are in the comment above it.",
+      "note": "git archive of animatedads/oorexx commit 39a1eec (branch oodialog-wasm)"
+    },
+    {
+      "artifact": "oodialog-wasm-39a1eec.zip",
+      "sha256": "182237b600c6e2dfff5b15f7a9ee780a25b3f45cea13189778822d17547076e8",
+      "member": "oodialog-wasm/src/oodWeb.cls",
+      "line_start": 480,
+      "line_end": 490,
+      "claim": ".oodn~windows answers the live dialogs, oldest first.",
+      "note": "git archive of animatedads/oorexx commit 39a1eec (branch oodialog-wasm)"
+    },
+    {
+      "artifact": "oodialog-wasm-39a1eec.zip",
+      "sha256": "182237b600c6e2dfff5b15f7a9ee780a25b3f45cea13189778822d17547076e8",
+      "member": "oodialog-wasm/site/oodfiles.js",
+      "line_start": 1,
+      "line_end": 17,
+      "claim": "windowsNames(files) and its rules.",
+      "note": "git archive of animatedads/oorexx commit 39a1eec (branch oodialog-wasm)"
+    },
+    {
+      "artifact": "oodialog-wasm-39a1eec.zip",
+      "sha256": "182237b600c6e2dfff5b15f7a9ee780a25b3f45cea13189778822d17547076e8",
+      "member": "oodialog-wasm/src/oodWeb.cls",
+      "line_start": 690,
+      "line_end": 705,
+      "claim": "srcDir is taken from the bottom frame of the call stack.",
+      "note": "git archive of animatedads/oorexx commit 39a1eec (branch oodialog-wasm)"
+    }
+  ]
+}

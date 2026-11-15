@@ -1,0 +1,804 @@
+{
+  "kind": "corpus",
+  "id": "oodialog-wasm.facts",
+  "version": "0.1",
+  "sphere": "oodialog-wasm",
+  "title": "ooDialog/WASM: every statement of the articles, one a record, for search",
+  "records": [
+    {
+      "topic": "start",
+      "article": "ops.oodialog-wasm.start",
+      "rule": "Start here: what ooDialog/WASM is and where it lives. ooDialog/WASM runs unchanged ooDialog programs in a web browser on Josep Maria Blasco's ooRexx/WASM runtime. Upstream's Rexx classes are kept. Only the Windows DLL is replaced: by a native layer in Rexx (oodWeb.cls) and a page runtime in JavaScript (oodialog-web.js). The code is in animatedads/oorexx, branch oodialog-wasm, directory oodialog-wasm/. The README.md there is the current state; this sphere explains how the parts fit and what other tasks may rely on."
+    },
+    {
+      "topic": "start",
+      "article": "ops.oodialog-wasm.start",
+      "field": "facts",
+      "rule": "Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: oorexxwasm 0.2.4 (ooRexx 5.3.0) and its js.cls, by Josep Maria Blasco."
+    },
+    {
+      "topic": "start",
+      "article": "ops.oodialog-wasm.start",
+      "field": "facts",
+      "rule": "Upstream: ooDialog trunk, SourceForge oorexx code-0 r13513. About 11,700 lines of Rexx classes over 104,000 lines of C++, joined by about 1,180 native entry points."
+    },
+    {
+      "topic": "start",
+      "article": "ops.oodialog-wasm.start",
+      "field": "facts",
+      "rule": "Programs keep ::requires \"ooDialog.cls\". Three files go into the interpreter's file system: ooDialog.cls, oodWeb.cls, ooShapes.cls. They are in dist/."
+    },
+    {
+      "topic": "start",
+      "article": "ops.oodialog-wasm.start",
+      "field": "facts",
+      "rule": "tools/oodgen.rex reads upstream's *.cls and writes dist/ooDialog.cls. Every external \"LIBRARY oodialog fn\" becomes a forward to .oodn~fn(self, MESSAGENAME, argumentArray)."
+    },
+    {
+      "topic": "start",
+      "article": "ops.oodialog-wasm.start",
+      "field": "facts",
+      "rule": "src/oodWeb.cls is the native layer. .oodn is its one object. A native that is not ported raises SYNTAX 98.900 and names itself."
+    },
+    {
+      "topic": "start",
+      "article": "ops.oodialog-wasm.start",
+      "field": "facts",
+      "rule": "src/oodialog-web.js is the page runtime: dialogs and controls as DOM elements, a subset of Win32 control messages, events back to Rexx. The build embeds it in oodWeb.cls."
+    },
+    {
+      "topic": "start",
+      "article": "ops.oodialog-wasm.start",
+      "field": "facts",
+      "rule": "src/patches.txt replaces or drops the few upstream members that must run in the class's own scope (init methods, the calendar's date attribute)."
+    },
+    {
+      "topic": "start",
+      "article": "ops.oodialog-wasm.start",
+      "field": "facts",
+      "rule": "src/oodExtras.cls holds classes of the port that need ooDialog's own classes (OodFileDialog). The build appends it to ooDialog.cls."
+    },
+    {
+      "topic": "start",
+      "article": "ops.oodialog-wasm.start",
+      "field": "facts",
+      "rule": "The lane of this work in the agent mailbox is oodialog_wasm."
+    },
+    {
+      "topic": "start",
+      "article": "ops.oodialog-wasm.start",
+      "field": "procedure",
+      "rule": "Read ref.oodialog-wasm.renderer-contract before writing another renderer or a tool that drives the page."
+    },
+    {
+      "topic": "start",
+      "article": "ops.oodialog-wasm.start",
+      "field": "procedure",
+      "rule": "Read ref.oodialog-wasm.seams before building on top of the port (designer, resource reader, system classes)."
+    },
+    {
+      "topic": "start",
+      "article": "ops.oodialog-wasm.start",
+      "field": "procedure",
+      "rule": "Read ops.oodialog-wasm.differences before judging a behaviour as a fault."
+    },
+    {
+      "topic": "start",
+      "article": "ops.oodialog-wasm.start",
+      "field": "procedure",
+      "rule": "Read ref.oodialog-wasm.harness before running or writing tests."
+    },
+    {
+      "topic": "start",
+      "article": "ops.oodialog-wasm.start",
+      "field": "procedure",
+      "rule": "Read ops.oodialog-wasm.port-a-native before adding to the native layer."
+    },
+    {
+      "topic": "start",
+      "article": "ops.oodialog-wasm.start",
+      "field": "invariants",
+      "rule": "Upstream's Rexx is not edited by hand. A change goes into the generator, patches.txt or the native layer."
+    },
+    {
+      "topic": "start",
+      "article": "ops.oodialog-wasm.start",
+      "field": "invariants",
+      "rule": "An upstream example used as a test is copied unchanged."
+    },
+    {
+      "topic": "start",
+      "article": "ops.oodialog-wasm.start",
+      "field": "invariants",
+      "rule": "dist/ is build output. Edit src/ and run the build."
+    },
+    {
+      "topic": "build-and-test",
+      "article": "ops.oodialog-wasm.build-and-test",
+      "rule": "Build the three class files and run the tests. One Rexx tool builds dist/. One Python tool runs programs in headless Chromium against the built files. A change is finished only when the whole suite passes on the final build, checked before the commit."
+    },
+    {
+      "topic": "build-and-test",
+      "article": "ops.oodialog-wasm.build-and-test",
+      "field": "procedure",
+      "rule": "Kit: Node with the npm package oorexxwasm 0.2.4 (it provides the command rexx); the browser runtime oorexxwasm-web-0.2.4 unpacked into site/; Python 3 with Playwright and Chromium; upstream ooDialog r13513 unpacked as upstream/ (examples in upstream/examples)."
+    },
+    {
+      "topic": "build-and-test",
+      "article": "ops.oodialog-wasm.build-and-test",
+      "field": "procedure",
+      "rule": "Build, from the project directory: rexx tools/oodbuild.rex"
+    },
+    {
+      "topic": "build-and-test",
+      "article": "ops.oodialog-wasm.build-and-test",
+      "field": "procedure",
+      "rule": "Run the core tests: python3 tools/oodtest.py --tree upstream/examples tests/t*.rex tests/up/*.rex tests/designer/*.rex"
+    },
+    {
+      "topic": "build-and-test",
+      "article": "ops.oodialog-wasm.build-and-test",
+      "field": "procedure",
+      "rule": "Run the other groups, each with its own tree: tests/up2 with upstream/examples/tutorial; tests/up3 with upstream/examples/propertySheet.tabControls; tests/up4 with upstream/examples/mouse; tests/up5 with upstream/examples/controls/ListView/subitem.editing; tests/up6/SimpleMonthCalendar.rex with upstream/examples/simple; tests/up6/PaidHolidays.rex with upstream/examples/controls; tests/res/t07_resdialog_binary.rex with no tree."
+    },
+    {
+      "topic": "build-and-test",
+      "article": "ops.oodialog-wasm.build-and-test",
+      "field": "procedure",
+      "rule": "Read every summary line. All must say 0 failed. Only then commit."
+    },
+    {
+      "topic": "build-and-test",
+      "article": "ops.oodialog-wasm.build-and-test",
+      "field": "invariants",
+      "rule": "The suite is run on the final build. A version-string change is a new build."
+    },
+    {
+      "topic": "build-and-test",
+      "article": "ops.oodialog-wasm.build-and-test",
+      "field": "invariants",
+      "rule": "A test that passes one run in five is a failing test. Repeat a timing-sensitive test several times before trusting it."
+    },
+    {
+      "topic": "build-and-test",
+      "article": "ops.oodialog-wasm.build-and-test",
+      "field": "invariants",
+      "rule": "The README.md states the test count and the version it was measured on."
+    },
+    {
+      "topic": "build-and-test",
+      "article": "ops.oodialog-wasm.build-and-test",
+      "field": "lessons",
+      "rule": "v0.13.0 was pushed with a failing check because the result of the last run was not read before the commit. The fault (an event method run inside another thread's sleep) reached another task."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "rule": "The renderer contract: what the native layer asks of the page, and what the page sends back. oodWeb.cls talks to a renderer through one object, window.__ood in the browser. Any renderer (the browser page, the Qt6 renderer) that answers the same calls and sends the same events can run the same ooDialog programs. The reference implementation is src/oodialog-web.js. This article names the calls and the rules; the source is the authority for each argument."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "calls",
+      "rule": "create(spec, ctrls): make a dialog (hidden) with its controls. Answers the dialog's key, a small whole number."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "calls",
+      "rule": "addControl(key, spec): add one control to a dialog that exists."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "calls",
+      "rule": "show(key, how) and destroy(key)."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "calls",
+      "rule": "sub(key, id, code): the program has connected the WM_COMMAND notification code of control id."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "calls",
+      "rule": "msg(key, id, msg, wParam, lParam): a Win32 control message (BM_, EM_, LB_, CB_, PBM_, TBM_, LVM_ ... as numbers). Answers the message's result as a string."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "calls",
+      "rule": "op(key, id, name, a, b, c): everything that is not a Win32 message. id 0 is the dialog itself. Answers a string."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "calls",
+      "rule": "msgBox(token, text, title, buttons, icon), popupMenu(token, x, y, data), setMenu(key, data)."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "calls",
+      "rule": "measure(text, fontName, fontSize), screen(), image(name, url), hasImage(name)."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "op_families",
+      "rule": "Plain names act on any window: rect, clientRect, move, size, show, hide, enable, setText, getText, focus, exists, setParent, grandChild, tabStops, bitmapPos."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "op_families",
+      "rule": "lv.* list-view, tv.* tree-view, tab.* tab control, ud.* up-down, dtp.* date-time picker, mc.* month calendar."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "op_families",
+      "rule": "gdi: drawing on a window. op(key, id, \"gdi\", verb, values, style). Verbs: line rect arc angleArc pixel getPixel fillRect clear extent text flood image scroll size ownerDraw."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "op_families",
+      "rule": "mouseSub and mouse: the Mouse class. mouse verbs: capture release getCapture state cursor."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "events",
+      "rule": "The renderer sends (key, kind, id, code, extra). Kinds: CMD (WM_COMMAND), NOTIFY (a named control notification), MSGBOX (a message box was answered), CTX (context menu), KEY (a connected key), WM (a window message such as RESIZE), MOUSE (a Mouse class event), GC (RETURN, ESCAPE, TAB or loss of focus in a control placed on another control)."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "events",
+      "rule": "Events are queued. Rexx takes them one at a time with .js~nextEvent. The renderer must never call into Rexx directly."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "invariants",
+      "rule": "The separator character is hex 1F. Lists of values travel as one string joined by it. A single value can itself contain it only where the reference source shows that (list rows, tree options): split on the count of fields the call defines, not on every separator."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "invariants",
+      "rule": "A window handle is \"0x\" followed by 16 hex digits of key * 65536 + id."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "invariants",
+      "rule": "A renderer that does not know an op answers the empty string. It must not raise an error."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "invariants",
+      "rule": "Coordinates are pixels. Client-area coordinates are from the top left of the window's client area."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "invariants",
+      "rule": "A connected MOUSEWHEEL does not scroll the control by itself. The program scrolls it."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "invariants",
+      "rule": "After setText, a multi-line edit shows its start, with the caret at 0."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "procedure",
+      "rule": "To support a new op in another renderer: find the op name in src/oodialog-web.js, read its case, implement the same answer string."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "procedure",
+      "rule": "To learn what changed between two versions: read the commit messages of the branch. Each one lists new ops and events."
+    },
+    {
+      "topic": "seams",
+      "article": "ref.oodialog-wasm.seams",
+      "rule": "Seams: the places where other work plugs in. Four seams let other tasks build on the port without editing it: a resource provider for binary Windows resources, the list of live dialogs for system classes, the Windows file-name helper for loaders, and the file dialog class."
+    },
+    {
+      "topic": "seams",
+      "article": "ref.oodialog-wasm.seams",
+      "field": "seams",
+      "rule": "Binary resources (.dll, .res): the port does not read them. Set .oodn~resourceProvider to an object that answers dialogTemplate(library, id) and menuTemplate(library, id). The shapes are in the comment above the attribute resourceProvider in src/oodWeb.cls. Test: tests/res/t07_resdialog_binary."
+    },
+    {
+      "topic": "seams",
+      "article": "ref.oodialog-wasm.seams",
+      "field": "seams",
+      "rule": "Live dialogs: .oodn~windows answers an array of the ooDialog objects of the dialogs now shown, oldest first. A system-classes file (WindowsManager, WindowObject, MenuObject for this machine) builds on it and on ooDialog's own API. Test: tests/t14_owned."
+    },
+    {
+      "topic": "seams",
+      "article": "ref.oodialog-wasm.seams",
+      "field": "seams",
+      "rule": "Windows file names: site/oodfiles.js, function oodFiles.windowsNames(files), called by the page before rexx.run. For every ::requires or CALL name written with a backslash it adds the file again under that literal name, in each directory from which the name resolves the Windows way. Programs are not changed. Test: tests/t16_winnames."
+    },
+    {
+      "topic": "seams",
+      "article": "ref.oodialog-wasm.seams",
+      "field": "seams",
+      "rule": "File dialog: class OodFileDialog in src/oodExtras.cls, over the WASM machine's file system. FileNameDialog, OpenFileDialog, SaveFileDialog and BrowseForFolder all use it."
+    },
+    {
+      "topic": "seams",
+      "article": "ref.oodialog-wasm.seams",
+      "field": "seams",
+      "rule": ".application~srcDir is the directory of the program that was started (the bottom of the call stack), also when oodWeb.cls is in another directory. Test: tests/t17_srcdir."
+    },
+    {
+      "topic": "seams",
+      "article": "ref.oodialog-wasm.seams",
+      "field": "seams",
+      "rule": "The browser clipboard is reached through .js~page of the runtime's js.cls. The port itself does not use it."
+    },
+    {
+      "topic": "seams",
+      "article": "ref.oodialog-wasm.seams",
+      "field": "invariants",
+      "rule": "winsystm.cls and OLE are Windows system libraries, not ooDialog. The port does not provide them. The sweep marks programs that need them as outside."
+    },
+    {
+      "topic": "seams",
+      "article": "ref.oodialog-wasm.seams",
+      "field": "invariants",
+      "rule": "The designer and the Qt6 renderer are other tasks' work. Their programs in tests/designer are copies kept as a contract test; they are not edited here."
+    },
+    {
+      "topic": "differences",
+      "article": "ops.oodialog-wasm.differences",
+      "rule": "Where the port differs from ooDialog on Windows, by design. These differences come from the browser, not from faults. Check this list before reporting a behaviour as a bug."
+    },
+    {
+      "topic": "differences",
+      "article": "ops.oodialog-wasm.differences",
+      "field": "differences",
+      "rule": "Threads: Windows runs each event method on its own thread. Here event methods run on the thread that takes the page's events (the one inside execute). msSleep on that thread handles the other events while it waits, so a method that loops and sleeps does not freeze its dialog. msSleep on any other thread just sleeps. A loop that never calls msSleep holds its dialog."
+    },
+    {
+      "topic": "differences",
+      "article": "ops.oodialog-wasm.differences",
+      "field": "differences",
+      "rule": "After a dialog has been closed, msSleep inside one of its event methods returns at once, so the program can end."
+    },
+    {
+      "topic": "differences",
+      "article": "ops.oodialog-wasm.differences",
+      "field": "differences",
+      "rule": "A dialog with an ownerDialog ends when its owner ends."
+    },
+    {
+      "topic": "differences",
+      "article": "ops.oodialog-wasm.differences",
+      "field": "differences",
+      "rule": "Drawing: a device context is a canvas over the window. What is drawn stays until it is cleared; Windows loses it at the next repaint. Lines are anti-aliased, so a flood fill can leave a thin rim. A bitmap brush is a plain colour."
+    },
+    {
+      "topic": "differences",
+      "article": "ops.oodialog-wasm.differences",
+      "field": "differences",
+      "rule": "connectDraw: the draw method is asked when the dialog is shown and when the program redraws the control, not on every repaint."
+    },
+    {
+      "topic": "differences",
+      "article": "ops.oodialog-wasm.differences",
+      "field": "differences",
+      "rule": "The pointer cannot be moved or confined: setCursorPos and clipCursor do nothing."
+    },
+    {
+      "topic": "differences",
+      "article": "ops.oodialog-wasm.differences",
+      "field": "differences",
+      "rule": "File and folder dialogs browse the WASM machine's file system. COM calls answer S_OK and do nothing. A refused file (onFileOk) closes the dialog and shows it again."
+    },
+    {
+      "topic": "differences",
+      "article": "ops.oodialog-wasm.differences",
+      "field": "differences",
+      "rule": "There are no printers. A printer root in BrowseForFolder is ignored."
+    },
+    {
+      "topic": "differences",
+      "article": "ops.oodialog-wasm.differences",
+      "field": "differences",
+      "rule": "The month calendar shows one month and selects one day."
+    },
+    {
+      "topic": "differences",
+      "article": "ops.oodialog-wasm.differences",
+      "field": "differences",
+      "rule": "A list box entry cannot show a tab character. With tab stops set, the entry is shown filled out to each stop; its text stays as the program gave it."
+    },
+    {
+      "topic": "differences",
+      "article": "ops.oodialog-wasm.differences",
+      "field": "differences",
+      "rule": "A dialog larger than the browser window is scaled down to fit."
+    },
+    {
+      "topic": "differences",
+      "article": "ops.oodialog-wasm.differences",
+      "field": "differences",
+      "rule": "Events the port accepts but never produces print one line: \"... is connected but is not produced yet\". The program goes on."
+    },
+    {
+      "topic": "differences",
+      "article": "ops.oodialog-wasm.differences",
+      "field": "invariants",
+      "rule": "A difference that is not in this list or in the README is to be treated as a fault and reported to the lane oodialog_wasm."
+    },
+    {
+      "topic": "harness",
+      "article": "ref.oodialog-wasm.harness",
+      "rule": "The test harness: test files, steps, the sweep and the probe. tools/oodtest.py runs a Rexx program in headless Chromium, drives the page with steps, and compares the program's output. It also has two survey modes over all upstream examples."
+    },
+    {
+      "topic": "harness",
+      "article": "ref.oodialog-wasm.harness",
+      "field": "files",
+      "rule": "NAME.rex: the program. NAME.steps: what to do on the page, one step a line. NAME.expect: the lines the program must print (optional). NAME.files/: extra files for the program's directory, sub-directories allowed."
+    },
+    {
+      "topic": "harness",
+      "article": "ref.oodialog-wasm.harness",
+      "field": "files",
+      "rule": "--tree DIR puts every file of DIR into the program's directory first. Use it for upstream examples that need their .rc, .h and bitmap files."
+    },
+    {
+      "topic": "harness",
+      "article": "ref.oodialog-wasm.harness",
+      "field": "files",
+      "rule": "The program runs in /home/rexx of the WASM machine."
+    },
+    {
+      "topic": "harness",
+      "article": "ref.oodialog-wasm.harness",
+      "field": "steps",
+      "rule": "wait SELECTOR: until the element is visible."
+    },
+    {
+      "topic": "harness",
+      "article": "ref.oodialog-wasm.harness",
+      "field": "steps",
+      "rule": "click SELECTOR. fill SELECTOR => TEXT. select SELECTOR => VALUE. press KEY. type TEXT (into what has the focus)."
+    },
+    {
+      "topic": "harness",
+      "article": "ref.oodialog-wasm.harness",
+      "field": "steps",
+      "rule": "mouse down|move|up|wheel SELECTOR @ DX DY [DELTA]: a real pointer, DX DY from the element's top left corner."
+    },
+    {
+      "topic": "harness",
+      "article": "ref.oodialog-wasm.harness",
+      "field": "steps",
+      "rule": "sleep MILLISECONDS. shot NAME (a screenshot into shots/)."
+    },
+    {
+      "topic": "harness",
+      "article": "ref.oodialog-wasm.harness",
+      "field": "steps",
+      "rule": "eval JAVASCRIPT: run it and log the answer. expect JAVASCRIPT ==> VALUE: the answer must equal VALUE."
+    },
+    {
+      "topic": "harness",
+      "article": "ref.oodialog-wasm.harness",
+      "field": "pass_rules",
+      "rule": "A test passes when every step succeeds, the program ends by itself, and its output contains the .expect lines."
+    },
+    {
+      "topic": "harness",
+      "article": "ref.oodialog-wasm.harness",
+      "field": "pass_rules",
+      "rule": "An unknown step fails the test."
+    },
+    {
+      "topic": "harness",
+      "article": "ref.oodialog-wasm.harness",
+      "field": "pass_rules",
+      "rule": "Selectors use the page's class names: .ood-dlg dialog, .ood-c control, .ood-def default button, .ood-msgbox message box, .ood-lv list-view, .ood-mc month calendar, .ood-child a dialog shown inside another."
+    },
+    {
+      "topic": "harness",
+      "article": "ref.oodialog-wasm.harness",
+      "field": "surveys",
+      "rule": "--sweep DIR: starts every example that requires ooDialog.cls, each from its own directory, and writes sweep.tsv. Verdicts: shows (a dialog appeared), ended, message (only a message box), native:NAME (stopped at a native not ported), error:TEXT, component (a part of a larger program started alone; it fails the same way on Windows), outside (needs winsystm.cls or OLE)."
+    },
+    {
+      "topic": "harness",
+      "article": "ref.oodialog-wasm.harness",
+      "field": "surveys",
+      "rule": "--poke DIR FROM TO: for each example that shows something, presses every control and then closes everything, and writes poke.tsv. Verdicts: clean, event-not-produced, or the problem found. It proves that nothing fails; it does not prove that what is shown is right."
+    },
+    {
+      "topic": "harness",
+      "article": "ref.oodialog-wasm.harness",
+      "field": "invariants",
+      "rule": "Each test runs in a fresh page. Tests must not depend on today's date; compute dates in the step."
+    },
+    {
+      "topic": "harness",
+      "article": "ref.oodialog-wasm.harness",
+      "field": "invariants",
+      "rule": "Results that were measured on an older version are labelled with that version."
+    },
+    {
+      "topic": "port-a-native",
+      "article": "ops.oodialog-wasm.port-a-native",
+      "rule": "How to port one native function. A native is ported in four moves: read what the C++ does, write the Rexx method in oodWeb.cls, add what the page must do in oodialog-web.js, and prove it with an upstream example run unchanged."
+    },
+    {
+      "topic": "port-a-native",
+      "article": "ops.oodialog-wasm.port-a-native",
+      "field": "procedure",
+      "rule": "Find the need: run the example; the error names the native, for example \"native function MC_GETMINRECT\"."
+    },
+    {
+      "topic": "port-a-native",
+      "article": "ops.oodialog-wasm.port-a-native",
+      "field": "procedure",
+      "rule": "Read the C++: grep -a -n \"RexxMethod.*mc_getMinRect\" upstream/ooDialog/*.cpp. Use grep -a: some of the C++ files are not plain ASCII and plain grep skips them silently. tools/cfn.py --sigs writes every signature to dist/sigs.txt."
+    },
+    {
+      "topic": "port-a-native",
+      "article": "ops.oodialog-wasm.port-a-native",
+      "field": "procedure",
+      "rule": "Read how upstream's Rexx calls it: grep the name in dist/ooDialog.cls. One native can serve several methods; the second argument tells which."
+    },
+    {
+      "topic": "port-a-native",
+      "article": "ops.oodialog-wasm.port-a-native",
+      "field": "procedure",
+      "rule": "Write the method in src/oodWeb.cls: ::method NAME unguarded, then use arg self_, msg, a. self_ is the Rexx object, msg the upper-case method name, a the argument array."
+    },
+    {
+      "topic": "port-a-native",
+      "article": "ops.oodialog-wasm.port-a-native",
+      "field": "procedure",
+      "rule": "Reach the page with self~op(self_, opName, a, b, c) for a control object or self~ctlOp(dialogState, id, opName, a, b, c)."
+    },
+    {
+      "topic": "port-a-native",
+      "article": "ops.oodialog-wasm.port-a-native",
+      "field": "procedure",
+      "rule": "Add the op to src/oodialog-web.js. Keep the answer a string."
+    },
+    {
+      "topic": "port-a-native",
+      "article": "ops.oodialog-wasm.port-a-native",
+      "field": "procedure",
+      "rule": "Build. Copy the upstream example into a tests/upN directory, write its .steps, run it."
+    },
+    {
+      "topic": "port-a-native",
+      "article": "ops.oodialog-wasm.port-a-native",
+      "field": "procedure",
+      "rule": "Run the whole suite, then update README.md (counts, what is new, what is not done)."
+    },
+    {
+      "topic": "port-a-native",
+      "article": "ops.oodialog-wasm.port-a-native",
+      "field": "invariants",
+      "rule": "An optional argument is tested with a~hasIndex(n). a~last of an empty array is .nil: loop to a~size."
+    },
+    {
+      "topic": "port-a-native",
+      "article": "ops.oodialog-wasm.port-a-native",
+      "field": "invariants",
+      "rule": "The default NUMERIC DIGITS is 9. Handles and times need more: set numeric digits in the method, or keep numbers small."
+    },
+    {
+      "topic": "port-a-native",
+      "article": "ops.oodialog-wasm.port-a-native",
+      "field": "invariants",
+      "rule": "A .Rect given to setWindowPos is a point / size rectangle: right and bottom are the width and height."
+    },
+    {
+      "topic": "port-a-native",
+      "article": "ops.oodialog-wasm.port-a-native",
+      "field": "invariants",
+      "rule": "Return what the C++ returns (0, .true, a .Rect ...). Programs test these values."
+    },
+    {
+      "topic": "port-a-native",
+      "article": "ops.oodialog-wasm.port-a-native",
+      "field": "invariants",
+      "rule": "Do not stub a native to return success without doing the work, unless the work is impossible in a browser; then say so in the README."
+    },
+    {
+      "topic": "state",
+      "article": "ref.oodialog-wasm.state",
+      "rule": "State at v0.16.0 and where the current state is recorded. This article is a snapshot. The current figures are always in README.md of the project, with the version they were measured on; sweep.tsv and poke.tsv hold the per-example results."
+    },
+    {
+      "topic": "state",
+      "article": "ref.oodialog-wasm.state",
+      "field": "snapshot",
+      "rule": "Version 0.16.0, 15 November 2026."
+    },
+    {
+      "topic": "state",
+      "article": "ref.oodialog-wasm.state",
+      "field": "snapshot",
+      "rule": "About half of the native entry points are ported (595 of 1,182 at v0.15.0; the month calendar and the DayState classes were added after that count)."
+    },
+    {
+      "topic": "state",
+      "article": "ref.oodialog-wasm.state",
+      "field": "snapshot",
+      "rule": "Tests: 38 of 38 pass in headless Chromium."
+    },
+    {
+      "topic": "state",
+      "article": "ref.oodialog-wasm.state",
+      "field": "snapshot",
+      "rule": "Sweep of the 140 upstream examples at v0.15.0: 72 show their dialog, 7 run to the end, 9 show only a message box, 11 stop at a native not ported, 10 stop on an error (8 of them wait for a reader of binary resources), 24 are components, 7 are outside ooDialog."
+    },
+    {
+      "topic": "state",
+      "article": "ref.oodialog-wasm.state",
+      "field": "done",
+      "rule": "Dialogs: UserDialog, RcDialog (.rc and .h files), ResDialog through the resource provider, ControlDialog, property sheets and wizards, owned dialogs, message boxes, standard dialogs and routines."
+    },
+    {
+      "topic": "state",
+      "article": "ref.oodialog-wasm.state",
+      "field": "done",
+      "rule": "Controls: buttons, check boxes, radio buttons, group boxes, statics, images, edits, list boxes, combo boxes, progress bars, list-views, tree-views, tabs, up-downs, track bars, date-time pickers, month calendars."
+    },
+    {
+      "topic": "state",
+      "article": "ref.oodialog-wasm.state",
+      "field": "done",
+      "rule": "Menus: menu bars and popup menus, from scripts and through the resource provider."
+    },
+    {
+      "topic": "state",
+      "article": "ref.oodialog-wasm.state",
+      "field": "done",
+      "rule": "Drawing, bitmap buttons and animation, the Mouse class, in-place editing in a list-view, list box tab stops, resizing (ResizingAdmin), tool tips (text), fonts."
+    },
+    {
+      "topic": "state",
+      "article": "ref.oodialog-wasm.state",
+      "field": "done",
+      "rule": "File dialogs and shell dialogs over the WASM machine's file system."
+    },
+    {
+      "topic": "state",
+      "article": "ref.oodialog-wasm.state",
+      "field": "not_done",
+      "rule": "Tool bar, status bar, re-bar; custom draw; scroll bars as controls."
+    },
+    {
+      "topic": "state",
+      "article": "ref.oodialog-wasm.state",
+      "field": "not_done",
+      "rule": "ResizingAdmin's size limits; connectActivate, connectHelp, connectPosChanged, connectResizing (accepted, not produced)."
+    },
+    {
+      "topic": "state",
+      "article": "ref.oodialog-wasm.state",
+      "field": "not_done",
+      "rule": "Image-list icons are not drawn; ResourceImage needs images from a binary resource."
+    },
+    {
+      "topic": "state",
+      "article": "ref.oodialog-wasm.state",
+      "field": "not_done",
+      "rule": "A modeless property sheet; wizard header and watermark images."
+    },
+    {
+      "topic": "state",
+      "article": "ref.oodialog-wasm.state",
+      "field": "not_done",
+      "rule": "The CommonDialogCustomizations controls of the shell dialogs."
+    },
+    {
+      "topic": "state",
+      "article": "ref.oodialog-wasm.state",
+      "field": "not_done",
+      "rule": "Printing. The estate's oorexx_pdf package is native ooRexx and is the planned stand-by printer: write a PDF into the WASM file system and offer it for download or the browser's print. Not started."
+    },
+    {
+      "topic": "state",
+      "article": "ref.oodialog-wasm.state",
+      "field": "not_done",
+      "rule": "Not run on a real phone or on the public Playground; the demo page is not hosted."
+    },
+    {
+      "topic": "state",
+      "article": "ref.oodialog-wasm.state",
+      "field": "invariants",
+      "rule": "When this article and README.md disagree, README.md is right and this article needs a new version."
+    },
+    {
+      "topic": "lessons",
+      "article": "ops.oodialog-wasm.lessons",
+      "rule": "Lessons from the port: faults made and how each is now prevented. Each lesson is a fault that happened in this work, its cause, and the rule that prevents it. They are here so that the next task does not repeat them."
+    },
+    {
+      "topic": "lessons",
+      "article": "ops.oodialog-wasm.lessons",
+      "field": "lessons",
+      "rule": "A build was pushed with a failing test. Cause: the last run's result was not read. Rule: read every summary line on the final build before the commit."
+    },
+    {
+      "topic": "lessons",
+      "article": "ops.oodialog-wasm.lessons",
+      "field": "lessons",
+      "rule": "msSleep was changed to handle events on any thread. An event method that waits for an animation thread could then run inside that thread's own sleep and wait for ever. Rule: only the thread that takes the page's events may handle events while it sleeps."
+    },
+    {
+      "topic": "lessons",
+      "article": "ops.oodialog-wasm.lessons",
+      "field": "lessons",
+      "rule": "The harness ignored a step it did not know, so a misspelt step passed. Rule: an unknown step fails."
+    },
+    {
+      "topic": "lessons",
+      "article": "ops.oodialog-wasm.lessons",
+      "field": "lessons",
+      "rule": "The first sweep counted message boxes as dialogs and ran examples from the wrong directory. Rule: each example runs from its own directory; a message box has its own verdict."
+    },
+    {
+      "topic": "lessons",
+      "article": "ops.oodialog-wasm.lessons",
+      "field": "lessons",
+      "rule": "Three of four \"does not end\" results were faults of the probe, not of the port. Rule: before reporting a fault found by a tool, reproduce it by hand."
+    },
+    {
+      "topic": "lessons",
+      "article": "ops.oodialog-wasm.lessons",
+      "field": "lessons",
+      "rule": "Two \"problems\" were parts of a larger program started alone. Rule: read how the example is meant to be started before fixing it."
+    },
+    {
+      "topic": "lessons",
+      "article": "ops.oodialog-wasm.lessons",
+      "field": "lessons",
+      "rule": "A test used today's date and would have failed next month. Rule: compute dates in the step."
+    },
+    {
+      "topic": "lessons",
+      "article": "ops.oodialog-wasm.lessons",
+      "field": "lessons",
+      "rule": "Plain grep skipped a C++ file that is not plain ASCII. Rule: grep -a on upstream's C++."
+    },
+    {
+      "topic": "lessons",
+      "article": "ops.oodialog-wasm.lessons",
+      "field": "lessons",
+      "rule": "Rexx traps met: \"a\"x is a hex literal, so write \"a\" || x; a name directly followed by ( is a function call; LABEL is a keyword in DO; d2x fails on a negative number; arithmetic above 9 digits needs NUMERIC DIGITS; one EXPOSE line only; a~last of an empty array is .nil."
+    },
+    {
+      "topic": "lessons",
+      "article": "ops.oodialog-wasm.lessons",
+      "field": "lessons",
+      "rule": "The other tasks could not know what had changed, because the state was only in this chat, the README and mailbox messages. Rule: this sphere is kept current, and each release is announced in the lane with the new ops and events."
+    },
+    {
+      "topic": "lessons",
+      "article": "ops.oodialog-wasm.lessons",
+      "field": "invariants",
+      "rule": "A lesson is added when a fault is found, in the same change that fixes it."
+    }
+  ]
+}

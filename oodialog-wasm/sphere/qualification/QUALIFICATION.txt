@@ -1,0 +1,28 @@
+ooDialog/WASM Gopher sphere v0.1 qualification
+===============================================
+Date: 2026-11-15
+Architecture: Tom Dyer. Sphere written and qualified by Claude (Fable 5.2).
+Required engine: LLM Gopher v0.21-dev1+
+
+Authoring toolchain:
+- packages/llm_gopher_v0.21-dev1 of animatedads/alchemy at commit dfc980c5 (Sphere Editor)
+- sphere_authoring_sphere_v0.3 (read before writing)
+
+Primary project provenance:
+- oodialog-wasm-39a1eec.zip
+  git archive of animatedads/oorexx commit 39a1eec (branch oodialog-wasm): README.md, src/, tools/, site/oodfiles.js
+  SHA-256 182237b600c6e2dfff5b15f7a9ee780a25b3f45cea13189778822d17547076e8
+  To rebuild it: git archive --format=zip -o oodialog-wasm-39a1eec.zip 39a1eec oodialog-wasm/README.md oodialog-wasm/src oodialog-wasm/tools oodialog-wasm/site/oodfiles.js
+
+Qualification results:
+- PASS Sphere Editor validation: 12 objects (sphere, access policy, 9 articles, 1 corpus), zero problems.
+- PASS Sphere Editor lint: CLEAN, zero warnings.
+- PASS tests/check_sphere.rex, run with ooRexx 5.3.0 (oorexxwasm 0.2.4 on Node):
+  13 JSON documents parse (the 12 objects and the profile), 9 articles with evidence, start_here ops.oodialog-wasm.start.
+- PASS tests/run.sh through LLM Gopher v0.21-dev1: sphere resolve, sphere load into a fresh
+  environment, context lists all nine articles, search finds resourceProvider in the seams
+  article, msSleep in the differences article, "separator character" in the renderer contract.
+
+Not qualified:
+- Not run with a native Linux ooRexx; the structural check was run with the WASM build of ooRexx 5.3.0.
+- The snapshot article ref.oodialog-wasm.state is true for v0.16.0 only.

@@ -1,0 +1,87 @@
+{
+  "kind": "article",
+  "id": "ref.oodialog-wasm.renderer-contract",
+  "version": "0.1",
+  "sphere": "oodialog-wasm",
+  "title": "The renderer contract: what the native layer asks of the page, and what the page sends back",
+  "summary": "oodWeb.cls talks to a renderer through one object, window.__ood in the browser. Any renderer (the browser page, the Qt6 renderer) that answers the same calls and sends the same events can run the same ooDialog programs. The reference implementation is src/oodialog-web.js. This article names the calls and the rules; the source is the authority for each argument.",
+  "authority": "implementation-record",
+  "section": "reference",
+  "topics": [
+    "renderer",
+    "contract",
+    "events",
+    "qt6"
+  ],
+  "calls": [
+    "create(spec, ctrls): make a dialog (hidden) with its controls. Answers the dialog's key, a small whole number.",
+    "addControl(key, spec): add one control to a dialog that exists.",
+    "show(key, how) and destroy(key).",
+    "sub(key, id, code): the program has connected the WM_COMMAND notification code of control id.",
+    "msg(key, id, msg, wParam, lParam): a Win32 control message (BM_, EM_, LB_, CB_, PBM_, TBM_, LVM_ ... as numbers). Answers the message's result as a string.",
+    "op(key, id, name, a, b, c): everything that is not a Win32 message. id 0 is the dialog itself. Answers a string.",
+    "msgBox(token, text, title, buttons, icon), popupMenu(token, x, y, data), setMenu(key, data).",
+    "measure(text, fontName, fontSize), screen(), image(name, url), hasImage(name).",
+    "setHandler(fn): the renderer calls fn(key, kind, id, code, extra) for each event. In the browser fn only puts the event in a queue."
+  ],
+  "op_families": [
+    "Plain names act on any window: rect, clientRect, move, size, show, hide, enable, setText, getText, focus, exists, setParent, grandChild, tabStops, bitmapPos.",
+    "lv.* list-view, tv.* tree-view, tab.* tab control, ud.* up-down, dtp.* date-time picker, mc.* month calendar.",
+    "gdi: drawing on a window. op(key, id, \"gdi\", verb, values, style). Verbs: line rect arc angleArc pixel getPixel fillRect clear extent text flood image scroll size ownerDraw.",
+    "mouseSub and mouse: the Mouse class. mouse verbs: capture release getCapture state cursor."
+  ],
+  "events": [
+    "The renderer sends (key, kind, id, code, extra). Kinds: CMD (WM_COMMAND), NOTIFY (a named control notification), MSGBOX (a message box was answered), CTX (context menu), KEY (a connected key), WM (a window message such as RESIZE), MOUSE (a Mouse class event), GC (RETURN, ESCAPE, TAB or loss of focus in a control placed on another control).",
+    "Events are queued. Rexx takes them one at a time with .js~nextEvent. The renderer must never call into Rexx directly."
+  ],
+  "invariants": [
+    "The separator character is hex 1F. Lists of values travel as one string joined by it. A single value can itself contain it only where the reference source shows that (list rows, tree options): split on the count of fields the call defines, not on every separator.",
+    "A window handle is \"0x\" followed by 16 hex digits of key * 65536 + id.",
+    "A renderer that does not know an op answers the empty string. It must not raise an error.",
+    "Coordinates are pixels. Client-area coordinates are from the top left of the window's client area.",
+    "A connected MOUSEWHEEL does not scroll the control by itself. The program scrolls it.",
+    "After setText, a multi-line edit shows its start, with the caret at 0."
+  ],
+  "procedure": [
+    "To support a new op in another renderer: find the op name in src/oodialog-web.js, read its case, implement the same answer string.",
+    "To learn what changed between two versions: read the commit messages of the branch. Each one lists new ops and events."
+  ],
+  "provenance": [
+    {
+      "artifact": "oodialog-wasm-39a1eec.zip",
+      "sha256": "182237b600c6e2dfff5b15f7a9ee780a25b3f45cea13189778822d17547076e8",
+      "member": "oodialog-wasm/src/oodialog-web.js",
+      "line_start": 1154,
+      "line_end": 1160,
+      "claim": "op(key, id, name, a, b, c) is the entry for everything that is not a Win32 message.",
+      "note": "git archive of animatedads/oorexx commit 39a1eec (branch oodialog-wasm)"
+    },
+    {
+      "artifact": "oodialog-wasm-39a1eec.zip",
+      "sha256": "182237b600c6e2dfff5b15f7a9ee780a25b3f45cea13189778822d17547076e8",
+      "member": "oodialog-wasm/src/oodialog-web.js",
+      "line_start": 791,
+      "line_end": 796,
+      "claim": "msg(key, id, msg, w, l) is the entry for Win32 control messages.",
+      "note": "git archive of animatedads/oorexx commit 39a1eec (branch oodialog-wasm)"
+    },
+    {
+      "artifact": "oodialog-wasm-39a1eec.zip",
+      "sha256": "182237b600c6e2dfff5b15f7a9ee780a25b3f45cea13189778822d17547076e8",
+      "member": "oodialog-wasm/src/oodialog-web.js",
+      "line_start": 463,
+      "line_end": 463,
+      "claim": "The separator character is hex 1F.",
+      "note": "git archive of animatedads/oorexx commit 39a1eec (branch oodialog-wasm)"
+    },
+    {
+      "artifact": "oodialog-wasm-39a1eec.zip",
+      "sha256": "182237b600c6e2dfff5b15f7a9ee780a25b3f45cea13189778822d17547076e8",
+      "member": "oodialog-wasm/src/oodialog-web.js",
+      "line_start": 966,
+      "line_end": 970,
+      "claim": "The gdi verbs and the style fields.",
+      "note": "git archive of animatedads/oorexx commit 39a1eec (branch oodialog-wasm)"
+    }
+  ]
+}

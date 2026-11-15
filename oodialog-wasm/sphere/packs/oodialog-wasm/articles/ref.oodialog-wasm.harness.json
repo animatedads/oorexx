@@ -1,0 +1,61 @@
+{
+  "kind": "article",
+  "id": "ref.oodialog-wasm.harness",
+  "version": "0.1",
+  "sphere": "oodialog-wasm",
+  "title": "The test harness: test files, steps, the sweep and the probe",
+  "summary": "tools/oodtest.py runs a Rexx program in headless Chromium, drives the page with steps, and compares the program's output. It also has two survey modes over all upstream examples.",
+  "authority": "implementation-record",
+  "section": "reference",
+  "topics": [
+    "harness",
+    "tests",
+    "sweep",
+    "probe"
+  ],
+  "files": [
+    "NAME.rex: the program. NAME.steps: what to do on the page, one step a line. NAME.expect: the lines the program must print (optional). NAME.files/: extra files for the program's directory, sub-directories allowed.",
+    "--tree DIR puts every file of DIR into the program's directory first. Use it for upstream examples that need their .rc, .h and bitmap files.",
+    "The program runs in /home/rexx of the WASM machine."
+  ],
+  "steps": [
+    "wait SELECTOR: until the element is visible.",
+    "click SELECTOR. fill SELECTOR => TEXT. select SELECTOR => VALUE. press KEY. type TEXT (into what has the focus).",
+    "mouse down|move|up|wheel SELECTOR @ DX DY [DELTA]: a real pointer, DX DY from the element's top left corner.",
+    "sleep MILLISECONDS. shot NAME (a screenshot into shots/).",
+    "eval JAVASCRIPT: run it and log the answer. expect JAVASCRIPT ==> VALUE: the answer must equal VALUE."
+  ],
+  "pass_rules": [
+    "A test passes when every step succeeds, the program ends by itself, and its output contains the .expect lines.",
+    "An unknown step fails the test.",
+    "Selectors use the page's class names: .ood-dlg dialog, .ood-c control, .ood-def default button, .ood-msgbox message box, .ood-lv list-view, .ood-mc month calendar, .ood-child a dialog shown inside another."
+  ],
+  "surveys": [
+    "--sweep DIR: starts every example that requires ooDialog.cls, each from its own directory, and writes sweep.tsv. Verdicts: shows (a dialog appeared), ended, message (only a message box), native:NAME (stopped at a native not ported), error:TEXT, component (a part of a larger program started alone; it fails the same way on Windows), outside (needs winsystm.cls or OLE).",
+    "--poke DIR FROM TO: for each example that shows something, presses every control and then closes everything, and writes poke.tsv. Verdicts: clean, event-not-produced, or the problem found. It proves that nothing fails; it does not prove that what is shown is right."
+  ],
+  "invariants": [
+    "Each test runs in a fresh page. Tests must not depend on today's date; compute dates in the step.",
+    "Results that were measured on an older version are labelled with that version."
+  ],
+  "provenance": [
+    {
+      "artifact": "oodialog-wasm-39a1eec.zip",
+      "sha256": "182237b600c6e2dfff5b15f7a9ee780a25b3f45cea13189778822d17547076e8",
+      "member": "oodialog-wasm/tools/oodtest.py",
+      "line_start": 285,
+      "line_end": 285,
+      "claim": "An unknown step fails the test.",
+      "note": "git archive of animatedads/oorexx commit 39a1eec (branch oodialog-wasm)"
+    },
+    {
+      "artifact": "oodialog-wasm-39a1eec.zip",
+      "sha256": "182237b600c6e2dfff5b15f7a9ee780a25b3f45cea13189778822d17547076e8",
+      "member": "oodialog-wasm/tools/oodtest.py",
+      "line_start": 60,
+      "line_end": 72,
+      "claim": "The sweep verdicts outside and component.",
+      "note": "git archive of animatedads/oorexx commit 39a1eec (branch oodialog-wasm)"
+    }
+  ]
+}

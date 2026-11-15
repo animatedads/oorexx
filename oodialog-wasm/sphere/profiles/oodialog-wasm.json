@@ -1,0 +1,8 @@
+{
+  "id": "oodialog-wasm",
+  "version": "0.1",
+  "packs": [
+    "packs/core",
+    "packs/oodialog-wasm"
+  ]
+}
