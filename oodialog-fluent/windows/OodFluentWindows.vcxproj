@@ -12,7 +12,9 @@
     <RootNamespace>OodFluentWindows</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
     <WindowsPackageType>None</WindowsPackageType>
-    <WindowsAppSdkBootstrapInitialize>true</WindowsAppSdkBootstrapInitialize>
+    <!-- A library loaded into ooDialog must not bootstrap Windows App SDK
+         inside the DLL startup path before the dialog's STA is initialized. -->
+    <WindowsAppSdkBootstrapInitialize>false</WindowsAppSdkBootstrapInitialize>
     <UseWinUI>true</UseWinUI>
     <OOREXX_API_DIR Condition="'$(OOREXX_API_DIR)'==''">$(ProjectDir)..\..\vendor\oorexx-api\api</OOREXX_API_DIR>
   </PropertyGroup>
@@ -39,6 +41,9 @@
       <PreprocessorDefinitions>OODF_BUILD_DLL;NOMINMAX;_WIN32_WINNT=0x0A00;WINVER=0x0A00;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
+    <Link>
+      <AdditionalDependencies>Microsoft.WindowsAppRuntime.Bootstrap.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.6.5" />

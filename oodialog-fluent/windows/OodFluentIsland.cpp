@@ -4,6 +4,8 @@
 #include <windows.h>
 #include <objidl.h>
 #include <combaseapi.h>
+#include <MddBootstrap.h>
+#include <WindowsAppSDK-VersionInfo.h>
 #ifdef GetCurrentTime
 #undef GetCurrentTime
 #endif
@@ -22,6 +24,7 @@
 
 #include <map>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <utility>
 
@@ -35,8 +38,37 @@ struct OodfComApartment {
     ~OodfComApartment() { if (owned) winrt::uninit_apartment(); }
 };
 
+struct OodfBootstrapScope {
+    // The runtime dependency is process-wide; concurrent dialogs share one
+    // initialization and release it after the last island is destroyed.
+    static std::mutex mutex;
+    static size_t references;
+    bool owned = false;
+
+    void initialize() {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (references == 0) {
+            // COM has already been initialized for the current STA.
+            winrt::check_hresult(MddBootstrapInitialize(WINDOWSAPPSDK_RELEASE_MAJORMINOR,
+                WINDOWSAPPSDK_RELEASE_VERSION_TAG_W, WINDOWSAPPSDK_RUNTIME_VERSION_UINT64));
+        }
+        ++references;
+        owned = true;
+    }
+
+    ~OodfBootstrapScope() {
+        if (!owned) return;
+        std::lock_guard<std::mutex> lock(mutex);
+        if (--references == 0) MddBootstrapShutdown();
+    }
+};
+
+std::mutex OodfBootstrapScope::mutex;
+size_t OodfBootstrapScope::references = 0;
+
 struct OodfWinHost {
     OodfComApartment apartmentScope;
+    OodfBootstrapScope bootstrapScope;
     DWORD uiThread{};
     OodfSession *model{}; // borrowed: ooRexx/native package owns the model
     ui::Dispatching::DispatcherQueueController queue{nullptr};
@@ -58,6 +90,7 @@ struct OodfWinHost {
             if (apartment != APTTYPE_STA && apartment != APTTYPE_MAINSTA)
                 winrt::throw_hresult(RPC_E_WRONG_THREAD);
         }
+        bootstrapScope.initialize();
         if (!ui::Dispatching::DispatcherQueue::GetForCurrentThread())
             queue = ui::Dispatching::DispatcherQueueController::CreateOnCurrentThread();
         manager = hosting::WindowsXamlManager::InitializeForCurrentThread();
