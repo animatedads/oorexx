@@ -49,8 +49,10 @@ struct OodfBootstrapScope {
         std::lock_guard<std::mutex> lock(mutex);
         if (references == 0) {
             // COM has already been initialized for the current STA.
+            PACKAGE_VERSION minVersion{};
+            minVersion.Version = WINDOWSAPPSDK_RUNTIME_VERSION_UINT64;
             winrt::check_hresult(MddBootstrapInitialize(WINDOWSAPPSDK_RELEASE_MAJORMINOR,
-                WINDOWSAPPSDK_RELEASE_VERSION_TAG_W, WINDOWSAPPSDK_RUNTIME_VERSION_UINT64));
+                WINDOWSAPPSDK_RELEASE_VERSION_TAG_W, minVersion));
         }
         ++references;
         owned = true;
