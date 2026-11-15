@@ -464,6 +464,14 @@ parseFailed:
 
 /* orders edits last first */
 ::class OodEditOrder public
+::method module_version class
+  return "0.10.0"
+::method module_lastChanged class
+  return "2026-11-15"
+::method module_version
+  return "0.10.0"
+::method module_lastChanged
+  return "2026-11-15"
 ::method compare
   use strict arg a, b
   if a[1] > b[1] then return -1

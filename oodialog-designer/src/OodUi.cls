@@ -17,6 +17,14 @@
 ::requires "OodNls.cls"
 
 ::class OodUi public inherit OodNls
+::method module_version class
+  return "0.10.0"
+::method module_lastChanged class
+  return "2026-11-15"
+::method module_version
+  return "0.10.0"
+::method module_lastChanged
+  return "2026-11-15"
 
 ::attribute current class
 
@@ -166,7 +174,13 @@ prop.object = object class
 prop.objectfile = class file
 prop.objectkey = key (none: a new one)
 prop.databases = databases (ent=data/ent …)
-prop.bind = bound to (attribute; part:a,b for a list)
+prop.bind = bound to
+prop.bind.edit = attribute, or @list.attribute
+prop.bind.checkbox = attribute
+prop.bind.static = attribute or path: employer.name
+prop.bind.listview = part:attribute,attribute
+prop.bind.combobox = part:attribute (a one-part)
+prop.bind.pushbutton = add:list or remove:list
 err.bind.class = %1 is not a class name
 err.bind.databases = %1: a database is name=folder
 err.bind.list = %1: a list view binds part:attribute,attribute
@@ -175,6 +189,14 @@ err.bind.path = %1: %2 can only be shown, not edited: bind it to a text
 err.bind.noObject = Controls are bound, but the form names no object class
 err.bind.noDatabases = The form's object needs its databases (ent=data/ent)
 err.bind.columns = %1: its bound attributes and its columns differ in number
+err.bind.combo = %1: a combo box binds part:attribute (a one-part, shown by the attribute)
+err.bind.button = %1: a push button binds add:list or remove:list
+err.bind.detail = %1: a field of a list's row binds @list.attribute
+err.bind.fixed = %1 is bound: its fixed items or rows are not used
+err.bind.single = %1 has Add, Remove or row fields: give it SINGLESEL
+err.bind.noDetail = %1 has Add but no row fields (@%1.attribute): a new row cannot be filled in
+err.bind.role = %1 is bound and has a role: the binding is used, the role is not
+err.bind.target = %1: %2 is not a bound list view
 st.noData = The data for bound dialogs is not in this site (data/files.txt)
 var.new = new variable
 var.first = first value
@@ -629,7 +651,13 @@ prop.object = Objektklasse
 prop.objectfile = Klassendatei
 prop.objectkey = Schlüssel (keiner: ein neues)
 prop.databases = Datenbanken (ent=data/ent …)
-prop.bind = gebunden an (Attribut; teil:a,b für eine Liste)
+prop.bind = gebunden an
+prop.bind.edit = Attribut, oder @liste.attribut
+prop.bind.checkbox = Attribut
+prop.bind.static = Attribut oder Pfad: employer.name
+prop.bind.listview = teil:attribut,attribut
+prop.bind.combobox = teil:attribut (ein Einzelteil)
+prop.bind.pushbutton = add:liste oder remove:liste
 err.bind.class = %1 ist kein Klassenname
 err.bind.databases = %1: eine Datenbank ist name=ordner
 err.bind.list = %1: eine Listenansicht bindet teil:attribut,attribut
@@ -638,6 +666,14 @@ err.bind.path = %1: %2 kann nur gezeigt, nicht bearbeitet werden: an einen Text 
 err.bind.noObject = Steuerelemente sind gebunden, aber das Formular nennt keine Objektklasse
 err.bind.noDatabases = Das Objekt des Formulars braucht seine Datenbanken (ent=data/ent)
 err.bind.columns = %1: gebundene Attribute und Spalten unterscheiden sich in der Zahl
+err.bind.combo = %1: ein Kombinationsfeld bindet teil:attribut (ein Einzelteil, durch das Attribut gezeigt)
+err.bind.button = %1: eine Schaltfläche bindet add:liste oder remove:liste
+err.bind.detail = %1: ein Feld einer Listenzeile bindet @liste.attribut
+err.bind.fixed = %1 ist gebunden: seine festen Einträge oder Zeilen werden nicht verwendet
+err.bind.single = %1 hat Hinzufügen, Entfernen oder Zeilenfelder: SINGLESEL setzen
+err.bind.noDetail = %1 hat Hinzufügen, aber keine Zeilenfelder (@%1.attribut): eine neue Zeile kann nicht ausgefüllt werden
+err.bind.role = %1 ist gebunden und hat eine Rolle: die Bindung gilt, die Rolle nicht
+err.bind.target = %1: %2 ist keine gebundene Listenansicht
 st.noData = Die Daten für gebundene Dialoge sind nicht in dieser Seite (data/files.txt)
 var.new = neue Variable
 var.first = Anfangswert

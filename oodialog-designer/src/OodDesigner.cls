@@ -21,11 +21,11 @@
 
 ::class OodModule public mixinclass Object
 ::method module_version class
-  return "0.9.0"
+  return "0.10.0"
 ::method module_lastChanged class
   return "2026-11-15"
 ::method module_version
-  return "0.9.0"
+  return "0.10.0"
 ::method module_lastChanged
   return "2026-11-15"
 
@@ -1483,6 +1483,10 @@
     out~append("::attribute store                    -- the databases (an ObjectStore)")
     out~append("::attribute session                  -- the unit of work: committed by OK")
     out~append("::attribute object                   -- the" form["OBJECT"] "this dialog edits")
+    do c over controls
+      if c~type == "COMBOBOX", c~prop("bind") \== "" then out~append("::attribute" c~name"_choices          -- what" c~name "offers: OBJECTS, LABELS")
+      if self~isManagedList(c) then out~append("::attribute" c~name"_current          -- the row its fields show (-1: none)")
+    end
   end
   do v over vars
     out~append("::attribute" v["NAME"])
@@ -1517,12 +1521,26 @@
   do c over controls
     if c~kind~args~wordpos("attr") = 0 then iterate
     if bound, c~prop("bind") \== "" then do
+      b = c~prop("bind")
+      if c~type == "EDIT", b~left(1) == "@" then do
+        out~append("  self~"c~name"_data = """"               -- shown when a row of" self~boundList(c) "is selected")
+        iterate
+      end
+      if c~type == "COMBOBOX" then do
+        parse var b part ":" show
+        out~append("  self~"c~name"_choices = oodChoices(self~store, self~session, self~object," oodRx(part)"," oodRx(show)")")
+        out~append("  self~"c~name"_data = oodLabelOf(self~"c~name"_choices, self~object~"part")")
+        iterate
+      end
       if c~type == "EDIT" then out~append("  self~"c~name"_data = oodValueOf(self~object," oodRx(c~prop("bind"))")")
       if c~type == "CHECKBOX" then out~append("  self~"c~name"_data = (oodValueOf(self~object," oodRx(c~prop("bind"))") == 1)")
       iterate
     end
     if c~type == "EDIT" then out~append("  self~"c~name"_data =" oodRx(c~prop("text")))
     if c~type == "CHECKBOX" | c~type == "RADIOBUTTON" then out~append("  self~"c~name"_data =" oodNum(c~prop("checked")))
+  end
+  do c over controls
+    if self~isManagedList(c) then out~append("  self~"c~name"_current = -1")
   end
   out~append("")
   -- defineDialog: the controls and their events
@@ -1545,7 +1563,14 @@
     if c~type == "TAB" then do
       if self~pageMembers(c)~items > 0 then iterate
     end
+    if self~boundEvent(c) == e["EVENT"] then iterate      -- its bound method connects, then forwards to this one
     out~append("  self~"c~kind~connect"("c~dlgId"," oodRx(e["EVENT"])"," oodRx(self~methodName(c~name, e["EVENT"]))")")
+  end
+  -- bound buttons and lists: their own methods (Add, Remove; the fields of the selected row)
+  do c over controls
+    ev = self~boundEvent(c)
+    if ev == "" then iterate
+    out~append("  self~"c~kind~connect"("c~dlgId"," oodRx(ev)"," oodRx(c~name"_bound")")")
   end
   -- a tab strip with controls on its pages: its own method shows the page
   do c over controls
@@ -1557,7 +1582,12 @@
   -- initDialog: list items, ranges, timers, then the form's INIT code
   out~append("::method initDialog unguarded")
   do c over controls
-    if c~type == "LISTBOX" | c~type == "COMBOBOX" then do
+    if c~type == "COMBOBOX", bound, c~prop("bind") \== "" then do
+      out~append("  do choice over self~"c~name"_choices[""LABELS""]   -- not LABEL: DO LABEL names a loop")
+      out~append("    self~"c~name"~add(choice)")
+      out~append("  end")
+    end
+    else if c~type == "LISTBOX" | c~type == "COMBOBOX" then do
       if c~prop("items") \== "" then do
         if nls then do
           out~append("  do item over self~nls("oodRx(c~name".items")")~makeArray(""|"")")
@@ -1602,8 +1632,9 @@
         end
         out~append(line")")
         out~append("  end")
+        if self~isManagedList(c) then out~append("  self~"c~name"_load(0)")
       end
-      if c~prop("rows") \== "" then do
+      else if c~prop("rows") \== "" then do
         do row over c~prop("rows")~makeArray("|")
           line = "  self~"c~name"~addRow( , "
           do cell over row~makeArray(";")
@@ -1710,6 +1741,7 @@
     out~append("  end")
     out~append("")
   end
+  if bound then self~generateListMethods(out)
   if nls then self~nlsMethods(out)
   if bound then self~generateValidate(out)
   -- the form's own methods
@@ -1803,8 +1835,16 @@
   out~append("::method validate unguarded")
   out~append("  self~getData")
   do c over controls
+    if self~isManagedList(c) then out~append("  self~"c~name"_save                 -- the selected row's fields into its object")
+  end
+  do c over controls
     b = c~prop("bind")
-    if b == "" | b~pos(".") > 0 then iterate
+    if c~type == "COMBOBOX", b \== "" then do
+      parse var b part ":" .
+      out~append("  self~object~"part "= oodChosen(self~"c~name"_choices, self~"c~name"_data)")
+      iterate
+    end
+    if b == "" | b~pos(".") > 0 | b~pos(":") > 0 then iterate
     if c~type == "EDIT" then out~append("  self~object~" || b "= oodFromText(self~"c~name"_data)")
     if c~type == "CHECKBOX" then out~append("  self~object~" || b "= self~"c~name"_data")
   end
@@ -1819,6 +1859,131 @@
   out~append("  call errorDialog msg")
   out~append("  return .false")
   out~append("")
+  return
+
+-- a bound list view with buttons or detail fields: its rows are edited
+::method isManagedList
+  use strict arg c
+  if c~type \== "LISTVIEW" | c~prop("bind") == "" then return .false
+  if \self~isBound then return .false
+  return self~listHelpers(c~name)~items > 0
+
+-- the event a bound control's own method takes ("" for none): the user's
+-- method for it is called from there
+::method boundEvent
+  use strict arg c
+  if \self~isBound then return ""
+  if c~type == "PUSHBUTTON", c~prop("bind") \== "" then return "CLICKED"
+  if self~isManagedList(c) then return "SELECTCHANGED"
+  return ""
+
+-- the methods of bound buttons and lists: Add, Remove, and the detail
+-- fields of the selected row (saved into its object as the row changes)
+::method generateListMethods
+  expose controls events form
+  use strict arg out
+  do c over controls
+    if c~type \== "PUSHBUTTON" | c~prop("bind") == "" then iterate
+    parse value c~prop("bind") with verb ":" list
+    out~append("::method" c~name"_bound unguarded")
+    out~append("  self~"list"_"verb)
+    user = (c~name".CLICKED")~upper
+    if events~hasIndex(user) then out~append("  forward message ("oodRx(self~methodName(c~name, "CLICKED"))")")
+    else out~append("  return 0")
+    out~append("")
+  end
+  do lv over controls
+    if \self~isManagedList(lv) then iterate
+    n = lv~name
+    parse value lv~prop("bind") with part ":" attrs
+    details = .array~new
+    do h over self~listHelpers(n)
+      if h~type == "EDIT" then details~append(h)
+    end
+    -- a row selected
+    out~append("::method" n"_bound unguarded")
+    out~append("  use arg id, item, state")
+    out~append("  if state~wordPos(""SELECTED"") > 0, item \= self~"n"_current then do")
+    out~append("    self~getData")
+    out~append("    self~"n"_save")
+    out~append("    self~"n"_load(item)")
+    out~append("  end")
+    if events~hasIndex((n".SELECTCHANGED")~upper) then out~append("  forward message ("oodRx(self~methodName(n, "SELECTCHANGED"))")")
+    else out~append("  return 0")
+    out~append("")
+    -- load
+    out~append("::method" n"_load unguarded")
+    out~append("  -- row i of" part "into the fields (0: the first); none: the fields cleared and off")
+    out~append("  use strict arg i")
+    out~append("  parts = oodPartsOf(self~object," oodRx(part)")")
+    out~append("  if i >= parts~items then i = parts~items - 1")
+    out~append("  self~"n"_current = i")
+    out~append("  if i < 0 then do")
+    do d over details
+      out~append("    self~"d~name"_data = """"")
+      out~append("    self~"d~name"~setText("""")")
+      out~append("    self~"d~name"~disable")
+    end
+    out~append("    return 0")
+    out~append("  end")
+    if details~items > 0 then out~append("  part = parts[i + 1]")
+    do d over details
+      parse value d~prop("bind") with "@" . "." attr
+      out~append("  self~"d~name"_data = oodValueOf(part," oodRx(attr)")")
+      out~append("  self~"d~name"~setText(self~"d~name"_data)")
+      out~append("  self~"d~name"~enable")
+    end
+    out~append("  self~"n"~select(i)")
+    out~append("  return 0")
+    out~append("")
+    -- save
+    out~append("::method" n"_save unguarded")
+    out~append("  -- the fields into the object of the row they show, and its cells")
+    if details~items > 0 then do
+      out~append("  i = self~"n"_current")
+      out~append("  parts = oodPartsOf(self~object," oodRx(part)")")
+      out~append("  if i < 0 | i >= parts~items then return 0")
+      out~append("  part = parts[i + 1]")
+      do d over details
+        parse value d~prop("bind") with "@" . "." attr
+        out~append("  part~"attr "= oodFromText(self~"d~name"_data)")
+      end
+      out~append("  call oodRow self~"n", i, part," oodRx(attrs))
+    end
+    out~append("  return 0")
+    out~append("")
+    -- add
+    out~append("::method" n"_add unguarded")
+    out~append("  -- a new object at the end of" part": its row, selected, its fields to fill in")
+    out~append("  self~getData")
+    out~append("  self~"n"_save")
+    out~append("  parts = oodPartsOf(self~object," oodRx(part)")")
+    out~append("  part = self~session~new(oodPartOf(self~store, self~object," oodRx(part)")~targetClass)")
+    out~append("  parts~append(part)")
+    line = "  self~"n"~addRow( , "
+    do a over attrs~makeArray(",")
+      line = line"," "oodValueOf(part," oodRx(a)")"
+    end
+    out~append(line")")
+    out~append("  self~"n"_load(parts~items - 1)")
+    if details~items > 0 then out~append("  self~"details[1]~name"~assignFocus")
+    out~append("  return 0")
+    out~append("")
+    -- remove
+    out~append("::method" n"_remove unguarded")
+    out~append("  -- the selected row's object out of" part": a new one is dropped, an owned one deleted at OK")
+    out~append("  i = self~"n"~selected")
+    out~append("  parts = oodPartsOf(self~object," oodRx(part)")")
+    out~append("  if i < 0 | i >= parts~items then return 0")
+    out~append("  part = parts[i + 1]")
+    out~append("  self~"n"_current = -1            -- first: no field is saved into the next row")
+    out~append("  parts~delete(i + 1)")
+    out~append("  if self~session~stateOf(part) == ""NEW"" then self~session~delete(part)")
+    out~append("  self~"n"~delete(i)")
+    out~append("  self~"n"_load(i)")
+    out~append("  return 0")
+    out~append("")
+  end
   return
 
 ::method generateBindRoutines
@@ -1843,11 +2008,66 @@
   out~append("  return .File~new(.context~package~name)~parent || .File~separator || path")
   out~append("")
   out~append("::routine oodPartsOf")
-  out~append("  -- the objects of a many-part (an empty array for none)")
+  out~append("  -- the objects of a many-part: its own array, so a change to it is the object's")
   out~append("  use strict arg obj, attr")
   out~append("  v = obj~send(attr)")
-  out~append("  if v == .nil then return .array~new")
+  out~append("  if v == .nil then do")
+  out~append("    v = .array~new")
+  out~append("    obj~send(attr""="", v)")
+  out~append("  end")
   out~append("  return v")
+  out~append("")
+  out~append("::routine oodPartOf")
+  out~append("  -- the part attr of the object's class (an ObjectPart): what it holds, and how")
+  out~append("  use strict arg store, obj, attr")
+  out~append("  do p over store~map(obj~class)~parts")
+  out~append("    if p~attribute~caselessEquals(attr) then return p")
+  out~append("  end")
+  out~append("  raise syntax 93.900 array(obj~class~id ""has no part"" attr)")
+  out~append("")
+  out~append("::routine oodChoices")
+  out~append("  -- what a one-part may hold: its objects, and a label each; the first label, """", is none")
+  out~append("  use strict arg store, session, obj, attr, show")
+  out~append("  r = .directory~new")
+  out~append("  r[""OBJECTS""] = .array~new")
+  out~append("  r[""LABELS""] = .array~of("""")")
+  out~append("  do o over session~all(oodPartOf(store, obj, attr)~targetClass)")
+  out~append("    t = oodValueOf(o, show)")
+  out~append("    label = t")
+  out~append("    n = 1")
+  out~append("    do while r[""LABELS""]~hasItem(label)       -- two the same: (2), (3) ...")
+  out~append("      n = n + 1")
+  out~append("      label = (t ""(""n"")"")~strip")
+  out~append("    end")
+  out~append("    r[""OBJECTS""]~append(o)")
+  out~append("    r[""LABELS""]~append(label)")
+  out~append("  end")
+  out~append("  return r")
+  out~append("")
+  out~append("::routine oodLabelOf")
+  out~append("  -- the label of the object a one-part holds ("""" for none)")
+  out~append("  use strict arg r, obj")
+  out~append("  if obj == .nil then return """"")
+  out~append("  i = r[""OBJECTS""]~index(obj)")
+  out~append("  if i == .nil then return """"")
+  out~append("  return r[""LABELS""][i + 1]")
+  out~append("")
+  out~append("::routine oodChosen")
+  out~append("  -- the object of a label (.nil for none)")
+  out~append("  use strict arg r, label")
+  out~append("  i = r[""LABELS""]~index(label)")
+  out~append("  if i == .nil then return .nil")
+  out~append("  if i = 1 then return .nil")
+  out~append("  return r[""OBJECTS""][i - 1]")
+  out~append("")
+  out~append("::routine oodRow")
+  out~append("  -- row i of a list view from its object: one attribute a column")
+  out~append("  use strict arg lv, i, obj, attrs")
+  out~append("  a = attrs~makeArray("","")")
+  out~append("  do c = 1 to a~items")
+  out~append("    lv~modify(i, c - 1, oodValueOf(obj, a[c]))")
+  out~append("  end")
+  out~append("  return 0")
   out~append("")
   out~append("::routine oodFromText")
   out~append("  -- an entry field's text for the object: empty is no value (NULL)")
@@ -1934,11 +2154,29 @@
   return oodAt(form, "OBJECT") \== ""
 
 -- a control's bind, checked: "attr" or "a.b" (static text only: read only);
--- a list view's "part:attr,attr" (one attribute a column)
+-- a list view's "part:attr,attr" (one attribute a column); a combo box's
+-- "part:attr" (a one-part: the objects it may hold, shown by attr); a push
+-- button's "add:list" or "remove:list"; an entry field's "@list.attr" (the
+-- attribute of the item selected in the bound list view)
 ::method checkBind
   use strict arg c, value
   value = value~strip
   if value == "" then return ""
+  if c~type == "COMBOBOX" then do
+    parse var value part ":" show
+    if \oodIsSymbol(part) | \oodIsPath(show~strip) then raise syntax 93.900 array(oodT("err.bind.combo", value))
+    return part":"show~strip
+  end
+  if c~type == "PUSHBUTTON" then do
+    parse var value verb ":" list
+    if wordpos(verb~strip~lower, "add remove") = 0 | \oodIsSymbol(list~strip) then raise syntax 93.900 array(oodT("err.bind.button", value))
+    return verb~strip~lower":"list~strip
+  end
+  if c~type == "EDIT", value~left(1) == "@" then do
+    parse var value "@" list "." attr
+    if \oodIsSymbol(list) | \oodIsSymbol(attr) then raise syntax 93.900 array(oodT("err.bind.detail", value))
+    return "@"list"."attr
+  end
   if c~type == "LISTVIEW" then do
     parse var value part ":" attrs
     if \oodIsSymbol(part) | attrs~strip == "" then raise syntax 93.900 array(oodT("err.bind.list", value))
@@ -1968,11 +2206,54 @@
   if bound, \self~isBound then out~append(oodT("err.bind.noObject"))
   if self~isBound, oodAt(form, "DATABASES") == "" then out~append(oodT("err.bind.noDatabases"))
   do c over controls
-    if c~type \== "LISTVIEW" | c~prop("bind") == "" then iterate
-    parse value c~prop("bind") with . ":" attrs
-    if attrs~makeArray(",")~items \= c~prop("columns")~makeArray("|")~items then out~append(oodT("err.bind.columns", c~name))
+    b = c~prop("bind")
+    if b == "" then iterate
+    if c~type == "LISTVIEW" then do
+      parse var b . ":" attrs
+      if attrs~makeArray(",")~items \= c~prop("columns")~makeArray("|")~items then out~append(oodT("err.bind.columns", c~name))
+      if c~prop("rows") \== "" then out~append(oodT("err.bind.fixed", c~name))
+      if self~listHelpers(c~name)~items > 0, c~prop("opts")~wordpos("SINGLESEL") = 0 then out~append(oodT("err.bind.single", c~name))
+      adds = .false; details = .false
+      do h over self~listHelpers(c~name)
+        if h~type == "EDIT" then details = .true
+        if h~prop("bind")~left(4) == "add:" then adds = .true
+      end
+      if adds, \details then out~append(oodT("err.bind.noDetail", c~name))
+    end
+    if c~type == "COMBOBOX", c~prop("items") \== "" then out~append(oodT("err.bind.fixed", c~name))
+    if c~type == "PUSHBUTTON", c~prop("role") \== "" then out~append(oodT("err.bind.role", c~name))
+    list = self~boundList(c)
+    if list \== "" then do
+      t = .nil
+      do o over controls
+        if o~name~caselessEquals(list) then t = o
+      end
+      if t == .nil then out~append(oodT("err.bind.target", c~name, list))
+      else if t~type \== "LISTVIEW" | t~prop("bind") == "" then out~append(oodT("err.bind.target", c~name, list))
+    end
   end
   return out~makeString("L", "0a"x)
+
+-- the list view a push button or a detail field works on ("" for none)
+::method boundList
+  use strict arg c
+  b = c~prop("bind")
+  if c~type == "PUSHBUTTON", b \== "" then return b~substr(b~pos(":") + 1)
+  if c~type == "EDIT", b~left(1) == "@" then do
+    parse var b "@" list "." .
+    return list
+  end
+  return ""
+
+-- the controls that work on list view lv: its buttons and detail fields
+::method listHelpers
+  expose controls
+  use strict arg lv
+  out = .array~new
+  do c over controls
+    if self~boundList(c)~caselessEquals(lv) then out~append(c)
+  end
+  return out
 
 
 /* ---- routines ------------------------------------------------------------ */
@@ -2148,14 +2429,14 @@
    action: a line the code pane inserts when a control is dropped on it
    (types: kinds it applies to, * for every visual kind; %n: the name). */
 ::resource oodKinds
-kind type=PUSHBUTTON label="Push button" prefix=btn create=createPushButton access=newPushButton args=text w=50 h=14 text=Button events=CLICKED connect=connectButtonEvent opts="DEFAULT GROUP NOTAB DISABLED HIDDEN" props="text role opts"
+kind type=PUSHBUTTON label="Push button" prefix=btn create=createPushButton access=newPushButton args=text w=50 h=14 text=Button events=CLICKED connect=connectButtonEvent opts="DEFAULT GROUP NOTAB DISABLED HIDDEN" props="text role bind opts"
 kind type=STATIC label=Text prefix=lbl create=createStaticText access=newStatic args=text w=60 h=10 text=Text opts="LEFT RIGHT CENTER GROUP DISABLED HIDDEN" props="text bind opts"
 kind type=EDIT label="Entry field" prefix=txt create=createEdit access=newEdit args=attr w=80 h=12 events="CHANGE UPDATE" connect=connectEditEvent opts="READONLY RIGHT CENTER PASSWORD MULTILINE NUMBER UPPER GROUP NOTAB DISABLED HIDDEN" props="text bind opts"
 kind type=CHECKBOX label="Check box" prefix=chk create=createCheckBox access=newCheckBox args="text attr" w=60 h=10 text=Check events=CLICKED connect=connectButtonEvent opts="GROUP NOTAB DISABLED HIDDEN" props="text checked bind opts"
 kind type=RADIOBUTTON label="Radio button" prefix=opt create=createRadioButton access=newRadioButton args="text attr" w=60 h=10 text=Option events=CLICKED connect=connectButtonEvent opts="GROUP NOTAB DISABLED HIDDEN" props="text checked groupstart opts"
 kind type=GROUPBOX label="Group box" prefix=grp create=createGroupBox access=newGroupBox args=text w=100 h=50 text=Group opts="HIDDEN" props="text opts"
 kind type=LISTBOX label="List box" prefix=lst create=createListBox access=newListBox args=attr w=80 h=50 events="SELCHANGE DBLCLK" connect=connectListBoxEvent opts="SORT MULTI GROUP NOTAB DISABLED HIDDEN" props="items opts"
-kind type=COMBOBOX label="Combo box" prefix=cbo create=createComboBox access=newComboBox args=attr w=80 h=60 events=SELCHANGE connect=connectComboBoxEvent opts="LIST SIMPLE SORT GROUP NOTAB DISABLED HIDDEN" defopts=LIST props="items opts"
+kind type=COMBOBOX label="Combo box" prefix=cbo create=createComboBox access=newComboBox args=attr w=80 h=60 events=SELCHANGE connect=connectComboBoxEvent opts="LIST SIMPLE SORT GROUP NOTAB DISABLED HIDDEN" defopts=LIST props="items bind opts"
 kind type=PROGRESSBAR label="Progress bar" prefix=prg create=createProgressBar access=newProgressBar args="" w=100 h=10 opts="SMOOTH VERTICAL HIDDEN" props="min max pos opts"
 kind type=LISTVIEW label="List view" prefix=lv create=createListView access=newListView args="" w=120 h=60 events="SELECTCHANGED COLUMNCLICK CHECKBOXCHANGED" connect=connectListViewEvent opts="REPORT LIST ICON SMALLICON SINGLESEL SHOWSELALWAYS GROUP NOTAB DISABLED HIDDEN" defopts="REPORT SHOWSELALWAYS" exopts="FULLROWSELECT GRIDLINES CHECKBOXES" props="columns rows bind exstyles opts"
 kind type=TAB label="Tab strip" prefix=tab create=createTab access=newTab args="" w=120 h=14 events=SELCHANGE connect=connectTabEvent opts="BUTTONS MULTILINE GROUP NOTAB DISABLED HIDDEN" props="tabs opts"

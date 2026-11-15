@@ -7,6 +7,7 @@ CREATE TABLE addr (addr_id INTEGER PRIMARY KEY, addr_street VARCHAR, addr_town V
 CREATE TABLE per_addr (per_id INTEGER NOT NULL REFERENCES per(per_id), addr_id INTEGER NOT NULL REFERENCES addr(addr_id))
 CREATE TABLE note (note_id INTEGER PRIMARY KEY, per_id INTEGER REFERENCES per(per_id), note_text VARCHAR)
 INSERT INTO com (com_id, com_name) VALUES (10, 'Anduin')
+INSERT INTO com (com_id, com_name) VALUES (11, 'WU Wien')
 INSERT INTO per (per_id, per_name, per_active, per_company) VALUES (1, 'Tom Dyer', 1, 10)
 INSERT INTO per (per_id, per_name, per_active) VALUES (2, 'Rony Flatscher', 1)
 INSERT INTO per_ext (per_id, phone) VALUES (1, '0141 555 0100')

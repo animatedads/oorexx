@@ -454,6 +454,11 @@
       }
       else if (k === 'role') box.appendChild(selectInput(c.name, k, c[k], ['', 'OK', 'CANCEL'], ['—', T('prop.role.ok'), T('prop.role.cancel')]));
       else if (['checked', 'enabled', 'groupstart', 'grayed'].includes(k)) box.appendChild(checkInput(c.name, k, c[k]));
+      else if (k === 'bind') {                       // the form of a bind depends on the control: shown as its placeholder
+        const l = propInput(c.name, k, c[k]), i = l.querySelector('input'), h = 'prop.bind.' + c.type.toLowerCase();
+        if (NLS.has(h)) { i.placeholder = T(h); i.title = T(h); }
+        box.appendChild(l);
+      }
       else box.appendChild(propInput(c.name, k, c[k]));
     }
     const del = D.createElement('button'); del.textContent = T('prop.remove', c.name); del.style.marginTop = '8px';

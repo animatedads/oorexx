@@ -590,7 +590,9 @@ def sc_bound(pg):
     with his phone from per_ext, his employer from com and his addresses
     through per_addr; Save commits a changed name and phone in one
     transaction (the SAVED event says so); an emptied name (NOT NULL) is
-    refused in a message, and the dialog stays open."""
+    refused in a message, and the dialog stays open. Then (v0.10) another
+    employer is picked, an address removed and one added in the row fields,
+    and the commit holds them all."""
     ready(pg); open_example(pg, 'examples/People.rex')
     src = program_text(pg)
     expect('round trip in the browser is byte-identical', src, (SITE / 'examples/People.rex').read_text())
@@ -617,10 +619,34 @@ def sc_bound(pg):
     expect('the dialog stays open', pg.locator('.ood-dlg').count() >= 1, True)
     fields = pg.locator('.ood-dlg input[type="text"], .ood-dlg input:not([type])')
     fields.nth(0).fill('Tom Dyer (Alchemy)'); fields.nth(1).fill('0141 555 0199'); settle(pg, 200)
+    # v0.10: the reference picker, the selected row's fields, Remove and Add
+    combo = pg.locator('.ood-dlg select').first
+    expect('the employer is chosen in a combo box', combo.evaluate('s => s.options[s.selectedIndex].textContent'), 'Anduin')
+    expect('  it offers none and every company', combo.evaluate('s => [...s.options].map(o => o.textContent)'), ['', 'Anduin', 'WU Wien'])
+    combo.select_option(label='WU Wien'); settle(pg, 200)
+    rows = pg.locator('.ood-dlg tbody tr')
+    expect('the first address shown in its fields', fields.nth(2).input_value(), 'Byres Road')
+    rows.nth(1).click(); settle(pg, 800)
+    expect('another row selected: its fields', fields.nth(2).input_value() + '|' + fields.nth(3).input_value(), 'Augasse 2-6|Wien')
+    press(pg, 'Remove'); settle(pg, 800)
+    expect('Remove: one row left', rows.count(), 1)
+    expect('  the fields show the row that is left', fields.nth(2).input_value(), 'Byres Road')
+    press(pg, 'Add'); settle(pg, 800)
+    expect('Add: a new row', rows.count(), 2)
+    expect('  its fields empty and open', [fields.nth(2).input_value(), fields.nth(2).is_enabled()], ['', True])
+    fields.nth(2).fill('Great Western Road'); fields.nth(3).fill('Glasgow'); settle(pg, 200)
+    rows.nth(0).click(); settle(pg, 800)
+    expect('  leaving the row writes its cells', ' '.join(rows.nth(1).inner_text().split()), 'Great Western Road Glasgow')
+    pg.screenshot(path=str(SHOTS / 'bound_edit.png'))
     press(pg, 'Save')
     r = wait_end(pg)
     expect('saved: closed with OK', r['rc'], 1)
-    expect_in('the SAVED event ran after the commit', 'saved: Tom Dyer (Alchemy) (0141 555 0199)', pg.inner_text('#out'))
+    out = pg.inner_text('#out')
+    expect_in('the SAVED event ran after the commit', 'saved: Tom Dyer (Alchemy) (0141 555 0199)', out)
+    expect_in('  the chosen employer was committed', 'employer: WU Wien', out)
+    expect_in('  the kept address', 'address: Byres Road / Glasgow', out)
+    expect_in('  the added address', 'address: Great Western Road / Glasgow', out)
+    expect('  the removed one is gone', 'Augasse' in out, False)
 
 SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views, 'gadgets': sc_gadgets, 'libraries': sc_libraries, 'graph': sc_graph, 'trace': sc_trace, 'languages': sc_languages, 'ui_de': sc_ui_de, 'plugins': sc_plugins, 'assist': sc_assist, 'source': sc_source, 'bound': sc_bound}
 def main():

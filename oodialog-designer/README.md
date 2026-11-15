@@ -1,4 +1,4 @@
-# ooDialog Designer — v0.9.0
+# ooDialog Designer — v0.10.0
 
 Architecture: Tom Dyer. Code: Claude (Opus 5.5). README written by Claude (Opus 5.5).
 It runs on ooDialog/WASM v0.7.0 (code: Claude (Fable 5.2)) and on Josep Maria
@@ -264,7 +264,7 @@ one `kind` line; a new code-insertion action is one `action` line.
   then. The build lays the estate files out under `site/plugins/estate/`
   as the estate does, following each plugin's `::requires`, and lists them
   in its `files.txt`.
-- **Bound dialogs (v0.9):** a dialog can edit one object instead of one
+- **Bound dialogs (v0.9; v0.10 picks references and edits lists):** a dialog can edit one object instead of one
   table. The object is an instance of a class mapped over several tables
   with `::ANNOTATE` (oorexx_mapped_objects; its README explains why Access
   and Delphi were weak at this).
@@ -277,7 +277,24 @@ one `kind` line; a new code-insertion action is one `action` line.
     - a check box (a flag);
     - a text (shows it, and may follow a path such as `employer.name`);
     - a list view (`addresses:street,town`: one row per part, one
-      attribute per column).
+      attribute per column);
+    - (v0.10) a combo box picks a reference (`employer:name`: a `one`
+      part). It offers every object of the part's class, shown by the
+      attribute, with an empty first entry for none. Labels that repeat
+      get (2), (3), and the choice is found by its label, so a SORT
+      combo box works too;
+    - (v0.10) a push button adds or removes a list's parts (`add:lvAddresses`,
+      `remove:lvAddresses`). Add makes a new object of the part's class,
+      appends it, selects its row and puts the caret in its first field.
+      Remove takes the selected part out of the collection: a part made in
+      this dialog is dropped; one from the database is deleted at OK if the
+      part is owned, and only its link goes if it is shared;
+    - (v0.10) an entry field edits the selected row (`@lvAddresses.street`).
+      When the selection moves, the fields go into the row's object and its
+      cells, then the new row's values come in; with no row the fields are
+      empty and disabled. OK saves the selected row before the commit. A
+      list's own SELECTCHANGED (or a button's CLICKED) code still runs:
+      the bound method calls it, so the event is not connected twice.
   - The program opens the object in a unit of work. OK puts the fields back
     and commits them in one transaction. A refusal from the database (a NOT
     NULL, a foreign key) is shown in a message, and the dialog stays open
@@ -338,7 +355,7 @@ a built `site/plugins`, or skips them and says so. t07–t09 start their own
 stand-in servers with node; under native ooRexx (no ADDRESS FETCH) their
 network checks say SKIP, and t08's git-command checks still run.
 
-## State (2026-11-15, v0.9.0)
+## State (2026-11-15, v0.10.0)
 
 - `tests/t01_model.rex`: 69 of 69 checks pass under ooRexx/WASM in Node. They
   cover generation, a byte-identical round trip through the `::RESOURCE`,
@@ -397,7 +414,7 @@ network checks say SKIP, and t08's git-command checks still run.
   name, not `.nil`. The refusal checks of t01–t03 now also demand Error
   93.900 with the designer's message; before, any error passed. With the
   bug put back they fail 19 times.)
-- `tests/t10_binding.rex`: 25 of 25 checks pass, covering:
+- `tests/t10_binding.rex`: 44 of 44 checks pass, covering:
   - the program a bound design writes: the store, the session, the object
     opened by key, the fields' first values, a flag, a path shown, a list of
     parts, and validate with its one commit, the SAVED event and the
@@ -408,6 +425,14 @@ network checks say SKIP, and t08's git-command checks still run.
     attributes);
   - the problems listed (columns against attributes, no databases, bound
     controls with no object);
+  - (v0.10) the reference picker (its choices, the current one, the chosen
+    one written back, unique labels); Add and Remove (a new object of the
+    part's class, the current row cleared before a row goes, a new part
+    dropped); the row fields (empty at first, loaded and saved with the
+    selection, saved before the commit, never written to the object
+    itself); the user's own SELECTCHANGED and CLICKED called from the bound
+    methods and kept by the round trip; their refusals and problems (a
+    button naming no bound list, no SINGLESEL, Add without row fields);
   - an unbound design written as before;
   - German.
 - `tools/dztest.py`: 16 of 16 scenarios pass in headless Chromium:
@@ -470,8 +495,12 @@ network checks say SKIP, and t08's git-command checks still run.
        tables;
      - an emptied name refused in a message ("NOT NULL constraint failed:
        per_name"), with the dialog still open;
-     - a new name and phone saved in one commit, closing with OK, with the
-       SAVED event saying so.
+     - (v0.10) the employer picked in the combo box (none, Anduin, WU
+       Wien); a row selected, its fields shown; Remove; Add, the new row
+       filled in its fields and its cells written when the selection moves;
+     - a new name and phone, the new employer, the kept and the added
+       address saved in one commit (the removed one gone), closing with OK,
+       with the SAVED event saying so.
 - `tests/gen/Calculator.rex`, `Contacts.rex` and `Gadgets.rex` (generated)
   also pass the ooDialog/WASM harness, `oodtest.py`, with their `.steps`
   files.
@@ -499,12 +528,13 @@ network checks say SKIP, and t08's git-command checks still run.
 ## Not yet
 
 - Bound dialogs:
-  - a list's parts cannot be added or removed from the dialog;
-  - there is no picker for a reference (`one`): the employer is shown,
-    not chosen;
+  - a list is edited in fields below it, not in its cells (ooDialog/WASM
+    v0.15 has in-place cell editing; Windows ooDialog's is the label only);
+  - a picker offers every object of the class (`session~all`): no filter,
+    no search, so a large table loads whole;
   - the designer does not check a binding against the class (the program
     does, when it opens the object: every problem at once);
-  - a combo box and a date picker cannot be bound yet.
+  - a date picker cannot be bound yet.
 
 - Controls: up-down (it must follow its buddy), month calendar and images.
 - Track bar events: ooDialog/WASM has none yet.
