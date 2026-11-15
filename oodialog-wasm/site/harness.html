@@ -3,12 +3,14 @@
 <style>body{margin:0;font:14px system-ui;background:#3a6ea5}#out{position:fixed;left:0;bottom:0;right:0;max-height:30%;overflow:auto;margin:0;padding:4px;background:#111;color:#ddd;font:12px monospace;white-space:pre-wrap}</style>
 </head><body><pre id="out"></pre>
 <script src="ooRexx.js"></script>
+<script src="oodfiles.js"></script>
 <script>
 // Runs one Rexx program with the ooDialog files in the interpreter's file system.
 window.oodRun = async function (prog, files, cwd) {
   const out = document.getElementById('out');
   window.oodOut = []; window.oodDone = null;
   for (const k of Object.keys(files)) if (files[k] && files[k].b64) files[k] = Uint8Array.from(atob(files[k].b64), (ch) => ch.charCodeAt(0));
+  window.oodAliases = oodFiles.windowsNames(files);   // "Support\\View.rex" as Windows programs write it
   const rexx = await ooRexx.load();
   const add = (t) => { window.oodOut.push(t); out.textContent += t; out.scrollTop = out.scrollHeight; };
   const opts = { args: [prog], files, js: { page: true, worker: true }, onOut: add, onErr: add };

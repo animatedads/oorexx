@@ -31,7 +31,7 @@ oophil.rex	9
 propertySheet.tabControls/PropertySheetDemo.rex	10	event-not-produced
 propertySheet.tabControls/UserTabDemo.rex	5	
 propertySheet.tabControls/oodListViews.rex	1	error 97.1 Object "The NIL object" does not understand message "ADDNEWATTRIBUTE". ; event-not-produced ; unhandled msg TAB 0x1331
-propertySheet.tabControls/ticketWizard.rex	3	native:PSDLG_SETWIZBUTTONS
+propertySheet.tabControls/ticketWizard.rex	3	
 resizableDialogs/DialogAreaU/dlgAreaUDemo.rex	9	
 resizableDialogs/DialogAreaU/dlgAreaUDemoThree.rex	9	event-not-produced
 resizableDialogs/DialogAreaU/dlgAreaUDemoTwo.rex	9	

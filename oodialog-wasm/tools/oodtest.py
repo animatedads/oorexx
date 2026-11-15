@@ -61,8 +61,14 @@ def sweep(tree, report):
                 m = re.search(r'native function (\w+)', out)
                 err = re.search(r'Error (\d+)(?:\.\d+)?:? +(.*)', out)
                 todo = pg.evaluate("[...new Set([...document.querySelectorAll('.ood-todo')].map(e => e.textContent.split(' ')[0]))].join(' ')")
-                if m: verdict = 'native:' + m.group(1)
-                elif err and state != 'dialog': verdict = 'error:' + out[err.start():err.start() + 90].replace('\n', ' ')
+                outside = re.search(r'(winsystm\.cls|orexxole\.cls|OLEObject)', out, re.I)   # not ooDialog: Windows system classes and OLE
+                if outside and state != 'dialog': verdict = 'outside:' + outside.group(1)
+                elif m: verdict = 'native:' + m.group(1)
+                elif err and state != 'dialog':
+                    detail = re.search(r'Error (\d+\.\d+): +([^\n]*)', out)
+                    text = ('Error ' + detail.group(1) + ' ' + detail.group(2)) if detail else out[err.start():err.start() + 90].replace('\n', ' ')
+                    # a part of a larger program, started on its own: it names its files from the program's directory
+                    verdict = ('component:' if re.search(r'Could not find (file|routine) "[^"]*\\', text) else 'error:') + text[:110]
                 elif state == 'dialog': verdict = 'shows' + (' placeholders:' + todo if todo else '') + (' +error' if err else '')
                 elif state == 'message': verdict = 'message:' + pg.evaluate("document.querySelector('.ood-msgtext').textContent").replace('\n', ' ')[:90]
                 else: verdict = state
@@ -228,9 +234,11 @@ def main():
                 files = {'/home/rexx/' + f: (ROOT / 'dist' / f).read_text() for f in ('ooDialog.cls', 'oodWeb.cls', 'ooShapes.cls')}
                 extra = tp.parent / (tp.stem + '.files')
                 if extra.is_dir():
-                    for x in extra.iterdir():            # files beside the test; binaries go as bytes
-                        if x.suffix.lower() in BINARY: files['/home/rexx/' + x.name] = {'b64': base64.b64encode(x.read_bytes()).decode()}
-                        else: files['/home/rexx/' + x.name] = x.read_text(encoding='latin-1')
+                    for x in sorted(extra.rglob('*')):   # files beside the test, with sub-directories; binaries go as bytes
+                        if not x.is_file(): continue
+                        name = '/home/rexx/' + x.relative_to(extra).as_posix()
+                        if x.suffix.lower() in BINARY: files[name] = {'b64': base64.b64encode(x.read_bytes()).decode()}
+                        else: files[name] = x.read_text(encoding='latin-1')
                 if tree:                     # a whole directory, with its subdirectories; images go as base64
                     for x in tree.rglob('*'):
                         if x.is_file() and x.suffix.lower() in TEXT:

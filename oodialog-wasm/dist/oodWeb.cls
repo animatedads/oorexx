@@ -24,7 +24,7 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.10.0"
+  return "0.11.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute key unguarded
@@ -102,7 +102,7 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.10.0"
+  return "0.11.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute rexxSelf unguarded
@@ -131,7 +131,7 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.10.0"
+  return "0.11.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute dlg unguarded             -- its dialog's OodDlg
@@ -149,7 +149,7 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.10.0"
+  return "0.11.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::method module_version unguarded
@@ -904,7 +904,7 @@ syntax:
       if self~kindOpts(d, id)~pos("MULTI") > 0 then do
         self~winMsg(d, id, 389, 0, -1)
         do n over data~makeArray(" ")
-          if n~datatype("W") then self~winMsg(d, id, 389, 1, n - 1)
+          if n~datatype("W") then if n > 0 then self~winMsg(d, id, 389, 1, n - 1)
         end
       end
       else if data \== "" then self~ctlOp(d, id, "selectText", data)
@@ -1615,8 +1615,12 @@ syntax:
   d~sizeY = height + 48
   d~templateActive = .true
   self~addItem(self_, "TAB", 12320, 4, 4, width + 6, height + 20, "", "")
-  buttons = .array~of(.array~of(1, "OK", "DEFAULT"), .array~of(2, "Cancel", ""))
-  if info~opts~wordPos("NOAPPLYNOW") == 0 then buttons~append(.array~of(12321, "&Apply", "DISABLED"))
+  -- A wizard has no tabs: Back, Next and Finish walk through the pages
+  -- (ID_WIZBACK 12323, ID_WIZNEXT 12324, ID_WIZFINISH 12325 of prsht.h).
+  info~wizard = self~isWizard(info~opts)
+  if info~wizard then buttons = .array~of(.array~of(12323, "< &Back", "DISABLED"), .array~of(12324, "&Next >", "DEFAULT"), .array~of(12325, "Finish", ""), .array~of(2, "Cancel", ""))
+  else buttons = .array~of(.array~of(1, "OK", "DEFAULT"), .array~of(2, "Cancel", ""))
+  if \info~wizard then if info~opts~wordPos("NOAPPLYNOW") == 0 then buttons~append(.array~of(12321, "&Apply", "DISABLED"))
   if info~opts~wordPos("HASHELP") > 0 then buttons~append(.array~of(9, "Help", ""))
   x = width + 10 - buttons~items * 54
   do b over buttons
@@ -1626,7 +1630,8 @@ syntax:
   d~notifyTable~append(.array~of(12320, "SELCHANGE", "@SHEETTAB", "SELCHANGE"))
   d~cmdTable~append(.array~of(12320, "SELCHANGE", ""))
   if \self~dyndlg_startParentDialog(self_, msg, .array~new) then return -1
-  do page over pages
+  if info~wizard then self~ctlOp(d, 12325, "hide")
+  else do page over pages
     self~ctlOp(d, 12320, "tab.ins", -1, self~pageInfoOf(page)~title)
   end
   start = self_~startPage
@@ -1728,10 +1733,93 @@ syntax:
     when id == 9 then do
       if info~current > 0 then pages[info~current]~help(sheet)
     end
+    when id == 12323 | id == 12324 then do     -- Back, Next: 0 the neighbour page, -1 stay, else the page to show
+      if info~current < 1 then return .true
+      page = pages[info~current]
+      if id == 12323 then answer = page~wizBack(sheet)
+      else answer = page~wizNext(sheet)
+      if answer == -1 then return .true
+      target = info~current + 1
+      if id == 12323 then target = info~current - 1
+      if answer \== 0 then do
+        wanted = self~sheetPageIndex(sheet, answer)
+        if wanted > 0 then target = wanted
+      end
+      self~sheetActivate(sheet, target, .true)
+    end
+    when id == 12325 then do                   -- Finish: anything but 0 keeps the wizard open
+      if info~current > 0 then do
+        if pages[info~current]~killActive(sheet) \== .true then return .true
+        if pages[info~current]~wizFinish(sheet) \== 0 then return .true
+      end
+      info~outcome = "CLOSEDOK"
+      sheet~initCode = 1
+      sheet~finished = .true
+    end
     otherwise return .false
   end
   return .true
 
+::method isWizard unguarded
+  use arg opts
+  do word over .array~of("WIZARD", "WIZARD97", "WIZARDLITE", "AEROWIZARD")
+    if opts~caselessWordPos(word) > 0 then return .true
+  end
+  return .false
+::method sheetPageIndex unguarded  -- a page object, a page number or a page id as a page number; 0 if it is none
+  use arg sheet, which
+  pages = sheet~oodPeer~sheet~pages
+  do i = 1 to pages~items
+    if pages[i] == which then return i
+  end
+  if which~isA(.string) then do
+    if which~datatype("W") then if which >= 1 & which <= pages~items then return which
+    do i = 1 to pages~items
+      if pages[i]~pageID == which then return i
+    end
+  end
+  return 0
+/* setWizButtons(opts): BACK enables Back; NEXT shows Next; FINISH shows Finish in
+   its place; DISABLEDFINISH shows Finish disabled. */
+::method psdlg_setWizButtons unguarded
+  use arg self_, msg, a
+  d = self_~oodPeer
+  if \d~live then return 0
+  if \d~sheet~wizard then return 0
+  opts = self~opt(a, 1)~upper
+  self~ctlOp(d, 12323, "enable", (opts~wordPos("BACK") > 0))
+  finish = (opts~wordPos("FINISH") > 0 | opts~wordPos("DISABLEDFINISH") > 0)
+  if finish then do
+    self~ctlOp(d, 12324, "hide")
+    self~ctlOp(d, 12325, "show")
+    self~ctlOp(d, 12325, "enable", (opts~wordPos("DISABLEDFINISH") == 0))
+  end
+  else do
+    self~ctlOp(d, 12325, "hide")
+    self~ctlOp(d, 12324, "show")
+    self~ctlOp(d, 12324, "enable", (opts~wordPos("NEXT") > 0))
+  end
+  return 0
+::method psdlg_querySiblings unguarded   -- querySiblings(arg1, arg2): each page made so far is asked, until one answers other than 0
+  use arg self_, msg, a
+  do page over self_~oodPeer~sheet~pages
+    if \self~pageInfoOf(page)~activated then iterate
+    answer = page~queryFromSibling(a[1], a[2], self_)
+    if answer \== 0 then return answer
+  end
+  return 0
+::method psdlg_setNextText unguarded
+  use arg self_, msg, a
+  if self_~oodPeer~live then self~ctlOp(self_~oodPeer, 12324, "setText", a[1])
+  return 0
+::method psdlg_setFinishText unguarded
+  use arg self_, msg, a
+  d = self_~oodPeer
+  if \d~live then return 0
+  self~ctlOp(d, 12325, "setText", a[1])
+  self~ctlOp(d, 12324, "hide")
+  self~ctlOp(d, 12325, "show")
+  return 0
 ::method psdlg_getResult unguarded
   use arg self_
   return self_~oodPeer~sheet~outcome
@@ -3327,6 +3415,19 @@ syntax:
   blue = (v % 65536) // 256
   return "rgb(" || red || "," || green || "," || blue || ")"
 
+::method rb_checkInGroup_cls unguarded  -- .RadioButton~checkInGroup(dlg, idFirst, idLast, idCheck): CheckRadioButton()
+  use arg self_, msg, a
+  dlg = a[1]
+  d = dlg~oodPeer
+  first = self~resolveId(dlg, a[2])
+  last = self~resolveId(dlg, a[3])
+  check = -1
+  if a~hasIndex(4) then check = self~resolveId(dlg, a[4])
+  if first < 0 | last < first then return 1
+  do id = first to last
+    self~winMsg(d, id, 241, (id == check))        -- BM_SETCHECK
+  end
+  return 0
 ::method rb_check unguarded
   use arg self_
   self~wb_sendWinIntMsg(self_, "", .array~of(241, 1, 0))

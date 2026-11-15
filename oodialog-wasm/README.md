@@ -1,4 +1,4 @@
-# ooDialog for ooRexx/WASM — v0.10.0
+# ooDialog for ooRexx/WASM — v0.11.0
 
 Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: Josep Maria Blasco's
 ooRexx/WASM (`oorexxwasm` 0.2.4, ooRexx 5.3.0) and its `js.cls`.
@@ -48,33 +48,42 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
     python3 tools/oodtest.py --poke upstream/examples 0 24
     python3 tools/oodtest.py --tree upstream/examples tests/t*.rex tests/up/calculator.rex tests/up/oodpbar.rex tests/up/oodStandardRoutines.rex
 
-## State on 2026-11-15 (v0.10.0)
+## State on 2026-11-15 (v0.11.0)
 
-- Natives ported: 518 of 1,184 (43.8%). (The total fell from 1,196 because 12
+- Natives ported: 523 of 1,184 (44.2%). (The total fell from 1,196 because 12
   natives are now plain Rexx in `src/patches.txt`.)
-- Tests: 23 of 23 pass in headless Chromium (`tests/t01`..`t15` with expected
+- Tests: 25 of 25 pass in headless Chromium (`tests/t01`..`t16` with expected
   output, the binary resource hand-off test `tests/res/t07_resdialog_binary`,
   four unmodified upstream samples: `calculator.rex`,
   `oodpbar.rex`, `oodStandardRoutines.rex`, and the tutorial
   `employee11tab.rex`, a four-page property sheet from an .rc file, in which
-  an employee is added and then found on the list page; and the three
+  an employee is added and then found on the list page, and
+  `ticketWizard.rex`, a Wizard 97 walked with Next, a refusal and Back; and the three
   programs written by ooDialog Designer v0.3.0, in `tests/designer`).
 - Sweep of all 140 upstream example programs (`oodtest.py --sweep`, results in
   `sweep.tsv`), each run from its own directory: 61 show their dialog, 7 run to
-  the end, 9 show only a message box (6 of them are component files that cannot
-  find their header because they are meant to be started from a parent
-  program), 23 stop at a native not ported yet, 40 stop on another error (most
-  are Error 43: `winSystm.cls`, `::requires` paths written with `\`).
-  Earlier counts of "shows a dialog" included message boxes and were too high.
+  the end, 9 show only a message box, 23 stop at a native not ported yet, 9
+  stop on an error (6 need a reader of binary resources, which is another
+  task's work; `oovideo.rex` is broken upstream), 24 are components: parts of
+  the user guide's Order Manager, which name their files from the program's
+  directory and fail the same way on Windows when started alone, and 7 are
+  outside ooDialog: they need `winsystm.cls` or OLE, which are Windows system
+  libraries, not ooDialog. The three Order Manager programs (`Startup.rex`)
+  load all their parts and then stop at `winsystm.cls` for the same reason.
+- Windows file names: `site/oodfiles.js` (`oodFiles.windowsNames(files)`, called
+  by the page before `rexx.run`) lets `::requires "support\View.rex"` and
+  `call "OrderMgr\RequiresList.rex"` find `Support/View.rex`. The programs are
+  not changed: the file is given once more under the name as written
+  (`tests/t16_winnames`).
 - Depth probe (`oodtest.py --poke`, results in `poke.tsv`): the 70 examples
   that show a dialog or a message box are used automatically (tabs, rows,
-  check boxes, lists, edits, menus, every button, then closed). 55 come through
+  check boxes, lists, edits, menus, every button, then closed). 56 come through
   with no error, no unhandled Windows message and a clean end. 6 more have no
-  fault except connecting an event this layer does not produce. 9 have a real
-  problem, each named in `poke.tsv`: the wizard buttons, drawing, the `\` in a
-  `call` of two user guide exercises, sub-item editing (`setParent`), and
-  single faults. Every program ends. `oovideo.rex` fails on an unmatched `/*`
-  at line 44 of the upstream file itself (r13513).
+  fault except connecting an event this layer does not produce. 8 have a
+  problem, each named in `poke.tsv`: 2 are components started alone (not a
+  fault), the others are drawing, sub-item editing (`setParent`), list
+  tabulators and single faults. Every program ends. `oovideo.rex` fails on an
+  unmatched `/*` at line 44 of the upstream file itself (r13513).
   The probe proves the absence of errors, not that results are right.
 - Working, each asserted by a test: UserDialog; RcDialog (upstream's own .rc
   parser); push button, check box, radio button, group box, static text and
@@ -95,7 +104,9 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
   list). COM calls answer S_OK. Not done: the other CommonDialogEvents, the
   CommonDialogCustomizations controls, roots such as CSIDL_PRINTERS (the
   dialog browses the WASM machine's folders); PropertySheetDialog
-  with UserPSPDialog and RcPSPDialog pages (tabbed sheets: pages made when
+  with UserPSPDialog and RcPSPDialog pages (wizards: Back, Next and Finish with
+  wizBack, wizNext, wizFinish, setWizButtons, querySiblings; header and
+  watermark images are not drawn; tabbed sheets: pages made when
   first shown, killActive, apply, queryCancel, setCurSel, getResult);
   control~connectEvent; UserControlDialog (a dialog inside its owner, on its
   own thread, placed with setWindowPos); tool tips (the browser's own);

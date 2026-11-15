@@ -1,0 +1,14 @@
+wait .ood-dlg >> text=Font Selection
+click .ood-dlg button.ood-def
+wait .ood-dlg >> text=Let's Go To The Movies
+expect [...document.querySelectorAll('.ood-dlg:not(.ood-child) > * button.ood-c, .ood-dlg:not(.ood-child) button.ood-c')].filter(b => !b.closest('.ood-child')).filter((b, i, a) => a.indexOf(b) === i).map(b => b.textContent.trim() + (b.hidden ? '(h)' : '') + (b.disabled ? '(d)' : '')).join(',') ==> < Back(d),Next >,Finish(h),Cancel
+click .ood-dlg >> text=Next >
+sleep 500
+expect [...document.querySelectorAll('.ood-dlg button.ood-c')].find(b => b.textContent.trim() === '< Back').disabled ==> False
+click .ood-dlg >> text=Next >
+wait .ood-msgbox >> text=you must select
+click .ood-msgbox >> text=OK
+click .ood-dlg >> text=< Back
+sleep 500
+expect [...document.querySelectorAll('.ood-dlg button.ood-c')].find(b => b.textContent.trim() === '< Back').disabled ==> True
+click .ood-dlg >> text=Cancel
