@@ -27,6 +27,12 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDateTimeEdit>
+#include <QCalendarWidget>
+#include <QTableView>
+#include <QTextCharFormat>
+#include <QJsonDocument>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QSlider>
 #include <QStyledItemDelegate>
 #include <QScrollBar>
@@ -111,6 +117,7 @@ struct Tv {
     bool dirty = false, rendering = false;
     QTreeWidget *w = nullptr;
 };
+struct Mc;
 struct TabC { QStringList tabs; int cur = -1; bool rendering = false; QTabBar *bar = nullptr; QWidget *box = nullptr; };
 
 struct Ctl {
@@ -123,6 +130,7 @@ struct Ctl {
     std::shared_ptr<Lv> lv;
     std::shared_ptr<Tv> tv;
     std::shared_ptr<TabC> tab;
+    std::shared_ptr<Mc> mc;                                       // a month calendar
     int lo = 0, hi = 100, pos = 0, page = 20, line = 1, buddy = 0;   // track bar and up-down
     bool buddyInt = false, wrap = false;
     QDateTime when;                                               // date-time picker: the part not shown is kept
@@ -135,6 +143,20 @@ struct Ctl {
 };
 
 class OodDialog;
+
+/* ResizingAdmin (oodResizableDialog.cpp), as oodialog-web.js v0.17.0 does it: each edge of each control is
+ * pinned to an edge of the dialog or of another control.  type S stationary, P proportional, ML my left
+ * (a right edge), MT my top (a bottom edge); edge LEFT TOP RIGHT BOTTOM XCENTER YCENTER; to 0 the dialog. */
+struct RaEdge { QString type, edge; int to = 0; };
+struct RaBox { double left = 0, top = 0, right = 0, bottom = 0; };
+struct RaItem { int id = 0; QWidget *el = nullptr; RaEdge edges[4]; RaBox orig, cur; };
+struct Ra {
+    RaEdge def[4];
+    std::vector<RaItem> items;    // the controls the program named first, in its order; then the others as created
+    RaBox orig;                   // the client area when sizing began
+    bool ended = false;           // wantSizeEnded: RASIZEENDED 250 ms after the last change
+    bool watched = false;
+};
 
 struct Dlg {
     int key = 0;
@@ -151,6 +173,8 @@ struct Dlg {
     double fx = 1, fy = 1;
     int defId = 1, group = 0;
     bool shown = false, noClose = false;
+    std::shared_ptr<Ra> ra;                // a ResizingAdmin dialog
+    bool sizeWatched = false;
 };
 
 std::map<int, Dlg *> dialogs;
@@ -744,6 +768,122 @@ void udSet(Dlg *d, Ctl &u, int pos) {
     cmd(d, b->second, 0x400); cmd(d, b->second, 0x300);
 }
 
+/*---- month calendar (MONTHCALENDAR): behaviour as in oodialog-web.js v0.16.0 ----
+ * A QCalendarWidget with a "Today:" line under it (NOTODAY leaves it out).  The days shown are 42 from
+ * the first cell; Qt starts a month that begins on the first day of the week one row down, so the first
+ * cell is the week before, and GETDAYSTATE and dayState count months from the month of that first cell.
+ * Bold days are one bit mask a month (bit 0 is the 1st), as MCN_GETDAYSTATE has them. */
+struct Mc {
+    QCalendarWidget *cal = nullptr;
+    QToolButton *foot = nullptr;
+    QDate sel, today, min, max;
+    std::map<int, quint32> bold;                    // year * 12 + month - 1 -> mask
+    int firstDay = 0;                               // 0 Sunday ... 6 Saturday, as the page counts
+    bool noToday = false, dayState = false, quiet = false;
+    QDate shownMonth;                               // the first of the month shown
+};
+const char *MONTHS[] = {"January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"};
+QString mcIso(const QDate &d) { return d.toString("yyyy-MM-dd") + "T00:00:00"; }
+QDate mcDate(const QString &v) { return QDate::fromString(v.trimmed().left(10), Qt::ISODate); }
+QDate mcFirstShown(const Mc &m) {
+    const QDate first = m.shownMonth;
+    int col = (first.dayOfWeek() % 7 - m.firstDay + 7) % 7;   // dayOfWeek: Monday 1 .. Sunday 7
+    if (col == 0) col = 7;                                    // Qt shows the week before a month that starts a row
+    return first.addDays(-col);
+}
+void mcPaint(Mc &m) {
+    QSignalBlocker hush(m.cal);
+    m.cal->setDateTextFormat(QDate(), QTextCharFormat());
+    const QDate f = mcFirstShown(m);
+    for (int k = 0; k < 42; ++k) {
+        const QDate d = f.addDays(k);
+        auto it = m.bold.find(d.year() * 12 + d.month() - 1);
+        if (it == m.bold.end() || !((it->second >> (d.day() - 1)) & 1)) continue;
+        QTextCharFormat b; b.setFontWeight(QFont::Bold);
+        m.cal->setDateTextFormat(d, b);
+    }
+    if (m.foot) { m.foot->setText("Today: " + QString("%1/%2/%3").arg(m.today.month()).arg(m.today.day()).arg(m.today.year())); m.foot->setVisible(!m.noToday); }
+}
+void mcShow(Dlg *d, int id, Mc &m, const QDate &day, bool ask) {    // bring the month of day into view; the program is asked for its bold days
+    const QDate month(day.year(), day.month(), 1);
+    const bool moved = month != m.shownMonth;
+    m.shownMonth = month;
+    m.quiet = true;
+    m.cal->setCurrentPage(day.year(), day.month());
+    m.quiet = false;
+    mcPaint(m);
+    if (moved && ask && m.dayState) {
+        const QDate f = mcFirstShown(m);
+        note(d, id, "GETDAYSTATE", mcIso(QDate(f.year(), f.month(), 1)) + FS + "3");
+    }
+}
+void mcPick(Dlg *d, int id, Mc &m, const QDate &day, bool byUser) {
+    if (!day.isValid() || (m.min.isValid() && day < m.min) || (m.max.isValid() && day > m.max)) return;
+    m.sel = day;
+    { QSignalBlocker hush(m.cal); m.cal->setSelectedDate(day); }
+    mcShow(d, id, m, day, byUser);
+    if (byUser) { const QString e = mcIso(day) + FS + mcIso(day); note(d, id, "SELCHANGE", e); note(d, id, "SELECT", e); }
+}
+void mcBold(Mc &m, const QDate &from, const QString &masks) {
+    int k = 0;
+    for (const QString &v : masks.split(' ', Qt::SkipEmptyParts)) {
+        const QDate d = from.addMonths(k++);
+        m.bold[d.year() * 12 + d.month() - 1] = (quint32)v.toLongLong();
+    }
+    mcPaint(m);
+}
+QString mcOp(Dlg *d, int id, Mc &m, const QString &name, const QString &a, const QString &b) {
+    if (name == "get") return mcIso(m.sel);
+    if (name == "set") { const QDate v = mcDate(a); if (!v.isValid()) return "0"; m.sel = v; { QSignalBlocker hush(m.cal); m.cal->setSelectedDate(v); } mcShow(d, id, m, v, false); return "1"; }
+    if (name == "today") { if (!a.isEmpty()) { m.today = mcDate(a); mcPaint(m); } return mcIso(m.today); }
+    if (name == "range") {
+        m.min = mcDate(a); m.max = mcDate(b);
+        { QSignalBlocker hush(m.cal); m.cal->setDateRange(m.min.isValid() ? m.min : QDate(1601, 1, 1), m.max.isValid() ? m.max : QDate(9999, 12, 31)); }
+        if (m.min.isValid() && m.sel < m.min) m.sel = m.min;
+        if (m.max.isValid() && m.sel > m.max) m.sel = m.max;
+        { QSignalBlocker hush(m.cal); m.cal->setSelectedDate(m.sel); }
+        mcShow(d, id, m, m.sel, false);
+        return "1";
+    }
+    if (name == "getRange") return (m.min.isValid() ? mcIso(m.min) : QString()) + FS + (m.max.isValid() ? mcIso(m.max) : QString());
+    if (name == "months") {                                  // P: with the days of the months before and after; else the whole month
+        if (a != "P") return mcIso(m.shownMonth) + FS + mcIso(m.shownMonth.addMonths(1).addDays(-1)) + FS + "1";
+        const QDate f = mcFirstShown(m), l = f.addDays(41);
+        return mcIso(f) + FS + mcIso(l) + FS + QString::number((l.year() - f.year()) * 12 + l.month() - f.month() + 1);
+    }
+    if (name == "dayState") { const QDate f = mcFirstShown(m); mcBold(m, QDate(f.year(), f.month(), 1), a); return "1"; }
+    if (name == "dayStateFrom") { const QDate f = mcDate(a); if (!f.isValid()) return "0"; mcBold(m, QDate(f.year(), f.month(), 1), b); return "1"; }
+    if (name == "firstDay") {                                // Windows: 0 is Monday
+        if (!a.isEmpty()) {
+            m.firstDay = (a.toInt() + 1) % 7;
+            QSignalBlocker hush(m.cal);
+            m.cal->setFirstDayOfWeek(Qt::DayOfWeek(m.firstDay == 0 ? 7 : m.firstDay));
+            mcPaint(m);
+        }
+        return QString::number((m.firstDay + 6) % 7);
+    }
+    if (name == "minRect") { const QSize s = m.cal->parentWidget()->minimumSizeHint().expandedTo(m.cal->parentWidget()->sizeHint()); return QString::number(s.width()) + " " + QString::number(s.height()); }
+    if (name == "todayWidth") return m.noToday ? "0" : QString::number(QFontMetrics(m.foot->font()).horizontalAdvance(m.foot->text()) + 12);
+    if (name == "hit") {                                     // what is at a point of the client area
+        QWidget *box = m.cal->parentWidget();
+        QWidget *t = box->childAt(a.toInt(), b.toInt());
+        if (!t) return "NOWHERE";
+        if (t == m.foot) return "TODAY";
+        if (t->objectName() == "qt_calendar_prevmonth") return "PREV";
+        if (t->objectName() == "qt_calendar_nextmonth") return "NEXT";
+        auto *view = m.cal->findChild<QTableView *>("qt_calendar_calendarview");
+        if (view && (t == view->viewport() || view->isAncestorOf(t))) {
+            const QModelIndex i = view->indexAt(view->viewport()->mapFrom(box, QPoint(a.toInt(), b.toInt())));
+            const int row = i.row() - 1, col = i.column() - (m.cal->verticalHeaderFormat() == QCalendarWidget::NoVerticalHeader ? 0 : 1);
+            if (!i.isValid() || row < 0 || col < 0) return "NOWHERE";
+            return "DATE " + mcIso(mcFirstShown(m).addDays(row * 7 + col));
+        }
+        if (t->objectName().startsWith("qt_calendar")) return "TITLE";
+        return "NOWHERE";
+    }
+    return "";
+}
+
 /* A list-view does not select rows by dragging over them: on Windows a drag with the button down is
  * LVN_BEGINDRAG, for the program; the selection stays.  Moves still reach the mouse layer (the
  * application's filter sees them first). */
@@ -752,6 +892,16 @@ public:
     using QObject::QObject;
     bool eventFilter(QObject *, QEvent *e) override {
         return e->type() == QEvent::MouseMove && (static_cast<QMouseEvent *>(e)->buttons() & Qt::LeftButton);
+    }
+};
+
+/* An editable combo box selects the whole of its edit's text when it takes the focus, as Windows does. */
+class SelectOnFocus : public QObject {
+public:
+    using QObject::QObject;
+    bool eventFilter(QObject *o, QEvent *e) override {
+        if (e->type() == QEvent::FocusIn) if (auto *cb = qobject_cast<QComboBox *>(o)) if (cb->lineEdit()) QTimer::singleShot(0, cb->lineEdit(), &QLineEdit::selectAll);
+        return false;
     }
 };
 
@@ -846,6 +996,10 @@ void addControl(Dlg *d, const std::map<QString, QString> &s) {
         const bool droplist = has(c.opts, "LIST") && !has(c.opts, "SIMPLE");
         b->setEditable(!droplist);
         if (has(c.opts, "SORT")) b->setInsertPolicy(QComboBox::InsertAlphabetically);
+        if (!droplist) {
+            b->setInsertPolicy(QComboBox::NoInsert);     // Enter in the edit adds no item, as on Windows
+            b->installEventFilter(new SelectOnFocus(b));  // and taking the focus selects the edit's text
+        }
         QObject::connect(b, QOverload<int>::of(&QComboBox::activated), [d, id] { cmd(d, d->ctrls[id], 9); cmd(d, d->ctrls[id], 1); });
         if (!droplist) QObject::connect(b, &QComboBox::editTextChanged, [d, id] { cmd(d, d->ctrls[id], 6); cmd(d, d->ctrls[id], 5); });
         c.el = c.main = b;
@@ -929,6 +1083,40 @@ void addControl(Dlg *d, const std::map<QString, QString> &s) {
         e->setDateTime(c.when);
         QObject::connect(e, &QDateTimeEdit::dateTimeChanged, [d, id] { note(d, id, "DATETIMECHANGE", dtpGet(d->ctrls[id])); });
         c.el = c.main = e;
+    } else if (c.kind == "MONTHCALENDAR") {
+        auto *box = new QWidget(parent);
+        box->setObjectName("ood-mc");
+        box->setAutoFillBackground(true);
+        auto *lay = new QVBoxLayout(box); lay->setContentsMargins(0, 0, 0, 0); lay->setSpacing(0);
+        auto m = std::make_shared<Mc>();
+        m->cal = new QCalendarWidget(box);
+        m->cal->setGridVisible(false);
+        m->cal->setHorizontalHeaderFormat(QCalendarWidget::ShortDayNames);
+        m->cal->setVerticalHeaderFormat(has(c.opts, "WEEKNUMBERS") ? QCalendarWidget::ISOWeekNumbers : QCalendarWidget::NoVerticalHeader);
+        m->cal->setFirstDayOfWeek(Qt::Sunday);
+        m->foot = new QToolButton(box);
+        m->foot->setObjectName("ood-mc-foot");
+        m->foot->setAutoRaise(true);
+        m->foot->setFocusPolicy(Qt::NoFocus);
+        lay->addWidget(m->cal, 1);
+        lay->addWidget(m->foot, 0, Qt::AlignLeft);
+        m->noToday = has(c.opts, "NOTODAY");
+        m->dayState = has(c.opts, "DAYSTATE");
+        m->today = m->sel = QDate::currentDate();
+        m->shownMonth = QDate(m->sel.year(), m->sel.month(), 1);
+        m->cal->setSelectedDate(m->sel);
+        mcPaint(*m);
+        Mc *mp = m.get();
+        QObject::connect(m->cal, &QCalendarWidget::clicked, [d, id, mp](QDate day) { mcPick(d, id, *mp, day, true); });
+        QObject::connect(m->cal, &QCalendarWidget::activated, [d, id, mp](QDate day) { if (day != mp->sel) mcPick(d, id, *mp, day, true); });
+        QObject::connect(m->cal, &QCalendarWidget::currentPageChanged, [d, id, mp](int y, int mo) {   // the user moved a month
+            if (mp->quiet) return;
+            mcShow(d, id, *mp, QDate(y, mo, 1), true);
+        });
+        QObject::connect(m->foot, &QToolButton::clicked, [d, id, mp] { mcPick(d, id, *mp, mp->today, true); });
+        c.mc = m;
+        c.el = box;
+        c.main = m->cal;
     } else if (c.kind == "UPDOWN") {
         auto *box = new QWidget(parent);
         box->setObjectName("ood-ud");
@@ -1032,19 +1220,26 @@ void bmpPaint(Ctl &c) {
     b->setIconSize(c.bmpStretch || c.bmpAt ? b->size() : it->second.second.size());
 }
 
+void raLayout(Dlg *d);
+
 class SizeWatch : public QObject {
 public:
     Dlg *d;
     QSize start;
     QTimer ended;
     SizeWatch(Dlg *dd, QSize s, QObject *parent) : QObject(parent), d(dd), start(s) {
+        d->sizeWatched = true;
         ended.setSingleShot(true);
         ended.setInterval(250);
-        QObject::connect(&ended, &QTimer::timeout, [this] { if (d->subs.count("0.SIZEMOVEENDED")) fire(d->key, "WM", "0", "SIZEMOVEENDED"); });
+        QObject::connect(&ended, &QTimer::timeout, [this] {
+            if (d->subs.count("0.SIZEMOVEENDED")) fire(d->key, "WM", "0", "SIZEMOVEENDED");
+            if (d->ra && d->ra->ended) fire(d->key, "WM", "0", "RASIZEENDED");
+        });
     }
     bool eventFilter(QObject *o, QEvent *e) override {
         if (e->type() != QEvent::Resize) return false;
         auto *c = static_cast<QWidget *>(o);
+        if (d->ra) raLayout(d);                          // ResizingAdmin: the controls follow the dialog
         if (c->size() == start) return false;            // being shown at its own size is no change
         start = QSize();                                  // from now on, every change counts
         if (d->subs.count("0.RESIZE")) fire(d->key, "WM", "0", "RESIZE", QString::number(c->width()) + FS + QString::number(c->height()));
@@ -1052,6 +1247,89 @@ public:
         return false;
     }
 };
+
+RaBox raRect(QWidget *el) { const QRect g = el->geometry(); return {(double)g.left(), (double)g.top(), (double)g.left() + g.width(), (double)g.top() + g.height()}; }
+RaEdge raEdge(const QJsonValue &v) { const QJsonArray a = v.toArray(); return {a[0].toString(), a[1].toString(), a[2].toInt()}; }
+void raLimits(Dlg *d, const QJsonValue &min, const QJsonValue &max) {   // "initial": the size the dialog had; null: none
+    QWidget *cl = d->client;
+    QSize lo(60, 30), hi(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
+    if (min.isString() && min.toString() == "initial") lo = QSize((int)d->ra->orig.right, (int)d->ra->orig.bottom);
+    else if (min.isArray()) lo = QSize(min.toArray()[0].toInt(), min.toArray()[1].toInt());
+    if (max.isArray()) hi = QSize(max.toArray()[0].toInt(), max.toArray()[1].toInt());
+    cl->setMinimumSize(lo);
+    cl->setMaximumSize(hi);
+}
+QString raInit(Dlg *d, const QString &spec) {
+    const QJsonObject o = QJsonDocument::fromJson(spec.toUtf8()).object();
+    auto ra = std::make_shared<Ra>();
+    const QJsonArray def = o["def"].toArray();
+    for (int k = 0; k < 4; ++k) ra->def[k] = raEdge(def[k]);
+    QWidget *cl = d->client;
+    ra->orig = {0, 0, (double)cl->width(), (double)cl->height()};
+    std::set<int> seen;
+    auto add = [&](int id, const RaEdge *edges) {
+        auto it = d->ctrls.find(id);
+        if (it == d->ctrls.end() || seen.count(id) || it->second.el->parentWidget() != cl) return;
+        seen.insert(id);
+        RaItem item;
+        item.id = id; item.el = it->second.el;
+        for (int k = 0; k < 4; ++k) item.edges[k] = edges[k];
+        item.orig = item.cur = raRect(item.el);
+        ra->items.push_back(item);
+    };
+    for (const QJsonValue &row : o["ctrls"].toArray()) {
+        const QJsonArray r = row.toArray();
+        RaEdge e[4];
+        for (int k = 0; k < 4; ++k) e[k] = raEdge(r[k + 1]);
+        add(r[0].toInt(), e);
+    }
+    for (int id : d->order) if (!d->ctrls[id].parentCtl) add(id, ra->def);
+    ra->ended = o["ended"].toInt() != 0;
+    d->ra = ra;
+    raLimits(d, o["min"], o["max"]);
+    if (!d->sizeWatched) cl->installEventFilter(new SizeWatch(d, cl->size(), cl));   // a dialog with no sizing border becomes sizable
+    return "1";
+}
+void raLayout(Dlg *d) {
+    Ra &ra = *d->ra;
+    const RaBox now = {0, 0, (double)d->client->width(), (double)d->client->height()};
+    auto rects = [&](int id) -> std::pair<RaBox, RaBox> {
+        if (id) for (auto &it : ra.items) if (it.id == id) return {it.orig, it.cur};
+        return {ra.orig, now};
+    };
+    auto coord = [](const QString &edge, const RaBox &r) {
+        if (edge == "LEFT") return r.left;
+        if (edge == "TOP") return r.top;
+        if (edge == "RIGHT") return r.right;
+        if (edge == "BOTTOM") return r.bottom;
+        if (edge == "XCENTER") return (r.left + r.right) / 2;
+        return (r.top + r.bottom) / 2;                    // YCENTER
+    };
+    auto side = [](const RaBox &r, int k) { return k == 0 ? r.left : k == 1 ? r.top : k == 2 ? r.right : r.bottom; };
+    auto span = [](int k, const RaBox &r) { return k == 0 || k == 2 ? r.right - r.left : r.bottom - r.top; };
+    for (auto &it : ra.items) {
+        it.cur = RaBox();
+        double v[4];
+        for (int k = 0; k < 4; ++k) {
+            const RaEdge &e = it.edges[k];
+            const auto [pi, pc] = rects(e.to);
+            double x;
+            if (e.type == "S") x = side(it.orig, k) - coord(e.edge, pi) + coord(e.edge, pc);
+            else if (e.type == "ML") x = it.cur.left + (it.orig.right - it.orig.left);
+            else if (e.type == "MT") x = it.cur.top + (it.orig.bottom - it.orig.top);
+            else {                                        // proportional: to the same edge of the window pinned to
+                const double was = span(k, pi) ? span(k, pi) : 1;
+                x = side(pc, k) + (side(it.orig, k) - side(pi, k)) * (span(k, pc) / was);
+            }
+            v[k] = std::trunc(x);
+            if (k == 0) it.cur.left = v[0];
+            if (k == 1) it.cur.top = v[1];
+            if (k == 2) it.cur.right = v[2];
+            if (k == 3) it.cur.bottom = v[3];
+        }
+        it.el->setGeometry((int)v[0], (int)v[1], std::max(0, (int)(v[2] - v[0])), std::max(0, (int)(v[3] - v[1])));
+    }
+}
 
 /* The client area of a control, as Windows has it: inside its frame (a list-view's includes its header). */
 QPoint clientOrigin(QWidget *el) {
@@ -1632,6 +1910,13 @@ QString call(const QString &name, const QString &payload) {
         auto it = d->ctrls.find(arg(1).toInt()); if (it == d->ctrls.end()) return "0";
         Ctl &c = it->second;
         const int msg = arg(2).toInt(), w = arg(3).toInt(), l = arg(4).toInt();
+        if (c.mc) {
+            switch (msg) {
+            case 0x1015: return mcOp(d, c.id, *c.mc, "todayWidth", "", "");                       // MCM_GETMAXTODAYWIDTH
+            case 0x1003: case 0x1013: return "1";                                                  // MCM_GETMAXSELCOUNT, MCM_GETMONTHDELTA
+            }
+            return "0";
+        }
         if (auto *b = qobject_cast<QAbstractButton *>(c.main)) {
             auto *cb = qobject_cast<QCheckBox *>(b);
             switch (msg) {
@@ -1777,6 +2062,10 @@ QString call(const QString &name, const QString &payload) {
         if (c && c->lv && op.startsWith("lv.")) return lvOp(d, id, c->lv, op.mid(3), oa, ob, oc);
         if (c && c->tv && op.startsWith("tv.")) return tvOp(d, id, c->tv, op.mid(3), oa, ob, oc);
         if (c && c->tab && op.startsWith("tab.")) return tabOp(d, c->tab, op.mid(4), oa, ob);
+        if (c && c->mc && op.startsWith("mc.")) return mcOp(d, id, *c->mc, op.mid(3), oa, ob);
+        if (c && op == "isDropList") { auto *cb = qobject_cast<QComboBox *>(m); return cb && !cb->isEditable() ? "1" : "0"; }
+        if (op == "ra.init") return raInit(d, oa);
+        if (op == "ra.limits") { if (!d->ra) return "0"; raLimits(d, QJsonDocument::fromJson(("[" + oa + "]").toUtf8()).array()[0], QJsonDocument::fromJson(("[" + ob + "]").toUtf8()).array()[0]); return "1"; }
         if (c && op == "dtp.get") return dtpGet(*c);
         if (c && op == "dtp.set") { dtpSet(*c, QDateTime::fromString(oa, "yyyy-MM-ddTHH:mm:ss")); return "1"; }
         if (c && op == "ud.range") return QString::number(c->lo) + " " + QString::number(c->hi);
@@ -1897,9 +2186,10 @@ QString call(const QString &name, const QString &payload) {
             return "1";
         }
         if (c && op == "grandChild") {
-            if (!c->main->property("oodGrandChild").toBool()) {
-                c->main->setProperty("oodGrandChild", true);
-                c->main->installEventFilter(new GrandChild(d, id, oa == "1", c->main));
+            QWidget *keys = c->main;                      // an editable combo box keeps the focus and passes keys to its edit
+            if (!keys->property("oodGrandChild").toBool()) {
+                keys->setProperty("oodGrandChild", true);
+                keys->installEventFilter(new GrandChild(d, id, oa == "1", keys));
             }
             return "1";
         }
@@ -1934,7 +2224,17 @@ QString call(const QString &name, const QString &payload) {
             const QString text = op == "add" ? oa : ob;
             const int at = op == "add" ? -1 : oa.toInt();
             if (lw) { if (at < 0 || at >= lw->count()) { lw->addItem(text); return QString::number(lw->row(lw->findItems(text, Qt::MatchExactly).value(0))); } lw->insertItem(at, text); return QString::number(at); }
-            if (cb) { if (at < 0 || at >= cb->count()) { cb->addItem(text); return QString::number(cb->findText(text)); } cb->insertItem(at, text); return QString::number(at); }
+            if (cb) {
+                // Qt makes the first item added the current one.  Windows leaves an editable combo's edit as it
+                // was, and so does the page's datalist input; a drop-down list keeps Qt's way, as the page's <select> does.
+                const int was = cb->currentIndex();
+                const QString edit = cb->currentText();
+                QSignalBlocker hush(cb);
+                int r;
+                if (at < 0 || at >= cb->count()) { cb->addItem(text); r = cb->findText(text); } else { cb->insertItem(at, text); r = at; }
+                if (was < 0 && cb->isEditable()) { cb->setCurrentIndex(-1); cb->setEditText(edit); }
+                return QString::number(r);
+            }
             return "-1";
         }
         if (op == "itemText") { const int i = oa.toInt(); if (lw) return lw->item(i) ? lw->item(i)->text() : ""; if (cb) return cb->itemText(i); return ""; }
@@ -2105,6 +2405,15 @@ QObject *find(const QString &selector, QString *why) {
             for (int k = 0; k < tw->columnCount(); ++k) if (h->text(k).contains(want, Qt::CaseInsensitive)) { pendingCol = k; return tw; }
         }
         *why = "no column header " + want; return nullptr;
+    }
+    if (rest.startsWith(".ood-mc")) {                     // a month calendar; -next and -prev its arrows, -foot its Today line
+        for (auto *box : root->findChildren<QWidget *>("ood-mc")) {
+            if (!box->isVisible()) continue;
+            if (rest == ".ood-mc") return box;
+            const char *name = rest == ".ood-mc-next" ? "qt_calendar_nextmonth" : rest == ".ood-mc-prev" ? "qt_calendar_prevmonth" : rest == ".ood-mc-foot" ? "ood-mc-foot" : "";
+            if (QWidget *w = box->findChild<QWidget *>(name)) return w;
+        }
+        *why = "no month calendar part " + rest; return nullptr;
     }
     if (rest.startsWith(".ood-image")) {                  // a static image; " img" when it shows a picture
         for (auto *l : root->findChildren<QLabel *>("ood-image")) {
@@ -2399,13 +2708,14 @@ bool translatedExpect(const QString &rest, bool *ok, QString *got, QString *why)
     }
     static const QRegularExpression overCell(R"(^\(\(\) => \{ const e = document\.querySelector\('\.ood-dlg ([^']+)'\); const r = e\.getBoundingClientRect\(\), td = document\.querySelectorAll\('\.ood-lv tbody tr'\)\[(\d+)\]\.children\[(\d+)\]\.getBoundingClientRect\(\); return .*\}\)\(\) ==> (\w+)$)");
     static const QRegularExpression cellText(R"(^document\.querySelectorAll\('\.ood-lv tbody tr'\)\[(\d+)\]\.children\[(\d+)\]\.textContent ==> (.*)$)");
-    static const QRegularExpression hiddenOne(R"(^document\.querySelector\('\.ood-dlg ([^']+)'\)\.hidden(?: \|\| document\.querySelector\('\.ood-dlg [^']+'\)\.closest\('\[hidden\]'\) !== null)? ==> (\w+)$)");
+    static const QRegularExpression hiddenOne(R"(^document\.querySelector\('\.ood-dlg ([^']+)'\)(?:\.hidden(?: \|\| document\.querySelector\('\.ood-dlg [^']+'\)\.closest\('\[hidden\]'\) !== null)?|\.closest\('\[hidden\]'\) !== null) ==> (\w+)$)");
     static const QRegularExpression firstOptionJson(R"(^JSON\.stringify\(\[\.\.\.document\.querySelectorAll\('\.ood-dlg'\)\]\.pop\(\)\.querySelector\('select option'\)\.textContent\) ==> (.*)$)");
     static const QRegularExpression tabbedUnder(R"(^\(\(\) => \{ const d = \[\.\.\.document\.querySelectorAll\('\.ood-dlg'\)\]\.pop\(\), o = d\.querySelector\('select option'\);.*o\.label\.indexOf\('([^']+)'\).*x\.textContent\.trim\(\) === '([^']+)'\).*return Math\.abs\(at - want\) < (\d+); \}\)\(\) ==> (\w+)$)");
     auto inPlace = [](const QString &sel) -> QWidget * {  // the page's in-place editor: an edit, or a drop-down combo
         QWidget *root = topDialog();
         if (!root) return nullptr;
         if (sel.startsWith("select")) { for (auto *cb : root->findChildren<QComboBox *>()) return cb; return nullptr; }
+        if (sel.contains("[list]")) { for (auto *cb : root->findChildren<QComboBox *>()) if (cb->isEditable()) return cb; return nullptr; }   // an editable combo: an edit with a datalist
         for (auto *e : root->findChildren<QLineEdit *>()) {
             if (qobject_cast<QAbstractSpinBox *>(e->parentWidget()) || qobject_cast<QComboBox *>(e->parentWidget())) continue;
             return e;
@@ -2431,6 +2741,13 @@ bool translatedExpect(const QString &rest, bool *ok, QString *got, QString *why)
                                  .arg(cell.left()).arg(cell.top()).arg(cell.width()).arg(cell.height()).arg(focused ? "yes" : "no");
         *ok = (*got).compare(m.captured(4), Qt::CaseInsensitive) == 0;
         return true;
+    }
+    static const QRegularExpression datalist(R"(^\[\.\.\.document\.querySelector\('\.ood-dlg datalist'\)\.children\]\.map\(o => o\.value\)\.join\(','\) ==> (.*)$)");
+    if ((m = datalist.match(rest)).hasMatch()) {          // an editable combo box's items
+        QComboBox *cb = qobject_cast<QComboBox *>(inPlace("[list]"));
+        QStringList v;
+        for (int i = 0; cb && i < cb->count(); ++i) v << cb->itemText(i);
+        *got = cb ? v.join(',') : "no editable combo box"; *ok = *got == m.captured(1); return true;
     }
     if ((m = cellText.match(rest)).hasMatch()) {
         QTreeWidget *tw = firstLv();
@@ -2544,6 +2861,124 @@ bool translatedExpect(const QString &rest, bool *ok, QString *got, QString *why)
     return false;
 }
 
+/* The player's layout mark (marklayout): the client area's size and each control's rectangle, in the order
+ * the page has them as .ood-c children of the client; the steps' month calendar pick (mcpick). */
+struct LayoutMark { Dlg *d = nullptr; QSize client; std::vector<QRect> rects; } layoutMark;
+QDate pickedDay;
+
+Dlg *dialogOf(QWidget *w) { for (auto &kv : dialogs) if (w && kv.second->win == w->window()) return kv.second; return nullptr; }
+std::vector<QRect> layoutNow(Dlg *d) {
+    std::vector<QRect> out;
+    for (int id : d->order) { auto &c = d->ctrls[id]; if (c.el && c.el->parentWidget() == d->client) out.push_back(c.el->geometry()); }
+    return out;
+}
+Mc *mcOf(QObject *o) {
+    for (auto &kv : dialogs) for (auto &c : kv.second->ctrls) if (c.second.mc && (QObject *)c.second.el == o) return c.second.mc.get();
+    return nullptr;
+}
+/* One field of a Qt dialect expectation: N, *, >N, <N, =W or =H (the marked client size), or dxK dyK dwK dhK
+ * (that change of the Kth control). */
+bool fieldOk(const QString &want, double got, const std::vector<QRect> &now) {
+    if (want == "*") return true;
+    if (want.startsWith('>')) return got > want.mid(1).toDouble();
+    if (want.startsWith('<')) return got < want.mid(1).toDouble();
+    if (want == "=W") return got == layoutMark.client.width();
+    if (want == "=H") return got == layoutMark.client.height();
+    static const QRegularExpression ref(R"(^d([xywh])(\d+)$)");
+    if (auto m = ref.match(want); m.hasMatch()) {
+        const size_t k = m.captured(2).toUInt();
+        if (k >= now.size() || k >= layoutMark.rects.size()) return false;
+        const QRect a = layoutMark.rects[k], b = now[k];
+        const QString f = m.captured(1);
+        return got == (f == "x" ? b.x() - a.x() : f == "y" ? b.y() - a.y() : f == "w" ? b.width() - a.width() : b.height() - a.height());
+    }
+    return got == want.toDouble();
+}
+bool qtExpect(const QString &rest, bool *ok, QString *got, QString *why) {
+    const QString what = rest.section(' ', 0, 0), arg = rest.section(' ', 1).section(" ==> ", 0, 0).trimmed(), want = rest.section(" ==> ", 1);
+    static const QStringList words = {"delta", "right", "scaled", "unchanged", "limits", "mcTitle", "mcBold", "mcBoldIn", "mcFits", "mcSel", "mcSelShown"};
+    if (!words.contains(what)) return false;
+    if (what.startsWith("mc")) {                          // the month calendar SELECTOR
+        QObject *o = find(arg, why);
+        Mc *m = mcOf(o);
+        if (!m) { *got = "no month calendar"; *ok = false; return true; }
+        const QDate f = mcFirstShown(*m);
+        if (what == "mcTitle") {
+            *got = QString(MONTHS[m->cal->monthShown() - 1]) + " " + QString::number(m->cal->yearShown());
+            QString w = want;
+            if (want == "@next") { const QDate n = pickedDay.addMonths(1); w = QString(MONTHS[n.month() - 1]) + " " + QString::number(n.year()); }
+            *ok = *got == w; return true;
+        }
+        if (what == "mcBold" || what == "mcBoldIn") {
+            QStringList v;
+            for (int k = 0; k < 42; ++k) {
+                const QDate d = f.addDays(k);
+                if (what == "mcBoldIn" && d.month() != m->cal->monthShown()) continue;
+                if (m->cal->dateTextFormat(d).fontWeight() == QFont::Bold) v << d.toString("yyyy-MM-dd");
+            }
+            *got = v.join(','); *ok = *got == want; return true;
+        }
+        if (what == "mcFits") {
+            QWidget *box = m->cal->parentWidget();
+            const bool yes = box->sizeHint().width() <= box->width() + 1;
+            *got = yes ? "True" : QString("False (needs %1, has %2)").arg(box->sizeHint().width()).arg(box->width());
+            *ok = (*got).compare(want, Qt::CaseInsensitive) == 0; return true;
+        }
+        if (what == "mcSel") { *got = m->sel.toString("yyyy-MM-dd"); *ok = want == "@picked" ? m->sel == pickedDay : *got == want; return true; }
+        if (what == "mcSelShown") {                       // some other control of the dialog shows the selected day as Month D, YYYY
+            const QString text = QString(MONTHS[m->sel.month() - 1]) + " " + QString::number(m->sel.day()) + ", " + QString::number(m->sel.year());
+            QWidget *root = m->cal->window();
+            bool yes = false;
+            for (QWidget *w : root->findChildren<QWidget *>()) if (w->isVisible() && !m->cal->parentWidget()->isAncestorOf(w) && plain(widgetText(w)).trimmed() == text) yes = true;
+            *got = yes ? "True" : "False (" + text + " not shown)";
+            *ok = (*got).compare(want, Qt::CaseInsensitive) == 0; return true;
+        }
+    }
+    Dlg *d = layoutMark.d;
+    if (!d || !dialogs.count(d->key)) { *got = "no marklayout"; *ok = false; return true; }
+    const std::vector<QRect> now = layoutNow(d);
+    if (now.size() != layoutMark.rects.size()) { *got = "the number of controls changed"; *ok = false; return true; }
+    const QStringList fields = want.split(' ', Qt::SkipEmptyParts);
+    if (what == "delta" || what == "right") {
+        const size_t k = arg.toUInt();
+        if (k >= now.size()) { *got = "no control " + arg; *ok = false; return true; }
+        const QRect a = layoutMark.rects[k], b = now[k];
+        if (what == "right") {
+            const int r = (b.x() + b.width()) - (a.x() + a.width());
+            *got = QString::number(r); *ok = fieldOk(want, r, now); return true;
+        }
+        const double v[4] = {(double)b.x() - a.x(), (double)b.y() - a.y(), (double)b.width() - a.width(), (double)b.height() - a.height()};
+        *got = QString("%1 %2 %3 %4").arg(v[0]).arg(v[1]).arg(v[2]).arg(v[3]);
+        *ok = fields.size() == 4;
+        for (int i = 0; i < 4 && *ok; ++i) *ok = fieldOk(fields[i], v[i], now);
+        return true;
+    }
+    if (what == "scaled") {                               // every control is the marked one times F, within 2 pixels
+        const double f = arg.toDouble();
+        bool yes = true; QString bad;
+        for (size_t k = 0; k < now.size(); ++k) {
+            const QRect a = layoutMark.rects[k], b = now[k];
+            const int av[4] = {a.x(), a.y(), a.width(), a.height()}, bv[4] = {b.x(), b.y(), b.width(), b.height()};
+            for (int i = 0; i < 4; ++i) if (std::abs(bv[i] - f * av[i]) > 2) { yes = false; if (bad.isEmpty()) bad = QString(" (control %1: %2 %3 %4 %5 was %6 %7 %8 %9)").arg(k).arg(bv[0]).arg(bv[1]).arg(bv[2]).arg(bv[3]).arg(av[0]).arg(av[1]).arg(av[2]).arg(av[3]); }
+        }
+        *got = yes ? "True" : "False" + bad; *ok = (*got).compare(want, Qt::CaseInsensitive) == 0; return true;
+    }
+    if (what == "unchanged") {                            // the client area and every control as marked
+        const bool yes = d->client->size() == layoutMark.client && now == layoutMark.rects;
+        *got = yes ? "True" : QString("False (client %1x%2, marked %3x%4)").arg(d->client->width()).arg(d->client->height()).arg(layoutMark.client.width()).arg(layoutMark.client.height());
+        *ok = (*got).compare(want, Qt::CaseInsensitive) == 0; return true;
+    }
+    if (what == "limits") {                               // the client area's minimum width, height, maximum width, height
+        const QSize lo = d->client->minimumSize(), hi = d->client->maximumSize();
+        const double v[4] = {(double)lo.width(), (double)lo.height(), (double)hi.width(), (double)hi.height()};
+        *got = QString("%1 %2 %3 %4").arg(v[0]).arg(v[1]).arg(v[2]).arg(v[3]);
+        *ok = fields.size() == 4;
+        for (int i = 0; i < 4 && *ok; ++i) *ok = fieldOk(fields[i], v[i], now);
+        return true;
+    }
+    return false;
+}
+
 void stepFailed(const QString &line, const QString &why) {
     fflush(stdout);
     fprintf(stderr, "oodqt: STEP FAILED: %s (%s)\n", qPrintable(line), qPrintable(why));
@@ -2569,7 +3004,7 @@ void stepTick() {
     }
     if (verb == "expect") {
         bool ok = false; QString got;
-        if (translatedExpect(rest, &ok, &got, &why)) {
+        if (qtExpect(rest, &ok, &got, &why) || translatedExpect(rest, &ok, &got, &why)) {
             if (ok) { done(); return; }
             if (steps->since.elapsed() > 5000) stepFailed(line, "got " + got);
             return;
@@ -2649,7 +3084,12 @@ void stepTick() {
         for (auto &kv : dialogs) if (w && kv.second->win == w->window()) hit = kv.second;
         if (!hit) { if (steps->since.elapsed() > 10000) stepFailed(line, why.isEmpty() ? "no dialog" : why); return; }
         const QStringList wh = rest.section(" => ", 1).split(' ', Qt::SkipEmptyParts);
-        const int cw = wh.value(0).toInt(), ch = wh.value(1).toInt();
+        auto size = [&](const QString &v, int marked) {   // N pixels; +N or -N from the marked layout; xF times it
+            if ((v.startsWith('+') || v.startsWith('-')) && layoutMark.d == hit) return marked + v.toInt();
+            if (v.startsWith('x') && layoutMark.d == hit) return qRound(marked * v.mid(1).toDouble());
+            return v.toInt();
+        };
+        const int cw = size(wh.value(0), layoutMark.client.width()), ch = size(wh.value(1), layoutMark.client.height());
         hit->win->resize(hit->win->width() + cw - hit->client->width(), hit->win->height() + ch - hit->client->height());
         done(); return;
     }
@@ -2721,6 +3161,31 @@ void stepTick() {
             QApplication::sendEvent(under, &ev);
         }
         at = to;
+        done(); return;
+    }
+    if (verb == "marklayout") {                           // marklayout SELECTOR: its dialog's client size and controls, for delta, scaled, unchanged, limits
+        Dlg *hit = dialogOf(qobject_cast<QWidget *>(find(rest, &why)));
+        if (!hit) { if (steps->since.elapsed() > 10000) stepFailed(line, why.isEmpty() ? "no dialog" : why); return; }
+        layoutMark = {hit, hit->client->size(), layoutNow(hit)};
+        fprintf(stderr, "oodqt: layout marked: client %dx%d, %d controls\n", layoutMark.client.width(), layoutMark.client.height(), (int)layoutMark.rects.size());
+        done(); return;
+    }
+    if (verb == "mcpick") {                               // mcpick SELECTOR => D: click day D of the month shown, with the mouse
+        QObject *o = find(rest.section(" => ", 0, 0), &why);
+        Mc *m = mcOf(o);
+        if (!m) { if (steps->since.elapsed() > 10000) stepFailed(line, why.isEmpty() ? "no month calendar" : why); return; }
+        auto *view = m->cal->findChild<QTableView *>("qt_calendar_calendarview");
+        const QDate day(m->cal->yearShown(), m->cal->monthShown(), rest.section(" => ", 1).toInt());
+        const int k = mcFirstShown(*m).daysTo(day);
+        const int col = k % 7 + (m->cal->verticalHeaderFormat() == QCalendarWidget::NoVerticalHeader ? 0 : 1), row = k / 7 + 1;
+        const QRect r = view ? view->visualRect(view->model()->index(row, col)) : QRect();
+        if (!day.isValid() || r.isEmpty()) stepFailed(line, "no cell for that day");
+        pickedDay = day;
+        const QPoint at = r.center();
+        for (QEvent::Type t : {QEvent::MouseButtonPress, QEvent::MouseButtonRelease}) {
+            QMouseEvent ev(t, at, view->viewport()->mapToGlobal(at), Qt::LeftButton, t == QEvent::MouseButtonPress ? Qt::LeftButton : Qt::NoButton, Qt::NoModifier);
+            QApplication::sendEvent(view->viewport(), &ev);
+        }
         done(); return;
     }
     if (verb == "mark") {                                 // mark SELECTOR: remember its picture and place, for expect moved
@@ -2834,6 +3299,16 @@ void ensureApp() {
         // The process is exiting: widgets are left for it to reclaim.  Deleting them here freed
         // windows already owned by other windows and corrupted the heap (v0.1.1 test runs).
         if (steps) steps->timer.stop();
+        // A program that ends before its steps are done has not passed them: the rest were never checked
+        // (up to v0.7.0 such a run counted as a pass; dropDownComboBox's Enter closed the dialog early in v0.8.0's first run).
+        if (steps) for (int i = steps->at; i < steps->lines.size(); ++i) {
+            const QString l = steps->lines[i].trimmed();
+            if (l.isEmpty() || l.startsWith('#')) continue;
+            fflush(stdout);
+            fprintf(stderr, "oodqt: STEPS NOT FINISHED: the program ended at step %d: %s\n", i + 1, qPrintable(l));
+            fflush(stderr);
+            std::_Exit(4);
+        }
         // Qt's pixmap cache is a global with a flush timer: emptied here, on its own thread, it stops the timer.
         // Left to the process's exit handlers, it was destroyed on the main thread ("Timers cannot be stopped
         // from another thread", every run up to v0.3.0).
@@ -2889,7 +3364,7 @@ RexxPackageEntry oodqt_package_entry = {
     STANDARD_PACKAGE_HEADER
     REXX_INTERPRETER_5_0_0,
     "oodqt",
-    "0.7.0",
+    "0.8.0",
     NULL,
     oodqt_unload,
     oodqt_routines,

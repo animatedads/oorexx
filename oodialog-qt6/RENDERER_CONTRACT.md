@@ -137,3 +137,27 @@ The thread proposal above (msSleep) was taken in oodialog-wasm v0.13.1; oowalker
 - A list-view reports `NOTIFY id BEGINSCROLL dx SEP dy` when its view starts to move, and `ENDSCROLL` when it has rested for 150 ms. Rows the program puts in don't count as moving.
 - `op(key, id, "tabStops", "s1 s2 …")` (LB_SETTABSTOPS) gives the stops in pixels. The items keep their text; each tab is shown filled out to the next stop.
 - A list-view click and double click: the second click of a double click is reported as `CLICK` and then `DBLCLK`, as the page (Chromium) does. Qt alone reports only the double click.
+
+## Month calendar and ResizingAdmin (added 15 Nov 2026, v0.8.0, as read from oodialog-wasm `2423db8`, v0.16.0 and v0.17.0)
+
+Month calendar (kind `MONTHCALENDAR`; styles `NOTODAY`, `WEEKNUMBERS`, `DAYSTATE`). Dates go both ways as `yyyy-mm-ddT00:00:00`.
+- `mc.get` answers the selected day. `mc.set d` selects it and brings its month into view.
+- `mc.today [d]` sets and answers the day the Today line shows.
+- `mc.range min max` limits the days (an empty bound is none); `mc.getRange` answers `min SEP max`.
+- `mc.months [P]` answers `first SEP last SEP count`: the month shown, or with `P` every day shown, the days of the months before and after included.
+- `mc.dayState "m1 m2 …"` sets the bold days, one bit mask a month (bit 0 is the 1st), from the month of the first day shown; `mc.dayStateFrom d "m1 …"` does the same from d's month.
+- `mc.firstDay [n]` sets and answers the first day of the week, Windows-numbered (0 is Monday).
+- `mc.minRect` answers `w h`, the size the calendar needs; `mc.hit x y` answers `DATE d`, `TITLE`, `PREV`, `NEXT`, `TODAY` or `NOWHERE` for a point of the control.
+- Messages: `MCM_GETMAXTODAYWIDTH` (0x1015) answers the Today line's width; `MCM_GETMAXSELCOUNT` (0x1003) and `MCM_GETMONTHDELTA` (0x1013) answer 1.
+- Events: a day picked by the user is `NOTIFY id SELCHANGE` and then `SELECT`, with `extra` = `d SEP d`. With `DAYSTATE`, moving to another month asks `NOTIFY id GETDAYSTATE first-month SEP 3`, which the program answers with `mc.dayState`.
+- The Qt renderer shows 42 days from the first cell as `QCalendarWidget` places them: a month that starts on the first day of the week starts one row down. The first day shown and the month GETDAYSTATE asks for follow that, so they can differ from the page by a week; the bold days still land on the cells the user sees.
+
+ResizingAdmin:
+- `op(key, 0, "ra.init", JSON)` makes the dialog sizable and pins its controls. JSON is `{"def": [L, T, R, B], "ctrls": [[id, L, T, R, B], …], "min": …, "max": …, "ended": 0|1}`, and each edge is `[type, edge, toId]`: type `P` proportional, `S` stationary, `ML` my left (a right edge), `MT` my top (a bottom edge); edge `LEFT TOP RIGHT BOTTOM XCENTER YCENTER`; toId 0 for the dialog. The controls named come first, in the program's order, then the others as created, with the default edges.
+- `min` and `max` are `"initial"` (the size at `ra.init`), `[w, h]` in pixels, or `null`; `op(key, 0, "ra.limits", min, max)` changes them. With no minimum the client area can shrink to 60 x 30.
+- On every size change each control's edges are worked out in that order, from the original and current rectangles of what it is pinned to. With `ended` 1, `WM 0 RASIZEENDED` comes 250 ms after the last change.
+
+Editable combo box:
+- `op(key, id, "isDropList")` answers 1 for a drop-down list, 0 for a combo with an edit; `getEditControl` uses it.
+- An Edit object over a combo's id (its edit part) is the combo: `grandChild` on it reports RETURN, ESCAPE and losing the focus as the combo's.
+- Adding items leaves an editable combo's edit text as it was, and nothing is current until the program selects. Taking the focus selects the edit's text, and Enter adds no item.

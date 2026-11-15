@@ -1,8 +1,8 @@
-# ooDialog on Linux: Qt6 renderer (v0.7.0)
+# ooDialog on Linux: Qt6 renderer (v0.8.0)
 
 - **Architecture:** Tom Dyer
 - **Coding:** Claude (Opus 5.5): `native/oodqt.cpp`, `src/js.cls`, `tools/oodqt_test.rex`, `tools/OodQtTest.cls`, `tools/oodqt_suite.rex`, `tools/oodqt_sweep.rex`, `tools/WindowsNames.cls` (a port of `site/oodfiles.js`, which is Claude (Fable 5.2)'s). Claude (Fable 5.2): `oodialog-wasm` (oodWeb.cls, the generated ooDialog.cls, the tests), all of which is used unchanged. The ooDialog Designer (another Claude (Opus 5.5) chat) generated the three designer programs, used unchanged.
-- **Written by:** Claude (Opus 5.5), 14 Nov 2026; updated 15 Nov 2026 for v0.3.0 to v0.7.0
+- **Written by:** Claude (Opus 5.5), 14 Nov 2026; updated 15 Nov 2026 for v0.3.0 to v0.8.0
 
 Upstream ooDialog's Rexx classes run on Linux unchanged. This is not a rewrite of ooDialog. `oodialog-wasm` (r13513 upstream classes plus `oodWeb.cls`) already replaces the Windows DLL with an ooRexx layer that talks to a renderer through one object. Here that renderer is Qt6 Widgets instead of a web page:
 
@@ -62,7 +62,7 @@ export LD_LIBRARY_PATH=$PWD/build
 ```
 export REXX_PATH=$PWD/src:$PWD/../oodialog-wasm/dist:/path/to/alchemy/packages/oorexx_logging_stream_target_v0.1/src
 ```
-The whole suite, offscreen, in the browser harness's groups (designer and res with no tree; t* and up with the samples; up2 with samples/tutorial; up3 with samples/propertysheet.tabControls; up4 with samples/mouse; up5 with samples/controls/ListView/subitem.editing):
+The whole suite, offscreen, in the browser harness's groups (designer and res with no tree; t* and up with the samples; up2 with samples/tutorial; up3 with samples/propertysheet.tabControls; up4 with samples/mouse; up5 with samples/controls/ListView/subitem.editing; up6 SimpleMonthCalendar with samples/simple and PaidHolidays with samples/controls; up7 with samples/resizableDialogs/ResizingAdmin):
 ```
 rexx tools/oodqt_suite.rex --wasm ../oodialog-wasm --samples /path/to/samples/windows/oodialog --designer /path/to/oodialog-designer/tests/gen
 ```
@@ -89,9 +89,9 @@ Each program runs in a fresh directory under `TMPDIR`, as the page runs it in a 
 
 As in the browser harness, a program may return a value (2 when its Close button is IDCANCEL) once its output matches `.expect`; a Rexx error, a failed step, or a non-zero return without an `.expect` fails it.
 
-## State on 15 Nov 2026 (v0.7.0), against oodialog-wasm `fc16dfb` (v0.15.0) and the designer's `tests/gen` at `f56647a`
+## State on 15 Nov 2026 (v0.8.0), against oodialog-wasm `2423db8` (v0.17.0) and the designer's `tests/gen` (v0.10 package)
 
-**39 of 39 pass, offscreen and on an X server** (Xvfb, Qt's `xcb` platform, as a desktop runs it). New in v0.15.0 and passing: up5/editControl and up5/dropDownListComboBox (upstream's in-place editing of a list-view cell, with an edit and with a drop-down combo) and up2/employe9 (list box tab stops), all upstream samples, unchanged. New in v0.14.0 and passing: up4/dragNdrop (a row dragged between list-views with the Mouse class, capture and cursors) and up4/mouseWheel (a connected wheel scrolling an edit), both upstream samples, unchanged. Earlier: v0.6.0 36 of 36; v0.5.0 34 of 34; v0.4.0 34 of 34 offscreen, with up/oowalker passing 5 of 6 runs; v0.3.0 21 of 31; v0.2.0 8 of 19. up/oowalker passed 10 of 10 separate runs against v0.13.1, which took the msSleep change proposed in v0.4.0. The suite is the browser harness's own tests, `.steps` and `.expect`, plus the three programs the ooDialog Designer generates (Calculator, Contacts, Gadgets), used unchanged as a contract test.
+**45 of 45 pass, offscreen and on an X server** (Xvfb, Qt's `xcb` platform, as a desktop runs it). Every run now also fails a test whose program ends before its steps are done (see the lessons from v0.8.0). New in v0.17.0 and passing: up7/basicResize, up7/augmentedResize and up7/gbStationary (ResizingAdmin: the dialog is resized and each pinned control is checked) and up5/dropDownComboBox (in-place editing with an editable combo box). New in v0.16.0 and passing: up6/SimpleMonthCalendar and up6/PaidHolidays (the month calendar, with bold days from MCN_GETDAYSTATE). All are upstream samples, unchanged. v0.7.0 passed 39 of 39 against `fc16dfb` (v0.15.0). New in v0.15.0 and passing: up5/editControl and up5/dropDownListComboBox (upstream's in-place editing of a list-view cell, with an edit and with a drop-down combo) and up2/employe9 (list box tab stops), all upstream samples, unchanged. New in v0.14.0 and passing: up4/dragNdrop (a row dragged between list-views with the Mouse class, capture and cursors) and up4/mouseWheel (a connected wheel scrolling an edit), both upstream samples, unchanged. Earlier: v0.6.0 36 of 36; v0.5.0 34 of 34; v0.4.0 34 of 34 offscreen, with up/oowalker passing 5 of 6 runs; v0.3.0 21 of 31; v0.2.0 8 of 19. up/oowalker passed 10 of 10 separate runs against v0.13.1, which took the msSleep change proposed in v0.4.0. The suite is the browser harness's own tests, `.steps` and `.expect`, plus the three programs the ooDialog Designer generates (Calculator, Contacts, Gadgets), used unchanged as a contract test.
 
 | Test | Result |
 |---|---|
@@ -99,36 +99,47 @@ As in the browser harness, a program may return a value (2 when its Close button
 | up/: calculator, oodpbar, oodraw, oograph, oodStandardRoutines, oowalker | **PASS** |
 | up2/: drawing3, drawing5, employee11tab; up3/ticketWizard | **PASS** |
 | up4/: dragNdrop, mouseWheel | **PASS** |
-| up5/: editControl, dropDownListComboBox; up2/employe9 | **PASS** |
+| up5/: editControl, dropDownListComboBox, dropDownComboBox; up2/employe9 | **PASS** |
+| up6/: SimpleMonthCalendar (with samples/simple), PaidHolidays (with samples/controls) | **PASS** |
+| up7/: basicResize, augmentedResize, gbStationary (with samples/resizableDialogs/ResizingAdmin) | **PASS** |
 | designer: Calculator, Contacts, Gadgets (`tests/gen` and `tests/designer`) | **PASS** |
 
-Twelve tests have browser steps that are JavaScript against the page, and a Qt-dialect steps file in `tests/steps/` (t04, t09, t13, t14, t15, oodraw, oodStandardRoutines, oowalker, drawing5, mouseWheel, dropDownListComboBox, employe9). The player also takes the harness's `mouse move|down|up|wheel SELECTOR @ dx dy [delta]`, `>> nth=N`, `.ood-lv tbody tr >> nth=R >> td >> nth=C` and `type TEXT`, and fails a step it does not know. The other JavaScript checks are translated by the player as they stand.
+Seventeen tests have browser steps that are JavaScript against the page, and a Qt-dialect steps file in `tests/steps/` (t04, t09, t13, t14, t15, oodraw, oodStandardRoutines, oowalker, drawing5, mouseWheel, dropDownListComboBox, employe9, SimpleMonthCalendar, PaidHolidays, basicResize, augmentedResize, gbStationary). v0.8.0 adds to the dialect:
+- `marklayout SELECTOR` remembers the dialog's client size and every control's rectangle, numbered in creation order as the page's `.ood-c` children are. `resize SELECTOR => +W +H` and `=> xF xF` then size from that mark.
+- `expect delta N ==> dx dy dw dh`, `expect right N ==> d`, `expect scaled F ==> True`, `expect unchanged ==> True` and `expect limits ==> minW minH maxW maxH` check against the mark. A field is a number, `*`, `>N`, `<N`, `=W`/`=H` (the marked size) or `dxK`… (that change of control K).
+- `mcpick SELECTOR => D` clicks day D of the month shown, with the mouse; `expect mcTitle|mcBold|mcBoldIn|mcSel|mcSelShown|mcFits SELECTOR ==> VALUE` read the calendar (`@picked` and `@next` name the day picked and the month after it). `.ood-mc-next`, `.ood-mc-prev` and `.ood-mc-foot` are its arrows and Today line. The player also takes the harness's `mouse move|down|up|wheel SELECTOR @ dx dy [delta]`, `>> nth=N`, `.ood-lv tbody tr >> nth=R >> td >> nth=C` and `type TEXT`, and fails a step it does not know. The other JavaScript checks are translated by the player as they stand.
 
 ### All of upstream's samples (`tools/oodqt_sweep.rex`)
 
-Every ooDialog program in upstream's `samples/windows/oodialog` was started on Xvfb with nothing clicked, against oodialog-wasm v0.15.0; the report is `sweep/sweep-2026-11-15-xcb.md`, and `shots/sweep_contact.jpg` shows each dialog that came up (v0.13.1's run).
+Every ooDialog program in upstream's `samples/windows/oodialog` was started on Xvfb with nothing clicked, against oodialog-wasm v0.17.0; the report is `sweep/sweep-2026-11-15-v0.17-xcb.md` (v0.15.0's is `sweep/sweep-2026-11-15-xcb.md`), and `shots/sweep_contact.jpg` shows each dialog that came up (v0.13.1's run).
 
-**77 of 122 programs show their dialog with no Rexx error** (75 against v0.14.0, 73 against v0.13.1; v0.15.0 adds the two subitem.editing samples, v0.14.0 the two mouse samples); 41 stop with a Rexx error; 4 show something else first (a message box, a file dialog). A further 68 files are modules that other files require; they are not started. None of the 41 errors is in the renderer:
+**81 of 122 programs show their dialog with no Rexx error** (77 against v0.15.0, 75 against v0.14.0, 73 against v0.13.1; v0.16.0 and v0.17.0 add SimpleMonthCalendar, PaidHolidays, gbStationary and dropDownComboBox, v0.15.0 the two subitem.editing samples, v0.14.0 the two mouse samples); 37 stop with a Rexx error; 4 show something else first (a message box, a file dialog). A further 68 files are modules that other files require; they are not started. None of the 37 errors is in the renderer:
 
 | Cause | Programs |
 |---|---|
 | `winsystm.cls` (upstream's WindowsSystem classes: desktop, windows, processes) is not provided | 19 |
-| an ooDialog native function oodWeb does not have yet (MC_, toolbar, rebar, tool info, custom draw, …) | 11 |
+| an ooDialog native function oodWeb does not have yet (toolbar, rebar, tool info, custom draw, …) | 7 |
 | a dialog or menu from a `.dll`/`.res` needs a resource reader, and none was set | 8 |
 | other: `identityHash` too big for `d2x` on 64 bits; `.nil` where an attribute's owner was expected; `.OLEObject~getObject` (Windows OLE) | 3 |
 
-`proposals/oodWeb-v0.13.1-linux.patch` (four changes, `proposals/README.md`; it applies to v0.14.0 and v0.15.0 unchanged) brings 6 of these up: the resource reader comes from the renderer (alchemy's `oorexx_win_resources`), `calcDisplayRect` keeps its co-ordinates, `BinaryMenuBar~new(.nil, …)` makes an empty bar, and `il_handle` uses 20 digits. That was measured on those samples with a staged copy of `oodWeb.cls`; the patch is for the ooDialog/WASM chat to take or not.
+`proposals/oodWeb-v0.13.1-linux.patch` (four changes, `proposals/README.md`; it applies to v0.14.0, v0.15.0 and v0.17.0 unchanged; `git apply --check` against `2423db8`) brought 6 of these kinds up against v0.13.1: the resource reader comes from the renderer (alchemy's `oorexx_win_resources`), `calcDisplayRect` keeps its co-ordinates, `BinaryMenuBar~new(.nil, …)` makes an empty bar, and `il_handle` uses 20 digits. That was measured on those samples with a staged copy of `oodWeb.cls`; the patch is for the ooDialog/WASM chat to take or not.
 
-The controls in place: button (and bitmap button), check, radio, group box, static, static image, frame, edit (single and multi-line), list box, combo box, progress bar, list-view (`QTreeWidget`), tree-view (`QTreeWidget`), tab (`QTabBar` over its pages), track bar (`QSlider`), date-time picker (`QDateTimeEdit`), up-down (two `QToolButton`s, inside its buddy's edge when `RIGHT`/`LEFT`). Also in place:
+The controls in place: button (and bitmap button), check, radio, group box, static, static image, frame, edit (single and multi-line), list box, combo box, progress bar, list-view (`QTreeWidget`), tree-view (`QTreeWidget`), tab (`QTabBar` over its pages), track bar (`QSlider`), date-time picker (`QDateTimeEdit`), month calendar (`QCalendarWidget` with a Today line), up-down (two `QToolButton`s, inside its buddy's edge when `RIGHT`/`LEFT`). Also in place:
 - GDI: a device context is a transparent layer (`QImage`) over the client area or a control, as the page's canvas; lines, rectangles, arcs and pies, angle arcs, pixels, text, flood fill, BitBlt of loaded bitmaps, ScrollWindow;
 - images: Rexx sends each bitmap once as a data URL; bitmap buttons (with setBitmapPosition), static images, backdrops;
 - dialogs with a sizing border (THICKFRAME) report RESIZE and SIZEMOVEENDED;
+- ResizingAdmin dialogs: each control's edges follow the edges they are pinned to, with the minimum and maximum sizes, and RASIZEENDED for wantSizeEnded;
 - child dialogs (ControlDialog, property sheet pages) drawn inside their owner;
 - menu bars and popup menus, message boxes, tool tips, fonts and colours;
 - dialog keys (Escape, Enter, F1, close box) and key-press connections, with Windows virtual-key codes;
 - the Win32 messages and ops those controls use (BM_, EM_, LB_, CB_, PBM_, LVM_, TVM_, TCM_, TBM_, UDM_ as the page answers them).
 
 Other kinds show as labelled placeholders, as the page does. The runner kills a test after 90 seconds (`timeout -k 5`), so a hang shows as a failure.
+
+**Lessons from v0.8.0:**
+- The runner counted a test as passed when its program ended before its steps were done. dropDownComboBox "passed" its first v0.8.0 run that way: Enter reached the dialog's default button, the dialog closed, and the steps after Enter never ran. A program that ends with steps left now fails with `STEPS NOT FINISHED`. With the check in place, every other test of the suite still passes against v0.17.0. Earlier releases were not re-run with it.
+- Qt makes the first item added to a combo box its current one. Windows leaves an editable combo's edit as it was (the page's datalist input stays empty), and selects the whole of the edit's text when the combo takes the focus; Qt also adds an item when Enter is pressed in the edit. An editable combo now keeps its edit text, selects it on focus, and adds nothing on Enter.
+- QCalendarWidget starts a month that begins on the first day of the week one row down, so its first cell is the week before; the page starts on the 1st. The days shown, `months P` and the month GETDAYSTATE asks for all follow what Qt shows, so the program's bold days land on the cells on screen.
 
 **Lessons from v0.7.0:**
 - editControl's first click on a cell was lost: the list-view was rebuilt between the press and the release (Qt's rows were deleted and made anew on every render), and Qt makes a click only of a press and release on the same row. Rows are now updated in place, which also keeps the view's scroll position.
@@ -158,4 +169,4 @@ Other kinds show as labelled placeholders, as the page does. The runner kills a 
 ## Not yet
 
 - A run on a physical desktop (KDE, GNOME): the X server runs here are on Xvfb, with no window manager.
-- The 41 sample errors above are oodWeb's to close (with the patch in `proposals/`, 35).
+- The 37 sample errors above are oodWeb's to close; the patch in `proposals/` (measured against v0.13.1) closed 6 of the same kinds.

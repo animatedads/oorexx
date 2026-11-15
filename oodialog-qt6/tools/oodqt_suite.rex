@@ -10,7 +10,8 @@
  * --platform  offscreen (the default) or xcb, for an X server (DISPLAY), e.g. under xvfb-run
  *
  * The groups: tests/designer and tests/res with no tree; tests/t*.rex and tests/up with the samples;
- * tests/up2 with samples/tutorial; tests/up3 with samples/propertysheet.tabControls; tests/up4 with samples/mouse; tests/up5 with samples/controls/ListView/subitem.editing.
+ * tests/up2 with samples/tutorial; tests/up3 with samples/propertysheet.tabControls; tests/up4 with samples/mouse; tests/up5 with samples/controls/ListView/subitem.editing;
+ * tests/up6 SimpleMonthCalendar with samples/simple and PaidHolidays with samples/controls; tests/up7 with samples/resizableDialogs/ResizingAdmin.
  * Each test runs as oodqt_test.rex runs it.  Exit 0 only if every test passes.
  */
 parse arg argline
@@ -43,6 +44,9 @@ groups~append(.array~of(s"/tutorial", files(t"/up2/*.rex")))
 groups~append(.array~of(s"/propertysheet.tabControls", files(t"/up3/*.rex")))
 groups~append(.array~of(s"/mouse", files(t"/up4/*.rex")))
 groups~append(.array~of(s"/controls/ListView/subitem.editing", files(t"/up5/*.rex")))
+groups~append(.array~of(s"/simple", files(t"/up6/SimpleMonthCalendar.rex")))
+groups~append(.array~of(s"/controls", files(t"/up6/PaidHolidays.rex")))
+groups~append(.array~of(s"/resizableDialogs/ResizingAdmin", files(t"/up7/*.rex")))
 
 runner = .OodQtTest~new
 log = .ToolProgress~new("oodqt-suite", runner, "RUN")~logger
