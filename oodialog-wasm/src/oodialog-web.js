@@ -45,6 +45,23 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
 .ood-frame{pointer-events:none}
 .ood-todo{border:1px dashed #a33;color:#a33;font-size:.85em;overflow:hidden;padding:2px}
 .ood-u{text-decoration:underline}
+.ood-mc{background:#fff;border:1px solid #7a7a7a;box-sizing:border-box;padding:4px 6px;cursor:default;outline:none;user-select:none;overflow:hidden}
+.ood-mc-head{display:flex;align-items:center;justify-content:space-between;padding:2px 0 4px}
+.ood-mc-head button{border:0;background:none;font:inherit;font-size:15px;line-height:1;padding:0 6px;cursor:pointer}
+.ood-mc-head button:hover{color:#0078d7}
+.ood-mc-grid{display:grid;grid-template-columns:repeat(7,minmax(22px,1fr));text-align:center}
+.ood-mc-wd{color:#555;border-bottom:1px solid #d0d0d0;padding:1px 0;margin-bottom:2px}
+.ood-mc-day{padding:1px 2px;border:1px solid transparent}
+.ood-mc-day:hover{background:#e5f1fb}
+.ood-mc-other{color:#9a9a9a}
+.ood-mc-off{color:#c8c8c8;text-decoration:line-through}
+.ood-mc-off:hover{background:none}
+.ood-mc-bold{font-weight:bold}
+.ood-mc-today{border-color:#0078d7}
+.ood-mc-sel{background:#0078d7;color:#fff}
+.ood-mc-sel:hover{background:#0078d7}
+.ood-mc-foot{padding-top:4px;white-space:nowrap}
+.ood-mc-foot:hover{color:#0078d7}
 .ood-lv,.ood-tv{border:1px solid #7a7a7a;background:#fff;overflow:auto;outline:none;cursor:default}
 .ood-lv table{border-collapse:collapse;table-layout:fixed}
 .ood-lv th{position:sticky;top:0;background:#fff;border-right:1px solid #e5e5e5;border-bottom:1px solid #e5e5e5;font-weight:normal;padding:2px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -163,13 +180,68 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       new W.ResizeObserver(() => {
         if (first) { first = false; return; }
         if (!ood.dialogs.has(key)) return;
+        if (dlg.ra) raLayout(dlg);                             // ResizingAdmin: the controls follow the dialog
         if (dlg.subs.has('0.RESIZE')) fire(key, 'WM', 0, 'RESIZE', client.clientWidth + SEP + client.clientHeight);
         clearTimeout(timer);
-        timer = setTimeout(() => { if (ood.dialogs.has(key) && dlg.subs.has('0.SIZEMOVEENDED')) fire(key, 'WM', 0, 'SIZEMOVEENDED', ''); }, 250);
+        timer = setTimeout(() => {
+          if (!ood.dialogs.has(key)) return;
+          if (dlg.subs.has('0.SIZEMOVEENDED')) fire(key, 'WM', 0, 'SIZEMOVEENDED', '');
+          if (dlg.ra && dlg.ra.ended) fire(key, 'WM', 0, 'RASIZEENDED', '');
+        }, 250);
       }).observe(client);
     }
     return dlg.fx + ' ' + dlg.fy + ' ' + Math.round(rect.width) + ' ' + Math.round(rect.height);
   };
+
+  /* ---- ResizingAdmin (oodResizableDialog.cpp) ----
+     Each edge of each control is pinned to an edge of the dialog or of another control:
+       [pinType, pinToEdge, pinToID]   pinType S stationary, P proportional, ML my left, MT my top
+     ra = { def: [left, top, right, bottom], ctrls: [[id, left, top, right, bottom], ...], min, max, ended }
+     The controls named by the program come first, in its order; then the others as created. */
+  function raRect(el) { return { left: el.offsetLeft, top: el.offsetTop, right: el.offsetLeft + el.offsetWidth, bottom: el.offsetTop + el.offsetHeight }; }
+  function raInit(dlg, spec) {
+    const ra = JSON.parse(spec), cl = dlg.client;
+    ra.orig = { left: 0, top: 0, right: cl.clientWidth, bottom: cl.clientHeight };
+    ra.items = [];
+    const seen = new Set();
+    const add = (id, edges) => { const c = dlg.ctrls.get(id); if (!c || seen.has(id)) return; seen.add(id);
+      ra.items.push({ id, c, edges, orig: raRect(c.el), cur: raRect(c.el) }); };
+    for (const row of ra.ctrls) add(row[0], row.slice(1));
+    for (const [id, c] of dlg.ctrls) if (!c.parentCtl) add(id, ra.def);
+    dlg.ra = ra;
+    cl.style.resize = 'both';
+    raLimits(dlg, ra.min, ra.max);
+    return '1';
+  }
+  function raLimits(dlg, min, max) {                           // "initial": the size the dialog has now; null: none
+    const ra = dlg.ra, cl = dlg.client; ra.min = min; ra.max = max;
+    const m = min === 'initial' ? [ra.orig.right, ra.orig.bottom] : min;
+    cl.style.minWidth = m ? m[0] + 'px' : '60px'; cl.style.minHeight = m ? m[1] + 'px' : '30px';
+    cl.style.maxWidth = max ? max[0] + 'px' : ''; cl.style.maxHeight = max ? max[1] + 'px' : '';
+  }
+  function raLayout(dlg) {
+    const ra = dlg.ra, cl = dlg.client;
+    const cur = { left: 0, top: 0, right: cl.clientWidth, bottom: cl.clientHeight };
+    const rects = (id) => { if (id) { const it = ra.items.find((x) => x.id === id); if (it) return [it.orig, it.cur]; } return [ra.orig, cur]; };
+    const coord = (edge, r) => ({ LEFT: r.left, TOP: r.top, RIGHT: r.right, BOTTOM: r.bottom, XCENTER: (r.left + r.right) / 2, YCENTER: (r.top + r.bottom) / 2 }[edge]);
+    const span = (side, r) => (side === 'left' || side === 'right' ? r.right - r.left : r.bottom - r.top);
+    const edge = (it, side, e) => {
+      const [pi, pc] = rects(e[2]);
+      if (e[0] === 'S') return it.orig[side] - coord(e[1], pi) + coord(e[1], pc);
+      if (e[0] === 'ML') return it.cur.left + (it.orig.right - it.orig.left);
+      if (e[0] === 'MT') return it.cur.top + (it.orig.bottom - it.orig.top);
+      const was = span(side, pi) || 1;                         // proportional: the same edge of the window pinned to
+      return pc[side] + (it.orig[side] - pi[side]) * (span(side, pc) / was);
+    };
+    for (const it of ra.items) {
+      it.cur = { left: 0, top: 0, right: 0, bottom: 0 };
+      it.cur.left = Math.trunc(edge(it, 'left', it.edges[0])); it.cur.top = Math.trunc(edge(it, 'top', it.edges[1]));
+      it.cur.right = Math.trunc(edge(it, 'right', it.edges[2])); it.cur.bottom = Math.trunc(edge(it, 'bottom', it.edges[3]));
+      const s = it.c.el.style;
+      s.left = it.cur.left + 'px'; s.top = it.cur.top + 'px';
+      s.width = Math.max(0, it.cur.right - it.cur.left) + 'px'; s.height = Math.max(0, it.cur.bottom - it.cur.top) + 'px';
+    }
+  }
 
   function wireDialog(dlg) {
     const el = dlg.el;
@@ -385,6 +457,13 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
         main.addEventListener('input', () => note(dlg, c, 'TRACK', main.value + SEP + 'DRAG'));
         main.addEventListener('change', () => note(dlg, c, 'TRACK', main.value + SEP + 'ENDTRACK'));
         break;
+      case 'MONTHCALENDAR':
+        el = main = D.createElement('div'); el.className = 'ood-mc'; el.tabIndex = 0; c.main = main; c.el = el;
+        c.mc = { sel: mcDay(new Date()), today: mcDay(new Date()), min: null, max: null, bold: new Map(), firstDay: 0,
+                 noToday: has(o, 'NOTODAY'), weekNumbers: has(o, 'WEEKNUMBERS'), dayState: has(o, 'DAYSTATE') };
+        c.mc.view = new Date(c.mc.sel.getFullYear(), c.mc.sel.getMonth(), 1);
+        mcRender(dlg, c);
+        break;
       case 'DATETIMEPICKER':
         el = main = D.createElement('input'); main.className = 'ood-edit';
         main.type = has(o, 'TIME') ? 'time' : 'date'; if (main.type === 'time') main.step = 1;
@@ -590,6 +669,92 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
   }
 
   const two = (n) => String(n).padStart(2, '0');
+  /* ---- Month calendar: one month, Sunday first unless set otherwise ---- */
+  const mcDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const mcIso = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') + 'T00:00:00';
+  const mcFirstShown = (c) => { const f = new Date(c.mc.view); f.setDate(1 - ((f.getDay() - c.mc.firstDay + 7) % 7)); return f; };
+  function mcInRange(c, d) { return (!c.mc.min || d >= c.mc.min) && (!c.mc.max || d <= c.mc.max); }
+  function mcRender(dlg, c) {
+    const m = c.mc, el = c.el; el.textContent = '';
+    const head = D.createElement('div'); head.className = 'ood-mc-head';
+    const nav = (text, by, cls) => { const b = D.createElement('button'); b.type = 'button'; b.className = cls; b.textContent = text; b.tabIndex = -1;
+      b.addEventListener('click', (e) => { e.stopPropagation(); mcGo(dlg, c, by); }); return b; };
+    const title = D.createElement('span'); title.className = 'ood-mc-title';
+    title.textContent = m.view.toLocaleString('en-US', { month: 'long' }) + ' ' + m.view.getFullYear();
+    head.append(nav('‹', -1, 'ood-mc-prev'), title, nav('›', 1, 'ood-mc-next'));
+    const grid = D.createElement('div'); grid.className = 'ood-mc-grid';
+    for (let k = 0; k < 7; k++) { const w = D.createElement('span'); w.className = 'ood-mc-wd'; w.textContent = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'][(k + m.firstDay) % 7]; grid.appendChild(w); }
+    const first = mcFirstShown(c);
+    for (let k = 0; k < 42; k++) {
+      const d = new Date(first.getFullYear(), first.getMonth(), first.getDate() + k);
+      const cell = D.createElement('span'); cell.className = 'ood-mc-day'; cell.textContent = d.getDate(); cell.dataset.date = mcIso(d).slice(0, 10);
+      if (d.getMonth() !== m.view.getMonth()) cell.classList.add('ood-mc-other');
+      if (+d === +m.sel) cell.classList.add('ood-mc-sel');
+      if (+d === +m.today) cell.classList.add('ood-mc-today');
+      const bold = m.bold.get(d.getFullYear() + '-' + d.getMonth()); if (bold && (bold >>> (d.getDate() - 1)) & 1) cell.classList.add('ood-mc-bold');
+      if (!mcInRange(c, d)) cell.classList.add('ood-mc-off');
+      else cell.addEventListener('click', () => mcPick(dlg, c, d, true));
+      grid.appendChild(cell);
+    }
+    el.append(head, grid);
+    if (!m.noToday) { const t = D.createElement('div'); t.className = 'ood-mc-foot'; t.textContent = 'Today: ' + m.today.toLocaleDateString('en-US');
+      t.addEventListener('click', () => mcPick(dlg, c, m.today, true)); el.appendChild(t); }
+  }
+  function mcShow(dlg, c, d, ask) {                           // bring the month of d into view; the program is asked for its bold days
+    const m = c.mc, moved = d.getFullYear() !== m.view.getFullYear() || d.getMonth() !== m.view.getMonth();
+    if (moved) m.view = new Date(d.getFullYear(), d.getMonth(), 1);
+    mcRender(dlg, c);
+    if (moved && ask && m.dayState) { const f = mcFirstShown(c); note(dlg, c, 'GETDAYSTATE', mcIso(new Date(f.getFullYear(), f.getMonth(), 1)) + SEP + 3); }
+  }
+  function mcGo(dlg, c, by) {
+    const m = c.mc, to = new Date(m.view.getFullYear(), m.view.getMonth() + by, 1), end = new Date(to.getFullYear(), to.getMonth() + 1, 0);
+    if ((m.min && end < m.min) || (m.max && to > m.max)) return;
+    mcShow(dlg, c, to, true);
+  }
+  function mcPick(dlg, c, d, byUser) {
+    if (!mcInRange(c, d)) return;
+    c.mc.sel = mcDay(d); mcShow(dlg, c, c.mc.sel, byUser);
+    if (byUser) { const e = mcIso(c.mc.sel) + SEP + mcIso(c.mc.sel); note(dlg, c, 'SELCHANGE', e); note(dlg, c, 'SELECT', e); }
+  }
+  function mcOp(dlg, c, name, a, b) {
+    const m = c.mc, date = (v) => (v === '' || v === undefined ? null : mcDay(new Date(String(v))));
+    switch (name) {
+      case 'get': return mcIso(m.sel);
+      case 'set': { const d = date(a); if (!d || isNaN(d)) return '0'; m.sel = d; mcShow(dlg, c, d, false); return '1'; }
+      case 'today': { if (a !== '' && a !== undefined) { m.today = date(a); mcRender(dlg, c); } return mcIso(m.today); }
+      case 'range': m.min = date(a); m.max = date(b);
+        if (m.min && m.sel < m.min) m.sel = m.min; if (m.max && m.sel > m.max) m.sel = m.max;
+        mcShow(dlg, c, m.sel, false); return '1';
+      case 'getRange': return (m.min ? mcIso(m.min) : '') + SEP + (m.max ? mcIso(m.max) : '');
+      case 'months': {                                         // what is shown: P with the days of the months before and after, else the whole month
+        if (a !== 'P') return mcIso(m.view) + SEP + mcIso(new Date(m.view.getFullYear(), m.view.getMonth() + 1, 0)) + SEP + 1;
+        const f = mcFirstShown(c), l = new Date(f.getFullYear(), f.getMonth(), f.getDate() + 41);
+        return mcIso(f) + SEP + mcIso(l) + SEP + ((l.getFullYear() - f.getFullYear()) * 12 + l.getMonth() - f.getMonth() + 1); }
+      case 'dayState': {                                       // the bold days of the months from the first one shown: one bit mask a month
+        const f = mcFirstShown(c);
+        String(a).split(' ').filter(Boolean).forEach((v, k) => { const d = new Date(f.getFullYear(), f.getMonth() + k, 1); m.bold.set(d.getFullYear() + '-' + d.getMonth(), Number(v) >>> 0); });
+        mcRender(dlg, c); return '1'; }
+      case 'dayStateFrom': {                                   // the same, from a month named by the program
+        const f = date(a);
+        String(b).split(' ').filter(Boolean).forEach((v, k) => { const d = new Date(f.getFullYear(), f.getMonth() + k, 1); m.bold.set(d.getFullYear() + '-' + d.getMonth(), Number(v) >>> 0); });
+        mcRender(dlg, c); return '1'; }
+      case 'firstDay': { if (a !== '' && a !== undefined) { m.firstDay = (Number(a) + 1) % 7; mcRender(dlg, c); } return String((m.firstDay + 6) % 7); }   // Windows: 0 is Monday
+      case 'minRect': {                                        // the size the calendar needs, whatever size it has now
+        const w = c.el.style.width, h = c.el.style.height; c.el.style.width = 'max-content'; c.el.style.height = 'max-content';
+        const r = Math.ceil(c.el.offsetWidth) + ' ' + Math.ceil(c.el.offsetHeight); c.el.style.width = w; c.el.style.height = h; return r; }
+      case 'todayWidth': { const t = c.el.querySelector('.ood-mc-foot'); if (!t) return '0';
+        const g = D.createElement('canvas').getContext('2d'); g.font = getComputedStyle(t).font; return String(Math.ceil(g.measureText(t.textContent).width) + 12); }
+      case 'hit': {                                            // what is at a point of the client area: "DATE iso" | "TITLE" | "PREV" | "NEXT" | "TODAY" | "NOWHERE"
+        const o = c.el.getBoundingClientRect(), t = D.elementFromPoint(o.left + Number(a), o.top + Number(b));
+        if (!t || !c.el.contains(t)) return 'NOWHERE';
+        if (t.dataset.date) return 'DATE ' + t.dataset.date + 'T00:00:00';
+        if (t.classList.contains('ood-mc-prev')) return 'PREV'; if (t.classList.contains('ood-mc-next')) return 'NEXT';
+        if (t.classList.contains('ood-mc-foot')) return 'TODAY'; if (t.closest('.ood-mc-head')) return 'TITLE';
+        return 'NOWHERE'; }
+    }
+    return '';
+  }
+
   function dtpSet(c, d) {
     c.date = d;
     c.main.value = c.main.type === 'time' ? two(d.getHours()) + ':' + two(d.getMinutes()) + ':' + two(d.getSeconds())
@@ -684,6 +849,13 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
     msg = Number(msg); w = Number(w); l = Number(l);
     const m = c.main;
     switch (c.kind) {
+      case 'MONTHCALENDAR':
+        switch (msg) {
+          case 0x1015: return mcOp(dlg, c, 'todayWidth');                     // MCM_GETMAXTODAYWIDTH
+          case 0x1003: return '1';                                            // MCM_GETMAXSELCOUNT: one day
+          case 0x1013: return '1';                                            // MCM_GETMONTHDELTA
+        }
+        return '0';
       case 'BUTTON': case 'CHECK': case 'RADIO':
         switch (msg) {
           case 0xF5: m.click(); return '0';                                   // BM_CLICK
@@ -1138,6 +1310,9 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       if (c.kind === 'BUTTON') { c.main.textContent = ''; paintButton(c); }
       return '1';
     }
+    if (c && name === 'isDropList') return c.droplist ? '1' : '0';
+    if (name === 'ra.init') return raInit(dlg, String(a));
+    if (name === 'ra.limits') { if (!dlg.ra) return '0'; raLimits(dlg, JSON.parse(String(a)), JSON.parse(String(b))); return '1'; }
     if (name === 'mouseSub') return mouseSub(dlg, c, el, String(a));
     if (name === 'mouse') return mouseOp(dlg, c, el, String(a), b);
     if (c && name === 'bitmapPos') { c.bmpPos = [Number(a) || 0, Number(b) || 0]; paintButton(c); return '1'; }
@@ -1146,6 +1321,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       if (c.img) { c.img.src = url || ''; c.img.hidden = !url; if (b === 'STRETCH') c.img.style.cssText = 'width:100%;height:100%'; }
       return url ? '1' : '0';
     }
+    if (c && c.mc && name.startsWith('mc.')) return mcOp(dlg, c, name.slice(3), a, b);
     if (c && name === 'dtp.get') return dtpGet(c);
     if (c && name === 'dtp.set') { dtpSet(c, new Date(String(a))); return '1'; }
     if (c && name === 'pointFont') { m.style.fontFamily = '"' + a + '","Segoe UI",Tahoma,sans-serif'; m.style.fontSize = Math.round(Number(b) * 96 / 72 * ood.scale * 100) / 100 + 'px'; const st = String(c2); m.style.fontWeight = st.includes('B') ? 'bold' : 'normal'; m.style.fontStyle = st.includes('I') ? 'italic' : 'normal'; m.style.textDecoration = st.includes('U') ? 'underline' : 'none'; return '1'; }

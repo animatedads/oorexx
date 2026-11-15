@@ -1,0 +1,52 @@
+{
+  "kind": "article",
+  "id": "ops.oodialog-wasm.lessons",
+  "version": "0.2",
+  "sphere": "oodialog-wasm",
+  "title": "Lessons from the port: faults made and how each is now prevented",
+  "summary": "Each lesson is a fault that happened in this work, its cause, and the rule that prevents it. They are here so that the next task does not repeat them.",
+  "authority": "implementation-record",
+  "section": "operations",
+  "topics": [
+    "lessons",
+    "faults",
+    "method"
+  ],
+  "lessons": [
+    "A build was pushed with a failing test. Cause: the last run's result was not read. Rule: read every summary line on the final build before the commit.",
+    "msSleep was changed to handle events on any thread. An event method that waits for an animation thread could then run inside that thread's own sleep and wait for ever. Rule: only the thread that takes the page's events may handle events while it sleeps.",
+    "The harness ignored a step it did not know, so a misspelt step passed. Rule: an unknown step fails.",
+    "The first sweep counted message boxes as dialogs and ran examples from the wrong directory. Rule: each example runs from its own directory; a message box has its own verdict.",
+    "Three of four \"does not end\" results were faults of the probe, not of the port. Rule: before reporting a fault found by a tool, reproduce it by hand.",
+    "Two \"problems\" were parts of a larger program started alone. Rule: read how the example is meant to be started before fixing it.",
+    "A test used today's date and would have failed next month. Rule: compute dates in the step.",
+    "Plain grep skipped a C++ file that is not plain ASCII. Rule: grep -a on upstream's C++.",
+    "Rexx traps met: \"a\"x is a hex literal, so write \"a\" || x; a name directly followed by ( is a function call; LABEL is a keyword in DO; d2x fails on a negative number; arithmetic above 9 digits needs NUMERIC DIGITS; one EXPOSE line only; a~last of an empty array is .nil.",
+    "The other tasks could not know what had changed, because the state was only in this chat, the README and mailbox messages. Rule: this sphere is kept current, and each release is announced in the lane with the new ops and events.",
+    "Version 0.1 of this sphere listed ResizingAdmin as done. It was not ported at all: its examples showed a dialog, the sweep said \"shows\", and the claim was written from that. Rule: a feature is listed as done only when a test with assertions covers it; \"shows\" is not \"works\".",
+    "A Rexx string that begins with a quoted word, written as three double quotes, does not parse the way it reads. Rule: put a text with double quotes inside single quotes: '\"'name'\" is not an edge'."
+  ],
+  "invariants": [
+    "A lesson is added when a fault is found, in the same change that fixes it."
+  ],
+  "provenance": [
+    {
+      "artifact": "oodialog-wasm-9f167f9.zip",
+      "sha256": "cc1894e0b0a3fc3840302f794a22d1e4ab083d04ecffa1f240d1d2710e6d5c5f",
+      "member": "oodialog-wasm/src/oodWeb.cls",
+      "line_start": 525,
+      "line_end": 530,
+      "claim": "onPumpThread: the rule that came from the msSleep race.",
+      "note": "git archive of animatedads/oorexx commit 9f167f9 (branch oodialog-wasm)"
+    },
+    {
+      "artifact": "oodialog-wasm-9f167f9.zip",
+      "sha256": "cc1894e0b0a3fc3840302f794a22d1e4ab083d04ecffa1f240d1d2710e6d5c5f",
+      "member": "oodialog-wasm/README.md",
+      "line_start": 159,
+      "line_end": 174,
+      "claim": "ResizingAdmin was not ported until v0.17.0.",
+      "note": "git archive of animatedads/oorexx commit 9f167f9 (branch oodialog-wasm)"
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "kind": "article",
+  "id": "ops.oodialog-wasm.differences",
+  "version": "0.2",
+  "sphere": "oodialog-wasm",
+  "title": "Where the port differs from ooDialog on Windows, by design",
+  "summary": "These differences come from the browser, not from faults. Check this list before reporting a behaviour as a bug.",
+  "authority": "implementation-record",
+  "section": "operations",
+  "topics": [
+    "differences",
+    "threads",
+    "drawing",
+    "limits"
+  ],
+  "differences": [
+    "Threads: Windows runs each event method on its own thread. Here event methods run on the thread that takes the page's events (the one inside execute). msSleep on that thread handles the other events while it waits, so a method that loops and sleeps does not freeze its dialog. msSleep on any other thread just sleeps. A loop that never calls msSleep holds its dialog.",
+    "After a dialog has been closed, msSleep inside one of its event methods returns at once, so the program can end.",
+    "A dialog with an ownerDialog ends when its owner ends.",
+    "Drawing: a device context is a canvas over the window. What is drawn stays until it is cleared; Windows loses it at the next repaint. Lines are anti-aliased, so a flood fill can leave a thin rim. A bitmap brush is a plain colour.",
+    "connectDraw: the draw method is asked when the dialog is shown and when the program redraws the control, not on every repaint.",
+    "The pointer cannot be moved or confined: setCursorPos and clipCursor do nothing.",
+    "File and folder dialogs browse the WASM machine's file system. COM calls answer S_OK and do nothing. A refused file (onFileOk) closes the dialog and shows it again.",
+    "There are no printers. A printer root in BrowseForFolder is ignored.",
+    "The month calendar shows one month and selects one day.",
+    "ResizingAdmin: pagedTab is accepted and does nothing, so the pages of a tab control are not resized with their dialog. A dialog made larger than the browser window is not scaled down again.",
+    "Tool tips are the browser's own (the title of the element). ToolInfo, manageAtypicalTool, getToolTips and the tool tip events are not ported.",
+    "A list box entry cannot show a tab character. With tab stops set, the entry is shown filled out to each stop; its text stays as the program gave it.",
+    "A dialog larger than the browser window is scaled down to fit.",
+    "Events the port accepts but never produces print one line: \"... is connected but is not produced yet\". The program goes on."
+  ],
+  "invariants": [
+    "A difference that is not in this list or in the README is to be treated as a fault and reported to the lane oodialog_wasm."
+  ],
+  "provenance": [
+    {
+      "artifact": "oodialog-wasm-9f167f9.zip",
+      "sha256": "cc1894e0b0a3fc3840302f794a22d1e4ab083d04ecffa1f240d1d2710e6d5c5f",
+      "member": "oodialog-wasm/src/oodWeb.cls",
+      "line_start": 5596,
+      "line_end": 5619,
+      "claim": "msSleep handles events only on the event thread; other threads sleep.",
+      "note": "git archive of animatedads/oorexx commit 9f167f9 (branch oodialog-wasm)"
+    },
+    {
+      "artifact": "oodialog-wasm-9f167f9.zip",
+      "sha256": "cc1894e0b0a3fc3840302f794a22d1e4ab083d04ecffa1f240d1d2710e6d5c5f",
+      "member": "oodialog-wasm/src/oodWeb.cls",
+      "line_start": 1516,
+      "line_end": 1525,
+      "claim": "An owned dialog is finished with its owner.",
+      "note": "git archive of animatedads/oorexx commit 9f167f9 (branch oodialog-wasm)"
+    },
+    {
+      "artifact": "oodialog-wasm-9f167f9.zip",
+      "sha256": "cc1894e0b0a3fc3840302f794a22d1e4ab083d04ecffa1f240d1d2710e6d5c5f",
+      "member": "oodialog-wasm/src/oodWeb.cls",
+      "line_start": 3760,
+      "line_end": 3763,
+      "claim": "pagedTab is accepted and does nothing.",
+      "note": "git archive of animatedads/oorexx commit 9f167f9 (branch oodialog-wasm)"
+    }
+  ]
+}

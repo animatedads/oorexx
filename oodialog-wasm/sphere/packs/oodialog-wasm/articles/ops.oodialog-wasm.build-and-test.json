@@ -1,0 +1,41 @@
+{
+  "kind": "article",
+  "id": "ops.oodialog-wasm.build-and-test",
+  "version": "0.2",
+  "sphere": "oodialog-wasm",
+  "title": "Build the three class files and run the tests",
+  "summary": "One Rexx tool builds dist/. One Python tool runs programs in headless Chromium against the built files. A change is finished only when the whole suite passes on the final build, checked before the commit.",
+  "authority": "implementation-record",
+  "section": "getting-started",
+  "topics": [
+    "build",
+    "test",
+    "procedure"
+  ],
+  "procedure": [
+    "Kit: Node with the npm package oorexxwasm 0.2.4 (it provides the command rexx); the browser runtime oorexxwasm-web-0.2.4 unpacked into site/; Python 3 with Playwright and Chromium; upstream ooDialog r13513 unpacked as upstream/ (examples in upstream/examples).",
+    "Build, from the project directory: rexx tools/oodbuild.rex",
+    "Run the core tests: python3 tools/oodtest.py --tree upstream/examples tests/t*.rex tests/up/*.rex tests/designer/*.rex",
+    "Run the other groups, each with its own tree: tests/up2 with upstream/examples/tutorial; tests/up3 with upstream/examples/propertySheet.tabControls; tests/up4 with upstream/examples/mouse; tests/up5 with upstream/examples/controls/ListView/subitem.editing; tests/up6/SimpleMonthCalendar.rex with upstream/examples/simple; tests/up6/PaidHolidays.rex with upstream/examples/controls; tests/up7 with upstream/examples/resizableDialogs/ResizingAdmin; tests/res/t07_resdialog_binary.rex with no tree.",
+    "Read every summary line. All must say 0 failed. Only then commit."
+  ],
+  "invariants": [
+    "The suite is run on the final build. A version-string change is a new build.",
+    "A test that passes one run in five is a failing test. Repeat a timing-sensitive test several times before trusting it.",
+    "The README.md states the test count and the version it was measured on."
+  ],
+  "lessons": [
+    "v0.13.0 was pushed with a failing check because the result of the last run was not read before the commit. The fault (an event method run inside another thread's sleep) reached another task."
+  ],
+  "provenance": [
+    {
+      "artifact": "oodialog-wasm-9f167f9.zip",
+      "sha256": "cc1894e0b0a3fc3840302f794a22d1e4ab083d04ecffa1f240d1d2710e6d5c5f",
+      "member": "oodialog-wasm/README.md",
+      "line_start": 51,
+      "line_end": 70,
+      "claim": "The test count and the version it was measured on.",
+      "note": "git archive of animatedads/oorexx commit 9f167f9 (branch oodialog-wasm)"
+    }
+  ]
+}

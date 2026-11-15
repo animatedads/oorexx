@@ -1,0 +1,43 @@
+{
+  "kind": "article",
+  "id": "ops.oodialog-wasm.port-a-native",
+  "version": "0.2",
+  "sphere": "oodialog-wasm",
+  "title": "How to port one native function",
+  "summary": "A native is ported in four moves: read what the C++ does, write the Rexx method in oodWeb.cls, add what the page must do in oodialog-web.js, and prove it with an upstream example run unchanged.",
+  "authority": "implementation-record",
+  "section": "operations",
+  "topics": [
+    "procedure",
+    "natives",
+    "porting"
+  ],
+  "procedure": [
+    "Find the need: run the example; the error names the native, for example \"native function MC_GETMINRECT\".",
+    "Read the C++: grep -a -n \"RexxMethod.*mc_getMinRect\" upstream/ooDialog/*.cpp. Use grep -a: some of the C++ files are not plain ASCII and plain grep skips them silently. tools/cfn.py --sigs writes every signature to dist/sigs.txt.",
+    "Read how upstream's Rexx calls it: grep the name in dist/ooDialog.cls. One native can serve several methods; the second argument tells which.",
+    "Write the method in src/oodWeb.cls: ::method NAME unguarded, then use arg self_, msg, a. self_ is the Rexx object, msg the upper-case method name, a the argument array.",
+    "Reach the page with self~op(self_, opName, a, b, c) for a control object or self~ctlOp(dialogState, id, opName, a, b, c).",
+    "Add the op to src/oodialog-web.js. Keep the answer a string.",
+    "Build. Copy the upstream example into a tests/upN directory, write its .steps, run it.",
+    "Run the whole suite, then update README.md (counts, what is new, what is not done)."
+  ],
+  "invariants": [
+    "An optional argument is tested with a~hasIndex(n). a~last of an empty array is .nil: loop to a~size.",
+    "The default NUMERIC DIGITS is 9. Handles and times need more: set numeric digits in the method, or keep numbers small.",
+    "A .Rect given to setWindowPos is a point / size rectangle: right and bottom are the width and height.",
+    "Return what the C++ returns (0, .true, a .Rect ...). Programs test these values.",
+    "Do not stub a native to return success without doing the work, unless the work is impossible in a browser; then say so in the README."
+  ],
+  "provenance": [
+    {
+      "artifact": "oodialog-wasm-9f167f9.zip",
+      "sha256": "cc1894e0b0a3fc3840302f794a22d1e4ab083d04ecffa1f240d1d2710e6d5c5f",
+      "member": "oodialog-wasm/README.md",
+      "line_start": 7,
+      "line_end": 20,
+      "claim": "The generator redirects every external native to .oodn.",
+      "note": "git archive of animatedads/oorexx commit 9f167f9 (branch oodialog-wasm)"
+    }
+  ]
+}

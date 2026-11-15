@@ -6,14 +6,14 @@ controls/ListBox/incrementalSearch.rex	shows
 controls/ListView/columnClickListView.rex	shows
 controls/ListView/columnIcons.rex	error:Error 98.900 ooDialog/WASM: a dialog from a resource file needs a reader of binary Windows resources; set .ood
 controls/ListView/customDrawListview.rex	native:CD_CUSTOMDRAWCONTROL
-controls/ListView/subitem.editing/dropDownComboBox.rex	native:CB_GETEDITCONTROL
+controls/ListView/subitem.editing/dropDownComboBox.rex	shows
 controls/ListView/subitem.editing/dropDownListComboBox.rex	shows
 controls/ListView/subitem.editing/editControl.rex	shows
 controls/ListView/subitem.editing/importList.rex	message:Could not locate the default importer file list directory.  Do you wish to pick an alterna
-controls/PaidHolidays.rex	native:MC_GETMINRECT
+controls/PaidHolidays.rex	shows
 controls/ToolBar/customizeToolBar.rex	native:TBB_INIT
 controls/ToolBar/toolBar.rex	error:Error 98.900 ooDialog/WASM: a dialog from a resource file needs a reader of binary Windows resources; set .ood
-controls/ToolTip/comboBoxToolTip.rex	native:CB_SETMINVISIBLE
+controls/ToolTip/comboBoxToolTip.rex	native:CB_GETCOMBOBOXINFO
 controls/ToolTip/customPositionToolTip.rex	native:GENERIC_GETTOOLTIPS
 controls/ToolTip/manageControlTool.rex	native:TI_INIT
 controls/ToolTip/toolTip.rex	shows
@@ -26,7 +26,7 @@ examples/addManyRows.rex	shows
 examples/browsePrinters.rex	shows
 examples/fileNameDialog_demo.rex	message:REMEMBER, FileNameDialog does NOT actually open or save your specified file, it simply pro
 examples/genGUID.rex	shows
-examples/imageButton.rex	error:Error 97.1 Object "an ImageList" does not understand message "IMAGELIST".
+examples/imageButton.rex	shows +error
 examples/openSaveFileDemo.rex	shows
 examples/publicRoutines_demo.rex	shows
 examples/saveFileWithFilter.rex	shows
@@ -34,7 +34,7 @@ examples/simpleFolderBrowse.rex	shows
 examples/stopWatch.rex	outside:winSystm.cls
 examples/useTools.rex	shows
 ftyperex.rex	outside:winsystm.cls
-menus/BinaryMenuBar.rex	shows +error
+menus/BinaryMenuBar.rex	error:Error 98.900 ooDialog/WASM: a BinaryMenuBar needs a reader of binary Windows resources; set .oodn~resourceProv
 menus/ContextMenu.rex	shows
 menus/ScriptMenuBar.rex	shows
 menus/UserMenuBar.rex	shows
@@ -66,11 +66,11 @@ resizableDialogs/ResizingAdmin/PropertySheetDemo.rex	shows
 resizableDialogs/ResizingAdmin/TabDemo.rex	error:Error 98.900 ooDialog/WASM: a dialog from a resource file needs a reader of binary Windows resources; set .ood
 resizableDialogs/ResizingAdmin/augmentedResize.rex	shows
 resizableDialogs/ResizingAdmin/basicResize.rex	shows
-resizableDialogs/ResizingAdmin/gbStationary.rex	native:RA_SETMAXSIZE
+resizableDialogs/ResizingAdmin/gbStationary.rex	shows
 sample.rex	shows
 samplesSetup.rex	ended
 simple/ChangeFont.rex	shows
-simple/SimpleMonthCalendar.rex	native:MC_GETMINRECT
+simple/SimpleMonthCalendar.rex	shows
 simple/SimpleUpDown.rex	shows
 sysinfo/sysinfo.rex	shows +error
 tutorial/drawing1.rex	shows

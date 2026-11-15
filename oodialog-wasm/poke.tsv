@@ -3,7 +3,9 @@ calculator.rex	11
 controls/ComboBox/comboBoxTypes.rex	8	
 controls/ListBox/incrementalSearch.rex	1	
 controls/ListView/columnClickListView.rex	3	
-controls/ListView/subitem.editing/importList.rex	4	event-not-produced ; native:DLGCTRL_SETPARENT
+controls/ListView/subitem.editing/dropDownListComboBox.rex	3	event-not-produced
+controls/ListView/subitem.editing/editControl.rex	3	event-not-produced
+controls/ListView/subitem.editing/importList.rex	4	event-not-produced
 controls/ToolTip/toolTip.rex	2	event-not-produced
 controls/TreeView/treeViewCustomDraw.rex	0	
 controls/fiscalReports.rex	8	event-not-produced
@@ -18,9 +20,12 @@ examples/publicRoutines_demo.rex	7
 examples/saveFileWithFilter.rex	6	
 examples/simpleFolderBrowse.rex	5	
 examples/useTools.rex	10	
+menus/BinaryMenuBar.rex	1	error 98.900 ooDialog/WASM: a BinaryMenuBar needs a reader of binary Windows resour
 menus/ContextMenu.rex	3	
 menus/ScriptMenuBar.rex	7	
 menus/UserMenuBar.rex	7	
+mouse/dragNdrop.rex	3	
+mouse/mouseWheel.rex	10	event-not-produced
 oobandit.rex	5	
 oobmpvu.rex	4	
 oodStandardDialogs.rex	8	
@@ -42,6 +47,7 @@ resizableDialogs/ResizingAdmin/basicResize.rex	5
 sample.rex	11	native:RI_INIT
 simple/ChangeFont.rex	3	
 simple/SimpleUpDown.rex	2	
+sysinfo/sysinfo.rex	2	did-not-end, left open: dialog: System Information ; error 97.1 Object ".OLEOBJECT" does not understand message "GETOBJECT".
 tutorial/drawing1.rex	4	
 tutorial/drawing2.rex	4	
 tutorial/drawing3.rex	4	
@@ -57,7 +63,7 @@ tutorial/employe6.rex	10
 tutorial/employe7.rex	10	
 tutorial/employe8.rex	9	
 tutorial/employe9.rex	9	
-tutorial/employee10menuRc.rex	11	native:GENERIC_SETLISTTABULATORS
+tutorial/employee10menuRc.rex	11	
 tutorial/employee11tab.rex	1	
 tutorial/textScroll.rex	6	
 userGuide/exercises/Exercise02/HelloWorld.rex	1	

@@ -1,0 +1,57 @@
+{
+  "kind": "article",
+  "id": "ref.oodialog-wasm.state",
+  "version": "0.2",
+  "sphere": "oodialog-wasm",
+  "title": "State at v0.17.0 and where the current state is recorded",
+  "summary": "This article is a snapshot. The current figures are always in README.md of the project, with the version they were measured on; sweep.tsv and poke.tsv hold the per-example results.",
+  "authority": "implementation-record",
+  "section": "reference",
+  "topics": [
+    "state",
+    "coverage",
+    "not-done"
+  ],
+  "snapshot": [
+    "Version 0.17.0, 15 November 2026.",
+    "Natives ported: 643 of 1,181.",
+    "Tests: 42 of 42 pass in headless Chromium. 29 of them are upstream examples or the designer's programs, run unchanged.",
+    "Sweep of the 140 upstream examples: 76 show their dialog, 7 run to the end, 9 show only a message box, 7 stop at a native not ported, 10 stop on an error (8 of them wait for a reader of binary resources), 24 are components, 7 are outside ooDialog.",
+    "Probe at v0.16.0, 81 examples: 66 clean, 10 connect an event that is not produced, 5 with a problem, none of them in the port's own code.",
+    "\"shows\" in the sweep means a dialog appeared. It does not mean every feature of the example works. Only an example that is a test (with steps and assertions) is known to work."
+  ],
+  "done": [
+    "Dialogs: UserDialog, RcDialog (.rc and .h files), ResDialog through the resource provider, ControlDialog, property sheets and wizards, owned dialogs, message boxes, standard dialogs and routines.",
+    "Controls: buttons, check boxes, radio buttons, group boxes, statics, images, edits, list boxes, combo boxes, progress bars, list-views, tree-views, tabs, up-downs, track bars, date-time pickers, month calendars.",
+    "Menus: menu bars and popup menus, from scripts and through the resource provider.",
+    "Resizing: ResizingAdmin (pin definitions, size limits, wantSizeEnded) since v0.17.0; DlgAreaU with connectResize since v0.9.",
+    "Drawing, bitmap buttons and animation, the Mouse class, in-place editing in a list-view (edit, drop-down list, editable combo box), list box tab stops, fonts.",
+    "File dialogs and shell dialogs over the WASM machine's file system."
+  ],
+  "not_done": [
+    "Tool bar, status bar, re-bar; custom draw; scroll bars as controls.",
+    "Real tool tips: ToolInfo, manageAtypicalTool, getToolTips, the tool tip events. A tool tip today is the element's title.",
+    "ResizingAdmin's pagedTab; ControlDlgInfo and the tab owner dialogs.",
+    "connectActivate, connectHelp, connectPosChanged, connectResizing (accepted, not produced).",
+    "Image-list icons are not drawn; ResourceImage needs images from a binary resource.",
+    "A modeless property sheet; wizard header and watermark images.",
+    "The CommonDialogCustomizations controls of the shell dialogs.",
+    "Printing. The estate's oorexx_pdf package is native ooRexx and is the planned stand-by printer: write a PDF into the WASM file system and offer it for download or the browser's print. Not started.",
+    "Not run on a real phone or on the public Playground; the demo page is not hosted."
+  ],
+  "invariants": [
+    "When this article and README.md disagree, README.md is right and this article needs a new version.",
+    "A feature is listed as done only when a test with assertions covers it."
+  ],
+  "provenance": [
+    {
+      "artifact": "oodialog-wasm-9f167f9.zip",
+      "sha256": "cc1894e0b0a3fc3840302f794a22d1e4ab083d04ecffa1f240d1d2710e6d5c5f",
+      "member": "oodialog-wasm/README.md",
+      "line_start": 51,
+      "line_end": 100,
+      "claim": "The state section with counts.",
+      "note": "git archive of animatedads/oorexx commit 9f167f9 (branch oodialog-wasm)"
+    }
+  ]
+}

@@ -24,7 +24,7 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.15.0"
+  return "0.17.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute key unguarded
@@ -102,7 +102,7 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.15.0"
+  return "0.17.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute rexxSelf unguarded
@@ -131,7 +131,7 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.15.0"
+  return "0.17.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::attribute dlg unguarded             -- its dialog's OodDlg
@@ -149,7 +149,7 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.15.0"
+  return "0.17.0"
 ::method module_lastChanged class
   return "2026-11-14"
 ::method module_version unguarded
@@ -314,7 +314,7 @@
   parse var extra first (sep) second
   do entry over d~wmTable
     if entry[1] \== event then iterate
-    if event == "SIZEMOVEENDED" then args = .array~new
+    if event == "SIZEMOVEENDED" | event == "RASIZEENDED" then args = .array~new
     else args = .array~of(0, second * 65536 + first)
     self~invoke(d~rexxSelf, entry[2], args)
   end
@@ -439,6 +439,17 @@
   wParam = code * 65536 + id
   lParam = "0x"d2x(key * 65536 + id)~right(16, "0")
   self~invoke(dlg, method, .array~of(wParam, lParam))
+
+/* Send an event method whose answer is wanted; .nil if it gives none or fails. */
+::method invokeResult unguarded
+  use arg dlg, method, args
+  signal on syntax
+  answer = dlg~sendWith(method, args)
+  if var("ANSWER") then return answer
+  return .nil
+syntax:
+  say "ooDialog/WASM: error in event method" method":" condition("O")~message
+  return .nil
 
 /* Send an event method.  An error in it is reported and the dialog goes on. */
 ::method invoke unguarded
@@ -933,8 +944,8 @@ noPackage:
   if id < 1 then return .nil
   kind = d~kinds[id]
   if kind == .nil then return .nil
-  kinds = "BUTTON CHECK RADIO GROUP STATIC FRAME IMAGE EDIT LIST COMBO PROGRESS LISTVIEW TREEVIEW TAB UPDOWN TRACKBAR DATETIMEPICKER"
-  names = "PUSHBUTTON CHECKBOX RADIOBUTTON GROUPBOX STATIC STATIC STATIC EDIT LISTBOX COMBOBOX PROGRESSBAR LISTVIEW TREEVIEW TAB UPDOWN TRACKBAR DATETIMEPICKER"
+  kinds = "BUTTON CHECK RADIO GROUP STATIC FRAME IMAGE EDIT LIST COMBO PROGRESS LISTVIEW TREEVIEW TAB UPDOWN TRACKBAR DATETIMEPICKER MONTHCALENDAR"
+  names = "PUSHBUTTON CHECKBOX RADIOBUTTON GROUPBOX STATIC STATIC STATIC EDIT LISTBOX COMBOBOX PROGRESSBAR LISTVIEW TREEVIEW TAB UPDOWN TRACKBAR DATETIMEPICKER MONTHCALENDAR"
   at = kinds~wordPos(kind~word(1)~upper)
   if at == 0 then return .nil
   return self~pbdlg_newControl(self_, "NEW"names~word(at), a)
@@ -1146,6 +1157,7 @@ noPackage:
   d~pixelCX = pw
   d~pixelCY = ph
   d~live = .true
+  if d~store["RA"] \== .nil then self~ctlOp(d, 0, "ra.init", self~raSpec(d))
   d~templateActive = .false
   self~register(d)
   do entry over d~cmdTable
@@ -1527,7 +1539,7 @@ noPackage:
   use arg self_, msg, a
   opts = ""
   nums = .array~new
-  do i = 2 to a~last
+  do i = 2 to a~size
     if \a~hasIndex(i) then iterate
     v = a[i]
     select
@@ -2031,6 +2043,7 @@ noPackage:
     when kind == "TAB" then return self~en_connectTabEvent(dlg, msg, args)
     when kind == "UPDOWN" then return self~en_connectUpDownEvent(dlg, msg, args)
     when kind == "DATETIMEPICKER" then return self~en_connectDateTimePickerEvent(dlg, msg, args)
+    when kind == "MONTHCALENDAR" then return self~en_connectMonthCalendarEvent(dlg, msg, args)
     otherwise do
       say "ooDialog/WASM: connectEvent" a[1] "for control" p~id "is connected but is not produced yet"
       return 0
@@ -2120,6 +2133,14 @@ noPackage:
         args = .array~of(parts[1] * 65536 + codes~word(codes~wordPos(parts[2]) + 1), hwnd)
       end
       when kind == "DATETIMEPICKER" then args = .array~of(self~dateTimeOf(extra), .true, id, hwnd, event, dlg~newDateTimePicker(id))
+      when kind == "MONTHCALENDAR" then do
+        if event == "GETDAYSTATE" then do         -- (start, count, id, hwnd): the method answers a day state buffer
+          buffer = self~invokeResult(dlg, entry[3], .array~of(self~dateTimeOf(parts[1]), parts[2], id, hwnd))
+          if buffer \== .nil then if buffer~isA(.String) then self~ctlOp(d, id, "mc.dayStateFrom", parts[1], buffer)
+          iterate
+        end
+        args = .array~of(self~dateTimeOf(parts[1]), self~dateTimeOf(parts[2]), id, hwnd)
+      end
       otherwise args = .array~of(id, extra)
     end
     self~invoke(dlg, entry[3], args)
@@ -2182,6 +2203,190 @@ noPackage:
   use arg iso
   parse var iso year "-" month "-" day "T" hours ":" minutes ":" seconds
   return .DateTime~new(year, month, day, hours, minutes, seconds)
+/*---- Month calendar --------------------------------------------------------------------
+   One month is shown and one day is selected (no MULTI selection).  A DayState is a bit
+   mask of the bold days of one month; a day state buffer is the masks as words. */
+::method mc_date unguarded
+  use arg self_
+  return self~dateTimeOf(self~op(self_, "mc.get"))
+::method mc_setDate unguarded
+  use arg self_, date
+  self~op(self_, "mc.set", date~isoDate~left(19))
+  return 0
+::method mc_getMinRect unguarded   -- getMinRect(rect): right and bottom are the size the calendar needs
+  use arg self_, msg, a
+  parse value self~op(self_, "mc.minRect") with width height .
+  if width == "" then return .false
+  a[1]~left = 0
+  a[1]~top = 0
+  a[1]~right = width
+  a[1]~bottom = height
+  return .true
+::method mc_sizeRectToMin unguarded
+  use arg self_, msg, a
+  parse value self~op(self_, "mc.minRect") with width height .
+  if width == "" then return .false
+  a[1]~right = a[1]~left + width
+  a[1]~bottom = a[1]~top + height
+  return a[1]
+::method mc_setRange unguarded     -- setRange(array of two DateTime; .nil for no limit)
+  use arg self_, msg, a
+  range = a[1]
+  low = ""
+  high = ""
+  if range~hasIndex(1) then if range[1] \== .nil then low = range[1]~isoDate~left(19)
+  if range~hasIndex(2) then if range[2] \== .nil then high = range[2]~isoDate~left(19)
+  self~op(self_, "mc.range", low, high)
+  return .true
+::method mc_getRange unguarded     -- getRange(array): "none", "min", "max" or "both"
+  use arg self_, msg, a
+  parse value self~op(self_, "mc.getRange") with low (self~sep) high
+  if low \== "" then a[1][1] = self~dateTimeOf(low)
+  if high \== "" then a[1][2] = self~dateTimeOf(high)
+  if low \== "" & high \== "" then return "both"
+  if low \== "" then return "min"
+  if high \== "" then return "max"
+  return "none"
+::method mc_getMonthRange unguarded    -- getMonthRange(array, span): the first and last day shown; answers the months
+  use arg self_, msg, a
+  span = "D"
+  if self~opt(a, 2)~upper~abbrev("P") then span = "P"
+  sep = self~sep
+  parse value self~op(self_, "mc.months", span) with first (sep) last (sep) count
+  if first == "" then return 0
+  a[1][1] = self~dateTimeOf(first)
+  a[1][2] = self~dateTimeOf(last)
+  return count
+::method mc_getSelectionRange unguarded
+  use arg self_, msg, a
+  day = self~dateTimeOf(self~op(self_, "mc.get"))
+  a[1][1] = day
+  a[1][2] = day
+  return .true
+::method mc_setSelectionRange unguarded
+  use arg self_, msg, a
+  self~op(self_, "mc.set", a[1][1]~isoDate~left(19))
+  return .true
+::method mc_getToday unguarded
+  use arg self_
+  return self~dateTimeOf(self~op(self_, "mc.today"))
+::method mc_setToday unguarded
+  use arg self_, msg, a
+  if a~hasIndex(1) then self~op(self_, "mc.today", a[1]~isoDate~left(19))
+  else self~op(self_, "mc.today", .DateTime~new~isoDate~left(19))
+  return 0
+::method mc_setDayState unguarded  -- setDayState(array of DayState): for the months from the first one shown
+  use arg self_, msg, a
+  masks = ""
+  do state over a[1]
+    masks = masks state~value
+  end
+  self~op(self_, "mc.dayState", masks~strip)
+  return .true
+::method mc_setDayStateQuick unguarded
+  use arg self_, msg, a
+  masks = ""
+  do i = 1 to 3
+    if a~hasIndex(i) then masks = masks a[i]~value
+    else masks = masks 0
+  end
+  self~op(self_, "mc.dayState", masks~strip)
+  return .true
+::method mc_getFirstDayOfWeek unguarded    -- 0 Monday ... 6 Sunday
+  use arg self_
+  return self~op(self_, "mc.firstDay")
+::method mc_setFirstDayOfWeek unguarded
+  use arg self_, msg, a
+  old = self~op(self_, "mc.firstDay")
+  day = a[1]
+  if \day~datatype("W") then do
+    names = "MONDAY TUESDAY WEDNESDAY THURSDAY FRIDAY SATURDAY SUNDAY"
+    day = names~wordPos(day~upper) - 1
+    if day < 0 then return old
+  end
+  self~op(self_, "mc.firstDay", day)
+  return old
+::method mc_getCalendarCount unguarded
+  return 1
+::method mc_getCurrentView unguarded
+  return "Monthly"
+::method mc_setCurrentView unguarded
+  return .false
+::method mc_getCalendarBorder unguarded
+  return 4
+::method mc_setCalendarBorder unguarded
+  return 0
+::method mc_getCALID unguarded
+  return "GREGORIAN"
+::method mc_setCALID unguarded
+  return 0
+::method mc_getColor unguarded
+  return -1
+::method mc_setColor unguarded
+  return -1
+::method mc_getStyle unguarded
+  return ""
+::method mc_addRemoveStyle unguarded
+  return ""
+::method mc_replaceStyle unguarded
+  return ""
+::method mc_hitTestInfo unguarded  -- hitTestInfo(point | x, y): a directory: hit, and date for a day
+  use arg self_, msg, a
+  if a[1]~isA(.String) then do
+    x = a[1]
+    y = a[2]
+  end
+  else do
+    x = a[1]~x
+    y = a[1]~y
+  end
+  answer = self~op(self_, "mc.hit", x, y)
+  info = .directory~new
+  what = answer~word(1)
+  select
+    when what == "DATE" then do
+      info~hit = "CalendarDate"
+      info~date = self~dateTimeOf(answer~word(2))
+    end
+    when what == "PREV" then info~hit = "TitleButtonPrev"
+    when what == "NEXT" then info~hit = "TitleButtonNext"
+    when what == "TITLE" then info~hit = "TitleBackground"
+    when what == "TODAY" then info~hit = "TodayLink"
+    otherwise info~hit = "NoWhere"
+  end
+  return info
+::method ds_init unguarded         -- .DayState~new(day, day ...): those days of the month are bold
+  use arg self_, msg, a
+  mask = 0
+  do i = 1 to a~size               -- (an empty array has no last index)
+    if \a~hasIndex(i) then iterate
+    day = a[i]
+    if \day~datatype("W") then raise syntax 93.905 array(i, day)
+    if day < 1 | day > 31 then raise syntax 93.907 array(i, 1, 31, day)
+    bit = 2 ** (day - 1)
+    if mask // (bit * 2) < bit then mask = mask + bit
+  end
+  self_~oodPeer = mask
+  return 0
+::method ds_value unguarded
+  use arg self_
+  return self_~oodPeer
+::method dss_makeDayStateBuffer unguarded  -- .DayStates~makeDayStateBuffer(array of DayState)
+  use arg self_, msg, a
+  masks = ""
+  do state over a[1]
+    masks = masks state~value
+  end
+  return masks~strip
+::method dss_quickDayStateBuffer unguarded
+  use arg self_, msg, a
+  masks = ""
+  do i = 1 to 3
+    if a~hasIndex(i) then masks = masks a[i]~value
+    else masks = masks 0
+  end
+  return masks~strip
+
 ::method dtp_getDateTime unguarded
   use arg self_
   return self~dateTimeOf(self~op(self_, "dtp.get"))
@@ -3393,6 +3598,170 @@ noPackage:
 ::method mouse_showCursor unguarded
   return 0
 
+
+/* ---- ResizingAdmin (oodResizableDialog.cpp) ----
+   A dialog class that inherits ResizingAdmin can be resized, and its controls follow.
+   defineSizing is called at the end of the dialog's init; there the program says how
+   each edge of a control is pinned.  The page does the arithmetic (raLayout). */
+::method raSetup unguarded
+  use arg self_
+  d = self_~oodPeer
+  ra = .directory~new
+  ra~def = .array~of(.array~of("P", "LEFT", 0), .array~of("P", "TOP", 0), .array~of("P", "RIGHT", 0), .array~of("P", "BOTTOM", 0))
+  ra~ctrls = .array~new            -- in the order the program names them: id, then the four edges
+  ra~min = "initial"
+  ra~max = .nil
+  ra~ended = .nil
+  d~store["RA"] = ra
+  self_~constDir["IDC_DEFAULT_PINTO_WINDOW"] = 0
+  self_~initResizing(.nil)
+  self_~defineSizing
+::method raState unguarded
+  use arg self_
+  ra = self_~oodPeer~store["RA"]
+  if ra == .nil then raise syntax 93.900 array("this dialog does not inherit ResizingAdmin")
+  return ra
+::method raEdge unguarded          -- (pinType, pinToEdge, pinToID) checked, for the side 1 left 2 top 3 right 4 bottom
+  use arg self_, side, how, which, pinTo
+  how = how~upper
+  which = which~upper
+  select
+    when how == "PROPORTIONAL" then type = "P"
+    when how == "STATIONARY" then type = "S"
+    when how == "MYLEFT" & side == 3 then type = "ML"
+    when how == "MYTOP" & side == 4 then type = "MT"
+    otherwise raise syntax 93.900 array('the pin type "'how'" is not valid for this edge; use PROPORTIONAL or STATIONARY (MYLEFT for a right edge, MYTOP for a bottom edge)')
+  end
+  if "LEFT TOP RIGHT BOTTOM XCENTER YCENTER"~wordPos(which) == 0 then raise syntax 93.900 array('"'which'" is not an edge; use LEFT, TOP, RIGHT, BOTTOM, XCENTER or YCENTER')
+  id = 0
+  if pinTo \== .nil then do
+    id = self~resolveId(self_, pinTo)
+    if id < 0 then raise syntax 93.900 array("the pin-to ID" pinTo "cannot be resolved")
+  end
+  return .array~of(type, which, id)
+::method raEdgeOf unguarded        -- an edge given as an array (pinType, pinToEdge [, pinToID])
+  use arg self_, side, spec
+  pinTo = .nil
+  if spec~hasIndex(3) then pinTo = spec[3]
+  return self~raEdge(self_, side, spec[1], spec[2], pinTo)
+::method raControl unguarded       -- the record of a control, made with the default edges when first named
+  use arg self_, rxID
+  ra = self~raState(self_)
+  id = self~resolveId(self_, rxID)
+  if id < 1 then raise syntax 93.900 array("the control ID" rxID "cannot be resolved")
+  do row over ra~ctrls
+    if row[1] == id then return row
+  end
+  row = .array~of(id, ra~def[1], ra~def[2], ra~def[3], ra~def[4])
+  ra~ctrls~append(row)
+  return row
+::method ra_initResizing unguarded
+  return 0
+::method ra_controlSide unguarded  -- controlLeft / Top / Right / Bottom(id, howPinned, whichEdge, pinToID)
+  use arg self_, msg, a
+  side = "CONTROLLEFT CONTROLTOP CONTROLRIGHT CONTROLBOTTOM"~wordPos(msg)
+  row = self~raControl(self_, a[1])
+  pinTo = .nil
+  if a~hasIndex(4) then pinTo = a[4]
+  row[side + 1] = self~raEdge(self_, side, a[2], a[3], pinTo)
+  return 0
+::method ra_controlSizing unguarded    -- controlSizing(id, left, top, right, bottom): an omitted edge keeps the default
+  use arg self_, msg, a
+  row = self~raControl(self_, a[1])
+  do side = 1 to 4
+    if a~hasIndex(side + 1) then row[side + 1] = self~raEdgeOf(self_, side, a[side + 1])
+  end
+  return 0
+::method ra_useDefaultSizing unguarded
+  use arg self_, msg, a
+  self~raControl(self_, a[1])
+  return 0
+::method ra_defaultSide unguarded  -- defaultLeft / Top / Right / Bottom(howPinned, whichEdge, pinToID)
+  use arg self_, msg, a
+  side = "DEFAULTLEFT DEFAULTTOP DEFAULTRIGHT DEFAULTBOTTOM"~wordPos(msg)
+  pinTo = .nil
+  if a~hasIndex(3) then pinTo = a[3]
+  self~raState(self_)~def[side] = self~raEdge(self_, side, a[1], a[2], pinTo)
+  return 0
+::method ra_defaultSizing unguarded
+  use arg self_, msg, a
+  ra = self~raState(self_)
+  do side = 1 to 4
+    if a~hasIndex(side) then ra~def[side] = self~raEdgeOf(self_, side, a[side])
+  end
+  return 0
+::method raSizeJson unguarded      -- a size limit for the page: "initial", null or [w, h]
+  use arg limit
+  if limit == .nil then return "null"
+  if limit == "initial" then return '"initial"'
+  return "["limit~width","limit~height"]"
+::method raSpec unguarded          -- the whole definition as JSON for the page
+  use arg d
+  ra = d~store["RA"]
+  json = '{"def":'self~raEdgesJson(ra~def)',"ctrls":['
+  first = .true
+  do row over ra~ctrls
+    if \first then json = json","
+    first = .false
+    json = json"["row[1]","self~raEdgesJson(.array~of(row[2], row[3], row[4], row[5]))~substr(2)
+  end
+  json = json'],"min":'self~raSizeJson(ra~min)',"max":'self~raSizeJson(ra~max)',"ended":'
+  if ra~ended == .nil then json = json"0}"
+  else json = json"1}"
+  return json
+::method raEdgesJson unguarded
+  use arg edges
+  json = "["
+  do i = 1 to edges~items
+    if i > 1 then json = json","
+    json = json'["'edges[i][1]'","'edges[i][2]'",'edges[i][3]']'
+  end
+  return json"]"
+::method raLimits unguarded
+  use arg self_
+  d = self_~oodPeer
+  ra = self~raState(self_)
+  if d~live then self~ctlOp(d, 0, "ra.limits", self~raSizeJson(ra~min), self~raSizeJson(ra~max))
+::method ra_minSize unguarded
+  use arg self_
+  limit = self~raState(self_)~min
+  if limit == "initial" then return .nil
+  return limit
+::method ra_maxSize unguarded
+  use arg self_
+  return self~raState(self_)~max
+::method ra_setMinSize unguarded   -- a .Size in pixels
+  use arg self_, msg, a
+  self~raState(self_)~min = a[1]
+  self~raLimits(self_)
+  return 0
+::method ra_setMaxSize unguarded
+  use arg self_, msg, a
+  self~raState(self_)~max = a[1]
+  self~raLimits(self_)
+  return 0
+::method ra_noMinSize unguarded
+  use arg self_
+  self~raState(self_)~min = .nil
+  self~raLimits(self_)
+  return 0
+::method ra_noMaxSize unguarded
+  use arg self_
+  self~raState(self_)~max = .nil
+  self~raLimits(self_)
+  return 0
+::method ra_wantSizeEnded unguarded    -- wantSizeEnded(method, willReply): the method is invoked when the user stops sizing
+  use arg self_, msg, a
+  method = "onSizeEnded"
+  if a~hasIndex(1) then if a[1] \== "" then method = a[1]
+  self~raState(self_)~ended = method
+  self_~oodPeer~wmTable~append(.array~of("RASIZEENDED", method))
+  return .true
+::method ra_pagedTab unguarded     -- (the pages of a tab are not resized with it yet)
+  use arg self_
+  self~raState(self_)
+  return 0
+
 ::method winex_deleteObject unguarded
   return 0
 ::method winex_deleteFont unguarded
@@ -3593,7 +3962,7 @@ noPackage:
   return 0
 ::method en_connectMonthCalendarEvent unguarded
   use arg self_, msg, a
-  return self~notProduced("month calendar", a)
+  return self~connectNotify(self_, a, "GETDAYSTATE GETDAYSTATE SELCHANGE SELCHANGE SELECT SELECT")
 ::method en_connectToolTipEvent unguarded
   use arg self_, msg, a
   return self~notProduced("tool tip", a)
@@ -3689,7 +4058,7 @@ noPackage:
   at = -1
   if a~hasIndex(1) then at = a[1]
   texts = self~opt(a, 3)
-  do i = 4 to a~last
+  do i = 4 to a~size
     texts = texts || self~sep || self~opt(a, i)
   end
   return self~op(self_, "lv.insRow", at, texts)
@@ -3728,6 +4097,8 @@ noPackage:
   if a~hasIndex(2) then sub = a[2]
   if self~op(self_, "lv.setCell", a[1], sub, a[3]) == 1 then return 0
   return -1
+::method lv_arrange unguarded     -- arrange, alignLeft, alignTop, snapToGrid: the icons of the page's list-view flow by themselves
+  return 0
 ::method lv_getItemInfo unguarded  -- getItemInfo(index, directory, subItem): the text, image and state of an item go into the directory
   use arg self_, msg, a
   index = a[1]
@@ -3961,7 +4332,7 @@ noPackage:
 ::method tab_addFullSeq unguarded  -- label, imageIndex, userData triples
   use arg self_, msg, a
   last = -1
-  do i = 1 to a~last by 3
+  do i = 1 to a~size by 3
     last = self~op(self_, "tab.ins", -1, self~opt(a, i))
   end
   return last
@@ -4279,12 +4650,31 @@ noPackage:
   use arg self_, msg, a
   p = self_~oodPeer
   method = "onEditGrandChildEvent"
-  if p~dlg~kinds[p~id]~word(1) == "COMBO" then method = "onComboBoxGrandChildEvent"
+  if self_~isA(self~classOf("ComboBox")) then method = "onComboBoxGrandChildEvent"   -- (the edit of a combo box reports as an edit)
   if a~hasIndex(1) then if a[1] \== "" then method = a[1]
   wantTab = .false
   if a~hasIndex(2) then wantTab = (a[2] == .true)
   p~dlg~store["GC" p~id] = .array~of(method, self_)
   return (self~op(self_, "grandChild", wantTab) == 1)
+::method cb_getEditControl unguarded   -- the edit part of a combo box as an Edit object; .nil for a drop-down list
+  use arg self_
+  p = self_~oodPeer
+  if \p~dlg~live then return .nil
+  if self~op(self_, "isDropList") == 1 then return .nil
+  cached = p~dlg~controls[p~id "COMBOEDIT"]
+  if cached \== .nil then return cached
+  edit = self~classOf("Edit")~new(p~dlg~rexxSelf, p~id, .OodCtl~new(p~dlg, p~id, "EDIT"))
+  p~dlg~controls[p~id "COMBOEDIT"] = edit
+  return edit
+::method cb_setMinVisible unguarded    -- the rows of the dropped list: the browser decides; the number is kept
+  use arg self_, msg, a
+  self_~oodPeer~dlg~store["CBMINVISIBLE" self_~oodPeer~id] = a[1]
+  return .true
+::method cb_getMinVisible unguarded
+  use arg self_
+  count = self_~oodPeer~dlg~store["CBMINVISIBLE" self_~oodPeer~id]
+  if count == .nil then return 30
+  return count
 ::method cb_isGrandchild unguarded
   forward message "e_isGrandchild"
 ::method grandChildEvent unguarded
@@ -4323,7 +4713,7 @@ noPackage:
   end
   if \d~live then return -1
   stops = ""
-  do i = first to a~last
+  do i = first to a~size
     if \a~hasIndex(i) then iterate
     if \a[i]~datatype("N") then iterate
     stops = stops (a[i] * d~factorX)~format(, 0)
@@ -5282,6 +5672,23 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
 .ood-frame{pointer-events:none}
 .ood-todo{border:1px dashed #a33;color:#a33;font-size:.85em;overflow:hidden;padding:2px}
 .ood-u{text-decoration:underline}
+.ood-mc{background:#fff;border:1px solid #7a7a7a;box-sizing:border-box;padding:4px 6px;cursor:default;outline:none;user-select:none;overflow:hidden}
+.ood-mc-head{display:flex;align-items:center;justify-content:space-between;padding:2px 0 4px}
+.ood-mc-head button{border:0;background:none;font:inherit;font-size:15px;line-height:1;padding:0 6px;cursor:pointer}
+.ood-mc-head button:hover{color:#0078d7}
+.ood-mc-grid{display:grid;grid-template-columns:repeat(7,minmax(22px,1fr));text-align:center}
+.ood-mc-wd{color:#555;border-bottom:1px solid #d0d0d0;padding:1px 0;margin-bottom:2px}
+.ood-mc-day{padding:1px 2px;border:1px solid transparent}
+.ood-mc-day:hover{background:#e5f1fb}
+.ood-mc-other{color:#9a9a9a}
+.ood-mc-off{color:#c8c8c8;text-decoration:line-through}
+.ood-mc-off:hover{background:none}
+.ood-mc-bold{font-weight:bold}
+.ood-mc-today{border-color:#0078d7}
+.ood-mc-sel{background:#0078d7;color:#fff}
+.ood-mc-sel:hover{background:#0078d7}
+.ood-mc-foot{padding-top:4px;white-space:nowrap}
+.ood-mc-foot:hover{color:#0078d7}
 .ood-lv,.ood-tv{border:1px solid #7a7a7a;background:#fff;overflow:auto;outline:none;cursor:default}
 .ood-lv table{border-collapse:collapse;table-layout:fixed}
 .ood-lv th{position:sticky;top:0;background:#fff;border-right:1px solid #e5e5e5;border-bottom:1px solid #e5e5e5;font-weight:normal;padding:2px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -5400,13 +5807,68 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       new W.ResizeObserver(() => {
         if (first) { first = false; return; }
         if (!ood.dialogs.has(key)) return;
+        if (dlg.ra) raLayout(dlg);                             // ResizingAdmin: the controls follow the dialog
         if (dlg.subs.has('0.RESIZE')) fire(key, 'WM', 0, 'RESIZE', client.clientWidth + SEP + client.clientHeight);
         clearTimeout(timer);
-        timer = setTimeout(() => { if (ood.dialogs.has(key) && dlg.subs.has('0.SIZEMOVEENDED')) fire(key, 'WM', 0, 'SIZEMOVEENDED', ''); }, 250);
+        timer = setTimeout(() => {
+          if (!ood.dialogs.has(key)) return;
+          if (dlg.subs.has('0.SIZEMOVEENDED')) fire(key, 'WM', 0, 'SIZEMOVEENDED', '');
+          if (dlg.ra && dlg.ra.ended) fire(key, 'WM', 0, 'RASIZEENDED', '');
+        }, 250);
       }).observe(client);
     }
     return dlg.fx + ' ' + dlg.fy + ' ' + Math.round(rect.width) + ' ' + Math.round(rect.height);
   };
+
+  /* ---- ResizingAdmin (oodResizableDialog.cpp) ----
+     Each edge of each control is pinned to an edge of the dialog or of another control:
+       [pinType, pinToEdge, pinToID]   pinType S stationary, P proportional, ML my left, MT my top
+     ra = { def: [left, top, right, bottom], ctrls: [[id, left, top, right, bottom], ...], min, max, ended }
+     The controls named by the program come first, in its order; then the others as created. */
+  function raRect(el) { return { left: el.offsetLeft, top: el.offsetTop, right: el.offsetLeft + el.offsetWidth, bottom: el.offsetTop + el.offsetHeight }; }
+  function raInit(dlg, spec) {
+    const ra = JSON.parse(spec), cl = dlg.client;
+    ra.orig = { left: 0, top: 0, right: cl.clientWidth, bottom: cl.clientHeight };
+    ra.items = [];
+    const seen = new Set();
+    const add = (id, edges) => { const c = dlg.ctrls.get(id); if (!c || seen.has(id)) return; seen.add(id);
+      ra.items.push({ id, c, edges, orig: raRect(c.el), cur: raRect(c.el) }); };
+    for (const row of ra.ctrls) add(row[0], row.slice(1));
+    for (const [id, c] of dlg.ctrls) if (!c.parentCtl) add(id, ra.def);
+    dlg.ra = ra;
+    cl.style.resize = 'both';
+    raLimits(dlg, ra.min, ra.max);
+    return '1';
+  }
+  function raLimits(dlg, min, max) {                           // "initial": the size the dialog has now; null: none
+    const ra = dlg.ra, cl = dlg.client; ra.min = min; ra.max = max;
+    const m = min === 'initial' ? [ra.orig.right, ra.orig.bottom] : min;
+    cl.style.minWidth = m ? m[0] + 'px' : '60px'; cl.style.minHeight = m ? m[1] + 'px' : '30px';
+    cl.style.maxWidth = max ? max[0] + 'px' : ''; cl.style.maxHeight = max ? max[1] + 'px' : '';
+  }
+  function raLayout(dlg) {
+    const ra = dlg.ra, cl = dlg.client;
+    const cur = { left: 0, top: 0, right: cl.clientWidth, bottom: cl.clientHeight };
+    const rects = (id) => { if (id) { const it = ra.items.find((x) => x.id === id); if (it) return [it.orig, it.cur]; } return [ra.orig, cur]; };
+    const coord = (edge, r) => ({ LEFT: r.left, TOP: r.top, RIGHT: r.right, BOTTOM: r.bottom, XCENTER: (r.left + r.right) / 2, YCENTER: (r.top + r.bottom) / 2 }[edge]);
+    const span = (side, r) => (side === 'left' || side === 'right' ? r.right - r.left : r.bottom - r.top);
+    const edge = (it, side, e) => {
+      const [pi, pc] = rects(e[2]);
+      if (e[0] === 'S') return it.orig[side] - coord(e[1], pi) + coord(e[1], pc);
+      if (e[0] === 'ML') return it.cur.left + (it.orig.right - it.orig.left);
+      if (e[0] === 'MT') return it.cur.top + (it.orig.bottom - it.orig.top);
+      const was = span(side, pi) || 1;                         // proportional: the same edge of the window pinned to
+      return pc[side] + (it.orig[side] - pi[side]) * (span(side, pc) / was);
+    };
+    for (const it of ra.items) {
+      it.cur = { left: 0, top: 0, right: 0, bottom: 0 };
+      it.cur.left = Math.trunc(edge(it, 'left', it.edges[0])); it.cur.top = Math.trunc(edge(it, 'top', it.edges[1]));
+      it.cur.right = Math.trunc(edge(it, 'right', it.edges[2])); it.cur.bottom = Math.trunc(edge(it, 'bottom', it.edges[3]));
+      const s = it.c.el.style;
+      s.left = it.cur.left + 'px'; s.top = it.cur.top + 'px';
+      s.width = Math.max(0, it.cur.right - it.cur.left) + 'px'; s.height = Math.max(0, it.cur.bottom - it.cur.top) + 'px';
+    }
+  }
 
   function wireDialog(dlg) {
     const el = dlg.el;
@@ -5622,6 +6084,13 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
         main.addEventListener('input', () => note(dlg, c, 'TRACK', main.value + SEP + 'DRAG'));
         main.addEventListener('change', () => note(dlg, c, 'TRACK', main.value + SEP + 'ENDTRACK'));
         break;
+      case 'MONTHCALENDAR':
+        el = main = D.createElement('div'); el.className = 'ood-mc'; el.tabIndex = 0; c.main = main; c.el = el;
+        c.mc = { sel: mcDay(new Date()), today: mcDay(new Date()), min: null, max: null, bold: new Map(), firstDay: 0,
+                 noToday: has(o, 'NOTODAY'), weekNumbers: has(o, 'WEEKNUMBERS'), dayState: has(o, 'DAYSTATE') };
+        c.mc.view = new Date(c.mc.sel.getFullYear(), c.mc.sel.getMonth(), 1);
+        mcRender(dlg, c);
+        break;
       case 'DATETIMEPICKER':
         el = main = D.createElement('input'); main.className = 'ood-edit';
         main.type = has(o, 'TIME') ? 'time' : 'date'; if (main.type === 'time') main.step = 1;
@@ -5827,6 +6296,92 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
   }
 
   const two = (n) => String(n).padStart(2, '0');
+  /* ---- Month calendar: one month, Sunday first unless set otherwise ---- */
+  const mcDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const mcIso = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') + 'T00:00:00';
+  const mcFirstShown = (c) => { const f = new Date(c.mc.view); f.setDate(1 - ((f.getDay() - c.mc.firstDay + 7) % 7)); return f; };
+  function mcInRange(c, d) { return (!c.mc.min || d >= c.mc.min) && (!c.mc.max || d <= c.mc.max); }
+  function mcRender(dlg, c) {
+    const m = c.mc, el = c.el; el.textContent = '';
+    const head = D.createElement('div'); head.className = 'ood-mc-head';
+    const nav = (text, by, cls) => { const b = D.createElement('button'); b.type = 'button'; b.className = cls; b.textContent = text; b.tabIndex = -1;
+      b.addEventListener('click', (e) => { e.stopPropagation(); mcGo(dlg, c, by); }); return b; };
+    const title = D.createElement('span'); title.className = 'ood-mc-title';
+    title.textContent = m.view.toLocaleString('en-US', { month: 'long' }) + ' ' + m.view.getFullYear();
+    head.append(nav('‹', -1, 'ood-mc-prev'), title, nav('›', 1, 'ood-mc-next'));
+    const grid = D.createElement('div'); grid.className = 'ood-mc-grid';
+    for (let k = 0; k < 7; k++) { const w = D.createElement('span'); w.className = 'ood-mc-wd'; w.textContent = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'][(k + m.firstDay) % 7]; grid.appendChild(w); }
+    const first = mcFirstShown(c);
+    for (let k = 0; k < 42; k++) {
+      const d = new Date(first.getFullYear(), first.getMonth(), first.getDate() + k);
+      const cell = D.createElement('span'); cell.className = 'ood-mc-day'; cell.textContent = d.getDate(); cell.dataset.date = mcIso(d).slice(0, 10);
+      if (d.getMonth() !== m.view.getMonth()) cell.classList.add('ood-mc-other');
+      if (+d === +m.sel) cell.classList.add('ood-mc-sel');
+      if (+d === +m.today) cell.classList.add('ood-mc-today');
+      const bold = m.bold.get(d.getFullYear() + '-' + d.getMonth()); if (bold && (bold >>> (d.getDate() - 1)) & 1) cell.classList.add('ood-mc-bold');
+      if (!mcInRange(c, d)) cell.classList.add('ood-mc-off');
+      else cell.addEventListener('click', () => mcPick(dlg, c, d, true));
+      grid.appendChild(cell);
+    }
+    el.append(head, grid);
+    if (!m.noToday) { const t = D.createElement('div'); t.className = 'ood-mc-foot'; t.textContent = 'Today: ' + m.today.toLocaleDateString('en-US');
+      t.addEventListener('click', () => mcPick(dlg, c, m.today, true)); el.appendChild(t); }
+  }
+  function mcShow(dlg, c, d, ask) {                           // bring the month of d into view; the program is asked for its bold days
+    const m = c.mc, moved = d.getFullYear() !== m.view.getFullYear() || d.getMonth() !== m.view.getMonth();
+    if (moved) m.view = new Date(d.getFullYear(), d.getMonth(), 1);
+    mcRender(dlg, c);
+    if (moved && ask && m.dayState) { const f = mcFirstShown(c); note(dlg, c, 'GETDAYSTATE', mcIso(new Date(f.getFullYear(), f.getMonth(), 1)) + SEP + 3); }
+  }
+  function mcGo(dlg, c, by) {
+    const m = c.mc, to = new Date(m.view.getFullYear(), m.view.getMonth() + by, 1), end = new Date(to.getFullYear(), to.getMonth() + 1, 0);
+    if ((m.min && end < m.min) || (m.max && to > m.max)) return;
+    mcShow(dlg, c, to, true);
+  }
+  function mcPick(dlg, c, d, byUser) {
+    if (!mcInRange(c, d)) return;
+    c.mc.sel = mcDay(d); mcShow(dlg, c, c.mc.sel, byUser);
+    if (byUser) { const e = mcIso(c.mc.sel) + SEP + mcIso(c.mc.sel); note(dlg, c, 'SELCHANGE', e); note(dlg, c, 'SELECT', e); }
+  }
+  function mcOp(dlg, c, name, a, b) {
+    const m = c.mc, date = (v) => (v === '' || v === undefined ? null : mcDay(new Date(String(v))));
+    switch (name) {
+      case 'get': return mcIso(m.sel);
+      case 'set': { const d = date(a); if (!d || isNaN(d)) return '0'; m.sel = d; mcShow(dlg, c, d, false); return '1'; }
+      case 'today': { if (a !== '' && a !== undefined) { m.today = date(a); mcRender(dlg, c); } return mcIso(m.today); }
+      case 'range': m.min = date(a); m.max = date(b);
+        if (m.min && m.sel < m.min) m.sel = m.min; if (m.max && m.sel > m.max) m.sel = m.max;
+        mcShow(dlg, c, m.sel, false); return '1';
+      case 'getRange': return (m.min ? mcIso(m.min) : '') + SEP + (m.max ? mcIso(m.max) : '');
+      case 'months': {                                         // what is shown: P with the days of the months before and after, else the whole month
+        if (a !== 'P') return mcIso(m.view) + SEP + mcIso(new Date(m.view.getFullYear(), m.view.getMonth() + 1, 0)) + SEP + 1;
+        const f = mcFirstShown(c), l = new Date(f.getFullYear(), f.getMonth(), f.getDate() + 41);
+        return mcIso(f) + SEP + mcIso(l) + SEP + ((l.getFullYear() - f.getFullYear()) * 12 + l.getMonth() - f.getMonth() + 1); }
+      case 'dayState': {                                       // the bold days of the months from the first one shown: one bit mask a month
+        const f = mcFirstShown(c);
+        String(a).split(' ').filter(Boolean).forEach((v, k) => { const d = new Date(f.getFullYear(), f.getMonth() + k, 1); m.bold.set(d.getFullYear() + '-' + d.getMonth(), Number(v) >>> 0); });
+        mcRender(dlg, c); return '1'; }
+      case 'dayStateFrom': {                                   // the same, from a month named by the program
+        const f = date(a);
+        String(b).split(' ').filter(Boolean).forEach((v, k) => { const d = new Date(f.getFullYear(), f.getMonth() + k, 1); m.bold.set(d.getFullYear() + '-' + d.getMonth(), Number(v) >>> 0); });
+        mcRender(dlg, c); return '1'; }
+      case 'firstDay': { if (a !== '' && a !== undefined) { m.firstDay = (Number(a) + 1) % 7; mcRender(dlg, c); } return String((m.firstDay + 6) % 7); }   // Windows: 0 is Monday
+      case 'minRect': {                                        // the size the calendar needs, whatever size it has now
+        const w = c.el.style.width, h = c.el.style.height; c.el.style.width = 'max-content'; c.el.style.height = 'max-content';
+        const r = Math.ceil(c.el.offsetWidth) + ' ' + Math.ceil(c.el.offsetHeight); c.el.style.width = w; c.el.style.height = h; return r; }
+      case 'todayWidth': { const t = c.el.querySelector('.ood-mc-foot'); if (!t) return '0';
+        const g = D.createElement('canvas').getContext('2d'); g.font = getComputedStyle(t).font; return String(Math.ceil(g.measureText(t.textContent).width) + 12); }
+      case 'hit': {                                            // what is at a point of the client area: "DATE iso" | "TITLE" | "PREV" | "NEXT" | "TODAY" | "NOWHERE"
+        const o = c.el.getBoundingClientRect(), t = D.elementFromPoint(o.left + Number(a), o.top + Number(b));
+        if (!t || !c.el.contains(t)) return 'NOWHERE';
+        if (t.dataset.date) return 'DATE ' + t.dataset.date + 'T00:00:00';
+        if (t.classList.contains('ood-mc-prev')) return 'PREV'; if (t.classList.contains('ood-mc-next')) return 'NEXT';
+        if (t.classList.contains('ood-mc-foot')) return 'TODAY'; if (t.closest('.ood-mc-head')) return 'TITLE';
+        return 'NOWHERE'; }
+    }
+    return '';
+  }
+
   function dtpSet(c, d) {
     c.date = d;
     c.main.value = c.main.type === 'time' ? two(d.getHours()) + ':' + two(d.getMinutes()) + ':' + two(d.getSeconds())
@@ -5921,6 +6476,13 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
     msg = Number(msg); w = Number(w); l = Number(l);
     const m = c.main;
     switch (c.kind) {
+      case 'MONTHCALENDAR':
+        switch (msg) {
+          case 0x1015: return mcOp(dlg, c, 'todayWidth');                     // MCM_GETMAXTODAYWIDTH
+          case 0x1003: return '1';                                            // MCM_GETMAXSELCOUNT: one day
+          case 0x1013: return '1';                                            // MCM_GETMONTHDELTA
+        }
+        return '0';
       case 'BUTTON': case 'CHECK': case 'RADIO':
         switch (msg) {
           case 0xF5: m.click(); return '0';                                   // BM_CLICK
@@ -6375,6 +6937,9 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       if (c.kind === 'BUTTON') { c.main.textContent = ''; paintButton(c); }
       return '1';
     }
+    if (c && name === 'isDropList') return c.droplist ? '1' : '0';
+    if (name === 'ra.init') return raInit(dlg, String(a));
+    if (name === 'ra.limits') { if (!dlg.ra) return '0'; raLimits(dlg, JSON.parse(String(a)), JSON.parse(String(b))); return '1'; }
     if (name === 'mouseSub') return mouseSub(dlg, c, el, String(a));
     if (name === 'mouse') return mouseOp(dlg, c, el, String(a), b);
     if (c && name === 'bitmapPos') { c.bmpPos = [Number(a) || 0, Number(b) || 0]; paintButton(c); return '1'; }
@@ -6383,6 +6948,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       if (c.img) { c.img.src = url || ''; c.img.hidden = !url; if (b === 'STRETCH') c.img.style.cssText = 'width:100%;height:100%'; }
       return url ? '1' : '0';
     }
+    if (c && c.mc && name.startsWith('mc.')) return mcOp(dlg, c, name.slice(3), a, b);
     if (c && name === 'dtp.get') return dtpGet(c);
     if (c && name === 'dtp.set') { dtpSet(c, new Date(String(a))); return '1'; }
     if (c && name === 'pointFont') { m.style.fontFamily = '"' + a + '","Segoe UI",Tahoma,sans-serif'; m.style.fontSize = Math.round(Number(b) * 96 / 72 * ood.scale * 100) / 100 + 'px'; const st = String(c2); m.style.fontWeight = st.includes('B') ? 'bold' : 'normal'; m.style.fontStyle = st.includes('I') ? 'italic' : 'normal'; m.style.textDecoration = st.includes('U') ? 'underline' : 'none'; return '1'; }
