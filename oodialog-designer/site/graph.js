@@ -29,6 +29,9 @@
     ['do … over', 'do item over collection\n  nop\nend'], ['do while', 'do while condition\n  nop\nend'],
     ['select', 'select\n  when condition then nop\n  otherwise nop\nend'], ['call', 'call routineName'],
     ['self~method', 'self~methodName'], ['return', 'return'], ['leave', 'leave'], ['nop', 'nop'],
+    // CATCH and FINALLY (ooRexx r13514+): the condition handled where it happens
+    ['do … catch', 'do\n  nop\ncatch co = syntax\n  say co~message\nend'],
+    ['do … finally', 'do\n  nop\ncatch co = syntax\n  say co~message\nfinally\n  nop\nend'],
   ];
 
   function attach(c) { cfg = c; buildPalette(); }
@@ -66,7 +69,7 @@
   }
 
   function kids(parent, slot) { return nodes.filter((n) => n && n.parent === parent && n.slot === slot); }
-  const isBody = (parent, slot) => slot === 'body' && (parent === 0 || ['do', 'loop', 'otherwise'].includes(nodes[parent].kind));
+  const isBody = (parent, slot) => slot === 'body' && (parent === 0 || ['do', 'loop', 'otherwise', 'catch', 'finally'].includes(nodes[parent].kind));
 
   function render() {
     const box = D.getElementById('graph'); box.textContent = '';
@@ -97,11 +100,14 @@
       b.appendChild(lanes);
     } else if (n.kind === 'select') {
       b.appendChild(renderSlot(n.id, 'when')); b.appendChild(renderSlot(n.id, 'otherwise'));
+      if (kids(n.id, 'catch').length) b.appendChild(renderSlot(n.id, 'catch'));
     } else if (n.kind === 'when') {
       b.appendChild(renderSlot(n.id, 'then'));
-    } else if (['do', 'loop', 'otherwise'].includes(n.kind)) {
+    } else if (['do', 'loop', 'otherwise', 'catch', 'finally'].includes(n.kind)) {
       b.appendChild(renderSlot(n.id, 'body'));
-      if (n.kind !== 'otherwise') b.appendChild(el('div', 'gend', 'end'));
+      // a block's CATCH and FINALLY clauses, under its body, before its END
+      if (kids(n.id, 'catch').length) b.appendChild(renderSlot(n.id, 'catch'));
+      if (['do', 'loop'].includes(n.kind)) b.appendChild(el('div', 'gend', 'end'));
     }
     return b;
   }
@@ -235,11 +241,12 @@
         const t = el('div', 'glane'); t.append(el('div', 'glt', 'then'), slotEl(n.id, 'then')); lanes.appendChild(t);
         if (kidsOf(n.id, 'else').length) { const e2 = el('div', 'glane'); e2.append(el('div', 'glt', 'else'), slotEl(n.id, 'else')); lanes.appendChild(e2); }
         b.appendChild(lanes);
-      } else if (n.kind === 'select') { b.append(slotEl(n.id, 'when'), slotEl(n.id, 'otherwise')); }
+      } else if (n.kind === 'select') { b.append(slotEl(n.id, 'when'), slotEl(n.id, 'otherwise'), slotEl(n.id, 'catch')); }
       else if (n.kind === 'when') b.appendChild(slotEl(n.id, 'then'));
-      else if (['do', 'loop', 'otherwise'].includes(n.kind)) {
+      else if (['do', 'loop', 'otherwise', 'catch', 'finally'].includes(n.kind)) {
         b.appendChild(slotEl(n.id, 'body'));
-        if (n.kind !== 'otherwise') b.appendChild(el('div', 'gend', 'end'));
+        b.appendChild(slotEl(n.id, 'catch'));
+        if (['do', 'loop'].includes(n.kind)) b.appendChild(el('div', 'gend', 'end'));
       }
       return b;
     }

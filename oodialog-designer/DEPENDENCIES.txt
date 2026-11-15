@@ -1,10 +1,11 @@
-ooDialog Designer v0.12 -- dependencies
+ooDialog Designer v0.13 -- dependencies
 Architecture: Tom Dyer.  Code: Claude (Opus 5.5).
 
 Model, generator, graph and language support (src/, the Autobuild tests):
 - ooRexx 5.3.0 (native, or ooRexx/WASM 0.2.4 by Josep Maria Blasco)
 - vendor/rexx-parser: Josep Maria Blasco's Rexx Parser, beta 0.7 (refresh
-  20261105), Apache License 2.0, unchanged; its LICENSE, NOTICE and VERSION
+  20261115: CATCH and FINALLY), Apache License 2.0 (ANSI.ErrorText.cls: CPL
+  1.0, its LICENSE-CPL beside it), unchanged; its LICENSE, NOTICE and VERSION
   are beside it.  OodGraph.cls requires "rexx-parser/bin/Rexx.Parser.cls", so
   vendor/ goes on REXX_PATH.  Only the graph (OodGraph.cls, t02) needs it.
 
@@ -42,4 +43,7 @@ The object lines of a bound design (src/OodBoundGraph.cls) use the same
 oorexx_mapped_objects v0.1 closure as a bound run. tests/database_lab_dom.cjs
 needs jsdom 27 (npm install --no-save jsdom@27).
 
-tests/wincheck.rex needs Windows ooDialog: sent to CODEX-PC (REQ-00003595).
+tests/wincheck.rex needs Windows ooDialog; tests/catchcheck.rex needs an
+ooRexx r13514 or later for its CATCH checks.  Both are for CODEX-PC (testing
+only, with Tom Dyer's approval).  The parser itself uses CATCH (r13514+); on
+an older ooRexx it loads and parses, and only its error hints are lost.

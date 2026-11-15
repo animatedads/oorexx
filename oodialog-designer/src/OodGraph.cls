@@ -79,6 +79,16 @@ parseFailed:
       end
       otherwise nop
     end
+    -- CATCH and FINALLY clauses of a DO, LOOP or SELECT (ooRexx r13514+, RFE
+    -- #31): one clause node each, in slot "catch", its instructions its body
+    if ins~isA(.Block.Instruction) then do section over ins~catchSections
+      kind = "catch"
+      if section[1]~isA(.Finally.Clause) then kind = "finally"
+      last = section[1]
+      if section[2]~items > 0 then last = section[2]~lastItem
+      cid = self~addClauseNode(kind, section[1], section[1], last, id, "catch")
+      self~walk(section[2], cid, "body")
+    end
   end
   return
 
@@ -198,13 +208,14 @@ parseFailed:
   rest = lines[n["L2"]]~substr(n["C2"])~strip
   return rest == "" | rest == ";"
 
--- the body a node can take children in: top level, a DO/LOOP, an OTHERWISE
+-- the body a node can take children in: top level, a DO/LOOP, an OTHERWISE,
+-- a CATCH or a FINALLY
 ::method isBody
   expose nodes
   use strict arg parent, slot
   if slot \== "body" then return .false
   if parent = 0 then return .true
-  return wordpos(nodes[parent]["KIND"], "do loop otherwise") > 0
+  return wordpos(nodes[parent]["KIND"], "do loop otherwise catch finally") > 0
 
 -- Where index-th child goes in parent's slot: "line col before|after|line indent"
 -- answers the edit that inserts text there, as [l, c, l, c, replacement-maker]
@@ -227,8 +238,14 @@ parseFailed:
     end
     p = nodes[parent]
     ind = self~indentOf(p["L1"]) || "  "
-    -- before the END line of the DO/LOOP (or after the OTHERWISE header)
-    if p["KIND"] == "otherwise" then return .array~of(p["HL"], p["HC"], p["HL"], p["HC"], "0a"x || self~reindent(text, ind))
+    -- after an OTHERWISE, CATCH or FINALLY header; before the END line of a
+    -- DO/LOOP, or before its first CATCH or FINALLY when it has one
+    if wordpos(p["KIND"], "otherwise catch finally") > 0 then return .array~of(p["HL"], p["HC"], p["HL"], p["HC"], "0a"x || self~reindent(text, ind))
+    cs = self~children(parent, "catch")
+    if cs~items > 0 then do
+      l = nodes[cs[1]]["L1"]
+      return .array~of(l, 1, l, 1, self~reindent(text, ind) || "0a"x)
+    end
     return .array~of(p["L2"], 1, p["L2"], 1, self~reindent(text, ind) || "0a"x)
   end
   if index <= kids~items then do
@@ -265,10 +282,17 @@ parseFailed:
     end
     if minInd = 999 then minInd = 0
   end
+  -- a block (its last line is END): its least indented lines (END, ELSE,
+  -- CATCH, FINALLY) stand at the first line's level; otherwise the later
+  -- lines continue the first, two further in
+  more = "  "
+  if ls~items > 1 then do
+    if ls[ls~items]~strip~word(1)~upper~strip("T", ";") == "END" then more = ""
+  end
   out = ind || ls[1]~strip("L")
   do i = 2 to ls~items
     if ls[i]~strip == "" then out = out || "0a"x
-    else out = out || "0a"x || ind || "  " || ls[i]~substr(minInd + 1)
+    else out = out || "0a"x || ind || more || ls[i]~substr(minInd + 1)
   end
   return out
 
@@ -278,7 +302,7 @@ parseFailed:
   use strict arg id
   n = nodes[id]
   -- a THEN, ELSE or WHEN's instruction cannot just go: the clause needs one
-  if \self~isBody(n["PARENT"], n["SLOT"]), n["KIND"] \== "when", n["KIND"] \== "otherwise" then
+  if \self~isBody(n["PARENT"], n["SLOT"]), wordpos(n["KIND"], "when otherwise catch finally") = 0 then
     return .array~of(n["L1"], n["C1"], n["L2"], n["C2"], "nop")
   if self~startsLine(id) then do
     if self~endsLine(id) then return .array~of(n["L1"], 1, n["L2"] + 1, 1, "")
@@ -362,7 +386,7 @@ parseFailed:
   expose nodes
   use strict arg id, parent, slot, index
   self~checkId(id)
-  if nodes[id]["KIND"] == "when" | nodes[id]["KIND"] == "otherwise" then
+  if wordpos(nodes[id]["KIND"], "when otherwise catch finally") > 0 then
     raise syntax 93.900 array(oodT("err.graph.clause", nodes[id]["KIND"]~upper))
   -- not into itself
   p = parent

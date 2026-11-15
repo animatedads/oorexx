@@ -167,6 +167,7 @@ footer{font-size:11px;color:#56606b;padding:4px 10px;background:#f7f9fb;border-t
 .glane>.gslot{margin-left:0}
 .glt{font:600 10px system-ui,sans-serif;color:#56606b;text-transform:uppercase}
 .k-if{border-left-color:#c26a00}.k-select,.k-when,.k-otherwise{border-left-color:#8a4fbf}
+.k-catch,.k-finally{border-left-color:#b3261e;background:#fdf6f5}
 .k-do,.k-loop{border-left-color:#2f8a4f}.k-assign{border-left-color:#2f6fb3}.k-message{border-left-color:#1f8a99}
 .k-say,.k-call{border-left-color:#7a838d}.k-return,.k-leave,.k-iterate,.k-exit{border-left-color:#a12a1f}
 .k-expose,.k-use{border-left-color:#b9c3ce;background:#f5f7f9}

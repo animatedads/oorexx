@@ -32,6 +32,7 @@ parserFrom = designerExamples"/../rexx-parser"
 call copy parserFrom"/manifest.txt", "site/rexx-parser/manifest.txt"
 call copy parserFrom"/LICENSE", "site/rexx-parser/LICENSE"
 call copy parserFrom"/NOTICE", "site/rexx-parser/NOTICE"
+if stream(parserFrom"/LICENSE-CPL", "c", "query exists") \= "" then call copy parserFrom"/LICENSE-CPL", "site/rexx-parser/LICENSE-CPL"
 do rel over .stream~new(parserFrom"/manifest.txt")~arrayIn
   rel = rel~strip
   if rel == "" then iterate

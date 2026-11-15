@@ -1,4 +1,4 @@
-/* Threads.rex -- an ooDialog program made with the ooDialog Designer 0.7.0
+/* Threads.rex -- an ooDialog program made with the ooDialog Designer 0.13.0
    Design: the ::RESOURCE oodDesign at the end.  The designer writes this
    whole file; what you type is the body of each event method.
    ooDialog Designer -- architecture: Tom Dyer; code: Claude (Opus 5.5). */
@@ -87,7 +87,7 @@ return dlg~execute("SHOWTOP")
   self~lblClock~setText("Time" time() "  (timer thread)")
 
 ::resource oodDesign
-designer version=0.7.0
+designer version=0.13.0
 form name=Threads title="Threads and a timer" w=200 h=104 style=CENTER
 var name=running value=.false
 var name=clicks value=0

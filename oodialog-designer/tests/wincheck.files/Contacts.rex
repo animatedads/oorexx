@@ -1,4 +1,4 @@
-/* Contacts.rex -- an ooDialog program made with the ooDialog Designer 0.7.0
+/* Contacts.rex -- an ooDialog program made with the ooDialog Designer 0.13.0
    Design: the ::RESOURCE oodDesign at the end.  The designer writes this
    whole file; what you type is the body of each event method.
    ooDialog Designer -- architecture: Tom Dyer; code: Claude (Opus 5.5). */
@@ -102,7 +102,7 @@ return dlg~execute("SHOWTOP")
   self~lblInfo~setText("Grid lines:" self~menuBar~isChecked(self~mnuGrid))
 
 ::resource oodDesign
-designer version=0.7.0
+designer version=0.13.0
 form name=Contacts title=Contacts w=220 h=146 style=CENTER
 control type=TAB name=tabMain id=100 x=8 y=6 w=204 h=14 tabs=People|Notes opts=""
 control type=LISTVIEW name=lvPeople id=101 x=8 y=24 w=204 h=90 columns=Name:80|Role:84|Since:30 rows="Mike Cowlishaw;Created Rexx;1979|Rick McGuire;ooRexx interpreter;1988|Mark Miesfeld;ooDialog;2006|Josep Maria Blasco;ooRexx/WASM;2026" exstyles="FULLROWSELECT GRIDLINES" opts="REPORT SHOWSELALWAYS" page=tabMain:1

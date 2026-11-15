@@ -863,6 +863,9 @@
   });
   async function runProgram(src, verb) {
     const name = st.snap.form.name + '.rex';
+    // CATCH and FINALLY on an ooRexx that reads them as commands: refused (OodDesign~catchRefusal)
+    const refusal = String(await rx(() => st.d.catchRefusal()).catch(() => ''));
+    if (refusal) { status(refusal, true); return; }
     $('out').textContent = ''; $('btnRun').disabled = true; $('btnTrace').disabled = true;
     try {
       if (!st.oodFiles) {

@@ -1,9 +1,10 @@
-# ooDialog Designer — v0.12.0
+# ooDialog Designer — v0.13.0
 
 Architecture: Tom Dyer. Code: Claude (Opus 5.5). README written by Claude (Opus 5.5).
 It runs on ooDialog/WASM v0.7.0 (code: Claude (Fable 5.2)) and on Josep Maria
 Blasco's ooRexx/WASM 0.2.4 runtime. The graph view parses event code with Josep
-Maria Blasco's Rexx Parser (beta 0.7, Apache License 2.0), shipped unchanged in
+Maria Blasco's Rexx Parser (beta 0.7, refresh 20261115, with CATCH and
+FINALLY; Apache License 2.0), shipped unchanged in
 `site/rexx-parser/` with its `LICENSE`, `NOTICE` and `VERSION`.
 
 A drag-and-drop designer that writes ooDialog programs in ooRexx. You drop
@@ -189,6 +190,19 @@ one `kind` line; a new code-insertion action is one `action` line.
   listed with those changed since the step before highlighted. While the
   dialog runs, its modal backdrop covers the page; the steps can be walked
   when it ends.
+- **CATCH and FINALLY (v0.13, Rexx Parser 20261115, ooRexx RFE #31):** a
+  DO, LOOP or SELECT's CATCH and FINALLY clauses are drawn under its body,
+  each with its own body that blocks can be dropped into; they are moved
+  with their block, deleted with their instructions, and probed when traced.
+  The palette has *do … catch* and *do … finally*. ooRexx trunk has CATCH
+  since r13514 and no ooRexx has FINALLY yet (2026-11-15), and an older
+  ooRexx reads both words as commands, running every clause. So: the
+  designer refuses to run code with CATCH on an ooRexx before r13514
+  (ooRexx/WASM 0.2.4 is r13268) and code with FINALLY on any; a program
+  that uses CATCH begins with a guard that refuses to start before r13514.
+  Found from the text (`OodDesign~catchWords`); the graph shows the parse.
+  Inserting a block now keeps its shape: its END, CATCH and FINALLY lines
+  stand at its first line's level (they were indented two further).
 - **Strings… (languages):** the texts the user sees, as `::RESOURCE` string
   tables, `::RESOURCE`'s first use. **Make translatable** names the base
   language; from then on each language is a `::RESOURCE strings.<language>`
@@ -383,21 +397,25 @@ a built `site/plugins`, or skips them and says so. t07–t09 start their own
 stand-in servers with node; under native ooRexx (no ADDRESS FETCH) their
 network checks say SKIP, and t08's git-command checks still run.
 
-## State (2026-11-15, v0.12.0)
+## State (2026-11-15, v0.13.0)
 
-- `tests/t01_model.rex`: 69 of 69 checks pass under ooRexx/WASM in Node. They
+- `tests/t01_model.rex`: 78 of 78 checks pass under ooRexx/WASM in Node. They
   cover generation, a byte-identical round trip through the `::RESOURCE`,
   background and timer threads, renames that rewrite `self~old` (and move a
   tab's pages), fifteen refusals, the tab page handler, list-view columns and
   rows, the menu bar, tree depth and expansion, track bar and date picker,
-  actions, and `module_version`.
-- `tests/t02_graph.rex`: 39 of 39 checks pass. They cover block kinds,
+  actions, `module_version`, and (v0.13) CATCH and FINALLY found, the
+  program's guard, and the refusals.
+- `tests/t02_graph.rex`: 50 of 50 checks pass. They cover block kinds,
   nesting and labels; insert, delete, move (within and between slots),
   replace and wrap; the refusals (into a THEN's single instruction, a block
   into itself, a WHEN or OTHERWISE out of its SELECT, a SELECT's last WHEN);
   `nop` left behind; the probes; the traced Calculator (every method on
   the line it has untraced); the same code run traced and untraced gives
-  the same SIGL and RESULT; a bad parse.
+  the same SIGL and RESULT; (v0.13) CATCH and FINALLY clauses and their
+  bodies, insert before a DO's first CATCH and into a FINALLY, delete and
+  move, probes, a LEAVE out of FINALLY refused by the parser, and inserted
+  blocks keeping their shape; a bad parse.
 - `tests/t03_nls.rex`: 55 of 55 checks pass. They cover the keys; German set,
   caseless, and the base column setting the property; event strings and
   their refusals; the program (`self~nls`, the tables, the entry field left
@@ -465,7 +483,7 @@ network checks say SKIP, and t08's git-command checks still run.
     button naming no bound list, no SINGLESEL, Add without row fields);
   - an unbound design written as before;
   - German.
-- `tools/dztest.py`: 18 of 18 scenarios pass in headless Chromium:
+- `tools/dztest.py`: 19 of 19 scenarios pass in headless Chromium:
   1. **hand:** a dialog built with the mouse (drop, rename, styles,
      variable, drag-an-action, move and resize), then run. The event code sees
      the variable and the field, and INIT's text survives `execute`.
@@ -540,11 +558,21 @@ network checks say SKIP, and t08's git-command checks still run.
       its LINK part); five boxes and per_addr as a junction; the Person
       object outlined; ON DELETE labels; a box selects its table; text the
       user typed in the object lines kept.
+  19. **catch (v0.13):** *do … finally* dragged from the palette is drawn
+      with its CATCH and FINALLY; a SAY dropped into the FINALLY body; CATCH
+      explains itself; the program starts with its guard; Run refused,
+      saying why.
 - `tests/database_lab_dom.cjs` (ChatGPT): 24 interaction checks pass
   (`npm install --no-save jsdom@27` first).
 - `tests/gen/Calculator.rex`, `Contacts.rex` and `Gadgets.rex` (generated)
   also pass the ooDialog/WASM harness, `oodtest.py`, with their `.steps`
   files.
+- `tests/catchcheck.rex` (v0.13) checks that an ooRexx runs CATCH as the
+  graph and the guard expect: a SYNTAX condition caught with its object, the
+  matching CATCH chosen, an unnamed condition going out; it reports what a
+  CATCH on a LOOP does. FINALLY's checks run only when asked for
+  (`rexx catchcheck.rex FINALLY`). Before r13514 it says SKIP. Written from
+  the RFE and the parser's tests, not yet run on an ooRexx with CATCH.
 - `tests/wincheck.rex` is the Windows ooDialog check: it loads the
   Calculator, Threads, Contacts and ContactsDE (English and German) examples, shows each with
   `executeAsync`, presses their buttons with `Button~click` (BM_CLICK) and

@@ -82,7 +82,27 @@ call check "actions name the control", acts~pos("self~lcd~setText(") > 0
 call check "list actions for a list only", acts~pos("~add(") == 0
 
 -- 8. versions
-call check "module_version", .OodDesign~module_version == "0.12.0" & d~module_version == "0.12.0"
+call check "module_version", .OodDesign~module_version == "0.13.0" & d~module_version == "0.13.0"
+
+-- CATCH and FINALLY: found in the code, guarded in the program, refused on an older ooRexx
+k = .calcDesign~build
+call check "no CATCH: no guard, may run", \k~usesCatch & k~generate~pos("RexxInfo~revision") = 0 & k~catchRefusal == ""
+k~setEventCode("bEnter", "CLICKED", "catch = 1" || "0a"x || "finally: nop")
+call check "  catch = 1 and a label are not CATCH clauses", \k~usesCatch
+k~setEventCode("bEnter", "CLICKED", "do" || "0a"x || "  self~enter" || "0a"x || "catch co = syntax" || "0a"x || "  say co~message" || "0a"x || "end")
+kp = k~generate
+call check "a CATCH clause found", k~usesCatch
+call check "  the program refuses to start before r13514", kp~pos("if .RexxInfo~revision < 13514 then do") > 0 & -
+  kp~pos('call errorDialog "This program uses CATCH or FINALLY: it needs ooRexx r13514 or later (this is r" || .RexxInfo~revision || ")."') > 0
+call check "  the guard comes before the dialog is made", kp~pos("RexxInfo~revision") < kp~pos("dlg = .Calculator~new")
+call check "  and the round trip keeps the code", .OodDesign~fromSource(kp)~generate == kp
+if .RexxInfo~revision < 13514 then
+  call check "  refused to run on this ooRexx (r" || .RexxInfo~revision || ")", k~catchRefusal~pos("r13514") > 0
+else
+  call check "  allowed on this ooRexx (r" || .RexxInfo~revision || ")", k~catchRefusal == ""
+k~setEventCode("bEnter", "CLICKED", "self~enter" || "0a"x || "  FINALLY")
+call check "  FINALLY alone too, any case", k~catchWords == "FINALLY"
+call check "  FINALLY refused on every ooRexx (none runs it yet)", k~catchRefusal~pos("FINALLY") > 0 & k~catchRefusal~pos("r13514") > 0
 call check "module_lastChanged", .OodCatalog~module_lastChanged \== ""
 
 -- 9. v0.2: tab pages, list view, menu bar

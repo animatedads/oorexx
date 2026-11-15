@@ -714,7 +714,32 @@ def sc_labgraph(pg):
     expect('text the user typed is kept', pg.input_value('#dbObjectLines'), 'OBJECT\tMINE\tENT.com')
 
 
-SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views, 'gadgets': sc_gadgets, 'libraries': sc_libraries, 'graph': sc_graph, 'trace': sc_trace, 'languages': sc_languages, 'ui_de': sc_ui_de, 'plugins': sc_plugins, 'assist': sc_assist, 'source': sc_source, 'bound': sc_bound, 'overview': sc_overview, 'labgraph': sc_labgraph}
+def sc_catch(pg):
+    """CATCH and FINALLY (ooRexx r13514+, Rexx Parser 20261115): a "do … finally"
+    block dragged from the palette is drawn with its CATCH and FINALLY lanes;
+    a block goes into the FINALLY body; the program guards against an older
+    ooRexx, and Run refuses: FINALLY is in no ooRexx yet (CATCH alone would
+    be refused too: ooRexx/WASM 0.2.4 is r13268)."""
+    ready(pg); open_example(pg, 'examples/Calculator.rex')
+    pick_event(pg, 'bClear', 'CLICKED'); wait_graph(pg)
+    pg.drag_and_drop('#gPalette .gpal:text-is("do … finally")', '#graph .gdrop[data-parent="0"][data-index="1"]'); wait_graph(pg)
+    expect('a DO with a CATCH and a FINALLY drawn', [blocks(pg, 'do'), blocks(pg, 'catch'), blocks(pg, 'finally')], [1, 1, 1])
+    expect_in('  the CATCH shows its condition', 'catch co = syntax', pg.inner_text('#graph .gb.k-catch'))
+    fid = pg.get_attribute('#graph .gb.k-finally', 'data-id')
+    pg.drag_and_drop('#gPalette .gpal:text-is("say")', f'#graph .gdrop[data-parent="{fid}"][data-index="1"]'); wait_graph(pg)
+    lines = [l.strip() for l in code_lines(pg)]
+    expect('a block dropped into the FINALLY body', lines[lines.index('finally') + 1], 'say "text"')
+    pg.locator('#graph .gb.k-catch > .gh').click(); settle(pg)
+    expect_in('  CATCH explains itself', 'CATCH', pg.inner_text('#gExplain'))
+    pg.screenshot(path=str(SHOTS / 'catch_graph.png'))
+    src = program_text(pg)
+    expect_in('the program refuses an older ooRexx', 'if .RexxInfo~revision < 13514 then do', src)
+    pg.click('#btnRun'); settle(pg, 800)
+    expect_in('Run refused (FINALLY: no ooRexx runs it yet), saying why', 'FINALLY', status(pg))
+    expect('  and nothing ran', pg.locator('.ood-dlg').count(), 0)
+
+
+SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views, 'gadgets': sc_gadgets, 'libraries': sc_libraries, 'graph': sc_graph, 'trace': sc_trace, 'languages': sc_languages, 'ui_de': sc_ui_de, 'plugins': sc_plugins, 'assist': sc_assist, 'source': sc_source, 'bound': sc_bound, 'overview': sc_overview, 'labgraph': sc_labgraph, 'catch': sc_catch}
 def main():
     names = sys.argv[1:] or list(SCENARIOS)
     srv = subprocess.Popen(['node', str(SITE / 'serve.mjs'), str(SITE), '--port', str(PORT)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

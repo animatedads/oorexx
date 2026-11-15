@@ -1,4 +1,4 @@
-/* ContactsDE.rex -- an ooDialog program made with the ooDialog Designer 0.7.0
+/* ContactsDE.rex -- an ooDialog program made with the ooDialog Designer 0.13.0
    Design: the ::RESOURCE oodDesign at the end.  The designer writes this
    whole file; what you type is the body of each event method.
    ooDialog Designer -- architecture: Tom Dyer; code: Claude (Opus 5.5). */
@@ -243,7 +243,7 @@ mnuGrid.text = &Gitterlinien
 msg.count = %1 Personen
 ::END
 ::resource oodDesign
-designer version=0.7.0
+designer version=0.13.0
 form name=ContactsDE title=Contacts w=220 h=146 style=CENTER
 languages list="en de"
 control type=TAB name=tabMain id=100 x=8 y=6 w=204 h=14 tabs=People|Notes opts=""

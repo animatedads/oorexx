@@ -21,11 +21,11 @@
 
 ::class OodModule public mixinclass Object
 ::method module_version class
-  return "0.12.0"
+  return "0.13.0"
 ::method module_lastChanged class
   return "2026-11-15"
 ::method module_version
-  return "0.12.0"
+  return "0.13.0"
 ::method module_lastChanged
   return "2026-11-15"
 
@@ -860,6 +860,57 @@
   end
   return out~makeString("L", "0a"x)
 
+-- The first ooRexx revision with CATCH and FINALLY (RFE #31).
+::method catchRevision class
+  return 13514
+
+-- Does any code here use CATCH or FINALLY?
+::method usesCatch
+  return self~catchWords \== ""
+
+-- Which of CATCH and FINALLY the code uses ("", "CATCH", "FINALLY" or both):
+-- a clause starting with either word, not an assignment to a variable of
+-- that name (catch = 1) nor a label.  Read from the text, so the model needs
+-- no parser: the graph shows the parse itself.
+::method catchWords
+  expose events methods
+  found = ""
+  pieces = .array~new
+  do e over events~allItems
+    pieces~append(e["CODE"])
+  end
+  do m over methods
+    pieces~append(m["CODE"])
+  end
+  do code over pieces
+    do line over code~changeStr("0d"x, "")~makeArray("0a"x)
+      do clause over line~makeArray(";")
+        c = clause~strip("B", " " || "09"x)
+        do kw over .array~of("CATCH", "FINALLY")
+          n = kw~length
+          if c~left(n)~upper \== kw then iterate
+          if c~length > n, verify(c~substr(n + 1, 1), " " || "09"x) > 0 then iterate   -- catcher, finally2
+          after = c~substr(n + 1)~strip("B", " " || "09"x)
+          if after~left(1) == "=" | after~left(1) == ":" then iterate                 -- catch = 1
+          if wordpos(kw, found) = 0 then found = (found kw)~strip
+        end
+      end
+    end
+  end
+  return found
+
+-- "" when the code may run here; otherwise why not.  CATCH needs ooRexx
+-- r13514 or later (an older one reads it as a command and runs every
+-- clause).  FINALLY is in no ooRexx yet (2026-11-15: trunk has CATCH since
+-- r13514, not FINALLY): the Rexx Parser knows it, so the graph draws it,
+-- but nothing can run it.
+::method catchRefusal
+  w = self~catchWords
+  if wordpos("FINALLY", w) > 0 then return oodT("err.finally.runtime")
+  if w == "" then return ""
+  if .RexxInfo~revision >= .OodDesign~catchRevision then return ""
+  return oodT("err.catch.runtime", .OodDesign~catchRevision, .RexxInfo~revision)
+
 ::method getEventCode
   expose events
   use strict arg name, event
@@ -1481,6 +1532,13 @@
   out~append("   Design: the ::RESOURCE oodDesign at the end.  The designer writes this")
   out~append("   whole file; what you type is the body of each event method.")
   out~append("   ooDialog Designer -- architecture: Tom Dyer; code: Claude (Opus 5.5). */")
+  if self~usesCatch then do
+    out~append("-- CATCH needs ooRexx r" || .OodDesign~catchRevision "or later: an older one reads it as a command")
+    out~append("if .RexxInfo~revision <" .OodDesign~catchRevision "then do")
+    out~append('  call errorDialog "This program uses CATCH or FINALLY: it needs ooRexx r' || .OodDesign~catchRevision 'or later (this is r" || .RexxInfo~revision || ")."')
+    out~append("  return 1")
+    out~append("end")
+  end
   bound = self~isBound
   if bound then do
     if nls then out~append("parse arg key lang                 -- the key of the" form["OBJECT"] "to edit; the language: de, fr_CA, ...")

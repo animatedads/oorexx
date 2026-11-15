@@ -95,6 +95,33 @@ call check "traced program: every method on the line it has untraced", -
   lineOf(t, "::method operate") = lineOf(n, "::method operate") & lineOf(t, "::method on_bEnter_clicked") = lineOf(n, "::method on_bEnter_clicked") & -
   lineOf(t, "::resource oodDesign") - lineOf(n, "::resource oodDesign") = .OodTraceFilter~new~extraLines~items
 call check "a traced run sees the SIGL and RESULT an untraced run sees", probedRunKeeps()
+-- CATCH and FINALLY (Rexx Parser 20261115; ooRexx r13514+ to run them)
+cc = 'do' || nl || '  x = 1 + y' || nl || 'catch co = syntax' || nl || '  say co~code' || nl || -
+     'catch error failure' || nl || '  nop' || nl || 'finally' || nl || '  say "done"' || nl || 'end'
+cg = .OodGraph~new(cc)
+call check "CATCH and FINALLY parse", cg~error == ""
+call check "  a clause node each, in the DO's catch slot", kinds(cg) == "do assign catch say catch nop finally say" & -
+  cg~children(1, "catch")~items = 3 & cg~nodes[3]["SLOT"] == "catch"
+call check "  each clause's instructions are its body", cg~children(3, "body")~items = 1 & cg~children(7, "body")~items = 1
+ce = 'do' || nl || 'catch syntax' || nl || '  nop' || nl || 'end'
+ci = .OodGraph~new(ce)~insertCode(1, "body", 1, "say 1")
+call check "  into an empty DO body: before its first CATCH, not into it", ci~pos("do" || nl || "  say 1" || nl || "catch syntax") = 1
+c2 = cg~insertCode(7, "body", 2, 'say "and"')
+call check "  into a FINALLY body", .OodGraph~new(c2)~error == "" & c2~pos('  say "done"' || nl || '  say "and"' || nl || 'end') > 0
+c3 = cg~deleteCode(5)
+call check "  a CATCH deleted with its instructions", .OodGraph~new(c3)~error == "" & c3~pos("catch error") = 0 & c3~pos("nop") = 0
+call refuses "  a CATCH cannot be moved out of its block", "cg~moveCode(3, 0, 'body', 1)"
+cp = cg~probeCode("m")
+call check "  probes in CATCH and FINALLY bodies, and the probed code parses", .OodGraph~new(cp)~error == "" & -
+  cp~pos('.OodTraceProbe~step("m", 4, "ui", .context~variables); say co~code') > 0 & cp~pos('.OodTraceProbe~step("m", 8, "ui", .context~variables); say "done"') > 0
+call check "  LEAVE out of a FINALLY is the parser's error", .OodGraph~new('do' || nl || 'finally' || nl || '  leave' || nl || 'end')~error \== ""
+-- a block inserted keeps its shape: END, CATCH and FINALLY at its first line's level
+tb = 'do' || nl || '  nop' || nl || 'catch co = syntax' || nl || '  say co~message' || nl || 'end'
+t1 = .OodGraph~new('say 1')~insertCode(0, "body", 1, tb)
+call check "a block inserted at the top: its lines as written", t1 == tb || nl || 'say 1'
+t2 = .OodGraph~new('do' || nl || '  say 1' || nl || 'end')~insertCode(1, "body", 2, tb)
+call check "  inside a DO: two further in, END and CATCH with DO", -
+  t2 == 'do' || nl || '  say 1' || nl || '  do' || nl || '    nop' || nl || '  catch co = syntax' || nl || '    say co~message' || nl || '  end' || nl || 'end'
 call check "a bad parse is reported", .OodGraph~new("if then")~error \== ""
 
 say "t02_graph:" checks - fails "of" checks "checks passed"
@@ -144,7 +171,7 @@ check: procedure expose fails checks
   end
   return
 
-refuses: procedure expose fails checks g code
+refuses: procedure expose fails checks g code cg
   use arg rfLabel, rfCode
   checks = checks + 1
   signal on syntax name rfRefused

@@ -58,6 +58,8 @@ end
 do f over .array~of("LICENSE", "NOTICE", "VERSION")
   call copy rexxParser"/"f, "site/rexx-parser/"f
 end
+-- since 20261115 its NOTICE names files under the CPL 1.0 (ANSI.ErrorText.cls): its LICENSE-CPL with them
+if stream(rexxParser"/LICENSE-CPL", "c", "query exists") \= "" then call copy rexxParser"/LICENSE-CPL", "site/rexx-parser/LICENSE-CPL"
 call write "site/rexx-parser/manifest.txt", manifest~makeString("L", "0a"x) || "0a"x
 -- the Libraries panel and what it runs on: the Object Editor's reflection
 -- and the library providers, with the Alchemy index
