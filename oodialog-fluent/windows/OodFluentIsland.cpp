@@ -2,11 +2,20 @@
 // Windows App SDK 2.6 WinUI 3 proof candidate; BUILD qualification != RUN qualification.
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <objidl.h>
+#include <combaseapi.h>
+#ifdef GetCurrentTime
+#undef GetCurrentTime
+#endif
 #include <winrt/base.h>
+#include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Microsoft.UI.Dispatching.h>
+#include <winrt/Microsoft.UI.Content.h>
 #include <winrt/Microsoft.UI.Interop.h>
 #include <winrt/Microsoft.UI.Xaml.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
+#include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Microsoft.UI.Xaml.Hosting.h>
 #include <winrt/Windows.Graphics.h>
 #include "OodFluentIsland.h"
