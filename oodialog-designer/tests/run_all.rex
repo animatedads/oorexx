@@ -9,8 +9,8 @@
      PACKAGE_ROOT/vendor (the Rexx Parser, for t02).  t06 to t09 need the
      plugins laid out with the estate files they use: with ESTATE_PACKAGES
      set (the estate's packages/), tools/plugins.rex lays them out in the
-     scratch directory; else the built site/plugins is used; else they are
-     skipped, and say so.  For t07 to t09 this adds the plugin's paths (plugins/index.txt) to REXX_PATH, since ooRexx
+     scratch directory (if that fails, they fail); else the built
+     site/plugins is used; else they are skipped, and say so.  For t07 to t09 this adds the plugin's paths (plugins/index.txt) to REXX_PATH, since ooRexx
      reads REXX_PATH only as it starts.
    Exit: the number of tests that failed.
 
@@ -42,7 +42,10 @@ if estate \== "" then do
   say "run_all: plugins laid out from" estate
   address system 'rexx "'root'/tools/plugins.rex" "'root'" "'estate'" "'scratch'/plugins" > "'scratch'/plugins.log" 2>&1'
   if rc = 0 then plugins = scratch"/plugins"
-  else say "run_all: tools/plugins.rex failed ("rc"): see" scratch"/plugins.log"
+  else do
+    say "run_all: tools/plugins.rex failed ("rc"): see" scratch"/plugins.log"
+    plugins = "FAILED"            -- asked for, and not there: t06 to t09 fail
+  end
 end
 else if SysFileExists(root"/site/plugins/index.txt") then plugins = root"/site/plugins"
 if plugins == "" then say "run_all: no plugins laid out (ESTATE_PACKAGES, or tools/build.rex): t06 to t09 are skipped"
@@ -55,7 +58,7 @@ needs["T08_GIT"] = plugins
 needs["T09_SSC"] = plugins
 -- REXX_PATH entries a test needs beyond the caller's
 paths = .directory~new
-if plugins \== "" then do
+if plugins \== "" & plugins \== "FAILED" then do
   paths["T07_ASSIST"] = pluginPaths(root, plugins, "assist")
   paths["T08_GIT"] = pluginPaths(root, plugins, "git")
   paths["T09_SSC"] = pluginPaths(root, plugins, "ssc")
@@ -66,6 +69,11 @@ do t over tests
   file = root"/tests/"t".rex"
   if \SysFileExists(file) then do
     say "run_all: MISSING" t
+    failed~append(t)
+    iterate
+  end
+  if needs~hasIndex(t~upper) & needs[t~upper] == "FAILED" then do
+    say "run_all: FAIL" t "-- the plugins could not be laid out"
     failed~append(t)
     iterate
   end
