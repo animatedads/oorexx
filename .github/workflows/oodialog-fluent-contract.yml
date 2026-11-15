@@ -97,6 +97,78 @@ jobs:
           $results | ForEach-Object { Write-Output $_ }
           Write-Output "SUPPORTED_RUNTIME_FAILURES=$supportedFailures DIAGNOSTIC_UNQUALIFIED_FAILURES=$diagnosticFailures"
           if ($supportedFailures -ne 0) { throw "$supportedFailures supported Windows runtime case(s) failed" }
+      - name: Probe real ooDialog Rexx session on Windows
+        # Exploratory until the downloaded ooRexx runtime and native ooDialog
+        # binding are independently verified. This step must not silently be
+        # counted as a passing supported-set gate.
+        continue-on-error: true
+        shell: pwsh
+        timeout-minutes: 5
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = 'https://sourceforge.net/projects/oorexx/files/oorexx/5.2.0/portable/oorexx-5.2.0-13156.windows.x86_64-portable-release.zip/download'
+          $archive = Join-Path $env:RUNNER_TEMP 'oorexx-5.2.0-portable.zip'
+          $unpack = Join-Path $env:RUNNER_TEMP 'oorexx-portable'
+          Write-Output 'REXX_PROBE_STAGE=DOWNLOAD_PORTABLE_5_2'
+          Invoke-WebRequest -Uri $url -OutFile $archive -MaximumRedirection 10 -TimeoutSec 100
+          if ((Get-Item $archive).Length -lt 5000000) { throw 'Invalid or incomplete ooRexx portable archive' }
+          Expand-Archive -Path $archive -DestinationPath $unpack -Force
+          $rexx = Get-ChildItem $unpack -Recurse -File -Filter 'rexx.exe' | Select-Object -First 1
+          $dialogClass = Get-ChildItem $unpack -Recurse -File -Filter 'ooDialog.cls' | Select-Object -First 1
+          $dialogDll = Get-ChildItem $unpack -Recurse -File -Filter 'oodialog.dll' | Select-Object -First 1
+          if (-not $rexx -or -not $dialogClass -or -not $dialogDll) {
+            throw "Portable archive missing component(s): rexx=$([bool]$rexx), ooDialog.cls=$([bool]$dialogClass), oodialog.dll=$([bool]$dialogDll)"
+          }
+          Write-Output "REXX_PROBE_PATH=$($rexx.FullName)"
+          Write-Output "OODIALOG_CLASS=$($dialogClass.FullName)"
+          Write-Output "OODIALOG_DLL=$($dialogDll.FullName)"
+          $binary = (Resolve-Path 'oodialog-fluent/windows/x64/Release').Path
+          $rexxSources = (Resolve-Path 'oodialog-fluent/rexx').Path
+          $env:PATH = "$binary;$($rexx.DirectoryName);$($dialogDll.DirectoryName);$env:PATH"
+          $env:REXX_PATH = "$rexxSources;$($dialogClass.DirectoryName);$env:REXX_PATH"
+          $catalogue = (Resolve-Path 'oodialog-fluent/catalogue/controls.tsv').Path
+          $script = (Resolve-Path 'oodialog-fluent/rexx/FluentUserDialogSmoke.rex').Path
+          $stdout = Join-Path $binary 'rexx-oodialog-stdout.txt'
+          $stderr = Join-Path $binary 'rexx-oodialog-stderr.txt'
+          Add-Type -TypeDefinition @'
+          using System;
+          using System.Runtime.InteropServices;
+          public static class OodfDialogHarness {
+              [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+              public static extern IntPtr FindWindow(string className, string windowName);
+              [DllImport("user32.dll")]
+              public static extern bool PostMessage(IntPtr window, uint message, IntPtr wp, IntPtr lp);
+          }
+          '@
+          Write-Output 'REXX_PROBE_STAGE=START_USER_DIALOG'
+          $process = Start-Process -FilePath $rexx.FullName -ArgumentList "`"$script`" `"$catalogue`"" -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          $posted = $false
+          for ($i = 0; $i -lt 80; $i++) {
+            $process.Refresh()
+            if ($process.HasExited) { break }
+            $window = [OodfDialogHarness]::FindWindow($null, 'OodFluent ooDialog Runtime Smoke')
+            if ($window -ne [IntPtr]::Zero) {
+              $posted = [OodfDialogHarness]::PostMessage($window, 0x111, [IntPtr]1, [IntPtr]::Zero)
+              if ($posted) { break }
+            }
+            Start-Sleep -Milliseconds 250
+          }
+          if (-not $process.WaitForExit(20000)) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            Write-Output 'REXX_PROBE_TIMEOUT'
+          }
+          $process.Refresh()
+          Write-Output "REXX_PROBE_POSTED_OK=$posted REXX_PROBE_EXIT=$($process.ExitCode)"
+          $output = if (Test-Path $stdout) { Get-Content $stdout -Raw } else { '' }
+          Write-Output $output
+          if (Test-Path $stderr) { Get-Content $stderr | ForEach-Object { Write-Output "REXX_STDERR $_" } }
+          if ($process.ExitCode -ne 0 -or -not $posted -or
+              $output -notmatch 'REXX_SMOKE_STAGE=CONTROLS_READY' -or
+              $output -notmatch 'REXX_SMOKE_STAGE=FLUENT_CLOSED' -or
+              $output -notmatch 'REXX_SMOKE_PASS=1') {
+            throw 'Real ooDialog live-session probe is not yet qualified'
+          }
+          Write-Output 'REXX_PROBE_PASS=1'
       - name: Inspect Windows crash dump with installed debugger
         if: always()
         continue-on-error: true
@@ -128,5 +200,6 @@ jobs:
             oodialog-fluent/windows/x64/Release/runtime-*-stdout.txt
             oodialog-fluent/windows/x64/Release/runtime-*-stderr.txt
             oodialog-fluent/windows/x64/Release/runtime-*.dmp
+            oodialog-fluent/windows/x64/Release/rexx-oodialog-*.txt
           if-no-files-found: error
           retention-days: 7
