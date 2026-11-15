@@ -3,6 +3,8 @@
 /* CI presses the ordinary ooDialog IDOK button to exercise teardown.  */
 
 parse arg catalogue
+/* rexx.exe receives the command's quoted argument as Rexx text. */
+catalogue = strip(catalogue, 'B', '"')
 if catalogue == '' then do
   say 'REXX_SMOKE_ERROR=missing catalogue path'
   exit 2

@@ -127,9 +127,13 @@ jobs:
           $candidate = if (Test-Path $archive) { $archive } else { $incoming }
           $bytes = [IO.File]::ReadAllBytes($candidate)
           $signature = [Convert]::ToHexString($bytes[0..([Math]::Min(3, $bytes.Length - 1))])
-          Write-Output "REXX_DOWNLOAD_BYTES=$($bytes.Length) SIGNATURE=$signature SHA256=$((Get-FileHash $candidate -Algorithm SHA256).Hash)"
+          $sha256 = (Get-FileHash $candidate -Algorithm SHA256).Hash
+          Write-Output "REXX_DOWNLOAD_BYTES=$($bytes.Length) SIGNATURE=$signature SHA256=$sha256"
           if ($bytes.Length -lt 5000000 -or -not $signature.StartsWith('504B0304')) {
             throw 'Invalid or incomplete ooRexx portable ZIP from SourceForge'
+          }
+          if ($sha256 -ne 'D7EA5B40F0F889D0B307BBC217FE9FB36BC3E3FD0688A829668CE681A350203E') {
+            throw 'ooRexx archive SHA-256 does not match pinned official 5.2.0 binary'
           }
           $zipCheck = [IO.Compression.ZipFile]::OpenRead($candidate)
           try {
