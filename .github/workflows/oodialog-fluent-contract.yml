@@ -155,6 +155,7 @@ jobs:
           $rexxSources = (Resolve-Path 'oodialog-fluent/rexx').Path
           $env:PATH = "$binary;$($rexx.DirectoryName);$($dialogDll.DirectoryName);$env:PATH"
           $env:REXX_PATH = "$rexxSources;$($dialogClass.DirectoryName);$env:REXX_PATH"
+          $env:OODF_LIFECYCLE_TRACE = '1'
           $catalogue = (Resolve-Path 'oodialog-fluent/catalogue/controls.tsv').Path
           $script = (Resolve-Path 'oodialog-fluent/rexx/FluentUserDialogSmoke.rex').Path
           $stdout = Join-Path $binary 'rexx-oodialog-stdout.txt'

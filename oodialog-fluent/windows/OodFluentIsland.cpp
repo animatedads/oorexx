@@ -97,6 +97,17 @@ struct OodfWinHost {
 
     explicit OodfWinHost(HWND parent, OodfSession *session)
         : uiThread(GetCurrentThreadId()), parentWindow(parent), model(session) {
+        const DWORD parentThread = GetWindowThreadProcessId(parentWindow, nullptr);
+        if (GetEnvironmentVariableA("OODF_LIFECYCLE_TRACE", nullptr, 0)) {
+            fprintf(stderr, "HOST_THREADS caller=%lu parent=%lu\n",
+                    static_cast<unsigned long>(uiThread), static_cast<unsigned long>(parentThread));
+            fflush(stderr);
+        }
+        if (parentThread != uiThread) {
+            lifecycleTrace("WRONG_HWND_OWNER_THREAD");
+            winrt::throw_hresult(RPC_E_WRONG_THREAD);
+        }
+        lifecycleTrace("APARTMENT_BEGIN");
         APTTYPE apartment{};
         APTTYPEQUALIFIER qualifier{};
         const HRESULT apartmentStatus = CoGetApartmentType(&apartment, &qualifier);
@@ -108,15 +119,26 @@ struct OodfWinHost {
             if (apartment != APTTYPE_STA && apartment != APTTYPE_MAINSTA)
                 winrt::throw_hresult(RPC_E_WRONG_THREAD);
         }
+        lifecycleTrace("APARTMENT_DONE");
+        lifecycleTrace("BOOTSTRAP_BEGIN");
         bootstrapScope.initialize();
+        lifecycleTrace("BOOTSTRAP_DONE");
+        lifecycleTrace("DISPATCHER_BEGIN");
         if (!ui::Dispatching::DispatcherQueue::GetForCurrentThread())
             queue = ui::Dispatching::DispatcherQueueController::CreateOnCurrentThread();
+        lifecycleTrace("DISPATCHER_DONE");
+        lifecycleTrace("XAML_MANAGER_BEGIN");
         manager = hosting::WindowsXamlManager::InitializeForCurrentThread();
+        lifecycleTrace("XAML_MANAGER_DONE");
+        lifecycleTrace("ISLAND_BEGIN");
         island = hosting::DesktopWindowXamlSource{};
         island.Initialize(ui::GetWindowIdFromWindow(parent));
+        lifecycleTrace("ISLAND_DONE");
+        lifecycleTrace("ROOT_BEGIN");
         root = controls::StackPanel{};
         root.Spacing(8.0);
         island.Content(root);
+        lifecycleTrace("ROOT_DONE");
     }
 
     ~OodfWinHost() {
