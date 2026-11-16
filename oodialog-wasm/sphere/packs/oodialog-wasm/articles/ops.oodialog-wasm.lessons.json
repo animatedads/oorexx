@@ -1,7 +1,7 @@
 {
   "kind": "article",
   "id": "ops.oodialog-wasm.lessons",
-  "version": "0.4",
+  "version": "0.5",
   "sphere": "oodialog-wasm",
   "title": "Lessons from the port: faults made and how each is now prevented",
   "summary": "Each lesson is a fault that happened in this work, its cause, and the rule that prevents it. They are here so that the next task does not repeat them.",
@@ -14,6 +14,9 @@
   ],
   "lessons": [
     "A build was pushed with a failing test. Cause: the last run's result was not read. Rule: read every summary line on the final build before the commit.",
+    "The probe was not run for three releases. In that time four faults sat in examples the sweep called shows; one put a tab control's pages at the dialog's corner. Rule: run the probe on every release, not only the sweep.",
+    "A test of this project called calcDisplayRect with an empty rectangle. Windows programs give it the tab's windowRect. The test passed and the Windows idiom failed. Rule: a test of this project uses the calls in the form the upstream examples use.",
+    "A person with a real browser found in five minutes that the menu sample showed nothing when its items were chosen, and that typing into the calculator did nothing. The second is upstream's own behaviour: calculator.rex has no keyboard code and a read-only display. Rule: a sample must show the result of every action it offers; and when a report differs from upstream's code, read upstream's code before changing the port.",
     "msSleep was changed to handle events on any thread. An event method that waits for an animation thread could then run inside that thread's own sleep and wait for ever. Rule: only the thread that takes the page's events may handle events while it sleeps.",
     "The harness ignored a step it did not know, so a misspelt step passed. Rule: an unknown step fails.",
     "The first sweep counted message boxes as dialogs and ran examples from the wrong directory. Rule: each example runs from its own directory; a message box has its own verdict.",
@@ -31,22 +34,22 @@
   ],
   "provenance": [
     {
-      "artifact": "oodialog-wasm-a8690d6.zip",
-      "sha256": "51d32f29a2c0fc5cdeaadf4464477d88fdecdeee6038229e869fa4c23ed40ccc",
+      "artifact": "oodialog-wasm-7a580c2.zip",
+      "sha256": "975a41c6e62fb1f8fc177e741a60777797c5f5562173da9dd26379f26c33fadb",
       "member": "oodialog-wasm/src/oodWeb.cls",
       "line_start": 526,
       "line_end": 531,
       "claim": "onPumpThread: the rule that came from the msSleep race.",
-      "note": "git archive of animatedads/oorexx commit a8690d6 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 7a580c2 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-a8690d6.zip",
-      "sha256": "51d32f29a2c0fc5cdeaadf4464477d88fdecdeee6038229e869fa4c23ed40ccc",
+      "artifact": "oodialog-wasm-7a580c2.zip",
+      "sha256": "975a41c6e62fb1f8fc177e741a60777797c5f5562173da9dd26379f26c33fadb",
       "member": "oodialog-wasm/README.md",
-      "line_start": 167,
-      "line_end": 182,
+      "line_start": 174,
+      "line_end": 189,
       "claim": "ResizingAdmin was not ported until v0.17.0.",
-      "note": "git archive of animatedads/oorexx commit a8690d6 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 7a580c2 (branch oodialog-wasm)"
     }
   ]
 }

@@ -1,7 +1,7 @@
 {
   "kind": "article",
   "id": "ref.oodialog-wasm.harness",
-  "version": "0.4",
+  "version": "0.5",
   "sphere": "oodialog-wasm",
   "title": "The test harness: test files, steps, the sweep and the probe",
   "summary": "tools/oodtest.py runs a Rexx program in headless Chromium, drives the page with steps, and compares the program's output. It also has two survey modes over all upstream examples.",
@@ -40,22 +40,22 @@
   ],
   "provenance": [
     {
-      "artifact": "oodialog-wasm-a8690d6.zip",
-      "sha256": "51d32f29a2c0fc5cdeaadf4464477d88fdecdeee6038229e869fa4c23ed40ccc",
+      "artifact": "oodialog-wasm-7a580c2.zip",
+      "sha256": "975a41c6e62fb1f8fc177e741a60777797c5f5562173da9dd26379f26c33fadb",
       "member": "oodialog-wasm/tools/oodtest.py",
       "line_start": 285,
       "line_end": 285,
       "claim": "An unknown step fails the test.",
-      "note": "git archive of animatedads/oorexx commit a8690d6 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 7a580c2 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-a8690d6.zip",
-      "sha256": "51d32f29a2c0fc5cdeaadf4464477d88fdecdeee6038229e869fa4c23ed40ccc",
+      "artifact": "oodialog-wasm-7a580c2.zip",
+      "sha256": "975a41c6e62fb1f8fc177e741a60777797c5f5562173da9dd26379f26c33fadb",
       "member": "oodialog-wasm/tools/oodtest.py",
       "line_start": 64,
       "line_end": 73,
       "claim": "The sweep verdicts outside and component.",
-      "note": "git archive of animatedads/oorexx commit a8690d6 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 7a580c2 (branch oodialog-wasm)"
     }
   ]
 }

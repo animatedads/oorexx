@@ -1,7 +1,7 @@
 {
   "kind": "corpus",
   "id": "oodialog-wasm.facts",
-  "version": "0.4",
+  "version": "0.5",
   "sphere": "oodialog-wasm",
   "title": "ooDialog/WASM: every statement of the articles, one a record, for search",
   "records": [
@@ -691,13 +691,13 @@
     {
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
-      "rule": "State at v0.19.0 and where the current state is recorded. This article is a snapshot. The current figures are always in README.md of the project, with the version they were measured on; sweep.tsv and poke.tsv hold the per-example results."
+      "rule": "State at v0.19.1 and where the current state is recorded. This article is a snapshot. The current figures are always in README.md of the project, with the version they were measured on; sweep.tsv and poke.tsv hold the per-example results."
     },
     {
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
       "field": "snapshot",
-      "rule": "Version 0.19.0, 15 November 2026."
+      "rule": "Version 0.19.1, 16 November 2026."
     },
     {
       "topic": "state",
@@ -709,7 +709,7 @@
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
       "field": "snapshot",
-      "rule": "Tests: 47 of 47 pass in headless Chromium. 33 of them are upstream examples or the designer's programs, run unchanged."
+      "rule": "Tests: 48 of 48 pass in headless Chromium. 33 of them are upstream examples or the designer's programs, run unchanged."
     },
     {
       "topic": "state",
@@ -847,6 +847,24 @@
       "article": "ops.oodialog-wasm.lessons",
       "field": "lessons",
       "rule": "A build was pushed with a failing test. Cause: the last run's result was not read. Rule: read every summary line on the final build before the commit."
+    },
+    {
+      "topic": "lessons",
+      "article": "ops.oodialog-wasm.lessons",
+      "field": "lessons",
+      "rule": "The probe was not run for three releases. In that time four faults sat in examples the sweep called shows; one put a tab control's pages at the dialog's corner. Rule: run the probe on every release, not only the sweep."
+    },
+    {
+      "topic": "lessons",
+      "article": "ops.oodialog-wasm.lessons",
+      "field": "lessons",
+      "rule": "A test of this project called calcDisplayRect with an empty rectangle. Windows programs give it the tab's windowRect. The test passed and the Windows idiom failed. Rule: a test of this project uses the calls in the form the upstream examples use."
+    },
+    {
+      "topic": "lessons",
+      "article": "ops.oodialog-wasm.lessons",
+      "field": "lessons",
+      "rule": "A person with a real browser found in five minutes that the menu sample showed nothing when its items were chosen, and that typing into the calculator did nothing. The second is upstream's own behaviour: calculator.rex has no keyboard code and a read-only display. Rule: a sample must show the result of every action it offers; and when a report differs from upstream's code, read upstream's code before changing the port."
     },
     {
       "topic": "lessons",

@@ -1,7 +1,7 @@
 {
   "kind": "article",
   "id": "ref.oodialog-wasm.renderer-contract",
-  "version": "0.4",
+  "version": "0.5",
   "sphere": "oodialog-wasm",
   "title": "The renderer contract: what the native layer asks of the page, and what the page sends back",
   "summary": "oodWeb.cls talks to a renderer through one object, window.__ood in the browser. Any renderer (the browser page, the Qt6 renderer) that answers the same calls and sends the same events can run the same ooDialog programs. The reference implementation is src/oodialog-web.js. This article names the calls and the rules; the source is the authority for each argument.",
@@ -54,67 +54,67 @@
   ],
   "provenance": [
     {
-      "artifact": "oodialog-wasm-a8690d6.zip",
-      "sha256": "51d32f29a2c0fc5cdeaadf4464477d88fdecdeee6038229e869fa4c23ed40ccc",
+      "artifact": "oodialog-wasm-7a580c2.zip",
+      "sha256": "975a41c6e62fb1f8fc177e741a60777797c5f5562173da9dd26379f26c33fadb",
       "member": "oodialog-wasm/src/oodialog-web.js",
       "line_start": 1345,
       "line_end": 1350,
       "claim": "op(key, id, name, a, b, c) is the entry for everything that is not a Win32 message.",
-      "note": "git archive of animatedads/oorexx commit a8690d6 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 7a580c2 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-a8690d6.zip",
-      "sha256": "51d32f29a2c0fc5cdeaadf4464477d88fdecdeee6038229e869fa4c23ed40ccc",
+      "artifact": "oodialog-wasm-7a580c2.zip",
+      "sha256": "975a41c6e62fb1f8fc177e741a60777797c5f5562173da9dd26379f26c33fadb",
       "member": "oodialog-wasm/src/oodialog-web.js",
       "line_start": 868,
       "line_end": 873,
       "claim": "msg(key, id, msg, w, l) is the entry for Win32 control messages.",
-      "note": "git archive of animatedads/oorexx commit a8690d6 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 7a580c2 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-a8690d6.zip",
-      "sha256": "51d32f29a2c0fc5cdeaadf4464477d88fdecdeee6038229e869fa4c23ed40ccc",
+      "artifact": "oodialog-wasm-7a580c2.zip",
+      "sha256": "975a41c6e62fb1f8fc177e741a60777797c5f5562173da9dd26379f26c33fadb",
       "member": "oodialog-wasm/src/oodialog-web.js",
       "line_start": 539,
       "line_end": 539,
       "claim": "The separator character is hex 1F.",
-      "note": "git archive of animatedads/oorexx commit a8690d6 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 7a580c2 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-a8690d6.zip",
-      "sha256": "51d32f29a2c0fc5cdeaadf4464477d88fdecdeee6038229e869fa4c23ed40ccc",
+      "artifact": "oodialog-wasm-7a580c2.zip",
+      "sha256": "975a41c6e62fb1f8fc177e741a60777797c5f5562173da9dd26379f26c33fadb",
       "member": "oodialog-wasm/src/oodialog-web.js",
       "line_start": 1045,
       "line_end": 1049,
       "claim": "The gdi verbs and the style fields.",
-      "note": "git archive of animatedads/oorexx commit a8690d6 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 7a580c2 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-a8690d6.zip",
-      "sha256": "51d32f29a2c0fc5cdeaadf4464477d88fdecdeee6038229e869fa4c23ed40ccc",
+      "artifact": "oodialog-wasm-7a580c2.zip",
+      "sha256": "975a41c6e62fb1f8fc177e741a60777797c5f5562173da9dd26379f26c33fadb",
       "member": "oodialog-wasm/src/oodialog-web.js",
       "line_start": 225,
       "line_end": 249,
       "claim": "The ResizingAdmin arithmetic.",
-      "note": "git archive of animatedads/oorexx commit a8690d6 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 7a580c2 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-a8690d6.zip",
-      "sha256": "51d32f29a2c0fc5cdeaadf4464477d88fdecdeee6038229e869fa4c23ed40ccc",
+      "artifact": "oodialog-wasm-7a580c2.zip",
+      "sha256": "975a41c6e62fb1f8fc177e741a60777797c5f5562173da9dd26379f26c33fadb",
       "member": "oodialog-wasm/src/oodialog-web.js",
       "line_start": 1163,
       "line_end": 1176,
       "claim": "The tool tip operations and events.",
-      "note": "git archive of animatedads/oorexx commit a8690d6 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 7a580c2 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-a8690d6.zip",
-      "sha256": "51d32f29a2c0fc5cdeaadf4464477d88fdecdeee6038229e869fa4c23ed40ccc",
+      "artifact": "oodialog-wasm-7a580c2.zip",
+      "sha256": "975a41c6e62fb1f8fc177e741a60777797c5f5562173da9dd26379f26c33fadb",
       "member": "oodialog-wasm/src/oodialog-web.js",
       "line_start": 252,
       "line_end": 263,
       "claim": "The pages of a paged tab take its display area after each layout.",
-      "note": "git archive of animatedads/oorexx commit a8690d6 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 7a580c2 (branch oodialog-wasm)"
     }
   ]
 }

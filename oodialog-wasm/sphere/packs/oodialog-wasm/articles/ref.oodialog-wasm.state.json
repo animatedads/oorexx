@@ -1,9 +1,9 @@
 {
   "kind": "article",
   "id": "ref.oodialog-wasm.state",
-  "version": "0.4",
+  "version": "0.5",
   "sphere": "oodialog-wasm",
-  "title": "State at v0.19.0 and where the current state is recorded",
+  "title": "State at v0.19.1 and where the current state is recorded",
   "summary": "This article is a snapshot. The current figures are always in README.md of the project, with the version they were measured on; sweep.tsv and poke.tsv hold the per-example results.",
   "authority": "implementation-record",
   "section": "reference",
@@ -13,9 +13,9 @@
     "not-done"
   ],
   "snapshot": [
-    "Version 0.19.0, 15 November 2026.",
+    "Version 0.19.1, 16 November 2026.",
     "Natives ported: 688 of 1,182. 12 of the 43 added in v0.18.0 accept their call and do nothing.",
-    "Tests: 47 of 47 pass in headless Chromium. 33 of them are upstream examples or the designer's programs, run unchanged.",
+    "Tests: 48 of 48 pass in headless Chromium. 33 of them are upstream examples or the designer's programs, run unchanged.",
     "Sweep of the 140 upstream examples: 79 show their dialog, 7 run to the end, 9 show only a message box, 5 stop at a native not ported, 9 stop on an error (8 of them wait for a reader of binary resources), 24 are components, 7 are outside ooDialog.",
     "Probe at v0.19.0, 88 examples: 73 clean, 11 connect an event that is not produced, 4 with a problem, none of them in the port's own code. This run found four faults of the port in examples the sweep called shows; all four are fixed in v0.19.0.",
     "\"shows\" in the sweep means a dialog appeared. It does not mean every feature of the example works. Only an example that is a test (with steps and assertions) is known to work."
@@ -46,13 +46,13 @@
   ],
   "provenance": [
     {
-      "artifact": "oodialog-wasm-a8690d6.zip",
-      "sha256": "51d32f29a2c0fc5cdeaadf4464477d88fdecdeee6038229e869fa4c23ed40ccc",
+      "artifact": "oodialog-wasm-7a580c2.zip",
+      "sha256": "975a41c6e62fb1f8fc177e741a60777797c5f5562173da9dd26379f26c33fadb",
       "member": "oodialog-wasm/README.md",
-      "line_start": 51,
-      "line_end": 100,
+      "line_start": 58,
+      "line_end": 107,
       "claim": "The state section with counts.",
-      "note": "git archive of animatedads/oorexx commit a8690d6 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 7a580c2 (branch oodialog-wasm)"
     }
   ]
 }
