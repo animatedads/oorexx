@@ -1,0 +1,39 @@
+wait .ood-dlg >> text=Sqrt
+expect document.activeElement === document.querySelector('.ood-dlg input') ==> True
+type 44
+sleep 400
+expect document.querySelector('.ood-dlg input').value ==> 44
+press Shift+Equal
+type 6
+press Enter
+sleep 400
+expect document.querySelector('.ood-dlg input').value ==> 50
+press Slash
+type 4
+press Equal
+sleep 400
+expect document.querySelector('.ood-dlg input').value ==> 12.5
+press Shift+8
+type 2
+press Enter
+sleep 400
+expect document.querySelector('.ood-dlg input').value ==> 25.0
+press Backspace
+press Backspace
+sleep 400
+expect document.querySelector('.ood-dlg input').value ==> 25
+press Minus
+type 5
+press NumpadAdd
+type 1
+press Period
+type 5
+press Enter
+sleep 400
+expect document.querySelector('.ood-dlg input').value ==> 21.5
+press Delete
+sleep 400
+expect document.querySelector('.ood-dlg input').value ==> 0
+click .ood-dlg >> text=Sqrt
+type 9
+click .ood-dlg >> text=Exit

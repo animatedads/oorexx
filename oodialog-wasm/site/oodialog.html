@@ -22,15 +22,19 @@ Architecture: Tom Dyer. Code: Claude (Fable 5.2).</p></header>
 <pre id="out"></pre>
 </main>
 <script src="ooRexx.js"></script>
+<script src="oodfiles.js"></script>
 <script>
 // Each sample: the program, and the other files it needs beside it.
 const SAMPLES = [
   { name: 'Simple dialog (UserDialog, data attribute, event)', prog: 'simple.rex' },
   { name: 'Calculator (upstream sample, RcDialog)', prog: 'calculator.rex', files: ['rc/calculator.rc'] },
+  { name: 'Calculator with keys (upstream sample + connectKeyPress)', prog: 'calckeys.rex', files: ['rc/calculator.rc'] },
   { name: 'Standard dialogs and routines (upstream sample)', prog: 'oodStandardRoutines.rex' },
   { name: 'Progress bars (upstream sample)', prog: 'oodpbar.rex', files: ['rc/oodpbar.rc'] },
   { name: 'List-view, tree-view, tab', prog: 'views.rex' },
   { name: 'Menu bar', prog: 'menu.rex' },
+  { name: 'Tool tips (upstream sample; needs a mouse)', prog: 'toolTip.rex', files: ['musicNote.ico'] },
+  { name: 'Resizable dialog (upstream sample, ResizingAdmin; drag the corner)', prog: 'augmentedResize.rex', files: ['rc/basicResize.rc', 'rc/basicResize.h'] },
   { name: 'Up-down, track bar, date picker, font', prog: 'controls.rex' },
   { name: 'File dialog on the WASM file system', prog: 'filedialog.rex' },
 ];
@@ -38,13 +42,16 @@ const $ = (id) => document.getElementById(id);
 SAMPLES.forEach((s, i) => $('sample').add(new Option(s.name, i)));
 let current = null;
 const text = async (url) => { const r = await fetch(url); if (!r.ok) throw new Error(url + ': ' + r.status); return r.text(); };
+const bytes = async (url) => { const r = await fetch(url); if (!r.ok) throw new Error(url + ': ' + r.status); return new Uint8Array(await r.arrayBuffer()); };
+const BINARY = /\.(ico|bmp|cur|png|jpg|gif|dll|res|exe)$/i;      // these go to the WASM file system as bytes
 $('run').onclick = async () => {
   const s = SAMPLES[$('sample').value];
   $('out').textContent = ''; $('state').textContent = 'loading'; $('run').disabled = true;
   try {
     const files = {};
     for (const f of ['ooDialog.cls', 'oodWeb.cls', 'ooShapes.cls']) files['/home/rexx/' + f] = await text(f);
-    for (const f of [s.prog].concat(s.files || [])) files['/home/rexx/' + f] = await text('samples/' + f);
+    for (const f of [s.prog].concat(s.files || [])) files['/home/rexx/' + f] = await (BINARY.test(f) ? bytes : text)('samples/' + f);
+    oodFiles.windowsNames(files);                               // "rc\\basicResize.rc", as Windows programs write it
     const rexx = await ooRexx.load();
     const add = (t) => { $('out').textContent += t; $('out').scrollTop = $('out').scrollHeight; };
     current = rexx.run({ args: [s.prog], files, js: { page: true, worker: true }, onOut: add, onErr: add });

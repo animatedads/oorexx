@@ -1,8 +1,8 @@
 # Articles of the oodialog-wasm sphere. Architecture: Tom Dyer. Written by Claude (Fable 5.2).
 # Each article: id, title, summary, section, topics, and lists of plain sentences.
 S = "oodialog-wasm"
-VERSION = "0.4"            # the sphere's version; raise it for a material change
-PORT = "0.19.0"             # the version of the port the articles were checked against
+VERSION = "0.5"            # the sphere's version; raise it for a material change
+PORT = "0.19.1"             # the version of the port the articles were checked against
 REPO = "animatedads/oorexx, branch oodialog-wasm, directory oodialog-wasm/"
 
 def art(id, title, summary, section, topics, **lists):
@@ -209,9 +209,9 @@ art("ref.oodialog-wasm.state",
     "This article is a snapshot. The current figures are always in README.md of the project, with the version they were measured on; sweep.tsv and poke.tsv hold the per-example results.",
     "reference", ["state", "coverage", "not-done"],
     snapshot=[
-        "Version 0.19.0, 15 November 2026.",
+        "Version 0.19.1, 16 November 2026.",
         "Natives ported: 688 of 1,182. 12 of the 43 added in v0.18.0 accept their call and do nothing.",
-        "Tests: 47 of 47 pass in headless Chromium. 33 of them are upstream examples or the designer's programs, run unchanged.",
+        "Tests: 48 of 48 pass in headless Chromium. 33 of them are upstream examples or the designer's programs, run unchanged.",
         "Sweep of the 140 upstream examples: 79 show their dialog, 7 run to the end, 9 show only a message box, 5 stop at a native not ported, 9 stop on an error (8 of them wait for a reader of binary resources), 24 are components, 7 are outside ooDialog.",
         "Probe at v0.19.0, 88 examples: 73 clean, 11 connect an event that is not produced, 4 with a problem, none of them in the port's own code. This run found four faults of the port in examples the sweep called shows; all four are fixed in v0.19.0.",
         "\"shows\" in the sweep means a dialog appeared. It does not mean every feature of the example works. Only an example that is a test (with steps and assertions) is known to work.",
@@ -247,6 +247,9 @@ art("ops.oodialog-wasm.lessons",
     "operations", ["lessons", "faults", "method"],
     lessons=[
         "A build was pushed with a failing test. Cause: the last run's result was not read. Rule: read every summary line on the final build before the commit.",
+        "The probe was not run for three releases. In that time four faults sat in examples the sweep called shows; one put a tab control's pages at the dialog's corner. Rule: run the probe on every release, not only the sweep.",
+        "A test of this project called calcDisplayRect with an empty rectangle. Windows programs give it the tab's windowRect. The test passed and the Windows idiom failed. Rule: a test of this project uses the calls in the form the upstream examples use.",
+        "A person with a real browser found in five minutes that the menu sample showed nothing when its items were chosen, and that typing into the calculator did nothing. The second is upstream's own behaviour: calculator.rex has no keyboard code and a read-only display. Rule: a sample must show the result of every action it offers; and when a report differs from upstream's code, read upstream's code before changing the port.",
         "msSleep was changed to handle events on any thread. An event method that waits for an animation thread could then run inside that thread's own sleep and wait for ever. Rule: only the thread that takes the page's events may handle events while it sleeps.",
         "The harness ignored a step it did not know, so a misspelt step passed. Rule: an unknown step fails.",
         "The first sweep counted message boxes as dialogs and ran examples from the wrong directory. Rule: each example runs from its own directory; a message box has its own verdict.",

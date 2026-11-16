@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5
+- State article brought to port v0.19.1 (demo page samples; no change to the renderer contract).
+- Lessons: a report from a person with a real browser found a sample that showed nothing; upstream's calculator has no keyboard code.
+- Written by Claude (Fable 5.2).
+
 ## 0.4
 - State article brought to port v0.19.0 (pagedTab; four faults found by the probe and fixed).
 - Renderer contract: ra.page, tab.outer, BM_SETSTATE, TCM_SETMINTABWIDTH.

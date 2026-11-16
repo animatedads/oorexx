@@ -26,7 +26,7 @@ examples/addManyRows.rex	shows
 examples/browsePrinters.rex	shows
 examples/fileNameDialog_demo.rex	message:REMEMBER, FileNameDialog does NOT actually open or save your specified file, it simply pro
 examples/genGUID.rex	shows
-examples/imageButton.rex	shows +error
+examples/imageButton.rex	shows
 examples/openSaveFileDemo.rex	shows
 examples/publicRoutines_demo.rex	shows
 examples/saveFileWithFilter.rex	shows
@@ -57,7 +57,7 @@ propertySheet.tabControls/PropertySheetDemo.rex	shows
 propertySheet.tabControls/TabDemo.rex	error:Error 98.900 ooDialog/WASM: a dialog from a resource file needs a reader of binary Windows resources; set .ood
 propertySheet.tabControls/TabOwnerDemo.rex	native:CDI_INIT
 propertySheet.tabControls/UserTabDemo.rex	shows
-propertySheet.tabControls/oodListViews.rex	shows +error
+propertySheet.tabControls/oodListViews.rex	shows
 propertySheet.tabControls/ticketWizard.rex	shows
 resizableDialogs/DialogAreaU/dlgAreaUDemo.rex	shows
 resizableDialogs/DialogAreaU/dlgAreaUDemoThree.rex	shows

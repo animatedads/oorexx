@@ -1,4 +1,4 @@
-# ooDialog for ooRexx/WASM — v0.19.0
+# ooDialog for ooRexx/WASM — v0.19.1
 
 Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: Josep Maria Blasco's
 ooRexx/WASM (`oorexxwasm` 0.2.4, ooRexx 5.3.0) and its `js.cls`.
@@ -28,15 +28,22 @@ so event methods run on it; nested modal dialogs nest the loop.
 
 ## Demo page
 
-`site/oodialog.html` runs eight samples (three of them upstream's) in the
-browser. Unpack Josep Maria Blasco's `oorexxwasm-web-0.2.4.zip` release into
+`site/oodialog.html` runs eleven samples (five of them upstream's unchanged)
+in the browser. "Calculator with keys" is upstream's calculator plus one block
+of connectKeyPress calls: upstream's own has no keyboard code and a read-only
+display, so typing into it does nothing. Enter presses the default button "=",
+or the button that has the focus (after a click, the button clicked). The
+digits of the number pad are connected but not tested: the harness's keyboard
+has no number lock. The tool tip and resizable samples are there to be tried
+with a real pointer. Unpack Josep Maria Blasco's `oorexxwasm-web-0.2.4.zip` release into
 `site/`, build, then serve `site/` with the release's own server (it sends the
 headers the runtime needs) and open the page:
 
     node site/serve.mjs site --port 8080
 
 `tools/ooddemo.py` checks the page in headless Chromium at desktop and phone
-widths. A dialog larger than the window is scaled down to fit it.
+widths: it runs five of the samples, types into one, rests the pointer on a
+tool, and drags a dialog's corner. A dialog larger than the window is scaled down to fit it.
 
 ## Build and test
 
@@ -48,13 +55,13 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
     python3 tools/oodtest.py --poke upstream/examples 0 24
     python3 tools/oodtest.py --tree upstream/examples tests/t*.rex tests/up/calculator.rex tests/up/oodpbar.rex tests/up/oodStandardRoutines.rex
 
-## State on 2026-11-15 (v0.19.0)
+## State on 2026-11-16 (v0.19.1)
 
 - Natives ported: 688 of 1,182 (58.2%); 12 of the 43 added in v0.18.0 accept
   their call and do nothing (see "Tool tips"). (The total was given as 1,181
   in v0.16.0 and v0.17.0; `dist/natives.txt` has 1,182 lines. It fell from 1,196 because 12
   natives are now plain Rexx in `src/patches.txt`.)
-- Tests: 47 of 47 pass in headless Chromium (`tests/t01`..`t17` with expected
+- Tests: 48 of 48 pass in headless Chromium (`tests/t01`..`t17` with expected
   output, the binary resource hand-off test `tests/res/t07_resdialog_binary`,
   four unmodified upstream samples: `calculator.rex`,
   `oodpbar.rex`, `oodStandardRoutines.rex`, and the tutorial
