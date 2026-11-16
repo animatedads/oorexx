@@ -1,4 +1,4 @@
-# ooDialog Designer — v0.13.0
+# ooDialog Designer — v0.14.0
 
 Architecture: Tom Dyer. Code: Claude (Opus 5.5). README written by Claude (Opus 5.5).
 It runs on ooDialog/WASM v0.7.0 (code: Claude (Fable 5.2)) and on Josep Maria
@@ -65,6 +65,15 @@ itself (Claude, `src/OodBoundGraph.cls`): it maps the form's object class
 over the form's databases in a session of its own, with the design's data
 files, and puts the OBJECT and PART lines there; text the user typed there
 is kept.
+
+**Drag to connect (v0.14; ChatGPT, PR #3, Database Lab model v0.1.3):** in
+the graph, a primary or unique key dragged onto a column of another table
+(or clicked, then the column clicked) makes a real NoSQLServer foreign key
+with the ON DELETE action chosen beside the graph (`OodDatabaseLab~
+addRelationship`); the graph is redrawn from the catalogue, and a table of
+two such keys becomes a junction. A drag from a column that is not a key
+does nothing. A table is selected by clicking its title, since its column
+rows are link targets.
 
 The current `oodialog-wasm` branch is at v0.13.1; the Designer's earlier
 v0.8 qualification was against v0.7.0. This new lab is independent of the
@@ -397,7 +406,7 @@ a built `site/plugins`, or skips them and says so. t07–t09 start their own
 stand-in servers with node; under native ooRexx (no ADDRESS FETCH) their
 network checks say SKIP, and t08's git-command checks still run.
 
-## State (2026-11-15, v0.13.0)
+## State (2026-11-16, v0.14.0)
 
 - `tests/t01_model.rex`: 78 of 78 checks pass under ooRexx/WASM in Node. They
   cover generation, a byte-identical round trip through the `::RESOURCE`,
@@ -483,7 +492,7 @@ network checks say SKIP, and t08's git-command checks still run.
     button naming no bound list, no SINGLESEL, Add without row fields);
   - an unbound design written as before;
   - German.
-- `tools/dztest.py`: 19 of 19 scenarios pass in headless Chromium:
+- `tools/dztest.py`: 20 of 20 scenarios pass in headless Chromium:
   1. **hand:** a dialog built with the mouse (drop, rename, styles,
      variable, drag-an-action, move and resize), then run. The event code sees
      the variable and the field, and INIT's text survives `execute`.
@@ -562,8 +571,16 @@ network checks say SKIP, and t08's git-command checks still run.
       with its CATCH and FINALLY; a SAY dropped into the FINALLY body; CATCH
       explains itself; the program starts with its guard; Run refused,
       saying why.
-- `tests/database_lab_dom.cjs` (ChatGPT): 24 interaction checks pass
+  20. **labdrag (v0.14):** on the real ooRexx model, three tables with no
+      foreign keys; a drag from a column that is not a key makes nothing;
+      customers.id dragged onto customers_sales.customers_id and sales.id
+      onto customers_sales.sales_id make two foreign keys and a junction;
+      a row with no parent is then refused by NoSQLServer.
+- `tests/database_lab_dom.cjs` (ChatGPT): 30 interaction checks pass
   (`npm install --no-save jsdom@27` first).
+- `tests/database_lab_chromium.cjs` (ChatGPT): 2 pointer drags on a model
+  stand-in pass in Chromium (`npm install --no-save playwright`; it starts
+  `/usr/bin/chromium`).
 - `tests/gen/Calculator.rex`, `Contacts.rex` and `Gadgets.rex` (generated)
   also pass the ooDialog/WASM harness, `oodtest.py`, with their `.steps`
   files.

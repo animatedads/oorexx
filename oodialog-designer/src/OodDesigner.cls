@@ -21,11 +21,11 @@
 
 ::class OodModule public mixinclass Object
 ::method module_version class
-  return "0.13.0"
+  return "0.14.0"
 ::method module_lastChanged class
   return "2026-11-15"
 ::method module_version
-  return "0.13.0"
+  return "0.14.0"
 ::method module_lastChanged
   return "2026-11-15"
 

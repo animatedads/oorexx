@@ -50,6 +50,16 @@
   font: 14px/1.3 system-ui, sans-serif; }
 .db-graph-nodes g { cursor: pointer; outline: none; }
 .db-graph-nodes g:hover rect, .db-graph-nodes g:focus rect { stroke: #165db1; stroke-width: 3; }
+.db-graph-tools { font-size: 12px; color: #2b516f; }
+.db-graph-tools span { flex: 1; min-width: 240px; }
+.db-graph-tools select { flex: 0 0 116px; min-width: 116px; }
+.db-graph-column { cursor: crosshair; user-select: none; touch-action: none; outline: none; }
+.db-graph-column:hover rect, .db-graph-column:focus rect { fill: #d9eaff; }
+.db-graph-column:hover text, .db-graph-column:focus text { fill: #0067b9; text-decoration: underline; }
+.db-graph-column[data-db-key="1"] text { font-weight: 600; }
+.db-graph-column.db-link-source rect { fill: #ffe9d5; }
+.db-graph-column.db-link-source text { fill: #b35208; text-decoration: underline; }
+.db-graph-drag-line { stroke: #dc7821; stroke-width: 2.5; stroke-dasharray: 6 4; pointer-events: none; }
 .db-foot { font-size: 12px; color: #576d82; }
 #dbNotice { margin-bottom: 10px; color: #24486e; min-height: 1.4em; }
 #dbNotice.bad { color: #ae2530; }

@@ -8,7 +8,8 @@
   const D = document;
   const $ = (id) => D.getElementById(id);
   const T = (key) => window.OodNlsPage?.has(key) ? window.OodT(key) : key;
-  const state = { runtime: null, session: null, lab: null, pending: Promise.resolve(), ready: false };
+  const state = { runtime: null, session: null, lab: null, pending: Promise.resolve(), ready: false, relations: false,
+    graphSource: null, graphPointer: null, graphSuppressClick: false };
   const types = ['INTEGER', 'VARCHAR', 'TEXT', 'DECIMAL', 'BOOLEAN', 'DATE', 'DATETIME', 'BLOB'];
 
   // The worker's 93.900 wrapper is transport syntax, not part of the
@@ -88,6 +89,7 @@
     state.session = await state.runtime.start({ files, js: { page: true, worker: true } });
     await state.session.loadPackage('OodDatabaseLab.cls');
     state.lab = await state.session.eval('return .OodDatabaseLab~new()');
+    state.relations = String(await state.lab.module_version()) === '0.1.3';
     await state.lab.language(window.OodNlsPage?.lang || '');
     state.ready = true;
     note(T('db.sessionOnly'));
@@ -227,7 +229,94 @@
     return { x: position.x + (side === 'right' ? position.w : side === 'left' ? 0 : position.w / 2),
       y: position.y + (t.junction ? 40 + index * 18 : 44 + index * 23) };
   }
+  function graphColumn(element) {
+    return element?.closest?.('.db-graph-column') || null;
+  }
+  function clearGraphSource() {
+    state.graphSource = null;
+    $('dbGraph')?.querySelectorAll('.db-graph-column.db-link-source').forEach((el) => el.classList.remove('db-link-source'));
+  }
+  function selectGraphSource(column) {
+    if (column.dataset.dbKey !== '1') return note(T('db.graphNeedKey'), true);
+    clearGraphSource();
+    state.graphSource = { table: column.dataset.dbTable, column: column.dataset.dbColumn };
+    column.classList.add('db-link-source');
+    note(T('db.graphChooseTarget') + ': ' + state.graphSource.table + '.' + state.graphSource.column);
+  }
+  function commitGraphLink(target) {
+    const source = state.graphSource;
+    if (!source || !target) { clearGraphSource(); return; }
+    const childTable = target.dataset.dbTable, childColumn = target.dataset.dbColumn;
+    clearGraphSource();
+    if (!state.relations) return note(T('db.graphRequires'), true);
+    if (source.table === childTable) return note(T('db.graphDifferentTable'), true);
+    const action = $('dbGraphOnDelete').value;
+    run(async () => {
+      await state.lab.addRelationship(source.table, source.column, childTable, childColumn, action);
+      await refreshGraph();
+      note(T('db.graphLinked') + ': ' + source.table + '.' + source.column + ' → ' + childTable + '.' + childColumn);
+    }).catch(() => {});
+  }
+  function graphPoint(svg, clientX, clientY) {
+    const box = svg.getBoundingClientRect(), view = svg.viewBox.baseVal;
+    const scaleX = view.width / (box.width || view.width), scaleY = view.height / (box.height || view.height);
+    return { x: view.x + (clientX - box.left) * scaleX, y: view.y + (clientY - box.top) * scaleY };
+  }
+  function graphPointerDown(event) {
+    const column = graphColumn(event.target);
+    if (!column || column.dataset.dbKey !== '1' || event.button !== 0) return;
+    selectGraphSource(column);
+    const svg = column.ownerSVGElement || column.closest('svg');
+    state.graphPointer = { id: event.pointerId, startX: event.clientX, startY: event.clientY,
+      svg, moved: false, line: null };
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  function graphPointerMove(event) {
+    const drag = state.graphPointer;
+    if (!drag || drag.id !== event.pointerId || !drag.svg.isConnected) return;
+    if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 6) return;
+    drag.moved = true;
+    if (!drag.line) {
+      const source = drag.svg.querySelector('.db-link-source');
+      if (!source) return;
+      const bounds = source.getBBox ? source.getBBox() : { x: 0, y: 0, width: 0, height: 0 };
+      const start = { x: bounds.x + bounds.width, y: bounds.y + bounds.height / 2 };
+      drag.line = svgEl('line', { x1: start.x, y1: start.y, x2: start.x, y2: start.y,
+        class: 'db-graph-drag-line' });
+      drag.svg.append(drag.line);
+    }
+    const p = graphPoint(drag.svg, event.clientX, event.clientY);
+    drag.line.setAttribute('x2', p.x); drag.line.setAttribute('y2', p.y);
+  }
+  function graphPointerUp(event) {
+    const drag = state.graphPointer;
+    if (!drag || drag.id !== event.pointerId) return;
+    state.graphPointer = null;
+    drag.line?.remove();
+    if (!drag.moved) return; // click-to-connect is also supported
+    state.graphSuppressClick = true;
+    setTimeout(() => { state.graphSuppressClick = false; }, 0);
+    const element = D.elementFromPoint?.(event.clientX, event.clientY) || event.target;
+    const target = graphColumn(element) || graphColumn(event.target);
+    if (target) commitGraphLink(target);
+    else { clearGraphSource(); note(T('db.graphDropColumn'), true); }
+  }
+  function cancelGraphPointer() {
+    state.graphPointer?.line?.remove();
+    state.graphPointer = null;
+    clearGraphSource();
+  }
+  function graphColumnActivate(event) {
+    const column = graphColumn(event.target);
+    if (!column || state.graphSuppressClick) return;
+    event.preventDefault(); event.stopPropagation();
+    if (state.graphSource && (column.dataset.dbTable !== state.graphSource.table || column.dataset.dbColumn !== state.graphSource.column)) {
+      commitGraphLink(column);
+    } else selectGraphSource(column);
+  }
   function drawGraph(source) {
+    clearGraphSource();
     const g = parseGraph(source), layout = graphLayout(g), target = $('dbGraph');
     target.textContent = '';
     if (!g.sorted.length) {
@@ -303,15 +392,23 @@
       for (const [i, c] of fields.entries()) {
         const annotation = t.junction ? ' → ' + c.type :
           (c.primary ? '  ' + T('db.graphPK') : '') + (c.unique ? '  ' + T('db.graphUQ') : '');
-        graphText(group, p.x + 15, p.y + (t.junction ? 42 + i * 18 : 46 + i * 23),
-          c.name + (t.junction ? annotation : '  ' + c.type + annotation), { fill: '#32495e', 'font-size': t.junction ? 11 : 13 });
+        const column = t.columns.find((item) => keyOf(item.name) === keyOf(c.name)) || c;
+        const rowY = p.y + (t.junction ? 42 + i * 18 : 46 + i * 23);
+        const cell = svgEl('g', { class: 'db-graph-column', 'data-db-table': t.name,
+          'data-db-column': c.name, 'data-db-key': column.primary || column.unique ? '1' : '0',
+          tabindex: 0, role: 'button', 'aria-label': t.name + '.' + c.name });
+        cell.append(svgEl('rect', { x: p.x + 5, y: rowY - (t.junction ? 14 : 18),
+          width: p.w - 10, height: t.junction ? 18 : 23, rx: 3, fill: 'transparent' }));
+        graphText(cell, p.x + 15, rowY, c.name + (t.junction ? annotation : '  ' + c.type + annotation),
+          { fill: '#32495e', 'font-size': t.junction ? 11 : 13 });
+        group.append(cell);
       }
       if (t.junction) graphText(group, p.x + p.w - 12, p.y + 22, '⋈', { 'text-anchor': 'end', fill: '#43826d' });
       const choose = () => {
         $('dbTables').value = t.name;
         run(loadTable).catch(() => {});
       };
-      group.addEventListener('click', choose);
+      group.addEventListener('click', (e) => { if (!graphColumn(e.target) && !state.graphSuppressClick) choose(); });
       group.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(); } });
       nodes.append(group);
     }
@@ -394,6 +491,11 @@
         </section>
         <section id="dbGraphPanel" role="tabpanel" hidden><h3 data-nls="db.graph">Database graph</h3>
           <p data-nls="db.graphHint">Tables, columns and foreign keys come from the NoSQLServer catalogue. Click a table to edit its schema.</p>
+          <div class="db-line db-graph-tools"><span data-nls="db.graphDragHint">Drag a primary or unique key to a foreign-key column to create a relationship.</span>
+            <label for="dbGraphOnDelete" data-nls="db.graphOnDelete">ON DELETE</label>
+            <select id="dbGraphOnDelete" aria-label="ON DELETE"><option value="RESTRICT">RESTRICT</option>
+              <option value="CASCADE">CASCADE</option><option value="NO ACTION">NO ACTION</option><option value="SET NULL">SET NULL</option></select>
+          </div>
           <label for="dbObjectLines" data-nls="db.graphObjects">ObjectStore graph lines (optional)</label>
           <textarea id="dbObjectLines" spellcheck="false" data-nls-placeholder="db.graphObjectPlaceholder" placeholder="OBJECT&#9;PERSON&#9;ENT.person"></textarea>
           <div class="db-line"><button id="dbGraphRefresh" data-nls="db.graphRefresh">Refresh graph</button></div>
@@ -415,6 +517,15 @@
     $('dbTabSql').addEventListener('click', () => switchTab(false));
     $('dbTabGraph').addEventListener('click', () => switchTab(true));
     $('dbGraphRefresh').addEventListener('click', () => run(refreshGraph).catch(() => {}));
+    $('dbGraph').addEventListener('pointerdown', graphPointerDown);
+    $('dbGraph').addEventListener('click', graphColumnActivate);
+    $('dbGraph').addEventListener('keydown', (e) => {
+      if (graphColumn(e.target) && (e.key === 'Enter' || e.key === ' ')) graphColumnActivate(e);
+    });
+    window.addEventListener('pointermove', graphPointerMove);
+    window.addEventListener('pointerup', graphPointerUp);
+    window.addEventListener('pointercancel', cancelGraphPointer);
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape') cancelGraphPointer(); });
     $('dbAddCol').addEventListener('click', () => makeColumn());
     $('dbNewTable').addEventListener('click', () => { $('dbTables').value = ''; $('dbTableName').value = ''; setExampleColumns(); });
     $('dbMakeTable').addEventListener('click', () => run(() => createTable(false)).catch(() => {}));

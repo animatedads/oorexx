@@ -707,7 +707,8 @@ def sc_labgraph(pg):
     expect_in('foreign keys drawn with ON DELETE', pg.evaluate("OodT('db.graphDelete')"), pg.inner_text('#dbGraph'))
     pg.screenshot(path=str(SHOTS / 'lab_graph.png'))
     pg.locator('#dbGraph').screenshot(path=str(SHOTS / 'lab_graph_svg.png'))
-    pg.click('#dbGraph .db-graph-table[data-table="addr"]'); settle(pg, 1200)
+    # the title: since the drag-to-connect (PR #3) a column row is a link target
+    pg.locator('#dbGraph .db-graph-table[data-table="addr"] text').first.click(); settle(pg, 1200)
     expect('a box selects its table', pg.input_value('#dbTables'), 'addr')
     pg.fill('#dbObjectLines', 'OBJECT\tMINE\tENT.com'); pg.click('#dbClose'); settle(pg, 300)
     pg.click('#btnDatabaseLab'); settle(pg, 3000)
@@ -739,7 +740,42 @@ def sc_catch(pg):
     expect('  and nothing ran', pg.locator('.ood-dlg').count(), 0)
 
 
-SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views, 'gadgets': sc_gadgets, 'libraries': sc_libraries, 'graph': sc_graph, 'trace': sc_trace, 'languages': sc_languages, 'ui_de': sc_ui_de, 'plugins': sc_plugins, 'assist': sc_assist, 'source': sc_source, 'bound': sc_bound, 'overview': sc_overview, 'labgraph': sc_labgraph, 'catch': sc_catch}
+def sc_labdrag(pg):
+    """Database Lab graph, drag to connect (ChatGPT's, PR #3, model v0.1.3), on
+    the real ooRexx model: three tables made by SQL with no foreign keys; a
+    key dragged onto a column makes a real NoSQLServer foreign key; after the
+    second, the link table is drawn as a junction; a drag from a column that
+    is not a key makes nothing (silently: reported to ChatGPT)."""
+    ready(pg); open_example(pg, 'examples/Calculator.rex')
+    pg.click('#btnDatabaseLab'); pg.wait_for_selector('#dbNew', state='visible', timeout=60000); settle(pg, 1500)
+    pg.fill('#dbNew', 'shop'); pg.click('#dbCreate'); settle(pg, 2500)
+    for sql in ['CREATE TABLE customers (id INTEGER PRIMARY KEY, name VARCHAR(40))',
+                'CREATE TABLE sales (id INTEGER PRIMARY KEY, total INTEGER)',
+                'CREATE TABLE customers_sales (customers_id INTEGER NOT NULL, sales_id INTEGER NOT NULL)']:
+        pg.fill('#dbSql', sql); pg.click('#dbRun'); settle(pg, 1500)
+    pg.click('#dbTabGraph'); settle(pg, 2500)
+    expect('three tables, no arrows yet', [pg.locator('#dbGraph .db-graph-table').count(), pg.locator('#dbGraph .db-graph-junction').count()], [3, 0])
+    def drag(a, b):
+        src = pg.locator(f'#dbGraph .db-graph-column[data-db-table="{a[0]}"][data-db-column="{a[1]}"]')
+        dst = pg.locator(f'#dbGraph .db-graph-column[data-db-table="{b[0]}"][data-db-column="{b[1]}"]')
+        src.scroll_into_view_if_needed(); sb = src.bounding_box(); db = dst.bounding_box()
+        pg.mouse.move(sb['x'] + sb['width'] / 2, sb['y'] + sb['height'] / 2); pg.mouse.down()
+        pg.mouse.move(db['x'] + db['width'] / 2, db['y'] + db['height'] / 2, steps=8); pg.mouse.up(); settle(pg, 2500)
+    drag(('customers_sales', 'sales_id'), ('sales', 'id'))
+    expect('a drag from a column that is not a key makes nothing', pg.locator('#dbGraph .db-graph-edges > *, #dbGraph .db-graph-junction').count(), 0)
+    drag(('customers', 'id'), ('customers_sales', 'customers_id'))
+    expect_in('  a key dragged onto a column: a relationship', pg.evaluate("OodT('db.graphLinked')"), pg.inner_text('#dbNotice'))
+    drag(('sales', 'id'), ('customers_sales', 'sales_id'))
+    expect('after two drags the link table is a junction', pg.locator('#dbGraph .db-graph-junction[data-table="customers_sales"]').count(), 1)
+    pg.click('#dbTabSql'); settle(pg, 300)
+    pg.fill('#dbSql', "INSERT INTO customers_sales (customers_id, sales_id) VALUES (1, 1)"); pg.click('#dbRun'); settle(pg, 1500)
+    said = (pg.inner_text('#dbNotice') + ' ' + pg.inner_text('#dbResults')).upper()
+    expect('the foreign keys are real: a row with no parent refused', 'FOREIGN' in said or 'REFERENCE' in said or 'PARENT' in said, True)
+    pg.click('#dbTabGraph'); settle(pg, 1500)
+    pg.locator('#dbGraph').screenshot(path=str(SHOTS / 'lab_drag.png'))
+
+
+SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views, 'gadgets': sc_gadgets, 'libraries': sc_libraries, 'graph': sc_graph, 'trace': sc_trace, 'languages': sc_languages, 'ui_de': sc_ui_de, 'plugins': sc_plugins, 'assist': sc_assist, 'source': sc_source, 'bound': sc_bound, 'overview': sc_overview, 'labgraph': sc_labgraph, 'catch': sc_catch, 'labdrag': sc_labdrag}
 def main():
     names = sys.argv[1:] or list(SCENARIOS)
     srv = subprocess.Popen(['node', str(SITE / 'serve.mjs'), str(SITE), '--port', str(PORT)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
