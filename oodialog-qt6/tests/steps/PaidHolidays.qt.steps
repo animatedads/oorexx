@@ -1,0 +1,21 @@
+# Qt dialect of oodialog-wasm tests/up6/PaidHolidays.steps (v0.16.0): the same checks, read from the calendar widget.
+wait .ood-mc
+sleep 600
+expect mcTitle .ood-mc ==> December 2011
+expect mcBold .ood-mc ==> 2011-12-23,2011-12-30
+click .ood-mc-next
+sleep 300
+expect mcTitle .ood-mc ==> December 2011
+click .ood-mc-prev
+sleep 600
+expect mcTitle .ood-mc ==> November 2011
+expect mcBoldIn .ood-mc ==> 2011-11-24,2011-11-25
+shot PaidHolidays
+click .ood-mc-prev
+click .ood-mc-prev
+click .ood-mc-prev
+click .ood-mc-prev
+sleep 600
+expect mcTitle .ood-mc ==> July 2011
+expect mcBoldIn .ood-mc ==> 2011-07-04
+click .ood-dlg button.ood-def

@@ -1,0 +1,17 @@
+# Qt dialect of oodialog-wasm tests/up8/customPositionToolTip.steps (v0.18.0).
+wait .ood-dlg
+sleep 500
+mouse move .ood-dlg >> text=George @ 5 5
+sleep 900
+expect tipShown ==> True
+shot customPositionToolTip
+expect tipText ==> George was famous once./He is unknown to my/niece.
+expect tipBesideItem George ==> True
+mouse move .ood-dlg >> text=Ringo @ 5 5
+sleep 900
+expect tipText ==> Ringo has a LOT of money.
+mouse move .ood-dlg .ood-title @ 20 5
+sleep 300
+expect tipShown ==> False
+output count native function ==> 0
+click .ood-dlg button.ood-def

@@ -1,0 +1,7 @@
+wait .ood-dlg >> text=Tool
+expect document.querySelectorAll('.ood-dlg').length ==> 2
+focus .ood-dlg >> text=Tool
+press Escape
+sleep 400
+expect document.querySelectorAll('.ood-dlg').length ==> 2
+click .ood-dlg button.ood-def
