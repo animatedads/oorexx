@@ -1,7 +1,7 @@
 {
   "kind": "article",
   "id": "ops.oodialog-wasm.differences",
-  "version": "0.5",
+  "version": "0.6",
   "sphere": "oodialog-wasm",
   "title": "Where the port differs from ooDialog on Windows, by design",
   "summary": "These differences come from the browser, not from faults. Check this list before reporting a behaviour as a bug.",
@@ -35,31 +35,31 @@
   ],
   "provenance": [
     {
-      "artifact": "oodialog-wasm-7a580c2.zip",
-      "sha256": "975a41c6e62fb1f8fc177e741a60777797c5f5562173da9dd26379f26c33fadb",
+      "artifact": "oodialog-wasm-9973473.zip",
+      "sha256": "e25e91685a67f21ae0293d972bb24d54f07c41032744839f8dba5e74e2dfd148",
       "member": "oodialog-wasm/README.md",
-      "line_start": 194,
-      "line_end": 223,
+      "line_start": 242,
+      "line_end": 271,
       "claim": "What tool tips do and where they differ from Windows.",
-      "note": "git archive of animatedads/oorexx commit 7a580c2 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 9973473 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-7a580c2.zip",
-      "sha256": "975a41c6e62fb1f8fc177e741a60777797c5f5562173da9dd26379f26c33fadb",
+      "artifact": "oodialog-wasm-9973473.zip",
+      "sha256": "e25e91685a67f21ae0293d972bb24d54f07c41032744839f8dba5e74e2dfd148",
       "member": "oodialog-wasm/src/oodWeb.cls",
-      "line_start": 6178,
-      "line_end": 6201,
+      "line_start": 6203,
+      "line_end": 6226,
       "claim": "msSleep handles events only on the event thread; other threads sleep.",
-      "note": "git archive of animatedads/oorexx commit 7a580c2 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 9973473 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-7a580c2.zip",
-      "sha256": "975a41c6e62fb1f8fc177e741a60777797c5f5562173da9dd26379f26c33fadb",
+      "artifact": "oodialog-wasm-9973473.zip",
+      "sha256": "e25e91685a67f21ae0293d972bb24d54f07c41032744839f8dba5e74e2dfd148",
       "member": "oodialog-wasm/src/oodWeb.cls",
-      "line_start": 1529,
-      "line_end": 1538,
+      "line_start": 1554,
+      "line_end": 1563,
       "claim": "An owned dialog is finished with its owner.",
-      "note": "git archive of animatedads/oorexx commit 7a580c2 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 9973473 (branch oodialog-wasm)"
     }
   ]
 }

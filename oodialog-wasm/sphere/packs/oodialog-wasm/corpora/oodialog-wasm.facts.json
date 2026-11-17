@@ -1,7 +1,7 @@
 {
   "kind": "corpus",
   "id": "oodialog-wasm.facts",
-  "version": "0.5",
+  "version": "0.6",
   "sphere": "oodialog-wasm",
   "title": "ooDialog/WASM: every statement of the articles, one a record, for search",
   "records": [
@@ -271,6 +271,12 @@
       "article": "ref.oodialog-wasm.renderer-contract",
       "field": "op_families",
       "rule": "tab.outer: the whole tab control as \"l t r b\" in the dialog's client area. tab.rect is its display area in the same coordinates. Rexx computes calcDisplayRect from the difference of the two. Control messages new in v0.19.0: BM_SETSTATE (0xF3), bit 4 of BM_GETSTATE (pushed), TCM_SETMINTABWIDTH (0x1331, answers the width before or -1)."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "op_families",
+      "rule": "deliver, since v0.20.0: a call of the page object like msgBox, not an op: deliver(name, mime, hex, title). hex is the file's bytes as hexadecimal digits. The renderer hands the file to the user: show it, and let the user print, open or save it. Answer the number of bytes as a string. Rexx side: .oodn~deliver(path, title, mime)."
     },
     {
       "topic": "renderer-contract",
@@ -691,13 +697,13 @@
     {
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
-      "rule": "State at v0.19.1 and where the current state is recorded. This article is a snapshot. The current figures are always in README.md of the project, with the version they were measured on; sweep.tsv and poke.tsv hold the per-example results."
+      "rule": "State at v0.20.0 and where the current state is recorded. This article is a snapshot. The current figures are always in README.md of the project, with the version they were measured on; sweep.tsv and poke.tsv hold the per-example results."
     },
     {
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
       "field": "snapshot",
-      "rule": "Version 0.19.1, 16 November 2026."
+      "rule": "Version 0.20.0, 17 November 2026."
     },
     {
       "topic": "state",
@@ -709,7 +715,7 @@
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
       "field": "snapshot",
-      "rule": "Tests: 48 of 48 pass in headless Chromium. 33 of them are upstream examples or the designer's programs, run unchanged."
+      "rule": "Tests: 49 of 49 pass in headless Chromium. 33 of them are upstream examples or the designer's programs, run unchanged."
     },
     {
       "topic": "state",
@@ -764,6 +770,12 @@
       "article": "ref.oodialog-wasm.state",
       "field": "done",
       "rule": "Tool tips since v0.18.0: tools that are windows or rectangles, fixed and asked text, NEEDTEXT SHOW POP RELAY, ToolInfo, manageAtypicalTool, a tree-view's getToolTips with GETINFOTIP."
+    },
+    {
+      "topic": "state",
+      "article": "ref.oodialog-wasm.state",
+      "field": "done",
+      "rule": "Printing since v0.20.0: oodPrint.cls makes a PDF with the estate's oorexx_pdf and the page hands it to the user (Print, Open, Save). A list-view as a table, a text, a report of the program, any file. Not checked in a real browser."
     },
     {
       "topic": "state",
@@ -847,6 +859,12 @@
       "article": "ops.oodialog-wasm.lessons",
       "field": "lessons",
       "rule": "A build was pushed with a failing test. Cause: the last run's result was not read. Rule: read every summary line on the final build before the commit."
+    },
+    {
+      "topic": "lessons",
+      "article": "ops.oodialog-wasm.lessons",
+      "field": "lessons",
+      "rule": "A source file was corrected and the test was run without a build. The test ran the old file from dist and showed nothing, because an error in an event method is a message box, not a line of output. Half an hour went on the wrong cause. Rule: build before every test run; when an event method seems to do nothing, look at the page for a message box first."
     },
     {
       "topic": "lessons",
