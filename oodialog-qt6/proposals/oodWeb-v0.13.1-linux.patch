@@ -1,0 +1,58 @@
+--- a/oodialog-wasm/dist/oodWeb.cls
++++ b/oodialog-wasm/dist/oodWeb.cls
+@@ -1392,6 +1392,7 @@
+ 
+ ::method needProvider unguarded
+   use arg what
++  if self~resourceProvider == .nil then if .js~hasMethod("RESOURCEPROVIDER") then self~resourceProvider = .js~resourceProvider
+   if self~resourceProvider \== .nil then return self~resourceProvider
+   raise syntax 98.900 array("ooDialog/WASM:" what "needs a reader of binary Windows resources; set .oodn~resourceProvider (see oodWeb.cls)")
+ 
+@@ -2344,6 +2345,7 @@
+   return self_~oodPeer~size
+ ::method il_handle unguarded
+   use arg self_
++  numeric digits 20                          -- identityHash is 64-bit on a 64-bit interpreter
+   return "0x"d2x(self_~oodPeer~identityHash~abs)~right(16, "0")
+ ::method il_isNull unguarded
+   return .false
+@@ -3791,7 +3793,11 @@
+   parse value self~op(self_, "tab.rect") with left top right bottom
+   if left == "" then return .false
+   r = a[1]
+-  r~left = left; r~top = top; r~right = right; r~bottom = bottom
++  -- TCM_ADJUSTRECT: r keeps its own co-ordinates (often the screen's, from windowRect); only the margins move it
++  parse value self~op(self_, "rect") with tl tt tr tb .
++  parse value self~ctlOp(self~target(self_)[1], 0, "origin") with ox oy
++  r~left += left - (tl - ox); r~top += top - (tt - oy)
++  r~right += right - (tr - ox); r~bottom += bottom - (tb - oy)
+   return .true
+ ::method tab_setItemSize unguarded
+   return .Size~new
+@@ -4251,17 +4257,22 @@
+   return
+ ::method binMenu_init unguarded    -- BinaryMenuBar~new(src, id, helpID, attachTo, autoConnect, methodName)
+   use arg self_, msg, a
+-  provider = self~needProvider("a BinaryMenuBar")
++  empty = \a~hasIndex(1)                     -- src .nil (or omitted): an empty menu bar, filled by the program
++  if \empty then empty = (a[1] == .nil)
+   src = ""
+-  if a~hasIndex(1) then src = a[1]
+-  if \src~isA(.String) then src = src~library     -- a ResDialog: the menu is in its module
++  if \empty then do
++    provider = self~needProvider("a BinaryMenuBar")
++    src = a[1]
++    if \src~isA(.String) then src = src~library   -- a ResDialog: the menu is in its module
++  end
+   rxID = .nil
+   if a~hasIndex(2) then rxID = a[2]
+   m = self~newMenu(self_, .true, rxID)
+   owner = .nil
+   if a~hasIndex(1) then if \a[1]~isA(.String) then owner = a[1]
+   if m~wID == -1 then if rxID \== .nil then m~wID = self~resolveId(owner, rxID)
+-  records = provider~menuTemplate(self~path(src), m~wID)
++  records = .array~new
++  if \empty then records = provider~menuTemplate(self~path(src), m~wID)
+   if records == .nil then return
+   path = .array~of(m)                  -- the menu being filled at each depth
+   do r over records
