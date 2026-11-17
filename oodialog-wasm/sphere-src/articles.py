@@ -1,8 +1,8 @@
 # Articles of the oodialog-wasm sphere. Architecture: Tom Dyer. Written by Claude (Fable 5.2).
 # Each article: id, title, summary, section, topics, and lists of plain sentences.
 S = "oodialog-wasm"
-VERSION = "0.5"            # the sphere's version; raise it for a material change
-PORT = "0.19.1"             # the version of the port the articles were checked against
+VERSION = "0.6"            # the sphere's version; raise it for a material change
+PORT = "0.20.0"             # the version of the port the articles were checked against
 REPO = "animatedads/oorexx, branch oodialog-wasm, directory oodialog-wasm/"
 
 def art(id, title, summary, section, topics, **lists):
@@ -88,6 +88,7 @@ art("ref.oodialog-wasm.renderer-contract",
         "gdi: drawing on a window. op(key, id, \"gdi\", verb, values, style). Verbs: line rect arc angleArc pixel getPixel fillRect clear extent text flood image scroll size ownerDraw.",
         "ra.page, since v0.19.0: op(key, tabId, \"ra.page\", childKey) names an embedded dialog as a page of that tab control. After every ResizingAdmin layout of the dialog, each page is moved and sized to the tab's display area; if the page has its own ra.init definition, it is laid out too. An embedded dialog that is sized by the size op and has a definition is laid out at once.",
         "tab.outer: the whole tab control as \"l t r b\" in the dialog's client area. tab.rect is its display area in the same coordinates. Rexx computes calcDisplayRect from the difference of the two. Control messages new in v0.19.0: BM_SETSTATE (0xF3), bit 4 of BM_GETSTATE (pushed), TCM_SETMINTABWIDTH (0x1331, answers the width before or -1).",
+        "deliver, since v0.20.0: a call of the page object like msgBox, not an op: deliver(name, mime, hex, title). hex is the file's bytes as hexadecimal digits. The renderer hands the file to the user: show it, and let the user print, open or save it. Answer the number of bytes as a string. Rexx side: .oodn~deliver(path, title, mime).",
         "mouseSub and mouse: the Mouse class. mouse verbs: capture release getCapture state cursor.",
         "tip.*: tool tips, since v0.18.0. The id is the tool tip's ID, not a control's: route tip.* before looking the id up as a control. tip.add takes one JSON text {key, host, rect, text}: host is a control's id or 0 for the dialog; rect is null (the whole window) or [l, t, r, b] in that window's client area; text null means the text is asked from the program. Others: tip.del(key), tip.text(key, text; one separator character means asked), tip.relay(hostId, 1|0), tip.count, tip.delay(ms), tip.maxWidth(px), tip.title(text), tip.active(1|0), tip.events(words), tip.show(text), tip.pos(x, y in screen pixels), tip.pop, tip.shown (toolKey, separator, text; empty if no tip), tip.tree(treeViewId).",
         "The renderer decides when a tip is due: the pointer rests on a tool for the delay. Fixed text: show the box, then send TT SHOW if tip.events names SHOW. Asked text: send TT NEEDTEXT; the program answers with tip.show. An empty text shows nothing. tip.pop ends the tip; if the pointer is still on the tool, the tip is due again after the delay. A tree-view named by tip.tree asks the text of the item under the pointer with NOTIFY GETINFOTIP (extra: the item); the answer is tip.show on tool tip ID 60000 + the tree-view's id.",
@@ -209,9 +210,9 @@ art("ref.oodialog-wasm.state",
     "This article is a snapshot. The current figures are always in README.md of the project, with the version they were measured on; sweep.tsv and poke.tsv hold the per-example results.",
     "reference", ["state", "coverage", "not-done"],
     snapshot=[
-        "Version 0.19.1, 16 November 2026.",
+        "Version 0.20.0, 17 November 2026.",
         "Natives ported: 688 of 1,182. 12 of the 43 added in v0.18.0 accept their call and do nothing.",
-        "Tests: 48 of 48 pass in headless Chromium. 33 of them are upstream examples or the designer's programs, run unchanged.",
+        "Tests: 49 of 49 pass in headless Chromium. 33 of them are upstream examples or the designer's programs, run unchanged.",
         "Sweep of the 140 upstream examples: 79 show their dialog, 7 run to the end, 9 show only a message box, 5 stop at a native not ported, 9 stop on an error (8 of them wait for a reader of binary resources), 24 are components, 7 are outside ooDialog.",
         "Probe at v0.19.0, 88 examples: 73 clean, 11 connect an event that is not produced, 4 with a problem, none of them in the port's own code. This run found four faults of the port in examples the sweep called shows; all four are fixed in v0.19.0.",
         "\"shows\" in the sweep means a dialog appeared. It does not mean every feature of the example works. Only an example that is a test (with steps and assertions) is known to work.",
@@ -223,6 +224,7 @@ art("ref.oodialog-wasm.state",
         "Resizing: ResizingAdmin (pin definitions, size limits, wantSizeEnded) since v0.17.0, pagedTab since v0.19.0; DlgAreaU with connectResize since v0.9.",
         "Drawing, bitmap buttons and animation, the Mouse class, in-place editing in a list-view (edit, drop-down list, editable combo box), list box tab stops, fonts.",
         "Tool tips since v0.18.0: tools that are windows or rectangles, fixed and asked text, NEEDTEXT SHOW POP RELAY, ToolInfo, manageAtypicalTool, a tree-view's getToolTips with GETINFOTIP.",
+        "Printing since v0.20.0: oodPrint.cls makes a PDF with the estate's oorexx_pdf and the page hands it to the user (Print, Open, Save). A list-view as a table, a text, a report of the program, any file. Not checked in a real browser.",
         "File dialogs and shell dialogs over the WASM machine's file system.",
     ],
     not_done=[
@@ -247,6 +249,7 @@ art("ops.oodialog-wasm.lessons",
     "operations", ["lessons", "faults", "method"],
     lessons=[
         "A build was pushed with a failing test. Cause: the last run's result was not read. Rule: read every summary line on the final build before the commit.",
+        "A source file was corrected and the test was run without a build. The test ran the old file from dist and showed nothing, because an error in an event method is a message box, not a line of output. Half an hour went on the wrong cause. Rule: build before every test run; when an event method seems to do nothing, look at the page for a message box first.",
         "The probe was not run for three releases. In that time four faults sat in examples the sweep called shows; one put a tab control's pages at the dialog's corner. Rule: run the probe on every release, not only the sweep.",
         "A test of this project called calcDisplayRect with an empty rectangle. Windows programs give it the tab's windowRect. The test passed and the Windows idiom failed. Rule: a test of this project uses the calls in the form the upstream examples use.",
         "A person with a real browser found in five minutes that the menu sample showed nothing when its items were chosen, and that typing into the calculator did nothing. The second is upstream's own behaviour: calculator.rex has no keyboard code and a read-only display. Rule: a sample must show the result of every action it offers; and when a report differs from upstream's code, read upstream's code before changing the port.",
@@ -278,6 +281,8 @@ EVIDENCE = [
     ("ref.oodialog-wasm.renderer-contract", "src/oodialog-web.js", "  function raLayout(dlg)", 25, "The ResizingAdmin arithmetic."),
     ("ref.oodialog-wasm.renderer-contract", "src/oodialog-web.js", "  /* ---- Tool tips ----", 14, "The tool tip operations and events."),
     ("ops.oodialog-wasm.differences", "README.md", "## Tool tips", 30, "What tool tips do and where they differ from Windows."),
+    ("ref.oodialog-wasm.renderer-contract", "src/oodialog-web.js", "  /* ---- Handing a file to the user (the standby printer) ----", 8, "deliver: what the page does with a file."),
+    ("ref.oodialog-wasm.state", "README.md", "## Printing (the standby printer)", 20, "What printing is here and what it needs."),
     ("ref.oodialog-wasm.seams", "src/oodWeb.cls", "::attribute resourceProvider unguarded", 1, "The resourceProvider attribute; the shapes are in the comment above it."),
     ("ref.oodialog-wasm.seams", "src/oodWeb.cls", "::method windows unguarded", 10, ".oodn~windows answers the live dialogs, oldest first."),
     ("ref.oodialog-wasm.seams", "site/oodfiles.js", "// oodfiles.js", 17, "windowsNames(files) and its rules."),

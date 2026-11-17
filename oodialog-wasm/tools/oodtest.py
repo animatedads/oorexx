@@ -20,15 +20,15 @@ def start_in_own_dir(pg, rel, files):
     """Run an example with its own directory as the current directory, as its author did."""
     cwd = '/home/rexx/' + str(pathlib.PurePosixPath(rel).parent) if '/' in rel else '/home/rexx'
     mine = dict(files)
-    for f in ('ooDialog.cls', 'oodWeb.cls', 'ooShapes.cls'): mine[cwd + '/' + f] = files['/home/rexx/' + f]
+    for f in ('ooDialog.cls', 'oodWeb.cls', 'ooShapes.cls', 'oodPrint.cls'): mine[cwd + '/' + f] = files['/home/rexx/' + f]
     pg.evaluate('([prog, files, cwd]) => window.oodRun(prog, files, cwd)', [pathlib.PurePosixPath(rel).name, mine, cwd])
 
 def sweep(tree, report):
     """Run every .rex of a tree that requires ooDialog.cls, 5 s each, and classify what happens."""
     import re, json
-    for f in ('ooDialog.cls', 'oodWeb.cls', 'ooShapes.cls'):
+    for f in ('ooDialog.cls', 'oodWeb.cls', 'ooShapes.cls', 'oodPrint.cls'):
         (ROOT / 'site' / f).write_bytes((ROOT / 'dist' / f).read_bytes())
-    files = {'/home/rexx/' + f: (ROOT / 'dist' / f).read_text() for f in ('ooDialog.cls', 'oodWeb.cls', 'ooShapes.cls')}
+    files = {'/home/rexx/' + f: (ROOT / 'dist' / f).read_text() for f in ('ooDialog.cls', 'oodWeb.cls', 'ooShapes.cls', 'oodPrint.cls')}
     progs = []
     for x in sorted(tree.rglob('*')):
         if x.is_file() and x.suffix.lower() in BINARY:
@@ -126,14 +126,14 @@ async () => {
 def poke(tree, lo, hi):
     """Depth probe: for each example that shows a dialog (sweep.tsv), use its controls and record what goes wrong."""
     import re, json
-    files = {'/home/rexx/' + f: (ROOT / 'dist' / f).read_text() for f in ('ooDialog.cls', 'oodWeb.cls', 'ooShapes.cls')}
+    files = {'/home/rexx/' + f: (ROOT / 'dist' / f).read_text() for f in ('ooDialog.cls', 'oodWeb.cls', 'ooShapes.cls', 'oodPrint.cls')}
     for x in sorted(tree.rglob('*')):
         if x.is_file() and x.suffix.lower() in BINARY:
             files['/home/rexx/' + str(x.relative_to(tree))] = {'b64': base64.b64encode(x.read_bytes()).decode()}
         if x.is_file() and x.suffix.lower() in TEXT:
             files['/home/rexx/' + str(x.relative_to(tree))] = x.read_text(encoding='latin-1')
     progs = [l.split('\t')[0] for l in (ROOT / 'sweep.tsv').read_text().splitlines() if l.split('\t')[1].startswith(('shows', 'message'))][lo:hi]
-    for f in ('ooDialog.cls', 'oodWeb.cls', 'ooShapes.cls'):
+    for f in ('ooDialog.cls', 'oodWeb.cls', 'ooShapes.cls', 'oodPrint.cls'):
         (ROOT / 'site' / f).write_bytes((ROOT / 'dist' / f).read_bytes())
     srv = subprocess.Popen(['node', str(ROOT / 'site/serve.mjs'), str(ROOT / 'site'), '--port', str(PORT)],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -216,7 +216,7 @@ def main():
     if '--tree' in args:
         i = args.index('--tree'); tree = pathlib.Path(args[i + 1]); del args[i:i + 2]
     tests = [a for a in args if not a.startswith('--')]
-    for f in ('ooDialog.cls', 'oodWeb.cls', 'ooShapes.cls'):
+    for f in ('ooDialog.cls', 'oodWeb.cls', 'ooShapes.cls', 'oodPrint.cls'):
         (ROOT / 'site' / f).write_bytes((ROOT / 'dist' / f).read_bytes())
     srv = subprocess.Popen(['node', str(ROOT / 'site/serve.mjs'), str(ROOT / 'site'), '--port', str(PORT)],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -231,7 +231,7 @@ def main():
                 pg.on('pageerror', lambda e: log('PAGEERROR', e))
                 pg.on('console', lambda m: log('console', m.text) if m.type == 'error' else None)
                 pg.goto(f'http://localhost:{PORT}/harness.html')
-                files = {'/home/rexx/' + f: (ROOT / 'dist' / f).read_text() for f in ('ooDialog.cls', 'oodWeb.cls', 'ooShapes.cls')}
+                files = {'/home/rexx/' + f: (ROOT / 'dist' / f).read_text() for f in ('ooDialog.cls', 'oodWeb.cls', 'ooShapes.cls', 'oodPrint.cls')}
                 extra = tp.parent / (tp.stem + '.files')
                 if extra.is_dir():
                     for x in sorted(extra.rglob('*')):   # files beside the test, with sub-directories; binaries go as bytes
@@ -280,6 +280,23 @@ def main():
                                 js, _, want = rest.rpartition(' ==> ')
                                 got = str(pg.evaluate(js))
                                 if got != want: raise Exception(f'expected {want!r}, got {got!r}')
+                            elif verb == 'pdf':    # pdf EXPR ==> PAGES ; text ; text ...   EXPR gives a PDF's bytes as hex (may be a promise).
+                                # The file is read by pdfinfo and pdftotext, programs that have nothing to do with the writer.
+                                expr, _, want = rest.partition(' ==> ')
+                                data = bytes.fromhex(pg.evaluate(expr))
+                                import tempfile
+                                with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tf: tf.write(data)
+                                info = subprocess.run(['pdfinfo', tf.name], capture_output=True, text=True)
+                                text = ' '.join(subprocess.run(['pdftotext', '-layout', tf.name, '-'], capture_output=True, text=True).stdout.split())
+                                os.unlink(tf.name)
+                                parts = [x.strip() for x in want.split(' ; ')]
+                                pages = [l.split()[1] for l in info.stdout.splitlines() if l.startswith('Pages:')]
+                                if info.returncode != 0 or pages != [parts[0]]: raise Exception(f'pdfinfo: rc {info.returncode}, pages {pages}, expected {parts[0]}: {info.stderr.strip()[:120]}')
+                                at = 0
+                                for frag in parts[1:]:
+                                    found = text.find(frag, at)
+                                    if found < 0: raise Exception(f'pdftotext: {frag!r} not found (in order) in {text[:300]!r}')
+                                    at = found + len(frag)
                             elif verb == 'shot':
                                 pg.screenshot(path=str(ROOT / 'shots' / (rest + '.png')))
                             else: raise Exception('unknown step: ' + verb)   # (a step that does nothing must not pass)

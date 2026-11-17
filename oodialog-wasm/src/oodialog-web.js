@@ -45,6 +45,11 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
 .ood-frame{pointer-events:none}
 .ood-todo{border:1px dashed #a33;color:#a33;font-size:.85em;overflow:hidden;padding:2px}
 .ood-u{text-decoration:underline}
+.ood-deliver{position:fixed;inset:4vh 4vw;display:flex;flex-direction:column;background:#fff;border:1px solid #555;box-shadow:0 6px 24px rgba(0,0,0,.4);font:13px 'Segoe UI',Tahoma,sans-serif;color:#222}
+.ood-deliverbar{display:flex;flex-wrap:wrap;gap:.6em;align-items:center;padding:.5em .7em;background:#1f3f66;color:#fff}
+.ood-deliverbar span{flex:1 1 12em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ood-deliveract{color:#1f3f66;background:#fff;border-radius:3px;padding:.25em .8em;text-decoration:none}
+.ood-deliverview{flex:1;border:0;width:100%;background:#888}
 .ood-pushed{border-style:inset;background:#cce4f7}
 .ood-tip{position:fixed;z-index:100000;background:#fff;color:#333;border:1px solid #767676;border-radius:3px;padding:3px 7px;font:12px 'Segoe UI',Tahoma,sans-serif;box-shadow:2px 2px 4px rgba(0,0,0,.25);pointer-events:none}
 .ood-tip b{display:block;margin-bottom:2px}
@@ -1608,6 +1613,34 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
   }
 
   /* ---- message box ------------------------------------------------------ */
+  /* ---- Handing a file to the user (the standby printer) ----
+     ood.deliver(name, mime, hex, title): the bytes of a file of the program's file system, as
+     hex.  The page has no printer and no desktop, so it shows the file in a panel with four
+     actions, each started by the user's own click (a browser refuses them otherwise):
+     Print (the browser's print of the shown file), Open (a new tab), Save (a download), Close.
+     ood.delivered lists what was handed over: {name, mime, size, title, magic}. */
+  ood.delivered = [];
+  ood.deliver = function (name, mime, hex, title) {
+    boot();
+    hex = String(hex);
+    const bytes = new Uint8Array(hex.length >> 1);
+    for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+    const url = URL.createObjectURL(new Blob([bytes], { type: String(mime) }));
+    ood.delivered.push({ name: String(name), mime: String(mime), size: bytes.length, title: String(title || name), magic: String.fromCharCode(...bytes.slice(0, 5)), url });
+    D.querySelectorAll('.ood-deliver').forEach((x) => x.remove());
+    const el = D.createElement('div'); el.className = 'ood-deliver'; el.style.zIndex = ++ood.z + 100000;
+    const bar = D.createElement('div'); bar.className = 'ood-deliverbar';
+    const cap = D.createElement('span'); cap.textContent = String(title || name) + '  (' + name + ', ' + bytes.length + ' bytes)'; bar.appendChild(cap);
+    const view = D.createElement('iframe'); view.className = 'ood-deliverview'; view.title = String(title || name); view.src = url;
+    const act = (label, make) => { const a = D.createElement('a'); a.textContent = label; a.href = url; a.className = 'ood-deliveract'; make(a); bar.appendChild(a); return a; };
+    act('Print', (a) => { a.addEventListener('click', (e) => { e.preventDefault(); try { view.contentWindow.focus(); view.contentWindow.print(); } catch (err) { W.open(url, '_blank'); } }); });
+    act('Open', (a) => { a.target = '_blank'; a.rel = 'noopener'; });
+    act('Save', (a) => { a.download = String(name); });
+    act('Close', (a) => { a.addEventListener('click', (e) => { e.preventDefault(); el.remove(); }); });
+    el.appendChild(bar); el.appendChild(view); D.body.appendChild(el);
+    return String(bytes.length);
+  };
+
   ood.msgBox = function (token, text, title, buttons, icon) {
     boot();
     const key = -Number(token);

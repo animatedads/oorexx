@@ -1,4 +1,4 @@
-# ooDialog for ooRexx/WASM — v0.19.1
+# ooDialog for ooRexx/WASM — v0.20.0
 
 Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: Josep Maria Blasco's
 ooRexx/WASM (`oorexxwasm` 0.2.4, ooRexx 5.3.0) and its `js.cls`.
@@ -55,13 +55,13 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
     python3 tools/oodtest.py --poke upstream/examples 0 24
     python3 tools/oodtest.py --tree upstream/examples tests/t*.rex tests/up/calculator.rex tests/up/oodpbar.rex tests/up/oodStandardRoutines.rex
 
-## State on 2026-11-16 (v0.19.1)
+## State on 2026-11-17 (v0.20.0)
 
 - Natives ported: 688 of 1,182 (58.2%); 12 of the 43 added in v0.18.0 accept
   their call and do nothing (see "Tool tips"). (The total was given as 1,181
   in v0.16.0 and v0.17.0; `dist/natives.txt` has 1,182 lines. It fell from 1,196 because 12
   natives are now plain Rexx in `src/patches.txt`.)
-- Tests: 48 of 48 pass in headless Chromium (`tests/t01`..`t17` with expected
+- Tests: 49 of 49 pass in headless Chromium (`tests/t01`..`t17` with expected
   output, the binary resource hand-off test `tests/res/t07_resdialog_binary`,
   four unmodified upstream samples: `calculator.rex`,
   `oodpbar.rex`, `oodStandardRoutines.rex`, and the tutorial
@@ -190,6 +190,54 @@ Until v0.17.0 this class was not ported at all: its examples showed their
 dialog, which the sweep counted, but the dialog could not be resized by its
 rules. Resizing with DlgAreaU and connectResize (`tests/t13_resize`) is a
 different mechanism and worked before.
+
+## Printing (the standby printer)
+
+ooDialog has no printing classes, and none of the upstream examples prints:
+their Print buttons show a message. A page has no printer device either. So
+printing here is an addition, `src/oodPrint.cls`, built on the estate's ooRexx
+PDF writer (package `oorexx_pdf` of animatedads/alchemy, written for Alchemy
+reports). The program makes a PDF; the page shows it in a panel with Print,
+Open, Save and Close, each started by the user's click.
+
+    ::requires "oodPrint.cls"
+    .OodPrint~listView(listView, title, fileName)   -- columns and rows, as a table
+    .OodPrint~text(text, title, fileName)           -- paragraphs
+    .OodPrint~report(aPdfFlowReport, fileName)      -- a report the program built
+    .OodPrint~file(path, title)                     -- any file, as it is
+
+Each answers the number of bytes handed over. `.oodn~deliver(path, title,
+mime)` is the call underneath, for any file of the program's file system.
+
+A program that prints needs six files of the estate beside it. They are not
+in this repository. Collect them from a clone of animatedads/alchemy:
+
+    rexx tools/oodpdfkit.rex PATH_TO_ALCHEMY_CLONE OUT_DIR
+
+The tool logs each step and applies two repairs to `PdfCore.cls` of oorexx_pdf
+v0.1-dev6 when they are needed. Without the first the file does not parse (a
+string without its closing quote). Without the second, "(" and ")" print with
+a backslash before them and a backslash in a text is lost (the escapes are
+written as in C; Rexx has none). Both are faults of the estate's package and
+are reported to it; the tool changes nothing once they are repaired there.
+
+Test: `tests/print/t19_print`, run with the kit as the tree:
+
+    python3 tools/oodtest.py --tree OUT_DIR tests/print/t19_print.rex
+
+It reads each PDF back with `pdfinfo` and `pdftotext` (the harness step
+`pdf`), programs that have nothing to do with the writer.
+
+Not done, not checked:
+- Headless Chromium has no PDF viewer: the panel's frame is empty there. That
+  a real browser shows the PDF in it, and that Print prints it, is not checked.
+  Open and Save are plain links.
+- The PDF writer's Helvetica path writes text as WinAnsi. Text outside it
+  (Greek, Cyrillic, CJK) needs the writer's managed fonts, which call
+  Fontconfig: not available in the browser.
+- No sample on the demo page: the kit is not in this repository.
+- Printing a dialog's fields, and printing what a program drew (the GDI
+  calls), are not done.
 
 ## Tool tips
 

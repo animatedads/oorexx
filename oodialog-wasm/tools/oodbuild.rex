@@ -29,8 +29,14 @@ copy = .stream~new("dist/ooShapes.cls")~~open("WRITE REPLACE")
 copy~arrayOut(shapes~arrayIn)
 shapes~close
 copy~close
-say "oodbuild: copying the three .cls files to site/ for the demo page"
-do name over .array~of("ooDialog.cls", "oodWeb.cls", "ooShapes.cls")
+say "oodbuild: copying oodPrint.cls"
+printFrom = .stream~new("src/oodPrint.cls")~~open("READ")
+printTo = .stream~new("dist/oodPrint.cls")~~open("WRITE REPLACE")
+printTo~arrayOut(printFrom~arrayIn)
+printFrom~close
+printTo~close
+say "oodbuild: copying the four .cls files to site/ for the demo page"
+do name over .array~of("ooDialog.cls", "oodWeb.cls", "ooShapes.cls", "oodPrint.cls")
   from = .stream~new("dist/"name)~~open("READ")
   to = .stream~new("site/"name)~~open("WRITE REPLACE")
   to~arrayOut(from~arrayIn)

@@ -1,0 +1,25 @@
+wait .ood-dlg >> text=Print list
+click .ood-dlg >> text=Print list
+wait .ood-deliver
+expect window.__ood.delivered.length ==> 1
+expect JSON.stringify((({name, mime, title, magic}) => ({name, mime, title, magic}))(window.__ood.delivered[0])) ==> {"name":"parts.pdf","mime":"application/pdf","title":"Parts in stock","magic":"%PDF-"}
+expect [...document.querySelectorAll('.ood-deliveract')].map(a => a.textContent + (a.download ? ':' + a.download : '') + (a.target ? ':' + a.target : '')).join(' ') ==> Print Open:_blank Save:parts.pdf Close
+eval (() => { window.__pdf = async (i) => { const b = new Uint8Array(await (await fetch(window.__ood.delivered[i].url)).arrayBuffer()); let s = ''; for (const x of b) s += x.toString(16).padStart(2, '0'); return s; }; return 'set'; })()
+shot print_panel
+click .ood-deliver >> text=Close
+expect document.querySelectorAll('.ood-deliver').length ==> 0
+click .ood-dlg >> text=Print text
+wait .ood-deliver
+expect window.__ood.delivered[1].name + ' ' + window.__ood.delivered[1].title ==> note.pdf A note
+click .ood-deliver >> text=Close
+click .ood-dlg >> text=Print report
+wait .ood-deliver
+sleep 500
+expect window.__ood.delivered.length ==> 3
+expect window.__ood.delivered[2].name + ' ' + window.__ood.delivered[2].title ==> report.pdf Built by the program
+expect document.querySelectorAll('.ood-deliver').length ==> 1
+pdf window.__pdf(0) ==> 1 ; Parts in stock ; Part ; Description ; Stock ; P-100 ; Left-handed widget (blue) ; 12 ; P-205 ; Bracket, 40 mm ; 340 ; P-333 ; Cable (5 m) \ spare ; 7 ; 3 rows
+pdf window.__pdf(1) ==> 1 ; A note ; First paragraph, line one. ; Line two. ; Second paragraph.
+pdf window.__pdf(2) ==> 1 ; Built by the program ; Owner ; Tom Dyer ; One paragraph.
+click .ood-deliver >> text=Close
+click .ood-dlg >> text=Close

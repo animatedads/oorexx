@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6
+- State article brought to port v0.20.0 (printing through the estate's oorexx_pdf).
+- Renderer contract: deliver.
+- Lessons: a test run against a build that was not rebuilt.
+- Written by Claude (Fable 5.2).
+
 ## 0.5
 - State article brought to port v0.19.1 (demo page samples; no change to the renderer contract).
 - Lessons: a report from a person with a real browser found a sample that showed nothing; upstream's calculator has no keyboard code.

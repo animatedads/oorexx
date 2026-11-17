@@ -24,9 +24,9 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.19.1"
+  return "0.20.0"
 ::method module_lastChanged class
-  return "2026-11-16"
+  return "2026-11-17"
 ::attribute key unguarded
 ::attribute rexxSelf unguarded
 ::attribute library unguarded
@@ -102,9 +102,9 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.19.1"
+  return "0.20.0"
 ::method module_lastChanged class
-  return "2026-11-16"
+  return "2026-11-17"
 ::attribute rexxSelf unguarded
 ::attribute isBar unguarded
 ::attribute wID unguarded
@@ -131,9 +131,9 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.19.1"
+  return "0.20.0"
 ::method module_lastChanged class
-  return "2026-11-16"
+  return "2026-11-17"
 ::attribute dlg unguarded             -- its dialog's OodDlg
 ::attribute id unguarded
 ::attribute kind unguarded
@@ -149,9 +149,9 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.19.1"
+  return "0.20.0"
 ::method module_lastChanged class
-  return "2026-11-16"
+  return "2026-11-17"
 ::method module_version unguarded
   return self~class~module_version
 ::method module_lastChanged unguarded
@@ -205,6 +205,31 @@
   return 0
 
 /*---- the page ----------------------------------------------------------------*/
+/* deliver(path, title, mime): hand a file of the program's file system to the user.  The page
+   shows it with Print, Open, Save and Close.  Answers the number of bytes; -1 if the file
+   cannot be read.  (The standby printer: see oodPrint.cls.) */
+::method deliver unguarded
+  use strict arg path, title = "", mime = ""
+  file = .stream~new(path)
+  if file~query("EXISTS") == "" then return -1
+  if file~open("READ SHARED") \== "READY:" then return -1
+  bytes = file~charIn(1, file~chars)
+  file~close
+  name = filespec("NAME", path~changeStr("\", "/"))
+  if mime == "" then do
+    ext = name~substr(name~lastPos(".") + 1)~upper
+    types = .directory~new
+    types~pdf = "application/pdf"
+    types~txt = "text/plain"
+    types~csv = "text/csv"
+    types~html = "text/html"
+    types~png = "image/png"
+    types~jpg = "image/jpeg"
+    mime = types[ext]
+    if mime == .nil then mime = "application/octet-stream"
+  end
+  if title == "" then title = name
+  return self~web~deliver(name, mime, bytes~c2x, title)
 ::method web                       -- the page's __ood, loading the runtime the first time
   expose web
   if var("WEB") then return web
