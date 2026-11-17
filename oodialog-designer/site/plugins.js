@@ -196,8 +196,15 @@
     for (const id of await assistIds()) sel.appendChild(el('option', { value: id, textContent: titles[id] || id }));
     sel.hidden = sel.options.length < 2;
     ask.querySelector('#akWhat').textContent = opts.title || '';
-    ask.querySelector('.ak-views').hidden = !window.OxGraph;
-    if (!window.OxGraph) ask.dataset.view = 'code';
+    // kind: BODY (a method body) or DOC (an ooRexxDoc comment: no graphs, the task may be empty)
+    ask.dataset.kind = opts.kind === 'DOC' ? 'DOC' : 'BODY';
+    const doc = ask.dataset.kind === 'DOC';
+    ask.querySelector('.ak-views').hidden = !window.OxGraph || doc;
+    if (!window.OxGraph || doc) ask.dataset.view = 'code';
+    ask.querySelector('#akTask').setAttribute('data-nls-placeholder', doc ? 'ask.doc.ph' : 'ask.task.ph');
+    ask.querySelector('.ak-sub[data-nls]').setAttribute('data-nls', doc ? 'ask.doc.now' : 'ask.now');
+    ask.querySelector('.ak-hint').setAttribute('data-nls', doc ? 'ask.doc.hint' : 'ask.hint');
+    window.OodNlsPage.apply(ask);
     proposal = null; lastAsked = opts.code(); showProposal(lastAsked, null);
     ask.hidden = false;
     ask.querySelector('#akTask').focus();
@@ -208,7 +215,7 @@
     lastAsked = code;
     go.disabled = true; ask.querySelector('#akInfo').textContent = T('ask.asking');
     ask.querySelector('#akApply').disabled = true;
-    const out = await call('use arg i, t, c, x; return .oodPluginsHost~assist(i, t, c, x)', id, task, code, askOpts.context())
+    const out = await call('use arg i, t, c, x, k; return .oodPluginsHost~assist(i, t, c, x, k)', id, task, code, askOpts.context(), ask.dataset.kind || 'BODY')
       .then(String, (e) => 'STATUS failed\nMODEL\nCOST\nNOTE ' + (e && e.message || e) + '\nCODE\n');
     go.disabled = false;
     proposal = parse(out);
@@ -235,10 +242,11 @@
       if (ask.dataset.view === 'graph' && window.OxGraph) await window.OxGraph.preview(code, oldBox); else oldBox.textContent = code;
       return;
     }
-    info.textContent = [T('ask.status.' + p.status), p.model && T('ask.model', p.model), p.cost && T('ask.cost', p.cost)].filter(Boolean).join('  ·  ');
+    const st = 'ask.status.' + p.status + (ask.dataset.kind === 'DOC' && p.status === 'ok' ? '.doc' : '');
+    info.textContent = [T(st), p.model && T('ask.model', p.model), p.cost && T('ask.cost', p.cost)].filter(Boolean).join('  ·  ');
     for (const n of p.notes) notes.appendChild(el('li', { textContent: n }));
     ask.querySelector('#akApply').disabled = p.status !== 'ok' || p.code === code;
-    const d = diff(code.split('\n'), p.code ? p.code.split('\n') : []);
+    const d = diff(code ? code.split('\n') : [], p.code ? p.code.split('\n') : []);
     if (ask.dataset.view === 'graph' && window.OxGraph) {
       // each side as blocks; a block holding a changed line is marked
       ask.dataset.graphReady = '0';

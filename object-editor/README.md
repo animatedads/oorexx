@@ -1,4 +1,4 @@
-# ooRexx Object Editor — v0.3.0
+# ooRexx Object Editor — v0.4.0
 
 The shared **Database Lab…** panel is also available here (described under
 the ooDialog Designer's Database Lab section). It runs the canonical Alchemy
@@ -57,6 +57,20 @@ is read as written (its prolog is blanked only for loading), so a class's
 doc-comment before its first directive is found. Built-in classes have no
 source and so no docs.
 
+**Writing ooRexxDoc (v0.4, Rony's "AI can write ooRexxDoc"):** with a code
+assistance plugin on, **Document…** beside **Ask…** (for the open method)
+and in the class card (for the class) asks for a doc-comment written from
+the member's own directive and body (`OxWorkspace~memberText`). The task
+may be empty. The proposal is shown beside the comment there now, and can
+be applied only when it is one `/** ... */` block or lines that all start
+with `---` (the plugin's `DOC` kind; see the designer's README). Applying
+it calls `OxWorkspace~setDoc(class, member, side, text)`: the comment
+replaces the doc-comment before the directive, or is put there, after a
+blank line; an ordinary `/* */` comment there is left alone; an empty text
+removes the doc-comment; anything that is not one doc-comment is refused.
+The file is reloaded, and the member's tooltip is the new summary.
+`OxWorkspace~getDoc` answers the comment as written.
+
 ## Editing
 
 - **Structural edits** are made in the source, and the file is reloaded at
@@ -111,7 +125,11 @@ the ooDialog Designer:
   the provider cannot supply is noted, not guessed.
 - **What it offers** is found by loading the installed file and examining it
   with OxWorkspace: its public classes, and their public methods,
-  attributes and constants on both sides.
+  attributes and constants on both sides. **(v0.4)** With their ooRexxDoc
+  (OxDocs): a class's comment is shown under it when it is opened; a
+  member's first sentence is its tooltip and a click shows the whole
+  comment. A library the Rexx Parser cannot read is still offered, without
+  docs.
 - **Use it here** adds the `::requires`, after which completion knows the
   library.
 - `tools/libindex.rex` writes an index from a local clone, e.g.
@@ -145,15 +163,26 @@ Then open `http://localhost:8080/objed.html`.
     cd ..
     python3 tools/oxtest.py
 
-## State (2026-11-15, v0.3.0)
+## State (2026-11-17, v0.4.0)
 
-- `t01_object.rex`: 57 of 57 checks pass under ooRexx/WASM in Node. They
+- `t01_object.rex`: 73 of 73 checks pass under ooRexx/WASM in Node. They
   cover the reflection results, lookup order, both sides, the edits and
   their reloads, the refusals, completion in every context above, the
-  prolog not being run, and (v0.3) ooRexxDoc: a class's from the prolog, a
-  member's summary and tags, a `---` doc-comment, none for a built-in class.
-- `oxtest.py`: 11 of 11 scenarios pass in headless Chromium (7 to 11:
-  ui_de, plugins, assist, ssc, docs). **reflect** now also checks the
+  prolog not being run, (v0.3) ooRexxDoc: a class's from the prolog, a
+  member's summary and tags, a `---` doc-comment, none for a built-in class;
+  and (v0.4) writing it: `getDoc` for `/**`, `---`, the class and none;
+  `memberText`; a new comment put before a member with a blank line above,
+  and read back by the Rexx Parser; a `---` comment replaced; the class's
+  after an ordinary comment; an empty text removing one; an ordinary
+  `/* */` left alone; a `/* */`, two comments and a missing member refused.
+- `oxtest.py`: 12 of 12 scenarios pass in headless Chromium (7 to 12:
+  ui_de, plugins, assist, ssc, docs, libdocs). **assist** (v0.4) also
+  documents `Person~addNote`: a plain comment refused with its reason, then
+  an empty task's proposal applied: it is in the source before the
+  directive, the member's tooltip is its summary, and the method's code is
+  kept. **libdocs:** a documented file handed to the local provider and
+  installed: the class's and a member's first sentence on hover, the whole
+  comment on click, no tooltip for an undocumented member. **reflect** now also checks the
   groups (Object closed, its members hidden until opened) and the operator
   labels; **docs** checks the tooltips of a `/**` and a `---` member and of
   the class, the whole text with its tags on a click, and no tooltip for an
@@ -170,11 +199,13 @@ Then open `http://localhost:8080/objed.html`.
   5. **oodialog:** the designer's Calculator.rex opens without its dialog
      showing; its chain runs through PlainBaseDialog to UserDialog, and
      `self~createPush` completes from ooDialog.
-- `t02_libraries.rex`: 26 of 26 checks pass. They cover version order, the
+- `t02_libraries.rex`: 29 of 29 checks pass. They cover version order, the
   catalogue (latest versions only), details, the install closure
   (`LoggingCore.cls` brings `MethodInterposition.cls`), goodies by
   reflection, a `::requires` with completion of `.LogService` and of
-  `log~` after `log = .LogService~new`, and a local provider with an upload.
+  `log~` after `log = .LogService~new`, and a local provider with an upload
+  (v0.4: its goodies carry the class's and a member's ooRexxDoc, and none
+  for an undocumented member).
 - `oxtest.py` scenario 6, **libraries:** Alchemy is connected and
   `oorexx_logging` found, installed and examined, then used. The
   `::requires` lands in the file, and `.LogSer` and `log~serv` complete.
@@ -204,9 +235,8 @@ order, a library's methods).
   cannot be found by reflection, so `self~lcd~` offers nothing.
 - `::annotate`, `::routine` editing and `::options` are shown in the source
   only.
-- Writing ooRexxDoc: a code-assistance "Document" task that proposes a
-  doc-comment for a member, applied before its directive, is next. The
-  Libraries panel does not show docs yet.
+- Document… is for a method or the class; an attribute or a constant has
+  none yet (`setDoc` takes them; the page has no button for them).
 - Renaming a member does not rewrite its callers.
 - The Alchemy index is made by hand with `libindex.rex`. Publishing it from
   the estate itself (written by Autobuild on each merge) would keep it

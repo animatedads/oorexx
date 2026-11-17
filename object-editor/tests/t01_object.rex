@@ -98,7 +98,26 @@ call check "ooRexxDoc read by the Rexx Parser: the class's, from the prolog", d~
 call check "  a member's summary and its tags", d~pos("METHOD" || "09"x || "age" || "09"x || "Age in whole years.") > 0 & d~pos("@return the age") > 0
 call check "  a --- doc-comment", d~pos("ATTRIBUTE" || "09"x || "name" || "09"x || "The person's name, as written.") > 0
 call check "  none for a class with no source", w~docsOf("Object") == ""
-call check "module_version", .OxWorkspace~module_version == "0.3.0" & w~module_version == "0.3.0"
+-- 9. writing ooRexxDoc (the code assistance "Document" task applies its answer so)
+call check "getDoc: a member's /** */", w~getDoc("Person", "age", "INSTANCE")~left(3) == "/**" & w~getDoc("Person", "age", "INSTANCE")~pos("@return the age") > 0
+call check "getDoc: a --- doc-comment", w~getDoc("Person", "name", "INSTANCE") == "--- The person's name, as written."
+call check "getDoc: the class's", w~getDoc("Person")~pos("A person, with a name") > 0
+call check "getDoc: none", w~getDoc("Person", "addNote", "INSTANCE") == "" & w~getDoc("Printable") == ""
+call check "memberText: the directive and body", w~memberText("Person", "addNote", "INSTANCE") == "::method addNote unguarded" || "0a"x || "  expose notes" || "0a"x || "  use strict arg text" || "0a"x || "  notes~append(text)"
+call check "memberText: the class's directive", w~memberText("Employee") == "::class Employee public subclass Person inherit Printable"
+dw = .OxWorkspace~new(file, text)
+call check "setDoc: a new doc, before the member", dw~setDoc("Person", "addNote", "INSTANCE", "/** Adds a note." || "0a"x || " * @param text  the note" || "0a"x || " */") == ""
+call check "  read back, and seen by the Rexx Parser", dw~getDoc("Person", "addNote", "INSTANCE")~pos("@param text") > 0 & dw~docsOf("Person")~pos("METHOD" || "09"x || "addnote" || "09"x || "Adds a note.") > 0
+call check "  a blank line above it, the member's code kept", dw~text~pos("  return date(""S"")~left(4) - born~left(4)" || "0a"x || "0a"x || "/** Adds a note.") > 0 & dw~getBody("Person", "addNote", "INSTANCE")~pos("notes~append(text)") > 0
+call check "setDoc: a --- doc replaced by a /** */", dw~setDoc("Person", "name", "INSTANCE", "/** The name. */") == "" & dw~getDoc("Person", "name", "INSTANCE") == "/** The name. */" & dw~text~pos("--- The person's") = 0
+call check "setDoc: the class's, after the ordinary comment", dw~setDoc("Employee", "", "INSTANCE", "--- Someone paid.") == "" & dw~getDoc("Employee") == "--- Someone paid." & dw~text~pos("--- Someone paid." || "0a"x || "::class Employee") > 0
+call check "setDoc: an empty text removes it", dw~setDoc("Person", "age", "INSTANCE", "") == "" & dw~getDoc("Person", "age", "INSTANCE") == "" & dw~text~pos("Age in whole years") = 0
+call check "setDoc: an ordinary /* */ before a member is not taken for a doc", dw~getDoc("Printable") == "" & dw~text~left(17) == "/* Person.cls -- "
+
+call refuses "setDoc: a /* */ comment is not ooRexxDoc", "w~setDoc('Person', 'init', 'INSTANCE', '/* not a doc */')"
+call refuses "setDoc: two comments in one", "w~setDoc('Person', 'init', 'INSTANCE', '/** one */' || '0a'x || '/** two */')"
+call refuses "setDoc: a member that is not there", "w~setDoc('Person', 'nosuch', 'INSTANCE', '/** x */')"
+call check "module_version", .OxWorkspace~module_version == "0.4.0" & w~module_version == "0.4.0"
 say "t01_object:" checks - fails "of" checks "checks passed"
 if fails > 0 then return 1
 return 0

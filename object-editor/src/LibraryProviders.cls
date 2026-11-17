@@ -438,8 +438,11 @@ apiRefused:
   return path
 
 -- What an installed file offers, found by loading it and examining the
--- objects: "class<tab>Name<tab>superclass" then "member<tab>Class<tab>name<tab>kind<tab>side"
--- for its public classes and their own public members.
+-- objects: "class<tab>Name<tab>superclass<tab>summary<tab>doc" then
+-- "member<tab>Class<tab>name<tab>kind<tab>side<tab>summary<tab>doc" for its
+-- public classes and their own public members.  summary and doc are its
+-- ooRexxDoc (OxDocs: the first sentence, and the whole text with "0b"x for
+-- each line end), "" when there is none or the Rexx Parser cannot read it.
 ::method goodies
   use strict arg path
   s = .stream~new(path)
@@ -453,13 +456,19 @@ apiRefused:
     if c == "" then iterate
     parse value w~classInfo(c) with nm "09"x sup "09"x . "09"x . "09"x isPublic "09"x .
     if isPublic \== "1" then iterate
-    out~append("class" || "09"x || nm || "09"x || sup)
+    docs = oxDocsTable(w, c)
+    out~append("class" || "09"x || nm || "09"x || sup || "09"x || docs["CLASS"])
     do side over .array~of("CLASS", "INSTANCE")
       do m over w~members(c, side, 0)~makeArray("0a"x)
         parse var m mn "09"x kind "09"x vis "09"x .
         if vis \== "public" then iterate
         if mn~right(1) == "=" then iterate
-        out~append("member" || "09"x || nm || "09"x || mn || "09"x || kind~lower || "09"x || side~lower)
+        key = kind mn~lower
+        if side == "CLASS" then key = key "class"
+        d = docs[key]
+        if d == .nil, kind == "ATTRIBUTE" then d = docs["METHOD" mn~lower]
+        if d == .nil then d = "09"x
+        out~append("member" || "09"x || nm || "09"x || mn || "09"x || kind~lower || "09"x || side~lower || "09"x || d)
       end
     end
   end
@@ -479,6 +488,22 @@ apiRefused:
 
 
 /* ---- routines ---------------------------------------------------------------- */
+
+-- a class's ooRexxDoc as a table: "KIND name" (as OxDocs gives them; "CLASS"
+-- for the class) -> "summary<tab>doc".  Empty when the parser fails: the
+-- docs are a help, and a library is still offered without them.
+::routine oxDocsTable public
+  use strict arg w, cls
+  t = .table~new
+  t~put("09"x, "CLASS")
+  signal on syntax name noDocs
+  do l over w~docsOf(cls)~makeArray("0a"x)
+    parse var l kind "09"x name "09"x summary "09"x text
+    if kind == "CLASS" then t~put(summary || "09"x || text, "CLASS")
+    else t~put(summary || "09"x || text, kind name)
+  end
+noDocs:
+  return t
 
 -- "name_v1.2-dev3" -> "name<tab>1.2-dev3"; no version: "name<tab>"
 ::routine oxSplitVersion public

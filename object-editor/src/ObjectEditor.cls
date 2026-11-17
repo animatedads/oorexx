@@ -23,13 +23,13 @@
 
 ::class OxModule public mixinclass Object
 ::method module_version class
-  return "0.3.0"
+  return "0.4.0"
 ::method module_lastChanged class
-  return "2026-11-15"
+  return "2026-11-17"
 ::method module_version
-  return "0.3.0"
+  return "0.4.0"
 ::method module_lastChanged
-  return "2026-11-15"
+  return "2026-11-17"
 
 
 /* One directive and the lines under it, or the prolog before the first one. */
@@ -788,6 +788,138 @@ editRefused:
   g~body = body
   if self~load then return ""
   return self~lastError
+
+/* ---- ooRexxDoc written in the editor ----------------------------------------
+   A doc-comment sits right before its directive, so it is held at the end of
+   the segment before it.  getDoc answers it as written ("" for none); setDoc
+   puts text there, replacing the one that is there, or takes it away ("").
+   The text must be one doc-comment: a block from slash-star-star to star-slash
+   with no star-slash inside, or lines that all start with three dashes.
+   (Code assistance proposes one; the person applies it.) */
+::method getDoc
+  use strict arg cls, name = "", scope = "INSTANCE"
+  parse value self~docPlace(cls, name, scope) with i first last
+  if first = 0 then return ""
+  prev = self~source~segments[i]
+  out = .array~new
+  do n = first to last
+    out~append(prev~body[n])
+  end
+  return out~makeString("L", "0a"x)
+
+-- a member's directive and body (name "": the class's directive), as the
+-- file has them: what a doc-comment is written from
+::method memberText
+  use strict arg cls, name = "", scope = "INSTANCE"
+  if name == "" then g = self~source~find("CLASS", "", cls)
+  else g = self~source~findMember(cls, name, scope)
+  if g == .nil then raise syntax 93.900 array(oxT("ox.err.noOwn", cls, name))
+  out = .array~of(g~header)
+  do l over g~body
+    out~append(l)
+  end
+  do while out~items > 1
+    if out~lastItem~strip \== "" then leave
+    out~delete(out~last)
+  end
+  return out~makeString("L", "0a"x)
+
+::method setDoc
+  use strict arg cls, name, scope, text
+  lines = .array~new
+  do l over text~changeStr("0d0a"x, "0a"x)~makeArray("0a"x)
+    lines~append(l~strip("T"))
+  end
+  do while lines~items > 0
+    if lines[1]~strip \== "" then leave
+    lines~delete(1)
+  end
+  do while lines~items > 0
+    if lines~lastItem~strip \== "" then leave
+    lines~delete(lines~last)
+  end
+  if lines~items > 0 then do
+    if \self~isDocComment(lines) then raise syntax 93.900 array(oxT("ox.err.notDoc"))
+  end
+  parse value self~docPlace(cls, name, scope) with i first last
+  prev = self~source~segments[i]
+  body = prev~body
+  if first > 0 then do                                     -- the one there goes
+    do n = last to first by -1
+      body~delete(n)
+    end
+  end
+  -- right before the directive; blank lines above it stay above it, and a new
+  -- one is kept off the code before it by one blank line
+  if first > 0 then at = first
+  else do
+    if body~items > 0, lines~items > 0 then do
+      if body~lastItem~strip \== "" then body~append("")
+    end
+    at = body~items + 1
+  end
+  out = .array~new
+  do n = 1 to at - 1
+    out~append(body[n])
+  end
+  do l over lines
+    out~append(l)
+  end
+  do n = at to body~items
+    out~append(body[n])
+  end
+  prev~body = out
+  if self~load then return ""
+  return self~lastError
+
+-- where the doc-comment of a class (name "") or member goes: the index of the
+-- segment before its directive, then the first and last line of the
+-- doc-comment there (0 0 when there is none)
+::method docPlace private
+  use strict arg cls, name, scope
+  segs = self~source~segments
+  if name == "" then g = self~source~find("CLASS", "", cls)
+  else g = self~source~findMember(cls, name, scope)
+  if g == .nil then raise syntax 93.900 array(oxT("ox.err.noOwn", cls, name))
+  i = segs~index(g) - 1
+  body = segs[i]~body
+  last = body~items
+  do while last > 0
+    if body[last]~strip \== "" then leave
+    last = last - 1
+  end
+  if last = 0 then return i 0 0
+  t = body[last]~strip
+  if t~left(3) == "---" then do                            -- --- lines
+    first = last
+    do while first > 1
+      if body[first - 1]~strip~left(3) \== "---" then leave
+      first = first - 1
+    end
+    return i first last
+  end
+  if t~right(2) \== "*/" then return i 0 0
+  first = last
+  do while first > 0
+    if body[first]~strip~left(2) == "/*" then leave
+    first = first - 1
+  end
+  if first = 0 then return i 0 0
+  if body[first]~strip~left(3) \== "/**" | body[first]~strip~left(4) == "/**/" then return i 0 0   -- an ordinary comment stays
+  return i first last
+
+-- one doc-comment: /** ... */ with no */ before its end, or --- lines only
+::method isDocComment private
+  use strict arg lines
+  if lines[1]~strip~left(3) == "---" then do
+    do l over lines
+      if l~strip~left(3) \== "---" then return .false
+    end
+    return .true
+  end
+  all = lines~makeString("L", "0a"x)~strip
+  if all~left(3) \== "/**" | all~right(2) \== "*/" | all~length < 5 then return .false
+  return all~substr(3, all~length - 4)~pos("*/") = 0
 
 -- ::requires: refused unless it loads, so its library is really there
 ::method addRequires

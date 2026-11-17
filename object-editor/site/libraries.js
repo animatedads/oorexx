@@ -130,8 +130,21 @@
       let cls = null;
       for (const l of lines(g)) {
         const t = tabs(l);
-        if (t[0] === 'class') { cls = el('details', {}, el('summary', { textContent: '.' + t[1] + (t[2] ? '  ' + T('libs.subclassOf', t[2]) : '') })); goodies.appendChild(cls); }
-        else if (cls) cls.appendChild(el('div', { className: 'lp-m', textContent: (t[4] === 'class' ? '.' + t[1] + '~' : '~') + t[2] + '   ' + t[3] }));
+        // ooRexxDoc: the first sentence on hover, the whole comment on click
+        if (t[0] === 'class') {
+          const sm = el('summary', { textContent: '.' + t[1] + (t[2] ? '  ' + T('libs.subclassOf', t[2]) : '') });
+          cls = el('details', {}, sm); goodies.appendChild(cls);
+          if (t[3] || t[4]) { sm.title = t[3] || T('libs.doc.noSummary'); sm.classList.add('lp-hasdoc'); cls.appendChild(docBlock(t[4] || t[3], true)); }
+        } else if (cls) {
+          const m = el('div', { className: 'lp-m', textContent: (t[4] === 'class' ? '.' + t[1] + '~' : '~') + t[2] + '   ' + t[3] });
+          cls.appendChild(m);
+          if (t[5] || t[6]) {
+            const full = docBlock(t[6] || t[5], false);
+            m.title = t[5] || T('libs.doc.noSummary'); m.classList.add('lp-hasdoc');
+            m.onclick = () => { full.hidden = !full.hidden; };
+            cls.appendChild(full);
+          }
+        }
       }
       use.disabled = false;
       say(T('libs.ready', goodies.children.length));
@@ -143,6 +156,8 @@
     };
     box.append(fl, el('div', { className: 'lp-actions' }, go, use), goodies);
   }
+
+  function docBlock(text, shown) { return el('pre', { className: 'lp-doc', hidden: !shown, textContent: String(text).replace(/\x0b/g, '\n') }); }
 
   async function open(c) {
     cfg = c;

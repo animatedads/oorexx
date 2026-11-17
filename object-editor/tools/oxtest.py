@@ -208,8 +208,56 @@ def sc_assist(pg):
         pg.click('#akApply'); settle(pg, 1500)
         expect('applied', pg.input_value('#code'), 'say "prose"')
         expect('and the method compiles', pg.inner_text('#edState'), 'compiles')
+        # Document...: an ooRexxDoc comment proposed from the member's code, applied before its directive
+        open_method(pg, 'Person', 'addNote')
+        expect('Document... is there', pg.is_visible('#btnDoc'), True)
+        expect('and one for the class', pg.is_visible('#btnDocClass'), True)
+        pg.click('#btnDoc'); pg.wait_for_selector('#askPanel:not([hidden])')
+        expect_in('it names the member', 'addNote', pg.inner_text('#akWhat'))
+        expect('no graph views for a comment', pg.is_visible('#askPanel .ak-views'), False)
+        pg.fill('#akTask', 'DOCNOT'); pg.click('#akGo')
+        pg.wait_for_function("document.getElementById('askPanel').dataset.status !== ''", timeout=60000)
+        expect('a plain /* */ comment is refused', pg.get_attribute('#askPanel', 'data-status'), 'refused')
+        expect_in('  and says why', 'not an ooRexxDoc comment', pg.inner_text('#akNotes'))
+        expect("the hint is the comment's", pg.inner_text('#askPanel .ak-hint').split(';')[0], 'Nothing changes until you apply it')
+        pg.fill('#akTask', ''); pg.click('#akGo')
+        pg.wait_for_function("document.getElementById('akInfo').textContent.indexOf('one ooRexxDoc comment') >= 0", timeout=60000)
+        expect('nothing there now: no line shown as removed', pg.locator('#akOld .ak-del').count(), 0)
+        expect_in('an empty task: the comment is written from the code', '@param n', pg.inner_text('#akNew'))
+        pg.screenshot(path=str(SHOTS / 'document.png'))
+        pg.click('#akApply'); settle(pg, 2000)
+        expect_in('written before the directive', '/** Answers the sum of 1 to n.\n *\n * @param n  how far to count\n * @return the sum\n */\n::method addNote', source(pg))
+        expect("the member's tooltip is its new summary", row(pg, 'addNote').locator('td.nm').get_attribute('title'), 'Answers the sum of 1 to n.')
+        expect("the method's code is kept", pg.input_value('#code').split('\n')[0], '  expose notes')
     finally:
         mock.terminate()
+
+def sc_libdocs(pg):
+    """The Libraries panel shows a library's ooRexxDoc: a file handed in (the
+    local provider), installed; its class and members have their first
+    sentence on hover and the whole comment on click."""
+    lib = pathlib.Path('/tmp/oxtest_libdocs/Greeter.cls'); lib.parent.mkdir(exist_ok=True)
+    lib.write_text('/** Says hello.  To anyone at all. */\n::class Greeter public\n'
+                   '/**\n * A greeting for who.\n * @param who  a name\n */\n::method hello\n  use strict arg who\n  return "Hello," who\n'
+                   '::method bye\n  return "Bye"\n')
+    ready(pg)
+    pg.click('#btnLibraries'); pg.wait_for_selector('#libPanel:not([hidden])', timeout=60000)
+    pg.set_input_files('#lpFiles', str(lib)); settle(pg, 2500)
+    pg.select_option('#lpProvider', 'local'); settle(pg, 1500)
+    pg.click('#lpList .lp-lib >> nth=0'); pg.wait_for_selector('#lpInstall', timeout=30000)
+    pg.click('#lpInstall'); pg.wait_for_selector('#lpGoodies details', timeout=90000)
+    sm = pg.locator('#lpGoodies summary >> nth=0')
+    expect('the class: its first sentence on hover', sm.get_attribute('title'), 'Says hello.')
+    m = pg.locator('#lpGoodies .lp-m', has_text='~hello')
+    expect('a member: its first sentence on hover', m.get_attribute('title'), 'A greeting for who.')
+    sm.click(); settle(pg, 300)
+    expect_in('the class open: its whole comment', 'To anyone at all.', pg.inner_text('#lpGoodies details >> nth=0'))
+    pre = pg.locator('#lpGoodies .lp-m:has-text("~hello") + pre.lp-doc')
+    expect('the whole comment hidden at first', pre.is_visible(), False)
+    m.click(); settle(pg, 300)
+    expect_in('a click shows it, its tags too', '@param who  a name', pre.inner_text())
+    expect('an undocumented member has no tooltip', pg.locator('#lpGoodies .lp-m', has_text='~bye').get_attribute('title'), None)
+    pg.screenshot(path=str(SHOTS / 'libdocs.png'))
 
 def sc_ssc(pg):
     """Semantic Source Control in the Object Editor (a stand-in store): the class file opened from the store, a method changed, the commit proposed as one method's new edition for review."""
@@ -257,7 +305,7 @@ def sc_docs(pg):
     expect('an undocumented member has no tooltip', row(pg, 'addNote').locator('td.nm').get_attribute('title'), None)
     pg.screenshot(path=str(SHOTS / 'docs.png'))
 
-SCENARIOS = {'reflect': sc_reflect, 'edit': sc_edit, 'requires': sc_requires, 'complete': sc_complete, 'oodialog': sc_oodialog, 'libraries': sc_libraries, 'ui_de': sc_ui_de, 'plugins': sc_plugins, 'assist': sc_assist, 'ssc': sc_ssc, 'docs': sc_docs}
+SCENARIOS = {'reflect': sc_reflect, 'edit': sc_edit, 'requires': sc_requires, 'complete': sc_complete, 'oodialog': sc_oodialog, 'libraries': sc_libraries, 'ui_de': sc_ui_de, 'plugins': sc_plugins, 'assist': sc_assist, 'ssc': sc_ssc, 'docs': sc_docs, 'libdocs': sc_libdocs}
 def main():
     names = sys.argv[1:] or list(SCENARIOS)
     SHOTS.mkdir(exist_ok=True)

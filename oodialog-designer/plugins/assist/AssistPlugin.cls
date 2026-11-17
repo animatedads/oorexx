@@ -35,13 +35,13 @@
 
 ::class AssistPlugin public subclass OodPlugin
 ::method module_version class
-  return "0.8.0"
+  return "0.9.0"
 ::method module_lastChanged class
-  return "2026-11-15"
+  return "2026-11-17"
 ::method module_version
-  return "0.8.0"
+  return "0.9.0"
 ::method module_lastChanged
-  return "2026-11-15"
+  return "2026-11-17"
 
 ::method init
   use strict arg id
@@ -74,16 +74,26 @@
 
 -- A proposal for the code, for this task.  Answers a directory: STATUS (ok,
 -- refused: shown but not to be applied, failed: no proposal), CODE, NOTES
--- (lines), MODEL, COST.
+-- (lines), MODEL, COST.  kind: BODY (a method body: it must compile and pass
+-- Boston Crab) or DOC (an ooRexxDoc comment for the member in the context:
+-- one /** ... */ block, or lines that all start with ---).
 ::method propose
-  use strict arg task, code, context
+  use strict arg task, code, context, kind = "BODY"
+  kind = kind~upper
   r = .directory~new
   r["STATUS"] = "failed"; r["CODE"] = ""; r["NOTES"] = .array~new; r["MODEL"] = ""; r["COST"] = ""
-  if task~strip == "" then do
-    r["NOTES"]~append(self~nls("err.noTask"))
+  if wordpos(kind, "BODY DOC") = 0 then do
+    r["NOTES"]~append(self~nls("err.kind", kind))
     return r
   end
-  prompt = self~promptFor(task, code, context)
+  if task~strip == "" then do
+    if kind == "DOC" then task = self~nls("doc.task")
+    else do
+      r["NOTES"]~append(self~nls("err.noTask"))
+      return r
+    end
+  end
+  prompt = self~promptFor(task, code, context, kind)
   provider = self~setting("provider")~lower
   keyName = "anthropic.key"; keyLabel = "set.anthropicKey"
   if provider == "openai" then do; keyName = "openai.key"; keyLabel = "set.openaiKey"; end
@@ -101,6 +111,13 @@
   r["CODE"] = proposal
   -- what it must pass before it can be applied
   lines = proposal~makeArray("0a"x)
+  if kind == "DOC" then do
+    err = docCommentError(lines)
+    if err \== "" then r["NOTES"]~append(self~nls(err))
+    if r["NOTES"]~items = 0 then r["STATUS"] = "ok"
+    else r["STATUS"] = "refused"
+    return r
+  end
   do l over lines
     if l~strip~left(2) == "::" then r["NOTES"]~append(self~nls("chk.directive"))
   end
@@ -114,7 +131,14 @@
   return r
 
 ::method promptFor
-  use strict arg task, code, context
+  use strict arg task, code, context, kind = "BODY"
+  if kind == "DOC" then do
+    t = self~nls("prompt.doc")~changeStr("\n", "0a"x)
+    t = t || "0a"x || "0a"x || "The member (its directive and body):" || "0a"x || "```rexx" || "0a"x || context || "0a"x || "```"
+    t = t || "0a"x || "0a"x || "Its ooRexxDoc comment now (empty: none):" || "0a"x || "```rexx" || "0a"x || code || "0a"x || "```"
+    t = t || "0a"x || "0a"x || "Task:" || "0a"x || task
+    return t
+  end
   t = self~nls("prompt.rules")~changeStr("\n", "0a"x)
   t = t || "0a"x || "0a"x || "Context:" || "0a"x || context
   t = t || "0a"x || "0a"x || "The method body now:" || "0a"x || "```rexx" || "0a"x || code || "0a"x || "```"
@@ -172,6 +196,36 @@
   if e = 0 then e = text~length + 1
   return text~substr(q + 1, e - q - 1)~strip("T", "0a"x)
 
+-- "" when the lines are one ooRexxDoc comment (one /** ... */ block, with no
+-- */ before its end, or lines that all start with ---), else the key of the
+-- reason
+::routine docCommentError public
+  use strict arg lines
+  ls = .array~new
+  do l over lines
+    ls~append(l~strip("T"))
+  end
+  do while ls~items > 0
+    if ls[1]~strip \== "" then leave
+    ls~delete(1)
+  end
+  do while ls~items > 0
+    if ls~lastItem~strip \== "" then leave
+    ls~delete(ls~last)
+  end
+  if ls~items = 0 then return "chk.doc.empty"
+  if ls[1]~strip~left(3) == "---" then do
+    do l over ls
+      if l~strip~left(3) \== "---" then return "chk.doc.dashes"
+    end
+    return ""
+  end
+  whole = ls~makeString("L", "0a"x)~strip
+  if whole~left(3) \== "/**" | whole~left(4) == "/**/" then return "chk.doc.notDoc"
+  if whole~right(2) \== "*/" | whole~length < 5 then return "chk.doc.notDoc"
+  if whole~substr(4, whole~length - 5)~pos("*/") > 0 then return "chk.doc.one"
+  return ""
+
 -- "" when the lines compile as a method body, else the error
 ::routine compileError
   use strict arg lines
@@ -201,6 +255,13 @@ chk.directive = A line starts with :: (a directive): a method body has none.
 chk.compile = It does not compile: %1
 chk.pitfall = Boston Crab: %1 on line %2.
 prompt.rules = You help write ooRexx 5 code: the body of one method, in the ooDialog Designer or the ooRexx Object Editor.\nAnswer with the complete new method body only, in one ```rexx block, and nothing else.\nWrite no :: directives.  Use only the names in the context; a control is self~name.\nJoin a string and a value with ||: never put a string right before ( or before x or b.\nNever use a loop variable with the name of a "use arg" argument.  Names differing only in case are one name.\nKeep the existing lines unless the task says otherwise.\nIf the task is unclear, or needs what the context does not have, answer with the code as it is and a -- comment saying what is missing.
+err.kind = No such kind of proposal: %1.
+doc.task = Write the ooRexxDoc comment for this member.
+chk.doc.empty = The answer is empty: no comment.
+chk.doc.notDoc = It is not an ooRexxDoc comment: one /** ... */ block, or lines that all start with ---.
+chk.doc.dashes = A line does not start with ---: a --- comment has every line so.
+chk.doc.one = It is more than one comment: a */ before the end.
+prompt.doc = You write ooRexxDoc comments for ooRexx 5 code, in the ooDialog Designer or the ooRexx Object Editor.\nAnswer with one ooRexxDoc comment only, in one ```rexx block, and nothing else: a /** ... */ block, its lines after the first starting with " * ".\nThe first sentence is a summary of what the member does, ending with a full stop; a blank comment line, then any detail.\nThen one @param name  text line for each "use arg" argument of a method or routine, in order, and an @return text line when it answers a value.\nSay only what the code shows; do not invent behaviour.  Keep what the comment now says when it is still right.
 ::END
 
 ::resource strings.de
@@ -221,4 +282,11 @@ chk.directive = Eine Zeile beginnt mit :: (eine Direktive): ein Methodenrumpf ha
 chk.compile = Es lässt sich nicht übersetzen: %1
 chk.pitfall = Boston Crab: %1 in Zeile %2.
 prompt.rules = You help write ooRexx 5 code: the body of one method, in the ooDialog Designer or the ooRexx Object Editor.\nAnswer with the complete new method body only, in one ```rexx block, and nothing else.\nWrite no :: directives.  Use only the names in the context; a control is self~name.\nJoin a string and a value with ||: never put a string right before ( or before x or b.\nNever use a loop variable with the name of a "use arg" argument.  Names differing only in case are one name.\nKeep the existing lines unless the task says otherwise.\nIf the task is unclear, or needs what the context does not have, answer with the code as it is and a -- comment saying what is missing.\nThe person writes in German; comments in the code may be German.
+err.kind = Keine solche Art von Vorschlag: %1.
+doc.task = Den ooRexxDoc-Kommentar für dieses Mitglied schreiben.
+chk.doc.empty = Die Antwort ist leer: kein Kommentar.
+chk.doc.notDoc = Es ist kein ooRexxDoc-Kommentar: ein Block /** ... */ oder Zeilen, die alle mit --- beginnen.
+chk.doc.dashes = Eine Zeile beginnt nicht mit ---: in einem ---Kommentar beginnt jede Zeile so.
+chk.doc.one = Es ist mehr als ein Kommentar: ein */ vor dem Ende.
+prompt.doc = You write ooRexxDoc comments for ooRexx 5 code, in the ooDialog Designer or the ooRexx Object Editor.\nAnswer with one ooRexxDoc comment only, in one ```rexx block, and nothing else: a /** ... */ block, its lines after the first starting with " * ".\nThe first sentence is a summary of what the member does, ending with a full stop; a blank comment line, then any detail.\nThen one @param name  text line for each "use arg" argument of a method or routine, in order, and an @return text line when it answers a value.\nSay only what the code shows; do not invent behaviour.  Keep what the comment now says when it is still right.\nThe person writes in German: write the comment in German, the tags (@param, @return) as they are.
 ::END

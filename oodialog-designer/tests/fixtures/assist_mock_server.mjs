@@ -8,6 +8,10 @@
 //   BROKEN     a body that does not compile
 //   DIRECTIVE  a body with a :: line
 //   PROSE      no ``` block: the whole answer is the code
+//   DOCOK      an ooRexxDoc comment (the DOC kind; also an empty task, which
+//              the plugin turns into "Write the ooRexxDoc comment ...")
+//   DOCNOT     a plain /* */ comment, not a doc-comment
+//   DOCTWO     two doc-comments in one answer
 // It records each request's key header (/seen), so a test can see the key is
 // sent once and not with a later request.
 // Architecture: Tom Dyer.  Code: Claude (Opus 5.5).
@@ -17,6 +21,9 @@ const port = Number(process.argv[2] || 8973);
 const seen = [];
 const ANTHROPIC_KEY = 'FAKE-ANTHROPIC-KEY-51', OPENAI_KEY = 'FAKE-OPENAI-KEY-62';
 const answers = {
+  DOCOK: 'The comment:\n```rexx\n/** Answers the sum of 1 to n.\n *\n * @param n  how far to count\n * @return the sum\n */\n```\n',
+  DOCNOT: '```rexx\n/* Sums. */\n```',
+  DOCTWO: '```rexx\n/** Sums. */\n/** Again. */\n```',
   GOOD: 'Here is the method.\n```rexx\nuse arg n\ntotal = 0\ndo i = 1 to n\n  total = total + i\nend\nself~lblTotal~setText("Total:" total)\n```\n',
   TRAP: '```rexx\nuse arg n\nsay "["(n)"]"\n```',
   BROKEN: '```rexx\nif then\n  say "x"\nend\n```',
@@ -25,6 +32,7 @@ const answers = {
 };
 function answerFor(prompt) {
   const task = String(prompt).split('Task:').pop();
+  if (task.includes('ooRexxDoc comment for this member')) return answers.DOCOK;
   for (const k of Object.keys(answers)) if (task.includes(k)) return answers[k];
   return answers.GOOD;
 }

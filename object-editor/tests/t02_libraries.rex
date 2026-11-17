@@ -59,11 +59,15 @@ call check "s~ after s = .LogService~new knows loggerFor", c~left(9) == "loggerF
 
 -- 6. a local provider: a file handed in
 lp = shelf~provider("local")
-lp~addFile("greeting/Greeter.cls", "::class Greeter public" || "0a"x || "::method hello" || "0a"x || "  use strict arg who" || "0a"x || "  return 'Hello,' who" || "0a"x)
+lp~addFile("greeting/Greeter.cls", "/** Says hello.  To anyone." || "0a"x || " */" || "0a"x || "::class Greeter public" || "0a"x || "--- A greeting for who." || "0a"x || "--- @param who  a name" || "0a"x || "::method hello" || "0a"x || "  use strict arg who" || "0a"x || "  return 'Hello,' who" || "0a"x || "::method bye" || "0a"x || "  return 'Bye'" || "0a"x)
 call check "local catalogue lists the handed-in library", shelf~catalogueLines("local")~pos("local:greeting") > 0
 gp = shelf~install("local:greeting")
 call check "local install", gp == work"/lib/local/Greeter.cls"
-call check "local goodies", shelf~goodies(gp)~pos("member" || "09"x || "Greeter" || "09"x || "hello") > 0
+lg = shelf~goodies(gp)
+call check "local goodies", lg~pos("member" || "09"x || "Greeter" || "09"x || "hello") > 0
+call check "  with the class's ooRexxDoc", lg~pos("class" || "09"x || "Greeter" || "09"x || "Object" || "09"x || "Says hello." || "09"x || "Says hello.  To anyone.") > 0
+call check "  and a member's: summary, then the whole text", lg~pos("hello" || "09"x || "method" || "09"x || "instance" || "09"x || "A greeting for who." || "09"x || "A greeting for who." || "0b"x || "@param who") > 0
+call check "  none for an undocumented member", lg~pos("bye" || "09"x || "method" || "09"x || "instance" || "09"x || "09"x) > 0
 call refuses "a path outside the folder", "lp~addFile('../escape.cls', 'x')"
 
 -- 7. the installed files, for a run to carry

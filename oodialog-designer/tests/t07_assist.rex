@@ -25,7 +25,7 @@ call check "the index lists assist, off", host~catalogueLines~pos("assist" || "0
 p = host~enable("assist")
 call check "switched on: AssistPlugin, provides assist", p~class~id~caselessEquals("AssistPlugin") & p~provides == "assist"
 call check "the host finds it by what it provides", host~enabledFor("assist") == "assist" & host~enabledFor("scm") == ""
-call check "module_version", p~class~module_version == "0.8.0" & p~module_version == "0.8.0" & p~class~package~findClass("OodSecretsProvider")~module_version == "0.8.0"
+call check "module_version", p~class~module_version == "0.9.0" & p~module_version == "0.9.0" & p~class~package~findClass("OodSecretsProvider")~module_version == "0.8.0"
 if \fetchHere() then do
   say "t07_assist: SKIP the provider checks (no ADDRESS FETCH: native ooRexx)"
   say "t07_assist:" checks - fails "of" checks "checks passed"
@@ -67,6 +67,20 @@ call note "a :: directive: shown, not to be applied", host~assist("assist", "DIR
 a = answer(host~assist("assist", "PROSE", code, ctx))
 call check "no ``` block: the answer is the code", a["STATUS"] == "ok" & a["CODE"] == 'say "prose"'
 call note "no task: nothing asked", host~assist("assist", "  ", code, ctx), "failed", "Say what the code should do"
+-- the DOC kind: an ooRexxDoc comment for a member
+member = "::method sum" || "0a"x || "  use arg n" || "0a"x || "  return n * (n + 1) / 2"
+a = answer(host~assist("assist", "DOCOK", "", member, "DOC"))
+call check "DOC: one /** */ comment passes:" a["STATUS"], a["STATUS"] == "ok" & a["CODE"]~left(3) == "/**" & a["CODE"]~pos("@param n") > 0 & a["CODE"]~right(2) == "*/"
+a = answer(host~assist("assist", "", "", member, "doc"))
+call check "DOC: no task is the standard task", a["STATUS"] == "ok" & a["CODE"]~pos("sum of 1 to n") > 0
+call note "DOC: a plain /* */ comment is refused", host~assist("assist", "DOCNOT", "", member, "DOC"), "refused", "not an ooRexxDoc comment"
+call note "DOC: two comments are refused", host~assist("assist", "DOCTWO", "", member, "DOC"), "refused", "more than one comment"
+call note "DOC: a method body is refused", host~assist("assist", "GOOD", "", member, "DOC"), "refused", "not an ooRexxDoc comment"
+call note "an unknown kind", host~assist("assist", "GOOD", code, ctx, "POEM"), "failed", "No such kind"
+dce = p~class~package~findPublicRoutine("DOCCOMMENTERROR")
+call check "docCommentError: --- lines", dce~call(.array~of("--- One.", "--- Two.")) == "" & dce~call(.array~of("--- One.", "say 1")) == "chk.doc.dashes"
+call check "docCommentError: /**/ and /* */ are not docs", dce~call(.array~of("/**/")) == "chk.doc.notDoc" & dce~call(.array~of("/* x */")) == "chk.doc.notDoc"
+call check "docCommentError: blank lines around are fine", dce~call(.array~of("", "/** x. */", "")) == ""
 seen = seenRequests()
 first = seen[1]
 call check "the key went as x-api-key, from the page:" first["browser"], first["key"] == "FAKE-ANTHROPIC-KEY-51" & first["browser"] == "true"

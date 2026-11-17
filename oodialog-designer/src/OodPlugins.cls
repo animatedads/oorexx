@@ -333,12 +333,14 @@
   return out~makeString("L", "0a"x)
 
 -- a proposal from an assist plugin: lines "STATUS ok|refused|failed", "MODEL m",
--- "COST c", "NOTE text" (any number), then a line "CODE" and the code
+-- "COST c", "NOTE text" (any number), then a line "CODE" and the code.
+-- kind: BODY (a method body) or DOC (an ooRexxDoc comment for a member)
 ::method assist
-  use strict arg id, task, code, context = ""
+  use strict arg id, task, code, context = "", kind = "BODY"
   p = self~plugin(id)
   if p~provides~wordpos("assist") = 0 then raise syntax 93.900 array(oodT("plug.err.notAssist", id))
-  r = p~propose(task, code, context)
+  if kind~caselessEquals("BODY") then r = p~propose(task, code, context)
+  else r = p~propose(task, code, context, kind)
   out = .array~new
   out~append("STATUS" r["STATUS"])
   out~append("MODEL" r["MODEL"])

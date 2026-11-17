@@ -25,3 +25,6 @@
 #libPanel .lp-m{font:12px ui-monospace,Menlo,Consolas,monospace;padding-left:18px;color:#3b4550}
 #libPanel #lpNotes{margin:0;padding:6px 10px;background:#111;color:#ddd;font:11px ui-monospace,Menlo,Consolas,monospace;overflow:auto}
 #libPanel .lp-hint{color:#6b7580}
+#libPanel .lp-hasdoc{text-decoration:underline dotted #8a96a3;text-underline-offset:3px;cursor:help}
+#libPanel .lp-m.lp-hasdoc{cursor:pointer}
+#libPanel .lp-doc{margin:2px 0 6px 30px;padding:4px 8px;background:#f6f8fa;border-left:3px solid #c5d0db;font:12px ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;color:#2c3640}

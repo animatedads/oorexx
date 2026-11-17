@@ -1,4 +1,4 @@
-# ooDialog Designer — v0.14.0
+# ooDialog Designer — v0.15.0
 
 Architecture: Tom Dyer. Code: Claude (Opus 5.5). README written by Claude (Opus 5.5).
 It runs on ooDialog/WASM v0.7.0 (code: Claude (Fable 5.2)) and on Josep Maria
@@ -292,6 +292,16 @@ one `kind` line; a new code-insertion action is one `action` line.
     `OxGraph.preview`, changed blocks marked), with its model and cost, and
     **Apply** is enabled only when it compiles as a method body
     (`.Method~new`), has no `::` line and passes Boston Crab.
+    **v0.15 (Rony's suggestion that AI can write ooRexxDoc):** a second kind
+    of proposal, `DOC`: an ooRexxDoc comment for one member, written from
+    its directive and body (`.oodPluginsHost~assist(id, task, code,
+    context, "DOC")`). The task may be empty. Apply is enabled only when the
+    answer is one `/** ... */` block (no `*/` before its end) or lines that
+    all start with `---` (`docCommentError` in `AssistPlugin.cls`); a plain
+    `/* */` comment, two comments, or a method body are refused with the
+    reason. The Object Editor's **Document…** (beside **Ask…**, and in the
+    class card for the class) uses it and writes the comment before the
+    directive (`OxWorkspace~setDoc`).
   - **Git** (`plugins/git/`, provides `scm`): **Repository…**. GitHub's REST
     API from the page (contents and commits; token as a secret; a commit is
     sent with the blob it was opened at, so GitHub refuses it if the branch
@@ -406,7 +416,7 @@ a built `site/plugins`, or skips them and says so. t07–t09 start their own
 stand-in servers with node; under native ooRexx (no ADDRESS FETCH) their
 network checks say SKIP, and t08's git-command checks still run.
 
-## State (2026-11-16, v0.14.0)
+## State (2026-11-17, v0.15.0)
 
 - `tests/t01_model.rex`: 78 of 78 checks pass under ooRexx/WASM in Node. They
   cover generation, a byte-identical round trip through the `::RESOURCE`,
@@ -436,7 +446,7 @@ network checks say SKIP, and t08's git-command checks still run.
   a key German lacks, `%1`/`%2`, a value holding `%2`, a `%` that is no
   argument, an empty base text, `<key>`, `LC_ALL`/`LC_MESSAGES`/`LANG` with
   `C` passed over, and UTF-8 to Windows-1252 (`ß`, `ö`, `€`, `…`).
-- `tests/t04_ui.rex`: 16 of 16 checks pass. de has every key of en (327),
+- `tests/t04_ui.rex`: 16 of 16 checks pass. de has every key of en (506),
   no other, with the same `%n`; every key the page and graph use is in the
   table (the files are read); every control kind and all 38 actions have
   their label; `de-DE` gives German, `fr` English; refusals from the model
@@ -446,13 +456,16 @@ network checks say SKIP, and t08's git-command checks still run.
   rule and fix, the fixes, a fix that no longer applies, messages and the
   catalogue in German, secrets held and only their names shown, switching
   off. `REXX_PATH` needs Boston Crab's `tests/` for `PitfallChecker.cls`.
-- `tests/t07_assist.rex`: 31 of 31 checks pass, against a stand-in for both
+- `tests/t07_assist.rex`: 40 of 40 checks pass, against a stand-in for both
   providers (`tests/fixtures/assist_mock_server.mjs`, started and stopped by
   the test): no key, no proposal; the key shown only as "(set)", its name
   only in the store; Anthropic and OpenAI proposals with model and cost;
   a P1 pitfall, a body that does not compile and a `::` line refused; prose
   with no code block; the key sent as `x-api-key` and as a bearer, never
-  with the other provider's request; a wrong key; German notes.
+  with the other provider's request; a wrong key; German notes; (v0.15) the
+  DOC kind: a `/** */` comment passes, an empty task is the standard one, a
+  plain `/* */` comment, two comments and a method body are refused, an
+  unknown kind fails, and `docCommentError` on `---` lines and blank lines.
 - `tests/t08_git.rex`: 31 of 31 checks pass: GitHub's API against a stand-in
   (`github_mock_server.mjs`): list, open, status, commit, a commit from a
   blob the branch moved past refused, a new file, a message that is a
@@ -626,10 +639,13 @@ network checks say SKIP, and t08's git-command checks still run.
 - Database graph: labels can overlap where edges cross (an EXT label over
   an ON DELETE label; a part's label under the junction box; the PERSON
   outline's title under the ADDRESS outline). Reported to ChatGPT's lane.
-- Object Editor: a "Document" task for code assistance (an ooRexxDoc
-  comment proposed for a member, applied before its directive) and doc
-  tooltips in the Libraries panel are next; CATCH/FINALLY blocks wait for a
-  Rexx Parser and an ooRexx/WASM runtime that have them.
+- Object Editor: CATCH/FINALLY blocks in its graph wait for an ooRexx/WASM
+  runtime that has them (the Rexx Parser 20261115 reads them).
+- Document… writes from the member's own code only: the model is not shown
+  the classes it calls, so a comment can say less than a person would.
+  The designer's own methods have no Document… yet (its program is written
+  by the designer; a comment there would need a place in the program
+  format).
 - Controls: up-down (it must follow its buddy), month calendar and images.
 - Track bar events: ooDialog/WASM has none yet.
 - Tab pages as ControlDialogs. A page here is a set of controls shown and

@@ -150,8 +150,11 @@
     apply.addEventListener('click', () => edit(() => st.w.setClass(i.name, sup.value.trim(), mix.value.trim(), pub.checked ? 1 : 0, isMix.checked ? 1 : 0), 'ox.classChanged', i.name));
     const del = D.createElement('button'); del.textContent = T('ox.removeClass');
     del.addEventListener('click', () => edit(() => st.w.removeClass(i.name), 'ox.classRemoved', i.name));
+    const doc = D.createElement('button'); doc.id = 'btnDocClass'; doc.textContent = T('ox.doc.cls.btn'); doc.title = T('ox.doc.cls.tip');
+    doc.hidden = true; OodPluginsPage.assistIds().then((ids) => { doc.hidden = !ids.length; }, () => {});
+    doc.addEventListener('click', () => documentMember(i.name, '', 'INSTANCE'));
     // the directive words (inherit, public, mixinclass) are ooRexx's, as written in the file
-    box.append(t, lab(T('ox.subclassOf'), sup), lab('inherit', mix), lab('public', pub), lab('mixinclass', isMix), apply, del);
+    box.append(t, lab(T('ox.subclassOf'), sup), lab('inherit', mix), lab('public', pub), lab('mixinclass', isMix), apply, del, doc);
   }
   /* ---- ooRexxDoc: the first sentence as a member's tooltip, the whole text in
      the doc box when it is clicked (OxDocs, read by the Rexx Parser) */
@@ -410,7 +413,11 @@
     open: async (name, text) => { await flushCode(); return openText(name, text); } }));
 
   // Ask…: shown when a code assistance plugin is on and a method is open
-  async function askButton() { $('btnAsk').hidden = !st.cur || !(await OodPluginsPage.assistIds()).length; }
+  async function askButton() {
+    const on = (await OodPluginsPage.assistIds()).length > 0;
+    $('btnAsk').hidden = !st.cur || !on; $('btnDoc').hidden = !st.cur || !on;
+    const c = $('btnDocClass'); if (c) c.hidden = !on;
+  }
   $('btnAsk').addEventListener('click', async () => {
     if (!st.cur) return;
     await flushCode();
@@ -423,6 +430,22 @@
     OodPluginsPage.ask({ title: $('edTitle').textContent, code: () => $('code').value, context,
       apply: async (text) => { if (st.cur !== cur) return; $('code').value = text; dirty = true; await flushCode(); } });
   });
+  // Document…: an ooRexxDoc comment proposed from the member's code (the
+  // assist plugins' DOC kind); applied before the member's directive (setDoc)
+  async function documentMember(cls, name, side, title) {
+    await flushCode();
+    const label = name === '' ? cls : cls + (side === 'CLASS' ? ' class' : '') + ' ~' + name;
+    const member = String(await rx(() => st.w.memberText(cls, name, side)).catch(() => ''));
+    let now = String(await rx(() => st.w.getDoc(cls, name, side)).catch(() => ''));
+    OodPluginsPage.ask({ kind: 'DOC', title: title || T('ox.doc.title', label), code: () => now,
+      context: () => 'In ' + st.fileName + ', class ' + cls + '.\n' + member,
+      apply: async (text) => {
+        if (await edit(() => st.w.setDoc(cls, name, side, text), 'ox.doc.applied', label)) now = text;
+        if (name !== '' && st.cur && st.cur.name.toLowerCase() === name.toLowerCase()) showCode();
+      } });
+  }
+  st.documentMember = documentMember;
+  $('btnDoc').addEventListener('click', () => { if (st.cur) documentMember(st.cls, st.cur.name, st.side); });
   $('code').addEventListener('input', () => diagnoseSoon());
 
   boot();
