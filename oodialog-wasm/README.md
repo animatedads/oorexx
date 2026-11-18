@@ -1,4 +1,4 @@
-# ooDialog for ooRexx/WASM — v0.20.0
+# ooDialog for ooRexx/WASM — v0.21.0
 
 Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: Josep Maria Blasco's
 ooRexx/WASM (`oorexxwasm` 0.2.4, ooRexx 5.3.0) and its `js.cls`.
@@ -55,13 +55,15 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
     python3 tools/oodtest.py --poke upstream/examples 0 24
     python3 tools/oodtest.py --tree upstream/examples tests/t*.rex tests/up/calculator.rex tests/up/oodpbar.rex tests/up/oodStandardRoutines.rex
 
-## State on 2026-11-17 (v0.20.0)
+## State on 2026-11-18 (v0.21.0)
 
-- Natives ported: 688 of 1,182 (58.2%); 12 of the 43 added in v0.18.0 accept
-  their call and do nothing (see "Tool tips"). (The total was given as 1,181
+- Natives ported: 881 of 1,182 (74.5%). v0.21.0 added 192 (see "Natives added
+  in v0.21.0" for what each family does, and which of them do nothing).
+  12 of the 43 added in v0.18.0 accept their call and do nothing (see "Tool
+  tips"). (The total was given as 1,181
   in v0.16.0 and v0.17.0; `dist/natives.txt` has 1,182 lines. It fell from 1,196 because 12
   natives are now plain Rexx in `src/patches.txt`.)
-- Tests: 49 of 49 pass in headless Chromium (`tests/t01`..`t17` with expected
+- Tests: 52 of 52 pass in headless Chromium (`tests/t01`..`t22` with expected
   output, the binary resource hand-off test `tests/res/t07_resdialog_binary`,
   four unmodified upstream samples: `calculator.rex`,
   `oodpbar.rex`, `oodStandardRoutines.rex`, and the tutorial
@@ -99,8 +101,7 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
 - Depth probe (`oodtest.py --poke`, results in `poke.tsv`): the 70 examples
   that show a dialog or a message box are used automatically (tabs, rows,
   check boxes, lists, edits, menus, every button, then closed; last full run
-  at v0.19.0, before its last two fixes, which were then checked on their two
-  examples alone). Of 88, 73 come through with no error, no unhandled Windows
+  at v0.21.0, on its final build). Of 88, 73 come through with no error, no unhandled Windows
   message and a clean end. 11 more have no fault except connecting an event
   this layer does not produce. 4 have a problem, each named in `poke.tsv`, and
   none of them is a fault of this layer's own code: 2 are components started
@@ -190,6 +191,54 @@ Until v0.17.0 this class was not ported at all: its examples showed their
 dialog, which the sweep counted, but the dialog could not be resized by its
 rules. Resizing with DlgAreaU and connectResize (`tests/t13_resize`) is a
 different mechanism and worked before.
+
+## Natives added in v0.21.0
+
+192 natives, in these families. Tests: `t20_lvrows`, `t21_natives`,
+`t22_statusbar` (programs of this project: no upstream example runs these
+without something else that is missing).
+
+- LvItem, LvSubItem, LvFullRow (54) and the list-view methods that use them:
+  addFullRow, prependFullRow, insertFullRow, addRowFromArray, getFullRow,
+  getItem, getSubitem, modifyItem, modifySubitem, modifyFullRow,
+  setFullRowText, setItemState, sortItems (InternalListViewSort by a column's
+  texts, or a method of the dialog that compares two rows' item data).
+  Image indexes, indent, group and columns of an item are kept and answered;
+  the page draws no item images.
+- StatusBar (15): a real control, a bar along the bottom of the dialog. Parts
+  by their right edges, texts, tips, simple mode, a part's rectangle, minimum
+  height, background colour. Icons are kept and answered, not drawn.
+- Windows by handle: getWindowText, setWindowText, showWindow / hideWindow and
+  their Fast forms, sendMessageToControl, sendMessageToWindow.
+- A control's connectKeyPress, connectFKeyPress, disconnectKeyPress,
+  hasKeyPressConnection: the method runs only while that control has the
+  focus and gets the control as its sixth argument.
+- The dialog's backgroundColor, backgroundSysColor, tiledBackgroundBitmap,
+  setTabStop. The list-view's bkColor, textColor, textBkColor, stringWidthPx,
+  getColumnOrder.
+- Item data of a combo box (it follows its item when others are inserted) and
+  removeItemData of a tree-view; the edit's lineFromIndex, lineIndex,
+  lineLength, getCue, getRect / setRect, setTabStops; a control's textSize;
+  the button's getTextMargin / setTextMargin.
+- The old names of the create methods: addButton, addCheckBox,
+  addRadioButton, addGroupBox, addEntryLine, addPasswordLine, addListBox,
+  addComboBox, addTreeControl, addListControl, addSliderControl,
+  addTabControl, with the arguments in the old order.
+- DlgUtil's arithmetic (shiftLeft, sShiftRight, signed32, sloWord ...),
+  screenArea, windowFromPoint.
+
+What is an answer and not a function:
+- SM (20): the screen size is the page's; the other 18 are the fixed values of
+  a Windows desktop at 96 DPI.
+- SPI (19): a page cannot change the system. A value that is set is kept for
+  the run and answered back; setWorkArea and setNonClientMetrics do nothing.
+- OS (5): every "is at least" answers true, is64bit true.
+- 26 natives accept their call and do nothing, because there is nothing for
+  them to do here: the init and unInit of the three row classes,
+  fixFullRowColumns, putControl, putInBag, dumpMessageTable, setWindowTheme,
+  redrawRect, clearRect, halt, terminate, setGroup, the edit's balloon tip
+  (answers false), settingChanged, shellChangeNotify, and the list-view's
+  setColumnOrder, which answers true only for the order the columns have.
 
 ## Printing (the standby printer)
 
@@ -367,8 +416,7 @@ WASM file system as bytes.
 
 ## Not yet (the sweep's order of need)
 
-Tool bar, status
-bar, re-bar; custom draw; the parts of a combo box
+Tool bar, re-bar; custom draw; the parts of a combo box
 as windows (getComboBoxInfo); connectActivate,
 connectHelp, connectPosChanged and connectResizing (accepted, not produced);
 drawing the icons of image lists; a modeless property sheet; wizard header and

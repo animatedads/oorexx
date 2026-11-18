@@ -50,6 +50,9 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
 .ood-deliverbar span{flex:1 1 12em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ood-deliveract{color:#1f3f66;background:#fff;border-radius:3px;padding:.25em .8em;text-decoration:none}
 .ood-deliverview{flex:1;border:0;width:100%;background:#888}
+.ood-stb{position:absolute;display:flex;box-sizing:border-box;background:#f0f0f0;border-top:1px solid #d0d0d0;font:12px 'Segoe UI',Tahoma,sans-serif;color:#222}
+.ood-stbpart{box-sizing:border-box;padding:3px 6px;border-right:1px solid #c8c8c8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ood-stbpart:last-child{border-right:0}
 .ood-pushed{border-style:inset;background:#cce4f7}
 .ood-tip{position:fixed;z-index:100000;background:#fff;color:#333;border:1px solid #767676;border-radius:3px;padding:3px 7px;font:12px 'Segoe UI',Tahoma,sans-serif;box-shadow:2px 2px 4px rgba(0,0,0,.25);pointer-events:none}
 .ood-tip b{display:block;margin-bottom:2px}
@@ -290,7 +293,8 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       fire(dlg.key, 'CTX', c && c.id > 0 ? c.id : 0, Math.round(e.clientX), Math.round(e.clientY));
     });
     el.addEventListener('keydown', (e) => {
-      if (dlg.subs.has('0.KEY')) fire(dlg.key, 'KEY', e.keyCode, (e.shiftKey ? 'S' : '') + (e.ctrlKey ? 'C' : '') + (e.altKey ? 'A' : ''));
+      if (dlg.subs.has('0.KEY')) { const fc = dlg.all.find((x) => x.id > 0 && x.el.contains(D.activeElement));   // extra: the control that has the focus
+        fire(dlg.key, 'KEY', e.keyCode, (e.shiftKey ? 'S' : '') + (e.ctrlKey ? 'C' : '') + (e.altKey ? 'A' : ''), fc ? fc.id : 0); }
     }, true);
     el.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') { e.preventDefault(); if (!dlg.noClose) fire(dlg.key, 'CMD', 2, 0); return; }
@@ -512,11 +516,17 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
         };
         up.addEventListener('click', () => step(1)); dn.addEventListener('click', () => step(-1));
         break; }
+      case 'STATUSBAR':                                     // a bar along the bottom of the dialog, in parts
+        el = main = D.createElement('div'); el.className = 'ood-stb'; c.focusable = false; c.docked = true;
+        c.parts = [{ edge: -1, text: '', tip: '' }]; c.simple = false; c.simpleText = '';
+        stbRender(c);
+        break;
       default:                                              // a control kind not ported yet
         el = main = D.createElement('div'); el.className = 'ood-todo'; el.textContent = spec.kind + ' ' + c.id; c.focusable = false;
     }
     c.el = el; c.main = main;
     place(dlg, el, c);
+    if (c.docked) { el.style.left = '0'; el.style.right = '0'; el.style.bottom = '0'; el.style.top = ''; el.style.width = ''; if (!c.h) el.style.height = '22px'; }   // Windows puts a status bar at the bottom, whatever rectangle is given
     if (c.kind === 'COMBO' && c.droplist) el.style.height = Math.round(12 * dlg.fy) + 'px';   // cy is the dropped height
     if (c.kind === 'COMBO' && !c.droplist) el.style.height = Math.round(12 * dlg.fy) + 'px';
     if (c.kind === 'UPDOWN' && c.buddy && (has(o, 'RIGHT') || has(o, 'LEFT'))) {   // sits inside its buddy's edge
@@ -1362,10 +1372,12 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
         if (c.kind === 'EDIT' || (c.kind === 'COMBO' && !c.droplist)) return m.value;
         if (c.kind === 'COMBO') return m.selectedIndex >= 0 ? m.options[m.selectedIndex].textContent : '';
         if (c.kind === 'LIST') return m.selectedIndex >= 0 ? m.options[m.selectedIndex].textContent : '';
+        if (c.parts) return c.parts[0].text;
         return c.rawText != null ? c.rawText : (c.textEl || m).textContent;
       case 'setText':
         a = String(a);
         if (!c) { dlg.capEl.textContent = a; return '1'; }
+        if (c.parts) { c.parts[0].text = a; stbRender(c); return '1'; }      // (WM_SETTEXT of a status bar: its first part)
         if (c.kind === 'EDIT') { m.value = a; if (m.tagName === 'TEXTAREA') { try { m.setSelectionRange(0, 0); } catch (e) { } m.scrollTop = 0; } cmd(dlg, c, 0x400); cmd(dlg, c, 0x300); return '1'; }   // (WM_SETTEXT leaves the caret at the start)   // as WM_SETTEXT: EN_UPDATE, EN_CHANGE
         if (c.kind === 'COMBO' && !c.droplist) { m.value = a; return '1'; }
         if (c.kind === 'GROUP' && !c.textEl.parentNode && a !== '') el.appendChild(c.textEl);
@@ -1420,7 +1432,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
         const old = dlg.ctrls.get(dlg.defId); if (old && old.kind === 'BUTTON') old.main.classList.remove('ood-def');
         dlg.defId = Number(a); const nw = dlg.ctrls.get(dlg.defId); if (nw && nw.kind === 'BUTTON') nw.main.classList.add('ood-def');
         return '1'; }
-      case 'color': if (a !== '') m.style.background = a; if (b !== '') m.style.color = b; return '1';
+      case 'color': { const t = c ? m : dlg.client; if (a !== '') t.style.background = a; if (b !== '') t.style.color = b; return '1'; }   // (a dialog's colour is its client area's)
       case 'font': if (a !== '') m.style.fontFamily = a; if (b !== '') m.style.fontSize = b; if (c2) m.style.fontWeight = c2; return '1';
       case 'textSize': {
         const s = D.createElement('span'); s.style.cssText = 'position:absolute;visibility:hidden;white-space:pre'; s.textContent = String(a);
@@ -1431,6 +1443,16 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       case 'replaceSel': m.setRangeText(String(a), m.selectionStart, m.selectionEnd, 'end'); c.modified = true; return '1';
       case 'line': { const ls = m.value.split('\n'); return ls[Number(a) - 1] == null ? '' : ls[Number(a) - 1]; }
       case 'cue': m.placeholder = String(a); return '1';
+      case 'getCue': return m.placeholder || '';
+      case 'tabStop': { const t = c ? c.main : null; if (!t) return '0'; t.tabIndex = a === '1' ? 0 : -1; return '1'; }
+      case 'optUid': { const o = optsOf(c)[Number(a)]; if (!o) return '0'; if (!o.dataset.uid) o.dataset.uid = String(c.optUid = (c.optUid || 0) + 1); return o.dataset.uid; }   // an item of a combo or list box, however it moves
+      case 'lineOf': { const at = a === '' || Number(a) < 0 ? m.selectionStart : Number(a); return String(m.value.slice(0, at).split('\n').length - 1); }           // EM_LINEFROMCHAR
+      case 'lineStart': { const ls = m.value.split('\n'); let n = a === '' || Number(a) < 0 ? m.value.slice(0, m.selectionStart).split('\n').length - 1 : Number(a);
+        if (n >= ls.length) return '-1'; let at = 0; for (let k = 0; k < n; k++) at += ls[k].length + 1; return String(at); }                                       // EM_LINEINDEX
+      case 'lineLen': { const ls = m.value.split('\n'); const n = a === '' || Number(a) < 0 ? m.value.slice(0, m.selectionStart).split('\n').length - 1 : Number(a); return ls[n] == null ? '0' : String(ls[n].length); }
+      case 'tabSize': m.style.tabSize = String(Math.max(1, Number(a))); return '1';
+      case 'pad': { const t = c ? c.el : dlg.client; if (a !== '') t.style.padding = String(a).split(' ').map((x) => x + 'px').join(' '); const g = getComputedStyle(t); return [g.paddingLeft, g.paddingTop, g.paddingRight, g.paddingBottom].map((x) => Math.round(parseFloat(x))).join(' '); }
+      case 'rowHeight': { const r = c.el.querySelector('.ood-tvrow, tr, option'); return String(r ? Math.round(r.getBoundingClientRect().height) : 16); }
       case 'backdrop': { const url = ood.images.get(String(a)); if (!url) return '0'; const t = c ? c.el : dlg.client;
         t.style.backgroundImage = 'url("' + url + '")'; t.style.backgroundRepeat = has(String(b), 'TILE') || b === '' ? 'repeat' : 'no-repeat';
         if (has(String(b), 'STRETCH')) t.style.backgroundSize = '100% 100%'; return '1'; }   // a tool tip: the browser's own
@@ -1470,12 +1492,47 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
     if (c && name === 'ud.range') return c.min + ' ' + c.max;
     if (c && name === 'ud.buddy') { const old = c.buddy; if (a !== '') c.buddy = Number(a); return String(old); }
     if (c && name.startsWith('lv.')) return lvOp(dlg, c, name.slice(3), a, b, c2);
+    if (c && c.parts && name.startsWith('sb.')) return stbOp(dlg, c, name.slice(3), a, b);
     if (c && name.startsWith('tv.')) return tvOp(dlg, c, name.slice(3), a, b, c2);
     if (c && name.startsWith('tab.')) return tabOp(dlg, c, name.slice(4), a, b, c2);
     ood.log.push('op ' + name);
     return '';
   };
 
+  /* ---- Status bar ----
+     Parts are numbered from 0 here.  A part's edge is its right edge in pixels of the bar; -1 is
+     "to the end of the bar".  In simple mode the bar shows one text and hides its parts. */
+  function stbRender(c) {
+    const el = c.el || c.main; if (!el) return;
+    el.textContent = '';
+    if (c.simple) { const p = D.createElement('div'); p.className = 'ood-stbpart'; p.style.flex = '1'; p.textContent = c.simpleText; el.appendChild(p); return; }
+    let left = 0;
+    c.parts.forEach((part, i) => {
+      const p = D.createElement('div'); p.className = 'ood-stbpart'; p.dataset.part = String(i); p.textContent = part.text; if (part.tip) p.title = part.tip;
+      if (part.edge < 0) p.style.flex = '1'; else { p.style.width = Math.max(0, part.edge - left) + 'px'; left = part.edge; }
+      el.appendChild(p);
+    });
+  }
+  function stbOp(dlg, c, name, a, b) {
+    const i = Number(a), part = c.parts[i];
+    switch (name) {
+      case 'setParts': { const edges = String(a).split(' ').map(Number); if (!edges.length || edges.some((e) => !Number.isInteger(e))) return '0';
+        c.parts = edges.map((e, k) => ({ edge: e, text: c.parts[k] ? c.parts[k].text : '', tip: c.parts[k] ? c.parts[k].tip : '' })); stbRender(c); return '1'; }
+      case 'parts': return c.parts.map((p) => p.edge).join(' ');
+      case 'setText': if (i === 255 || c.simple && a === '') { c.simpleText = String(b); stbRender(c); return '1'; } if (!part) return '0'; part.text = String(b); stbRender(c); return '1';
+      case 'text': if (i === 255) return c.simpleText; return part ? part.text : '';
+      case 'has': return part || i === 255 ? '1' : '0';                // (part 256 of Windows, here 255, is the simple mode's text)
+      case 'setTip': if (!part) return '0'; part.tip = String(b); stbRender(c); return '1';
+      case 'tip': return part ? part.tip : '';
+      case 'simple': c.simple = (a === '1'); stbRender(c); return '1';
+      case 'isSimple': return c.simple ? '1' : '0';
+      case 'rect': { const p = c.el.querySelector('[data-part="' + i + '"]'); if (!p) return ''; const o = c.el.getBoundingClientRect(), r = p.getBoundingClientRect();
+        return [r.left - o.left, r.top - o.top, r.right - o.left, r.bottom - o.top].map(Math.round).join(' '); }
+      case 'minHeight': c.el.style.minHeight = Number(a) + 'px'; return '1';
+      case 'bk': { const old = c.el.style.background || ''; c.el.style.background = String(a); return old; }
+    }
+    return '';
+  }
   function lvOp(dlg, c, name, a, b, c2) {
     const i = Number(a);
     switch (name) {
@@ -1540,6 +1597,13 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
         return '-1'; }
       case 'view': if (a === '') return c.view; c.view = String(a); later(c, lvRender); return '1';
       case 'uid': return c.rows[i] ? String(c.rows[i].uid) : '0';
+      case 'order': {                                          // the rows in a new order: the uids, in the order wanted
+        const by = new Map(c.rows.map((r) => [r.uid, r])), focus = c.rows[c.focusIdx], out = [];
+        for (const u of String(a).split(' ')) { const r = by.get(Number(u)); if (r) { out.push(r); by.delete(Number(u)); } }
+        for (const r of by.values()) out.push(r);
+        c.rows = out; c.focusIdx = focus ? out.indexOf(focus) : -1; lvRender(c); return '1'; }
+      case 'uids': return c.rows.map((r) => r.uid).join(' ');
+      case 'row': return c.rows[i] ? c.rows[i].cells.join(SEP) : '';
       case 'sort': { const col = i, dir = b === 'D' ? -1 : 1; c.rows.sort((x, y) => dir * String(x.cells[col] || '').localeCompare(String(y.cells[col] || ''), undefined, { numeric: true })); c.focusIdx = -1; later(c, lvRender); return '1'; }
     }
     return '';
@@ -1619,6 +1683,11 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
      actions, each started by the user's own click (a browser refuses them otherwise):
      Print (the browser's print of the shown file), Open (a new tab), Save (a download), Close.
      ood.delivered lists what was handed over: {name, mime, size, title, magic}. */
+  ood.windowAt = function (x, y) {                            // the window at a point of the screen: "key id", or ''
+    const t = D.elementFromPoint(Number(x), Number(y)); if (!t) return '';
+    for (const d2 of [...ood.dialogs.values()].reverse()) { if (!d2.el.contains(t)) continue; const k = d2.all.find((q) => q.id > 0 && q.el.contains(t)); return d2.key + ' ' + (k ? k.id : 0); }
+    return '';
+  };
   ood.delivered = [];
   ood.deliver = function (name, mime, hex, title) {
     boot();

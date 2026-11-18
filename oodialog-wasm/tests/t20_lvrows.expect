@@ -1,0 +1,22 @@
+item 0 Mike 3 data-mike mask TEXT IMAGE PARAM
+row 2 Perth 41 1 Mike
+add 0
+add 1
+prepend 0 its item is now at 0
+extra 2 2
+insert 1
+array 4
+rows Ann/Oban/30 Bob/Ayr/25 Mike/Perth/41 Sue/?/9 Zed/Wick/5
+got Mike 3 1 Perth 7 41 2
+none 1
+getSubitem 1 ? new: 30
+modifyItem 1 Susan data-sue
+modifySubitem 1 Elgin
+setFullRowText 1 Michael / Perth WA
+state 1 4 4
+removed Ayr 1 25 1
+insertSubitem 1 Troon 25 2
+userData u
+sorted 1 Michael/Perth WA/41 Ann/Oban/30 Bob/Ayr/25 Susan/Elgin/9 Zed/Wick/5
+data follows its row: data-sue
+by data 1 Ann/Oban/30 Bob/Ayr/25 Zed/Wick/5 Susan/Elgin/9 Michael/Perth WA/41

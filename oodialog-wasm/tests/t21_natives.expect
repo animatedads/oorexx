@@ -1,0 +1,20 @@
+DlgUtil 16 16 -4 -4 -1 4294967295 -1 -2 -1 18446744073709551614
+SM 1 1 32 16 3 17
+SPI 5 250 4 0 17
+OS 1 0 1 1
+screenArea 1 1
+getWindowText Natives / label / 1
+setWindowText 0 changed 1
+hideWindow 0 0 0 1
+lines 3 3
+edit 1 2 3 index 1 5 11 0 length 3 5 5
+cue type here
+cb data 1 data-a 1 1
+cb data moved data-a 1 removed data-a 1
+tv data data-root data-root 1 1
+textSize 1 1 1
+margin 1 1 3
+connections 1 1 0 1 0
+disconnect 0 0
+windowFromPoint 1 1
+keys:  one:65:11 one:66:11 any:67 f:117:10

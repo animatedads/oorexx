@@ -1,0 +1,8 @@
+start 1 0 1 Ready 5
+background 1 0
+lv 13172735 128 -1 0 1 1 0 1
+setParts 1 3 80 160 -1
+texts 1 1 1 0 middle 1
+rect 80 160 1 1 a tip
+bk 4278190080 65535
+simple 1 1 one text

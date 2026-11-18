@@ -1,0 +1,16 @@
+wait .ood-dlg >> text=Parts
+expect (() => { const b = document.querySelector('.ood-stb').getBoundingClientRect(), c = document.querySelector('.ood-dlg .ood-client').getBoundingClientRect(); return Math.abs(b.bottom - c.bottom) <= 1 && Math.abs(b.left - c.left) <= 1 && Math.abs(b.right - c.right) <= 1 && b.height >= 18; })() ==> True
+expect document.querySelector('.ood-stb').textContent ==> Ready
+expect getComputedStyle(document.querySelector('.ood-dlg .ood-client')).backgroundColor ==> rgb(200, 220, 240)
+expect [...document.querySelectorAll('.ood-dlg button, .ood-dlg label, .ood-dlg legend, .ood-dlg fieldset > span')].map(e => e.textContent.trim()).filter(t => t && t !== '✕').join('|') ==> Parts|Simple|A check box|A radio|Old names|Close
+expect document.querySelectorAll('.ood-dlg input[type=checkbox]').length + ' ' + document.querySelectorAll('.ood-dlg input[type=radio]').length + ' ' + document.querySelectorAll('.ood-dlg select').length + ' ' + document.querySelectorAll('.ood-lv th').length ==> 1 1 1 2
+expect getComputedStyle(document.querySelector('.ood-lv')).backgroundColor + ' ' + getComputedStyle(document.querySelector('.ood-lv')).color ==> rgb(255, 255, 200) rgb(128, 0, 0)
+click .ood-dlg >> text=Parts
+sleep 400
+expect [...document.querySelectorAll('.ood-stbpart')].map(p => p.textContent + ':' + Math.round(p.getBoundingClientRect().width)).slice(0, 2).join(' ') ==> left:80 middle:80
+expect document.querySelectorAll('.ood-stbpart')[2].textContent + ' ' + document.querySelectorAll('.ood-stbpart')[1].title ==> right a tip
+shot statusbar_parts
+click .ood-dlg >> text=Simple
+sleep 400
+expect document.querySelector('.ood-stb').textContent ==> one text
+click .ood-dlg >> text=Close

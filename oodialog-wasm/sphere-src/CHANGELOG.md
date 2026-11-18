@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7
+- State article brought to port v0.21.0: 881 of 1,182 natives.
+- Renderer contract: the STATUSBAR kind and its sb.* ops; lv.order, lv.uids, lv.row; optUid and the other small ops; windowAt; the KEY event's extra.
+- Lessons: native coverage stood still for four releases.
+- Written by Claude (Fable 5.2).
+
 ## 0.6
 - State article brought to port v0.20.0 (printing through the estate's oorexx_pdf).
 - Renderer contract: deliver.

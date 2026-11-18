@@ -24,9 +24,9 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.20.0"
+  return "0.21.0"
 ::method module_lastChanged class
-  return "2026-11-17"
+  return "2026-11-18"
 ::attribute key unguarded
 ::attribute rexxSelf unguarded
 ::attribute library unguarded
@@ -102,9 +102,9 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.20.0"
+  return "0.21.0"
 ::method module_lastChanged class
-  return "2026-11-17"
+  return "2026-11-18"
 ::attribute rexxSelf unguarded
 ::attribute isBar unguarded
 ::attribute wID unguarded
@@ -131,9 +131,9 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.20.0"
+  return "0.21.0"
 ::method module_lastChanged class
-  return "2026-11-17"
+  return "2026-11-18"
 ::attribute dlg unguarded             -- its dialog's OodDlg
 ::attribute id unguarded
 ::attribute kind unguarded
@@ -149,9 +149,9 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.20.0"
+  return "0.21.0"
 ::method module_lastChanged class
-  return "2026-11-17"
+  return "2026-11-18"
 ::method module_version unguarded
   return self~class~module_version
 ::method module_lastChanged unguarded
@@ -290,6 +290,7 @@
 
 ::method number unguarded          -- 0x00F5, a handle, or a number, as a number
   use arg v
+  numeric digits 40                  -- (a handle or a 64-bit value has more than nine digits)
   if v~isA(.String) then do
     if v~left(2)~upper == "0X" then return x2d(v~substr(3))
     if v~datatype("N") then return v
@@ -306,7 +307,7 @@
     when kind == "CMD" then self~command(key, id, code)
     when kind == "NOTIFY" then self~notify(key, id, code, extra)
     when kind == "CTX" then self~contextMenu(key, id, code, extra)
-    when kind == "KEY" then self~keyPress(key, id, code)
+    when kind == "KEY" then self~keyPress(key, id, code, extra)
     when kind == "WM" then self~wmEvent(key, code, extra)
     when kind == "MOUSE" then self~mouseEvent(key, id, code, extra)
     when kind == "GC" then self~grandChildEvent(key, id, code)
@@ -413,8 +414,8 @@
     if entry[1] == a[1]~upper then return .true
   end
   return .false
-::method keyPress unguarded        -- the method gets (key code, shift, control, alt, info)
-  use arg key, code, mods
+::method keyPress unguarded        -- the method gets (key code, shift, control, alt, info); a control's method also the control
+  use arg key, code, mods, focusId = 0
   d = self~dialogOf(key)
   if d == .nil then return
   shift = (mods~pos("S") > 0)
@@ -427,8 +428,54 @@
     if filter~wordPos("SHIFT") > 0 then if \shift then iterate
     if filter~wordPos("CONTROL") > 0 then if \control then iterate
     if filter~wordPos("ALT") > 0 then if \alt then iterate
-    self~invoke(d~rexxSelf, entry[1], .array~of(code, shift, control, alt, mods))
+    if entry~items > 3 then do      -- connected by a control: only while it has the focus
+      if entry[4] \== focusId then iterate
+      self~invoke(d~rexxSelf, entry[1], .array~of(code, shift, control, alt, mods, self~controlObject(d, entry[4])))
+    end
+    else self~invoke(d~rexxSelf, entry[1], .array~of(code, shift, control, alt, mods))
   end
+::method controlObject unguarded   -- the control object the program has for an ID; .nil if it has none
+  use arg d, id
+  do name over d~controls~allIndexes
+    if name~word(1) == id then return d~controls[name]
+  end
+  return .nil
+/* connectKeyPress and its family for a control: as the dialog's, but the method runs only
+   while that control has the focus, and gets the control as its sixth argument. */
+::method dlgctrl_connectKeyPress unguarded
+  use arg self_, msg, a
+  p = self_~oodPeer
+  self~connectKeys(p~dlg~rexxSelf, a[1], a[2], self~opt(a, 3))
+  p~dlg~keyTable[p~dlg~keyTable~items]~append(p~id)
+  return 0
+::method dlgctrl_connectFKeyPress unguarded
+  use arg self_, msg, a
+  p = self_~oodPeer
+  self~connectKeys(p~dlg~rexxSelf, a[1], "FKEYS", "")
+  p~dlg~keyTable[p~dlg~keyTable~items]~append(p~id)
+  return 0
+::method dlgctrl_disconnectKeyPress unguarded
+  use arg self_, msg, a
+  p = self_~oodPeer
+  keep = .array~new
+  do entry over p~dlg~keyTable
+    mine = (entry~items > 3)
+    if mine then mine = (entry[4] == p~id)
+    if mine then if a~hasIndex(1) then mine = (entry[1] == a[1]~upper)
+    if \mine then keep~append(entry)
+  end
+  p~dlg~keyTable = keep
+  return 0
+::method dlgctrl_hasKeyPressConnection unguarded
+  use arg self_, msg, a
+  p = self_~oodPeer
+  do entry over p~dlg~keyTable
+    if entry~items < 4 then iterate
+    if entry[4] \== p~id then iterate
+    if \a~hasIndex(1) then return .true
+    if entry[1] == a[1]~upper then return .true
+  end
+  return .false
 
 /* WM_CONTEXTMENU: the method gets the window's handle and the position. */
 ::method contextMenu unguarded
@@ -770,6 +817,567 @@ noPackage:
   if a[1] == 0 then return w
   if a[1] == 1 then return h
   return 0
+
+/* DlgUtil's arithmetic (oodUtilities.cpp). */
+::method dlgutil_shiftLeft_cls unguarded       -- unsigned, 64 bits
+  use arg self_, msg, a
+  numeric digits 40
+  amount = 1
+  if a~hasIndex(2) then amount = a[2]
+  return (self~number(a[1]) * 2 ** amount) // 18446744073709551616
+::method dlgutil_shiftRight_cls unguarded
+  use arg self_, msg, a
+  numeric digits 40
+  amount = 1
+  if a~hasIndex(2) then amount = a[2]
+  return self~number(a[1]) % 2 ** amount
+::method dlgutil_sShiftLeft_cls unguarded      -- signed, 64 bits
+  use arg self_, msg, a
+  numeric digits 40
+  amount = 1
+  if a~hasIndex(2) then amount = a[2]
+  n = (self~number(a[1]) * 2 ** amount) // 18446744073709551616
+  if n < 0 then n = n + 18446744073709551616
+  if n >= 9223372036854775808 then n = n - 18446744073709551616
+  return n
+::method dlgutil_sShiftRight_cls unguarded     -- the sign stays
+  use arg self_, msg, a
+  numeric digits 40
+  amount = 1
+  if a~hasIndex(2) then amount = a[2]
+  n = self~number(a[1])
+  if n >= 0 then return n % 2 ** amount
+  return -((-n + 2 ** amount - 1) % 2 ** amount)
+::method dlgutil_signed32_cls unguarded
+  use arg self_, msg, a
+  numeric digits 20
+  n = self~number(a[1]) // 4294967296
+  if n >= 2147483648 then return n - 4294967296
+  return n
+::method dlgutil_unsigned32_cls unguarded
+  use arg self_, msg, a
+  numeric digits 20
+  n = self~number(a[1])
+  if n < 0 then return n + 4294967296
+  return n
+::method dlgutil_signed_cls unguarded          -- (a pointer-sized number: 64 bits)
+  use arg self_, msg, a
+  numeric digits 40
+  n = self~number(a[1])
+  if n >= 9223372036854775808 then return n - 18446744073709551616
+  return n
+::method dlgutil_unsigned_cls unguarded
+  use arg self_, msg, a
+  numeric digits 40
+  n = self~number(a[1])
+  if n < 0 then return n + 18446744073709551616
+  return n
+::method dlgutil_sloWord_cls unguarded         -- the low word, signed
+  use arg self_, msg, a
+  numeric digits 40
+  n = self~number(a[1])
+  if n < 0 then n = n + 18446744073709551616
+  n = n // 65536
+  if n >= 32768 then return n - 65536
+  return n
+::method dlgutil_shiWord_cls unguarded         -- the high word of the low 32 bits, signed
+  use arg self_, msg, a
+  numeric digits 40
+  n = self~number(a[1])
+  if n < 0 then n = n + 18446744073709551616
+  n = (n % 65536) // 65536
+  if n >= 32768 then return n - 65536
+  return n
+::method dlgutil_handleToPointer_cls unguarded
+  use arg self_, msg, a
+  return a[1]
+::method dlgutil_threadID_cls unguarded
+  return 1
+::method dlgutil_errMsg_cls unguarded          -- (Windows' text for a system error code: there is no Windows)
+  use arg self_, msg, a
+  return "No description available"
+::method dlgutil_screenArea_cls unguarded      -- the work area as a Rect
+  use arg self_
+  parse value self~web~screen with w h
+  return self~classOf("Rect")~new(0, 0, w, h)
+::method dlgutil_windowFromPoint_cls unguarded -- the handle of the window at a point of the screen; 0 if none
+  use arg self_, msg, a
+  parse value self~web~windowAt(a[1]~x, a[1]~y) with key id
+  if key == "" then return 0
+  return "0x"d2x(key * 65536 + id)~right(16, "0")
+::method dlgutil_halt_cls unguarded
+  return 0
+::method dlgutil_terminate_cls unguarded
+  return 0
+
+/* SM: system metrics as class attributes (oodUtilities.cpp).  The values are those of a
+   Windows desktop at 96 DPI with its usual settings, except the screen, which is the page. */
+::method sm_cxScreen_cls unguarded
+  parse value self~web~screen with w .
+  return w
+::method sm_cyScreen_cls unguarded
+  parse value self~web~screen with . h
+  return h
+::method sm_cMouseButtons_cls unguarded
+  return 3
+::method sm_cxCursor_cls unguarded
+  return 32
+::method sm_cyCursor_cls unguarded
+  return 32
+::method sm_cxDrag_cls unguarded
+  return 4
+::method sm_cyDrag_cls unguarded
+  return 4
+::method sm_cxFixedFrame_cls unguarded
+  return 3
+::method sm_cyFixedFrame_cls unguarded
+  return 3
+::method sm_cxIcon_cls unguarded
+  return 32
+::method sm_cyIcon_cls unguarded
+  return 32
+::method sm_cxSmIcon_cls unguarded
+  return 16
+::method sm_cySmIcon_cls unguarded
+  return 16
+::method sm_cxSize_cls unguarded
+  return 36
+::method sm_cySize_cls unguarded
+  return 22
+::method sm_cxVScroll_cls unguarded
+  return 17
+::method sm_cyHScroll_cls unguarded
+  return 17
+::method sm_cyCaption_cls unguarded
+  return 23
+::method sm_cyMenu_cls unguarded
+  return 20
+::method sm_menuDropAlignment_cls unguarded
+  return 0
+/* SPI: system parameters.  A page cannot change the system: a value that is set is kept for
+   this run and answered back, and nothing else changes. */
+::method spiValues unguarded
+  expose spiTable
+  if \var("spiTable") then do
+    spiTable = .directory~new
+    spiTable~dragWidth = 4
+    spiTable~dragHeight = 4
+    spiTable~menuAnimation = .false
+    spiTable~menuFade = .false
+    spiTable~mouseHoverWidth = 4
+    spiTable~mouseHoverHeight = 4
+    spiTable~mouseHoverTime = 400
+    spiTable~wheelScrollLines = 3
+    spiTable~updateFlag = 0
+  end
+  return spiTable
+::method spi_init_cls unguarded
+  return 0
+::method spi_getDragWidth_cls unguarded
+  return self~spiValues~dragWidth
+::method spi_setDragWidth_cls unguarded
+  use arg self_, msg, a
+  self~spiValues~dragWidth = a[1]
+::method spi_getDragHeight_cls unguarded
+  return self~spiValues~dragHeight
+::method spi_setDragHeight_cls unguarded
+  use arg self_, msg, a
+  self~spiValues~dragHeight = a[1]
+::method spi_getMenuAnimation_cls unguarded
+  return self~spiValues~menuAnimation
+::method spi_setMenuAnimation_cls unguarded
+  use arg self_, msg, a
+  self~spiValues~menuAnimation = (a[1] == .true)
+::method spi_getMenuFade_cls unguarded
+  return self~spiValues~menuFade
+::method spi_setMenuFade_cls unguarded
+  use arg self_, msg, a
+  self~spiValues~menuFade = (a[1] == .true)
+::method spi_getMouseHoverWidth_cls unguarded  -- (one native for the attribute and its setter)
+  use arg self_, msg, a
+  if msg~right(1) == "=" then self~spiValues~mouseHoverWidth = a[1]
+  else return self~spiValues~mouseHoverWidth
+::method spi_getMouseHoverHeight_cls unguarded
+  use arg self_, msg, a
+  if msg~right(1) == "=" then self~spiValues~mouseHoverHeight = a[1]
+  else return self~spiValues~mouseHoverHeight
+::method spi_getMouseHoverTime_cls unguarded
+  use arg self_, msg, a
+  if msg~right(1) == "=" then self~spiValues~mouseHoverTime = a[1]
+  else return self~spiValues~mouseHoverTime
+::method spi_getWheelScrollLines_cls unguarded
+  return self~spiValues~wheelScrollLines
+::method spi_setWheelScrollLines_cls unguarded
+  use arg self_, msg, a
+  self~spiValues~wheelScrollLines = a[1]
+::method spi_getUpdateFlag_cls unguarded
+  return self~spiValues~updateFlag
+::method spi_setUpdateFlag_cls unguarded
+  use arg self_, msg, a
+  self~spiValues~updateFlag = a[1]
+::method spi_setWorkArea_cls unguarded
+  return 0
+::method spi_getNonClientMetrics_cls unguarded -- a directory of the sizes and fonts of a window's frame
+  use arg self_
+  d = .directory~new
+  d~borderWidth = 1
+  d~scrollWidth = 17
+  d~scrollHeight = 17
+  d~captionWidth = 36
+  d~captionHeight = 22
+  d~smCaptionWidth = 22
+  d~smCaptionHeight = 22
+  d~menuWidth = 19
+  d~menuHeight = 19
+  d~paddedBorderWidth = 4
+  return d
+::method spi_setNonClientMetrics_cls unguarded
+  return 0
+/* OS: which Windows this is.  It is none: the answers are those of a current 64-bit Windows,
+   which is what a program that asks wants to hear before it uses a newer control. */
+::method os_isVersion unguarded
+  use arg self_, msg
+  if msg~left(9) == "ISATLEAST" then return .true
+  return (msg == "ISWINDOWS10" | msg == "ISW10")
+::method os_is64bit unguarded
+  return .true
+::method os_is32on64bit unguarded
+  return .false
+::method os_settingChanged unguarded
+  return 0
+::method os_shellChangeNotify unguarded
+  return 0
+
+/* Windows by handle (ooDialog.cpp): a handle of this port is dialog key * 65536 + control ID. */
+::method windowOfHandle unguarded  -- an array (dialog peer, id); .nil if the handle is not a live window
+  use arg handle
+  n = self~number(handle)
+  if \n~datatype("W") | n < 65536 then return .nil
+  d = self~dialogOf(n % 65536)
+  if d == .nil then return .nil
+  if \d~live then return .nil
+  return .array~of(d, n // 65536)
+::method pbdlg_getWindowText unguarded
+  use arg self_, msg, a
+  w = self~windowOfHandle(a[1])
+  if w == .nil then return ""
+  return self~ctlOp(w[1], w[2], "getText")
+::method pbdlg_setWindowText unguarded -- 0 on success, 1 if there is no such window
+  use arg self_, msg, a
+  w = self~windowOfHandle(a[1])
+  if w == .nil then return 1
+  if self~ctlOp(w[1], w[2], "setText", a[2]) == 1 then return 0
+  return 1
+::method pbdlg_showWindow unguarded    -- showWindow, hideWindow and their Fast forms
+  use arg self_, msg, a
+  w = self~windowOfHandle(a[1])
+  if w == .nil then return 1
+  if msg~left(4) == "HIDE" then self~ctlOp(w[1], w[2], "hide")
+  else self~ctlOp(w[1], w[2], "show")
+  return 0
+::method pbdlg_sendMessageToControl unguarded  -- sendMessageToControl(id, msg, wParam, lParam)
+  use arg self_, msg, a
+  d = self_~oodPeer
+  id = self~resolveId(self_, a[1])
+  if id < 1 then return -1
+  return self~winMsg(d, id, a[2], a[3], a[4])
+::method pbdlg_sendMessageToWindow unguarded   -- sendMessageToWindow(hwnd, msg, wParam, lParam)
+  use arg self_, msg, a
+  w = self~windowOfHandle(a[1])
+  if w == .nil then return -1
+  return self~winMsg(w[1], w[2], a[2], a[3], a[4])
+::method pbdlg_putControl unguarded    -- (keeps a control object alive: the port keeps them all)
+  return 0
+::method dlgctrl_putInBag unguarded
+  return 0
+::method pbdlg_dumpMessageTable unguarded
+  return 0
+::method dlgctrl_setWindowTheme unguarded
+  return 0
+::method dlgctrl_textSize unguarded    -- textSize(text, size): the Size object takes the text's size in pixels, in the control's font
+  use arg self_, msg, a
+  p = self_~oodPeer
+  parse value self~ctlOp(p~dlg, p~id, "textSize", a[1]) with w h .
+  if w == "" then return .false
+  a[2]~width = w
+  a[2]~height = h
+  return .true
+::method dlgctrl_redrawRect unguarded  -- (the browser redraws by itself)
+  return 0
+::method dlgctrl_clearRect unguarded
+  return 0
+
+/* StatusBar (oodStatusBar.cpp).  Parts are numbered from 1 in Rexx. */
+::method stb_setParts unguarded    -- setParts(array of right edges in pixels; -1: to the end)
+  use arg self_, msg, a
+  if \a[1]~isA(.Array) then raise syntax 93.948 array(1, "Array")
+  edges = ""
+  do i = 1 to a[1]~size
+    if \a[1]~hasIndex(i) then raise syntax 93.900 array("The edges array can not be sparse; index" i "is missing")
+    if \a[1][i]~datatype("W") then raise syntax 93.900 array("The edges array must hold whole numbers; found" a[1][i])
+    edges = edges a[1][i]
+  end
+  return self~op(self_, "sb.setParts", edges~strip) == 1
+::method stb_getParts unguarded    -- getParts(array): the number of parts; the array takes their right edges
+  use arg self_, msg, a
+  edges = self~op(self_, "sb.parts")~makeArray(" ")
+  if a~hasIndex(1) then do i = 1 to edges~items
+    a[1][i] = edges[i]
+  end
+  return edges~items
+::method stb_setText unguarded     -- setText(text, index, type)
+  use arg self_, msg, a
+  return self~op(self_, "sb.setText", a[2] - 1, a[1]) == 1
+::method stb_getText unguarded     -- getText(index, directory): the directory, if given, takes the draw type
+  use arg self_, msg, a
+  if self~op(self_, "sb.has", a[1] - 1) \== 1 then return ""
+  if a~hasIndex(2) then a[2]~drawType = "LOWERBORDERS"
+  return self~op(self_, "sb.text", a[1] - 1)
+::method stb_getTextLength unguarded
+  use arg self_, msg, a
+  if self~op(self_, "sb.has", a[1] - 1) \== 1 then return 0
+  if a~hasIndex(2) then a[2]~drawType = "LOWERBORDERS"
+  return self~op(self_, "sb.text", a[1] - 1)~length
+::method stb_setTipText unguarded  -- setTipText(text, index)
+  use arg self_, msg, a
+  return self~op(self_, "sb.setTip", a[2] - 1, a[1]) == 1
+::method stb_getTipText unguarded
+  use arg self_, msg, a
+  return self~op(self_, "sb.tip", a[1] - 1)
+::method stb_simple unguarded      -- simple(.true | .false): one text instead of the parts
+  use arg self_, msg, a
+  on = .true
+  if a~hasIndex(1) then on = (a[1] == .true)
+  self~op(self_, "sb.simple", on)
+  return 0
+::method stb_isSimple unguarded
+  use arg self_
+  return self~op(self_, "sb.isSimple") == 1
+::method stb_getRect unguarded     -- the part's rectangle in the bar; .nil if there is no such part
+  use arg self_, msg, a
+  parse value self~op(self_, "sb.rect", a[1] - 1) with left top right bottom
+  if left == "" then return .nil
+  return self~classOf("Rect")~new(left, top, right, bottom)
+::method stb_getBorders unguarded  -- horizontal border, vertical border, gap between parts
+  return .array~of(0, 1, 1)
+::method stb_setMinHeight unguarded
+  use arg self_, msg, a
+  self~op(self_, "sb.minHeight", a[1])
+  return 0
+::method stb_setBkColor unguarded  -- answers the colour before (CLR_DEFAULT the first time)
+  use arg self_, msg, a
+  p = self_~oodPeer
+  old = p~dlg~store[p~id "bk"]
+  if old == .nil then old = 4278190080
+  p~dlg~store[p~id "bk"] = a[1]
+  if a[1] == 4278190080 then self~op(self_, "sb.bk", "")
+  else self~op(self_, "sb.bk", self~colorOf(a[1]))
+  return old
+::method stb_setIcon unguarded     -- (icons in a status bar are not drawn; the icon is kept and answered)
+  use arg self_, msg, a
+  p = self_~oodPeer
+  p~dlg~store[p~id "icon" a[2]] = a[1]
+  return .true
+::method stb_getIcon unguarded
+  use arg self_, msg, a
+  p = self_~oodPeer
+  return p~dlg~store[p~id "icon" a[1]]
+
+/* The old names of DynamicDialog's create methods (oodUser.cpp): the same arguments in the
+   old order.  Each row: the new method, then for each old argument its new position. */
+::method dyndlgOldName unguarded
+  use arg self_, a, method, positions
+  args = .array~new
+  do i = 1 to positions~words
+    if a~hasIndex(i) then args[positions~word(i)] = a[i]
+  end
+  return self_~sendWith(method, args)
+::method dyndlg_addButton unguarded          -- addButton(id, x, y, cx, cy, text, msgToRaise, opts, loadOptions)
+  use arg self_, msg, a
+  return self~dyndlgOldName(self_, a, "createPushButton", "1 2 3 4 5 7 8 6 9")
+::method dyndlg_addRadioButton unguarded     -- addRadioButton / addCheckBox(id, attributeName, x, y, cx, cy, text, opts, loadOptions)
+  use arg self_, msg, a
+  method = "createCheckBox"
+  if msg == "ADDRADIOBUTTON" then method = "createRadioButton"
+  return self~dyndlgOldName(self_, a, method, "1 8 2 3 4 5 7 6 9")
+::method dyndlg_addGroupBox unguarded        -- addGroupBox(x, y, cx, cy, text, opts, id)
+  use arg self_, msg, a
+  return self~dyndlgOldName(self_, a, "createGroupBox", "2 3 4 5 7 6 1")
+::method dyndlg_addEntryLine unguarded       -- addEntryLine / addPasswordLine(id, attributeName, x, y, cx, cy, opts)
+  use arg self_, msg, a
+  method = "createEdit"
+  if msg == "ADDPASSWORDLINE" then method = "createPasswordEdit"
+  return self~dyndlgOldName(self_, a, method, "1 7 2 3 4 5 6")
+::method dyndlg_addMethod unguarded          -- addListBox, addComboBox, addTreeControl, addListControl, addSliderControl, addTabControl
+  use arg self_, msg, a
+  names = "ADDLISTBOX createListBox ADDCOMBOBOX createComboBox ADDTREECONTROL createTreeView ADDLISTCONTROL createListView ADDSLIDERCONTROL createTrackBar ADDTABCONTROL createTab"
+  at = names~wordPos(msg)
+  if at == 0 then raise syntax 93.900 array('the method "'msg'" has no create method')
+  return self~dyndlgOldName(self_, a, names~word(at + 1), "1 7 2 3 4 5 6")
+::method dyndlg_init_cls unguarded
+  return 0
+
+/* The dialog's background, tab stops; the list-view's colours, styles and columns. */
+::method sysColorOf unguarded      -- a COLOR_ index of Windows as a CSS colour
+  use arg index
+  colors = "#c8c8c8 #000000 #99b4d1 #bfcddb #f0f0f0 #ffffff #646464 #000000 #000000 #000000 #b4b4b4 #f4f7fc #ababab #0078d7 #ffffff #f0f0f0 #a0a0a0 #6d6d6d #000000 #000000 #ffffff #696969 #e3e3e3 #000000 #ffffe1 #f0f0f0 #0066cc #b9d1ea #d7e4f2 #0078d7 #f0f0f0"
+  if \index~datatype("W") then return ""
+  if index < 0 | index >= colors~words then return ""
+  return colors~word(index + 1)
+::method pbdlg_backgroundColor unguarded   -- backgroundColor(colour, isColorRef) / backgroundSysColor(index)
+  use arg self_, msg, a
+  if msg == "BACKGROUNDSYSCOLOR" then css = self~sysColorOf(a[1])
+  else css = self~colorOf(a[1])
+  if css == "" then return .false
+  self~ctlOpWhenLive(self_~oodPeer, 0, "color", css, "")
+  return .true
+::method pbdlg_tiledBackgroundBitmap unguarded
+  use arg self_, msg, a
+  key = self~imageKey(a[1])
+  if key == "" then return 1
+  self~ctlOpWhenLive(self_~oodPeer, 0, "backdrop", key, "TILE")
+  return 0
+::method pbdlg_setTabGroup unguarded   -- setTabStop(id, add) / setGroup(id, add): groups are not kept
+  use arg self_, msg, a
+  id = self~resolveId(self_, a[1])
+  if id < 1 then return -1
+  add = .true
+  if a~hasIndex(2) then add = (a[2] == .true)
+  if msg == "SETTABSTOP" then self~ctlOp(self_~oodPeer, id, "tabStop", add)
+  return 0
+::method lv_setColor unguarded     -- bkColor=, textColor=, textBkColor=
+  use arg self_, msg, a
+  p = self_~oodPeer
+  p~dlg~store[p~id msg~strip("T", "=")] = a[1]
+  background = p~dlg~store[p~id "BKCOLOR"]
+  if background == .nil then background = p~dlg~store[p~id "TEXTBKCOLOR"]
+  foreground = p~dlg~store[p~id "TEXTCOLOR"]
+  css = ""
+  if background \== .nil then css = self~colorOf(background)
+  fg = ""
+  if foreground \== .nil then fg = self~colorOf(foreground)
+  self~op(self_, "color", css, fg)
+  return 0
+::method lv_getColor unguarded     -- bkColor, textColor, textBkColor: -1 if none was set
+  use arg self_, msg
+  p = self_~oodPeer
+  color = p~dlg~store[p~id msg]
+  if color == .nil then return -1
+  return color
+::method lv_stringWidthPx unguarded
+  use arg self_, msg, a
+  parse value self~op(self_, "textSize", a[1]) with w .
+  if \w~datatype("N") then return 0
+  return w
+::method lv_getColumnOrder unguarded   -- the columns from left to right: they are never moved
+  use arg self_
+  order = .array~new
+  do c = 0 to self~op(self_, "lv.colCount") - 1
+    order~append(c)
+  end
+  return order
+::method lv_setColumnOrder unguarded   -- (columns cannot be moved: true only for the order they have)
+  use arg self_, msg, a
+  count = self~op(self_, "lv.colCount")
+  if a[1]~items \== count then return .false
+  do c = 1 to count
+    if a[1][c] \== c - 1 then return .false
+  end
+  return .true
+::method lv_addRemoveStyle unguarded   -- addStyle / removeStyle: a view keyword changes the view
+  use arg self_, msg, a
+  if msg == "ADDSTYLE" then self~lvViewStyle(self_, a[1])
+  return 0
+::method lv_replaceStyle unguarded     -- replaceStyle(remove, add)
+  use arg self_, msg, a
+  self~lvViewStyle(self_, a[2])
+  return 0
+::method lvViewStyle unguarded
+  use arg self_, style
+  do word over style~upper~makeArray(" ")
+    if "ICON SMALLICON LIST REPORT"~wordPos(word) > 0 then self~op(self_, "lv.view", word)
+  end
+
+/* Item data of a combo box and a tree-view; lines of an edit; margins of a button. */
+::method cb_setItemData unguarded  -- setItemData(index, data): index from 1; answers the data that was there
+  use arg self_, msg, a
+  p = self_~oodPeer
+  uid = self~op(self_, "optUid", a[1] - 1)
+  if uid == 0 then return .nil
+  old = self~itemData(p~dlg, p~id, uid)
+  data = .nil
+  if a~hasIndex(2) then data = a[2]
+  self~setItemDataOf(p~dlg, p~id, uid, data)
+  return old
+::method cb_getItemData unguarded
+  use arg self_, msg, a
+  p = self_~oodPeer
+  uid = self~op(self_, "optUid", a[1] - 1)
+  if uid == 0 then return .nil
+  return self~itemData(p~dlg, p~id, uid)
+::method cb_removeItemData unguarded
+  use arg self_, msg, a
+  return self~cb_setItemData(self_, msg, .array~of(a[1]))
+::method cb_getCue unguarded
+  use arg self_
+  return self~op(self_, "getCue")
+::method e_getCue unguarded
+  use arg self_
+  return self~op(self_, "getCue")
+::method tv_removeItemData unguarded   -- answers the data that was there
+  use arg self_, msg, a
+  p = self_~oodPeer
+  item = self~tvItem(a, 1)
+  old = self~itemData(p~dlg, p~id, item)
+  self~setItemDataOf(p~dlg, p~id, item, .nil)
+  return old
+::method tv_getItemHeight unguarded
+  use arg self_
+  return self~op(self_, "rowHeight")
+::method e_lineFromIndex unguarded -- the line (from 1) that holds a character index (from 1); omitted: the caret's line
+  use arg self_, msg, a
+  at = -1
+  if a~hasIndex(1) then at = a[1] - 1
+  return self~op(self_, "lineOf", at) + 1
+::method e_lineIndex unguarded     -- the character index (from 1) of the start of a line (from 1); 0 if there is no such line
+  use arg self_, msg, a
+  line = -1
+  if a~hasIndex(1) then line = a[1] - 1
+  return self~op(self_, "lineStart", line) + 1
+::method e_lineLength unguarded
+  use arg self_, msg, a
+  line = -1
+  if a~hasIndex(1) then line = a[1] - 1
+  return self~op(self_, "lineLen", line)
+::method e_setTabStops unguarded   -- one tab stop, in dialog units, repeats: about four dialog units to a character
+  use arg self_, msg, a
+  if a[1]~items < 1 then return .false
+  self~op(self_, "tabSize", max(1, a[1][1] % 4))
+  return .true
+::method e_getRect unguarded       -- the formatting rectangle: the client area less the padding
+  use arg self_
+  parse value self~op(self_, "pad", "") with left top right bottom
+  size = self_~getRealSize
+  return self~classOf("Rect")~new(left, top, size~width - right, size~height - bottom)
+::method e_setRect unguarded
+  use arg self_, msg, a
+  size = self_~getRealSize
+  r = a[1]
+  self~op(self_, "pad", max(0, r~top) max(0, size~width - r~right) max(0, size~height - r~bottom) max(0, r~left))
+  return 0
+::method e_showBallon unguarded    -- (a balloon tip of an edit is not shown)
+  return .false
+::method e_hideBallon unguarded
+  return .false
+::method bc_getTextMargin unguarded
+  use arg self_
+  parse value self~op(self_, "pad", "") with left top right bottom
+  return self~classOf("Rect")~new(left, top, right, bottom)
+::method bc_setTextMargin unguarded
+  use arg self_, msg, a
+  r = a[1]
+  self~op(self_, "pad", r~top r~right r~bottom r~left)
+  return .true
 
 /*---- PlainBaseDialog ---------------------------------------------------------*/
 /* The fifth argument of a dialog's init (checkDlgType of ooDialog.cpp).  For a ControlDialog
@@ -1422,6 +2030,7 @@ noPackage:
   kind = msg~substr(7)
   id = self~addItem(self_, kind, a[1], a[2], a[3], a[4], a[5], self~opt(a, 6), "")
   if id < 1 then return id
+  if "STATUSBAR TOOLBAR REBAR"~wordPos(kind) > 0 then return 0     -- (these have no data)
   if self_~autoDetect then self~connectCreated(self_, a[1], id, self~opt(a, 7), kind)
   return 0
 
@@ -4791,6 +5400,500 @@ noPackage:
   self~setItemDataOf(p~dlg, p~id, uid, .nil)
   return old
 
+/* LvItem, LvSubItem, LvFullRow: descriptions of a list-view item, a subitem and a whole row
+   (oodListView.cpp).  Each object's peer is a directory.  What the page's list-view does not
+   keep for a row (image indexes, indent, group, columns) is kept in the dialog's store under
+   (id "lvx" uid).  The image indexes are kept and answered; the page draws no item images. */
+::method lvMaskOf unguarded        -- the mask an item has from what was given
+  use arg info
+  mask = ""
+  if info~text \== .nil then mask = mask "TEXT"
+  if info~imageIndex \== .nil then mask = mask "IMAGE"
+  if info~hasIndex("ITEMDATA") then if info~itemData \== .nil then mask = mask "PARAM"
+  if info~hasIndex("ITEMSTATE") then if info~itemState \== "" then mask = mask "STATE"
+  if info~hasIndex("INDENT") then if info~indent \== .nil then mask = mask "INDENT"
+  if info~hasIndex("GROUPID") then if info~groupID \== .nil then mask = mask "GROUPID"
+  if info~hasIndex("COLUMNS") then if info~columns \== .nil then mask = mask "COLUMNS"
+  return mask~strip
+::method lvi_init unguarded        -- LvItem~new(index, text, imageIndex, itemData, mask, itemState, itemStateMask, indent, groupID, columns)
+  use arg self_, msg, a
+  info = .directory~new
+  info["INDEX"] = 0
+  if a~hasIndex(1) then info["INDEX"] = a[1]
+  info~text = .nil
+  if a~hasIndex(2) then info~text = a[2]
+  info~imageIndex = .nil
+  if a~hasIndex(3) then info~imageIndex = a[3]
+  info~itemData = .nil
+  if a~hasIndex(4) then info~itemData = a[4]
+  info~itemState = self~opt(a, 6)
+  info~itemStateMask = self~opt(a, 7)
+  if info~itemState \== "" & info~itemStateMask == "" then info~itemStateMask = info~itemState
+  info~indent = .nil
+  if a~hasIndex(8) then info~indent = a[8]
+  info~groupID = .nil
+  if a~hasIndex(9) then info~groupID = a[9]
+  info~columns = .nil
+  if a~hasIndex(10) then info~columns = a[10]
+  info~columnFormats = .nil
+  info~overlayImageIndex = 0
+  info~stateImageIndex = 0
+  info~mask = self~opt(a, 5)
+  info~maskGiven = (info~mask \== "")
+  self_~oodPeer = info
+  return 0
+::method lvi_init_cls unguarded
+  return 0
+::method lvi_unInit unguarded
+  return 0
+::method lviGet unguarded
+  use arg self_, name, default
+  value = self_~oodPeer[name]
+  if value == .nil then return default
+  return value
+::method lvi_index unguarded
+  use arg self_
+  return self_~oodPeer["INDEX"]
+::method lvi_setIndex unguarded
+  use arg self_, msg, a
+  self_~oodPeer["INDEX"] = a[1]
+::method lvi_text unguarded
+  use arg self_
+  return self~lviGet(self_, "TEXT", "")
+::method lvi_setText unguarded
+  use arg self_, msg, a
+  self_~oodPeer~text = a[1]
+::method lvi_imageIndex unguarded
+  use arg self_
+  return self~lviGet(self_, "IMAGEINDEX", -1)
+::method lvi_setImageIndex unguarded
+  use arg self_, msg, a
+  self_~oodPeer~imageIndex = a[1]
+::method lvi_itemData unguarded
+  use arg self_
+  return self_~oodPeer~itemData
+::method lvi_setItemData unguarded
+  use arg self_, msg, a
+  self_~oodPeer~itemData = a[1]
+::method lvi_itemState unguarded
+  use arg self_
+  return self_~oodPeer~itemState
+::method lvi_setItemState unguarded
+  use arg self_, msg, a
+  self_~oodPeer~itemState = a[1]
+  if self_~oodPeer~itemStateMask == "" then self_~oodPeer~itemStateMask = a[1]
+::method lvi_itemStateMask unguarded
+  use arg self_
+  return self_~oodPeer~itemStateMask
+::method lvi_setItemStateMask unguarded
+  use arg self_, msg, a
+  self_~oodPeer~itemStateMask = a[1]
+::method lvi_indent unguarded
+  use arg self_
+  return self~lviGet(self_, "INDENT", 0)
+::method lvi_setIndent unguarded
+  use arg self_, msg, a
+  self_~oodPeer~indent = a[1]
+::method lvi_groupID unguarded
+  use arg self_
+  return self~lviGet(self_, "GROUPID", -2)
+::method lvi_setGroupID unguarded
+  use arg self_, msg, a
+  self_~oodPeer~groupID = a[1]
+::method lvi_columns unguarded
+  use arg self_
+  return self_~oodPeer~columns
+::method lvi_setColumns unguarded
+  use arg self_, msg, a
+  self_~oodPeer~columns = a[1]
+::method lvi_columnFormats unguarded
+  use arg self_
+  return self_~oodPeer~columnFormats
+::method lvi_setColumnFormats unguarded
+  use arg self_, msg, a
+  self_~oodPeer~columnFormats = a[1]
+::method lvi_overLayImageIndex unguarded
+  use arg self_
+  return self_~oodPeer~overlayImageIndex
+::method lvi_setOverlayImageIndex unguarded
+  use arg self_, msg, a
+  self_~oodPeer~overlayImageIndex = a[1]
+::method lvi_stateImageIndex unguarded
+  use arg self_
+  return self_~oodPeer~stateImageIndex
+::method lvi_setStateImageIndex unguarded
+  use arg self_, msg, a
+  self_~oodPeer~stateImageIndex = a[1]
+::method lvi_mask unguarded        -- the mask given, or the one that follows from what is set
+  use arg self_
+  info = self_~oodPeer
+  if info~maskGiven then return info~mask
+  return self~lvMaskOf(info)
+::method lvi_setMask unguarded
+  use arg self_, msg, a
+  self_~oodPeer~mask = a[1]
+  self_~oodPeer~maskGiven = .true
+::method lvsi_init unguarded       -- LvSubItem~new(item, subItem, text, imageIndex, mask)
+  use arg self_, msg, a
+  info = .directory~new
+  info~item = a[1]
+  info~subItem = a[2]
+  if info~subItem < 1 then raise syntax 93.907 array(2, 1, 4294967295, info~subItem)
+  info~text = .nil
+  if a~hasIndex(3) then info~text = a[3]
+  info~imageIndex = .nil
+  if a~hasIndex(4) then info~imageIndex = a[4]
+  info~mask = self~opt(a, 5)
+  info~maskGiven = (info~mask \== "")
+  self_~oodPeer = info
+  return 0
+::method lvsi_init_cls unguarded
+  return 0
+::method lvsi_unInit unguarded
+  return 0
+::method lvsi_item unguarded
+  use arg self_
+  return self_~oodPeer~item
+::method lvsi_setItem unguarded
+  use arg self_, msg, a
+  self_~oodPeer~item = a[1]
+::method lvsi_subItem unguarded
+  use arg self_
+  return self_~oodPeer~subItem
+::method lvsi_setSubItem unguarded
+  use arg self_, msg, a
+  self_~oodPeer~subItem = a[1]
+::method lvsi_text unguarded
+  use arg self_
+  return self~lviGet(self_, "TEXT", "")
+::method lvsi_setText unguarded
+  use arg self_, msg, a
+  self_~oodPeer~text = a[1]
+::method lvsi_imageIndex unguarded
+  use arg self_
+  return self~lviGet(self_, "IMAGEINDEX", -1)
+::method lvsi_setImageIndex unguarded
+  use arg self_, msg, a
+  self_~oodPeer~imageIndex = a[1]
+::method lvsi_mask unguarded
+  use arg self_
+  info = self_~oodPeer
+  if info~maskGiven then return info~mask
+  return self~lvMaskOf(info)
+::method lvsi_setMask unguarded
+  use arg self_, msg, a
+  self_~oodPeer~mask = a[1]
+  self_~oodPeer~maskGiven = .true
+/* LvFullRow~new(lvItem, lvSubItem ..., useForSorting): the last argument may be a logical. */
+::method lvfr_init unguarded
+  use arg self_, msg, a
+  if \a~hasIndex(1) then raise syntax 93.903 array(1)
+  if \a[1]~isA(self~classOf("LvItem")) then raise syntax 93.948 array(1, "LvItem")
+  row = .directory~new
+  row~item = a[1]
+  row~subs = .array~new
+  row~forSorting = .false
+  row~userData = .nil
+  do i = 2 to a~size
+    if \a~hasIndex(i) then raise syntax 93.903 array(i)
+    if a[i]~isA(self~classOf("LvSubItem")) then do
+      a[i]~oodPeer~item = row~item~oodPeer["INDEX"]
+      row~subs~append(a[i])
+    end
+    else if i == a~size & (a[i] == .true | a[i] == .false) then row~forSorting = a[i]
+    else raise syntax 93.948 array(i, "LvSubItem")
+  end
+  self_~oodPeer = row
+  return 0
+::method lvfr_init_cls unguarded
+  return 0
+::method lvfr_unInit unguarded
+  return 0
+::method lvfr_fromArray_cls unguarded  -- fromArray(data, itemIndex, strIfNil, useForSorting)
+  use arg self_, msg, a
+  data = a[1]
+  if \data~isA(.Array) then raise syntax 93.948 array(1, "Array")
+  if data~items == 0 then return .nil
+  index = 0
+  if a~hasIndex(2) then index = a[2]
+  nullStr = self~opt(a, 3)
+  args = .array~new
+  do i = 1 to data~size
+    if \data~hasIndex(i) then raise syntax 93.900 array("The data array can not be sparse; index" i "is missing")
+    text = data[i]
+    if text == .nil then text = nullStr
+    else text = text~string
+    if i == 1 then args~append(self~classOf("LvItem")~new(index, text))
+    else args~append(self~classOf("LvSubItem")~new(index, i - 1, text))
+  end
+  if a~hasIndex(4) then args~append(a[4] == .true)
+  return self_~sendWith("NEW", args)
+::method lvfr_item unguarded
+  use arg self_
+  return self_~oodPeer~item
+::method lvfr_subitems unguarded
+  use arg self_
+  return self_~oodPeer~subs~items
+::method lvfr_subitem unguarded    -- subitem(index): index 1 is the first subitem
+  use arg self_, msg, a
+  subs = self_~oodPeer~subs
+  if a[1] < 1 | a[1] > subs~items then return .nil
+  return subs[a[1]]
+::method lvfr_addSubitem unguarded -- the new subitem is the last; answers its index
+  use arg self_, msg, a
+  if \a[1]~isA(self~classOf("LvSubItem")) then raise syntax 93.948 array(1, "LvSubItem")
+  row = self_~oodPeer
+  row~subs~append(a[1])
+  a[1]~oodPeer~subItem = row~subs~items
+  a[1]~oodPeer~item = row~item~oodPeer["INDEX"]
+  return row~subs~items
+::method lvfr_insertSubitem unguarded  -- insertSubitem(subitem, colIndex): the later subitems move up one
+  use arg self_, msg, a
+  if \a[1]~isA(self~classOf("LvSubItem")) then raise syntax 93.948 array(1, "LvSubItem")
+  row = self_~oodPeer
+  at = a[2]
+  if at < 1 | at > row~subs~items + 1 then return .false
+  if at == 1 then row~subs~insert(a[1], .nil)       -- (.nil: before the first)
+  else row~subs~insert(a[1], at - 1)
+  do i = 1 to row~subs~items
+    row~subs[i]~oodPeer~subItem = i
+  end
+  a[1]~oodPeer~item = row~item~oodPeer["INDEX"]
+  return .true
+::method lvfr_removeSubitem unguarded  -- answers the removed subitem; .nil if there is none
+  use arg self_, msg, a
+  row = self_~oodPeer
+  if a[1] < 1 | a[1] > row~subs~items then return .nil
+  removed = row~subs~delete(a[1])
+  do i = 1 to row~subs~items
+    row~subs[i]~oodPeer~subItem = i
+  end
+  return removed
+::method lvfr_userData unguarded
+  use arg self_
+  return self_~oodPeer~userData
+::method lvfr_setUserData unguarded
+  use arg self_, msg, a
+  self_~oodPeer~userData = a[1]
+::method lvExtra unguarded         -- what the page does not keep for a row
+  use arg self_, uid
+  p = self_~oodPeer
+  extra = p~dlg~store[p~id "lvx" uid]
+  if extra == .nil then do
+    extra = .directory~new
+    extra~images = .table~new      -- column -> image index
+    p~dlg~store[p~id "lvx" uid] = extra
+  end
+  return extra
+::method lvPutItem unguarded       -- what an LvItem says, onto the row at index
+  use arg self_, index, item, withText
+  info = item~oodPeer
+  mask = self~lvi_mask(item)~upper
+  uid = self~op(self_, "lv.uid", index)
+  if uid == 0 then return .false
+  if withText & info~text \== .nil & mask~wordPos("TEXT") > 0 then self~op(self_, "lv.setCell", index, 0, info~text)
+  extra = self~lvExtra(self_, uid)
+  if info~imageIndex \== .nil & mask~wordPos("IMAGE") > 0 then extra~images[0] = info~imageIndex
+  if info~indent \== .nil then extra~indent = info~indent
+  if info~groupID \== .nil then extra~groupID = info~groupID
+  if info~columns \== .nil then extra~columns = info~columns
+  if info~itemData \== .nil & mask~wordPos("PARAM") > 0 then self~setItemDataOf(self_~oodPeer~dlg, self_~oodPeer~id, uid, info~itemData)
+  if mask~wordPos("STATE") > 0 then do word over info~itemStateMask~upper~makeArray(" ")
+    on = info~itemState~upper~wordPos(word) > 0
+    select
+      when word == "SELECTED" then if on then self~op(self_, "lv.state", index, "SELECT"); else self~op(self_, "lv.state", index, "DESELECT")
+      when word == "FOCUSED" then if on then self~op(self_, "lv.state", index, "FOCUS")
+      otherwise nop
+    end
+  end
+  return .true
+::method lvPutRow unguarded        -- a new row from a full row, at index (-1: the end); answers its index
+  use arg self_, row, at
+  r = row~oodPeer
+  texts = self~lvi_text(r~item)
+  do sub over r~subs
+    texts = texts || self~sep || self~lvsi_text(sub)
+  end
+  index = self~op(self_, "lv.insRow", at, texts)
+  if index < 0 then return -1
+  r~item~oodPeer["INDEX"] = index
+  self~lvPutItem(self_, index, r~item, .false)
+  extra = self~lvExtra(self_, self~op(self_, "lv.uid", index))
+  do sub over r~subs
+    sub~oodPeer~item = index
+    if sub~oodPeer~imageIndex \== .nil then extra~images[sub~oodPeer~subItem] = sub~oodPeer~imageIndex
+  end
+  if r~forSorting then self~setItemDataOf(self_~oodPeer~dlg, self_~oodPeer~id, self~op(self_, "lv.uid", index), row)
+  return index
+::method lvRowArg unguarded
+  use arg a
+  if \a~hasIndex(1) then raise syntax 93.903 array(1)
+  if \a[1]~isA(self~classOf("LvFullRow")) then raise syntax 93.948 array(1, "LvFullRow")
+  return a[1]
+::method lv_addFullRow unguarded   -- the row becomes the last row
+  use arg self_, msg, a
+  return self~lvPutRow(self_, self~lvRowArg(a), -1)
+::method lv_prependFullRow unguarded
+  use arg self_, msg, a
+  return self~lvPutRow(self_, self~lvRowArg(a), 0)
+::method lv_insertFullRow unguarded    -- at the index the row's item has
+  use arg self_, msg, a
+  row = self~lvRowArg(a)
+  return self~lvPutRow(self_, row, row~oodPeer~item~oodPeer["INDEX"])
+::method lv_addRowFromArray unguarded  -- addRowFromArray(data, itemIndex, strIfNil): at itemIndex, or at the end
+  use arg self_, msg, a
+  if \a[1]~isA(.Array) then raise syntax 93.948 array(1, "Array")
+  at = -1
+  if a~hasIndex(2) then at = a[2]
+  nullStr = self~opt(a, 3)
+  texts = ""
+  do i = 1 to a[1]~size
+    if \a[1]~hasIndex(i) then raise syntax 93.900 array("The data array can not be sparse; index" i "is missing")
+    text = a[1][i]
+    if text == .nil then text = nullStr
+    if i > 1 then texts = texts || self~sep
+    texts = texts || text~string
+  end
+  return self~op(self_, "lv.insRow", at, texts)
+::method lv_getItem unguarded      -- getItem(lvItem): the LvItem takes what the row at its index has
+  use arg self_, msg, a
+  if \a[1]~isA(self~classOf("LvItem")) then raise syntax 93.948 array(1, "LvItem")
+  info = a[1]~oodPeer
+  uid = self~op(self_, "lv.uid", info["INDEX"])
+  if uid == 0 then return .false
+  extra = self~lvExtra(self_, uid)
+  info~text = self~op(self_, "lv.cell", info["INDEX"], 0)
+  info~imageIndex = extra~images[0]
+  info~itemData = self~itemData(self_~oodPeer~dlg, self_~oodPeer~id, uid)
+  state = ""
+  words = self~op(self_, "lv.itemState", info["INDEX"])~upper
+  if words~wordPos("FOCUSED") > 0 then state = state "FOCUSED"
+  if words~wordPos("SELECTED") > 0 then state = state "SELECTED"
+  info~itemState = state~strip
+  info~itemStateMask = "FOCUSED SELECTED"
+  info~indent = extra~indent
+  info~groupID = extra~groupID
+  info~columns = extra~columns
+  return .true
+::method lv_getSubitem unguarded   -- getSubitem(lvSubItem), or getSubitem(itemIndex, subitemIndex) which answers a new LvSubItem
+  use arg self_, msg, a
+  if a[1]~isA(self~classOf("LvSubItem")) then sub = a[1]
+  else do
+    if \a~hasIndex(2) then raise syntax 93.903 array(2)
+    sub = self~classOf("LvSubItem")~new(a[1], a[2])
+  end
+  info = sub~oodPeer
+  uid = self~op(self_, "lv.uid", info~item)
+  if uid == 0 | info~subItem >= self~op(self_, "lv.colCount") then do
+    if a[1]~isA(self~classOf("LvSubItem")) then return .false
+    return .nil
+  end
+  info~text = self~op(self_, "lv.cell", info~item, info~subItem)
+  info~imageIndex = self~lvExtra(self_, uid)~images[info~subItem]
+  if a[1]~isA(self~classOf("LvSubItem")) then return .true
+  return sub
+::method lv_getFullRow unguarded   -- getFullRow(index, useForSorting): .nil if there is no such row
+  use arg self_, msg, a
+  index = a[1]
+  if self~op(self_, "lv.uid", index) == 0 then return .nil
+  item = self~classOf("LvItem")~new(index)
+  self~lv_getItem(self_, "GETITEM", .array~of(item))
+  args = .array~of(item)
+  do c = 1 to self~op(self_, "lv.colCount") - 1
+    args~append(self~lv_getSubitem(self_, "GETSUBITEM", .array~of(index, c)))
+  end
+  if a~hasIndex(2) then args~append(a[2] == .true)
+  return self~classOf("LvFullRow")~sendWith("NEW", args)
+::method lv_modifyItem unguarded
+  use arg self_, msg, a
+  if \a[1]~isA(self~classOf("LvItem")) then raise syntax 93.948 array(1, "LvItem")
+  return self~lvPutItem(self_, a[1]~oodPeer["INDEX"], a[1], .true)
+::method lv_modifySubitem unguarded
+  use arg self_, msg, a
+  if \a[1]~isA(self~classOf("LvSubItem")) then raise syntax 93.948 array(1, "LvSubItem")
+  info = a[1]~oodPeer
+  uid = self~op(self_, "lv.uid", info~item)
+  if uid == 0 then return .false
+  if info~text \== .nil then self~op(self_, "lv.setCell", info~item, info~subItem, info~text)
+  if info~imageIndex \== .nil then self~lvExtra(self_, uid)~images[info~subItem] = info~imageIndex
+  return .true
+::method lv_modifyFullRow unguarded    -- the row at the index of the full row's item takes all the full row says
+  use arg self_, msg, a
+  row = self~lvRowArg(a)~oodPeer
+  if \self~lvPutItem(self_, row~item~oodPeer["INDEX"], row~item, .true) then return .false
+  do sub over row~subs
+    sub~oodPeer~item = row~item~oodPeer["INDEX"]
+    self~lv_modifySubitem(self_, "MODIFYSUBITEM", .array~of(sub))
+  end
+  return .true
+::method lv_setFullRowText unguarded   -- only the texts
+  use arg self_, msg, a
+  row = self~lvRowArg(a)~oodPeer
+  index = row~item~oodPeer["INDEX"]
+  if self~op(self_, "lv.uid", index) == 0 then return .false
+  if row~item~oodPeer~text \== .nil then self~op(self_, "lv.setCell", index, 0, row~item~oodPeer~text)
+  do sub over row~subs
+    if sub~oodPeer~text \== .nil then self~op(self_, "lv.setCell", index, sub~oodPeer~subItem, sub~oodPeer~text)
+  end
+  return .true
+::method lv_fixFullRowColumns unguarded    -- (the rows are read from the page when they are wanted: nothing to fix)
+  return .true
+/* sortItems(method, param).  "InternalListViewSort": by the texts of param~column, with
+   param~ascending and param~caseless.  Any other name is a method of the dialog: it gets
+   the item data of two rows and param, and answers -1, 0 or 1. */
+::method lv_sortItems unguarded
+  use arg self_, msg, a
+  p = self_~oodPeer
+  method = a[1]
+  param = .nil
+  if a~hasIndex(2) then param = a[2]
+  uids = self~op(self_, "lv.uids")~makeArray(" ")
+  if uids~items < 2 then return .true
+  if method~upper == "INTERNALLISTVIEWSORT" then do
+    column = 0
+    ascending = .true
+    caseless = .true
+    if param \== .nil then do
+      if param~hasIndex("COLUMN") then column = param~column
+      if param~hasIndex("ASCENDING") then ascending = (param~ascending == .true)
+      if param~hasIndex("CASELESS") then caseless = (param~caseless == .true)
+    end
+    keys = .array~new
+    do i = 1 to uids~items
+      key = self~op(self_, "lv.cell", i - 1, column)
+      if caseless then key = key~upper
+      keys~append(.array~of(key, uids[i]))
+    end
+    sorted = keys~sortWith(.OodPairOrder~new(ascending))
+  end
+  else do
+    dlg = p~dlg~rexxSelf
+    if \dlg~hasMethod(method) then raise syntax 93.900 array('sortItems: the dialog has no method "'method'"')
+    keys = .array~new
+    do uid over uids
+      keys~append(.array~of(self~itemData(p~dlg, p~id, uid), uid))
+    end
+    sorted = keys~stableSortWith(.OodCallOrder~new(dlg, method, param))
+  end
+  order = ""
+  do pair over sorted
+    order = order pair[2]
+  end
+  self~op(self_, "lv.order", order~strip)
+  return .true
+::method lv_setItemState unguarded -- setItemState(index, keywords): SELECTED FOCUSED and their NOT forms
+  use arg self_, msg, a
+  if self~op(self_, "lv.uid", a[1]) == 0 then return .false
+  do word over a[2]~upper~makeArray(" ")
+    select
+      when word == "SELECTED" then self~op(self_, "lv.state", a[1], "SELECT")
+      when word == "NOTSELECTED" then self~op(self_, "lv.state", a[1], "DESELECT")
+      when word == "FOCUSED" then self~op(self_, "lv.state", a[1], "FOCUS")
+      otherwise nop
+    end
+  end
+  return .true
+
 /*---- TreeView -------------------------------------------------------------------------*/
 ::method tvHandle unguarded        -- an item of the page as the handle Rexx sees; 0 is no item
   use arg h
@@ -6234,3 +7337,27 @@ noPackage:
 ::resource oodjs
 @@OODJS@@
 ::END
+
+/* Orders for the sorts of a list-view's rows.  A pair is (key, uid). */
+::class OodPairOrder
+::method init
+  expose ascending
+  use arg ascending
+::method compare
+  expose ascending
+  use arg left, right
+  order = left[1]~compareTo(right[1])
+  if left[1]~datatype("N") & right[1]~datatype("N") then order = sign(left[1] - right[1])
+  if ascending then return order
+  return -order
+::class OodCallOrder
+::method init
+  expose dlg method param
+  use arg dlg, method, param
+::method compare
+  expose dlg method param
+  use arg left, right
+  if param == .nil then answer = dlg~send(method, left[1], right[1])
+  else answer = dlg~send(method, left[1], right[1], param)
+  if \answer~datatype("W") then return 0
+  return answer

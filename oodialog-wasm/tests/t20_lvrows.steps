@@ -1,0 +1,9 @@
+wait .ood-dlg >> text=Sort by age
+expect [...document.querySelectorAll('.ood-lv tbody tr')].map(r => [...r.cells].map(c => c.textContent).join('/')).join(' ') ==> Ann/Oban/30 Bob/Ayr/25 Michael/Perth WA/41 Susan/Elgin/9 Zed/Wick/5
+click .ood-dlg >> text=Sort by age
+sleep 500
+expect [...document.querySelectorAll('.ood-lv tbody tr')].map(r => r.cells[0].textContent).join(' ') ==> Michael Ann Bob Susan Zed
+click .ood-dlg >> text=Sort by data
+sleep 500
+expect [...document.querySelectorAll('.ood-lv tbody tr')].map(r => r.cells[0].textContent).join(' ') ==> Ann Bob Zed Susan Michael
+click .ood-dlg >> text=Close
