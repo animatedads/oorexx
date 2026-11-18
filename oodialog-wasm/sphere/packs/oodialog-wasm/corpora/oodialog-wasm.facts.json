@@ -1,7 +1,7 @@
 {
   "kind": "corpus",
   "id": "oodialog-wasm.facts",
-  "version": "0.6",
+  "version": "0.7",
   "sphere": "oodialog-wasm",
   "title": "ooDialog/WASM: every statement of the articles, one a record, for search",
   "records": [
@@ -277,6 +277,12 @@
       "article": "ref.oodialog-wasm.renderer-contract",
       "field": "op_families",
       "rule": "deliver, since v0.20.0: a call of the page object like msgBox, not an op: deliver(name, mime, hex, title). hex is the file's bytes as hexadecimal digits. The renderer hands the file to the user: show it, and let the user print, open or save it. Answer the number of bytes as a string. Rexx side: .oodn~deliver(path, title, mime)."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "op_families",
+      "rule": "New in v0.21.0. Control kind STATUSBAR: a bar docked at the bottom of the dialog whatever rectangle is given; its ops sb.setParts (right edges in pixels joined by spaces, -1 is to the end), sb.parts, sb.setText(part, text), sb.text, sb.has, sb.setTip, sb.tip, sb.simple(1|0), sb.isSimple, sb.rect, sb.minHeight, sb.bk; parts count from 0, part 255 is the text of simple mode; setText and getText on a status bar address part 0. List-view: lv.order (the uids in the order wanted), lv.uids, lv.row. Any control: optUid(index) gives a lasting number for an item of a combo or list box; getCue; lineOf, lineStart, lineLen (edit); tabSize; pad (padding, read or set); rowHeight; tabStop(1|0). The color op on the dialog (id 0) colours its client area. A call of the page object, not an op: windowAt(x, y) answers key and id of the window at a screen point. The KEY event now has extra: the id of the control that has the focus, 0 if none."
     },
     {
       "topic": "renderer-contract",
@@ -697,25 +703,25 @@
     {
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
-      "rule": "State at v0.20.0 and where the current state is recorded. This article is a snapshot. The current figures are always in README.md of the project, with the version they were measured on; sweep.tsv and poke.tsv hold the per-example results."
+      "rule": "State at v0.21.0 and where the current state is recorded. This article is a snapshot. The current figures are always in README.md of the project, with the version they were measured on; sweep.tsv and poke.tsv hold the per-example results."
     },
     {
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
       "field": "snapshot",
-      "rule": "Version 0.20.0, 17 November 2026."
+      "rule": "Version 0.21.0, 18 November 2026."
     },
     {
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
       "field": "snapshot",
-      "rule": "Natives ported: 688 of 1,182. 12 of the 43 added in v0.18.0 accept their call and do nothing."
+      "rule": "Natives ported: 881 of 1,182 (192 added in v0.21.0; 26 of those accept their call and do nothing, 18 system metrics are fixed values). 12 of the 43 added in v0.18.0 accept their call and do nothing."
     },
     {
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
       "field": "snapshot",
-      "rule": "Tests: 49 of 49 pass in headless Chromium. 33 of them are upstream examples or the designer's programs, run unchanged."
+      "rule": "Tests: 52 of 52 pass in headless Chromium. 33 of them are upstream examples or the designer's programs, run unchanged."
     },
     {
       "topic": "state",
@@ -776,6 +782,12 @@
       "article": "ref.oodialog-wasm.state",
       "field": "done",
       "rule": "Printing since v0.20.0: oodPrint.cls makes a PDF with the estate's oorexx_pdf and the page hands it to the user (Print, Open, Save). A list-view as a table, a text, a report of the program, any file. Not checked in a real browser."
+    },
+    {
+      "topic": "state",
+      "article": "ref.oodialog-wasm.state",
+      "field": "done",
+      "rule": "Since v0.21.0: LvItem, LvSubItem, LvFullRow and the list-view methods on them, with sortItems; the StatusBar control; windows by handle (getWindowText, setWindowText, showWindow, sendMessageToControl, sendMessageToWindow); a control's connectKeyPress; the dialog's backgroundColor; item data of a combo box; the old addXxx names of the create methods; SM, SPI, OS, DlgUtil's arithmetic."
     },
     {
       "topic": "state",
@@ -859,6 +871,12 @@
       "article": "ops.oodialog-wasm.lessons",
       "field": "lessons",
       "rule": "A build was pushed with a failing test. Cause: the last run's result was not read. Rule: read every summary line on the final build before the commit."
+    },
+    {
+      "topic": "lessons",
+      "article": "ops.oodialog-wasm.lessons",
+      "field": "lessons",
+      "rule": "Native coverage went 643, 686, 688, 688, 689 over four releases while samples, printing and the sphere took the time. The architect named it. Whole families were cheap: plain data classes and one-line calls on operations the page already had. Rule: every release states the native count next to the last one, and a release that adds none says why."
     },
     {
       "topic": "lessons",
