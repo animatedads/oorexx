@@ -1,0 +1,41 @@
+wait .ood-dlg >> text=Rectangles
+sleep 500
+click .ood-dlg button:text-is("Rectangles")
+sleep 3200
+expect (() => { const cv = [...document.querySelectorAll('canvas.ood-gdi')].sort((a,b)=>b.width*b.height-a.width*a.height)[0]; if (!cv) return 'no canvas'; const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n > 500; })() ==> True
+click .ood-dlg button:text-is("Interrupt")
+sleep 1500
+click .ood-dlg button:text-is("Pen Rectangles")
+sleep 3200
+expect (() => { const cv = [...document.querySelectorAll('canvas.ood-gdi')].sort((a,b)=>b.width*b.height-a.width*a.height)[0]; if (!cv) return 'no canvas'; const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n > 500; })() ==> True
+click .ood-dlg button:text-is("Interrupt")
+sleep 1500
+click .ood-dlg button:text-is("Pixels")
+sleep 3200
+expect (() => { const cv = [...document.querySelectorAll('canvas.ood-gdi')].sort((a,b)=>b.width*b.height-a.width*a.height)[0]; if (!cv) return 'no canvas'; const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n > 500; })() ==> True
+click .ood-dlg button:text-is("Interrupt")
+sleep 1500
+click .ood-dlg button:text-is("Star")
+sleep 3200
+expect (() => { const cv = [...document.querySelectorAll('canvas.ood-gdi')].sort((a,b)=>b.width*b.height-a.width*a.height)[0]; if (!cv) return 'no canvas'; const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n > 500; })() ==> True
+shot oodraw_star
+click .ood-dlg button:text-is("Interrupt")
+sleep 1500
+click .ood-dlg button:text-is("Lines")
+sleep 3200
+expect (() => { const cv = [...document.querySelectorAll('canvas.ood-gdi')].sort((a,b)=>b.width*b.height-a.width*a.height)[0]; if (!cv) return 'no canvas'; const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n > 500; })() ==> True
+click .ood-dlg button:text-is("Interrupt")
+sleep 1500
+click .ood-dlg button:text-is("Squares")
+sleep 3200
+expect (() => { const cv = [...document.querySelectorAll('canvas.ood-gdi')].sort((a,b)=>b.width*b.height-a.width*a.height)[0]; if (!cv) return 'no canvas'; const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n > 500; })() ==> True
+shot oodraw_squares
+click .ood-dlg button:text-is("Interrupt")
+sleep 1500
+click .ood-dlg button:text-is("Ellipses")
+sleep 3200
+expect (() => { const cv = [...document.querySelectorAll('canvas.ood-gdi')].sort((a,b)=>b.width*b.height-a.width*a.height)[0]; if (!cv) return 'no canvas'; const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n > 500; })() ==> True
+shot oodraw_ellipses
+click .ood-dlg button:text-is("Interrupt")
+sleep 1500
+click .ood-dlg button:text-is("Cancel")

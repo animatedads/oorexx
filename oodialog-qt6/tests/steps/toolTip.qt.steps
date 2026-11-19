@@ -1,0 +1,39 @@
+# Qt dialect of oodialog-wasm tests/up8/toolTip.steps (v0.18.0).
+wait .ood-dlg
+sleep 500
+expect tipShown ==> False
+mouse move .ood-dlg .ood-client @ 20 20
+sleep 900
+expect tipShown ==> True
+expect tipText ==> Over main dialog, top left quadrant
+expect tipAtClient ==> True
+mouse move .ood-dlg .ood-client @ 300 20
+sleep 900
+expect tipText ==> Over main dialog, top right quadrant
+mouse move .ood-dlg .ood-client @ 300 170
+sleep 900
+expect tipText ==> Over main dialog, bottom right quadrant
+mouse move .ood-dlg >> text=Test @ 10 8
+sleep 900
+expect tipText ==> Press Test to execute a ToolTip test
+mouse move .ood-dlg button.ood-def @ 10 8
+sleep 900
+expect tipTitle ==> Important Message
+shot toolTip_balloon
+expect tipLines ==> 4
+mouse move .ood-dlg >> text=Cancel @ 10 8
+sleep 900
+expect tipText ==> Press Cancel to end the dialog
+expect tipWidthSet ==> True
+mouse down .ood-dlg >> text=Cancel @ 10 8
+expect tipShown ==> False
+mouse up .ood-dlg .ood-client @ 20 20
+click .ood-dlg >> text=Test
+sleep 500
+click .ood-dlg >> text=Test
+sleep 500
+output lines Tool info  text: ==> Over main dialog, top left quadrant|Over main dialog, top right quadrant|Over main dialog, bottom left quadrant|Over main dialog, bottom right quadrant
+output lines Tool info  id: ==> 774|775|776|777
+output lines Time for ==> autopop: 5000|autopop: 5000|initial: 500|reshow: 100
+output count native function ==> 0
+click .ood-dlg button.ood-def

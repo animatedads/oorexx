@@ -1,0 +1,7 @@
+wait .ood-dlg
+sleep 1500
+mark .ood-dlg button.ood-bmp
+sleep 900
+expect moved .ood-dlg button.ood-bmp ==> True
+shot oowalker
+click .ood-dlg >> text=OK

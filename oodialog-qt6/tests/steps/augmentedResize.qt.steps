@@ -1,0 +1,20 @@
+# Qt dialect of oodialog-wasm tests/up7/augmentedResize.steps (v0.17.0): controls numbered in creation order.
+wait .ood-dlg
+sleep 500
+marklayout .ood-dlg
+expect limits ==> =W =H * *
+shot augmentedResize_before
+resize .ood-dlg => +200 +100
+sleep 600
+expect delta 0 ==> 0 0 200 100
+expect delta 1 ==> 200 0 0 0
+expect delta 2 ==> 0 100 200 0
+expect right 6 ==> 200
+expect delta 6 ==> * * >0 0
+expect delta 5 ==> dx6 * 0 *
+expect delta 10 ==> 200 100 0 *
+shot augmentedResize_after
+resize .ood-dlg => 200 100
+sleep 600
+expect unchanged ==> True
+click .ood-dlg button.ood-def

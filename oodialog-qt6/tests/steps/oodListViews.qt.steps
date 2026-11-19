@@ -1,0 +1,25 @@
+# Qt dialect of oodialog-wasm tests/up9/oodListViews.steps (v0.19.0).
+wait .ood-dlg
+sleep 1200
+expect inTab .ood-lv ==> True
+expect width .ood-lv ==> >300
+expect lvColumn 0 ==> Miller, Mike|Thaxton, Sue|Hewitt, Dave
+expect lvHeaders ==> 
+expect tabsWide 80 ==> True
+click .ood-dlg >> text=Report
+sleep 500
+expect lvHeaders ==> Name|Street|City|State|Zip Code|Age
+expect disabled Backward ==> False
+expect disabled Forward ==> False
+click .ood-dlg >> text=Forward
+sleep 500
+expect tabCurrent ==> Icon
+expect disabled Edit Record ==> True
+click .ood-dlg >> text=Report
+sleep 400
+click .ood-lv >> text=Thaxton, Sue
+sleep 500
+expect disabled Edit Record ==> False
+shot oodListViews
+output count native function ==> 0
+click .ood-dlg >> text=Cancel
