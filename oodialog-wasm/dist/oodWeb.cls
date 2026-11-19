@@ -24,7 +24,7 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.22.0"
+  return "0.23.0"
 ::method module_lastChanged class
   return "2026-11-19"
 ::attribute key unguarded
@@ -102,7 +102,7 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.22.0"
+  return "0.23.0"
 ::method module_lastChanged class
   return "2026-11-19"
 ::attribute rexxSelf unguarded
@@ -131,7 +131,7 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.22.0"
+  return "0.23.0"
 ::method module_lastChanged class
   return "2026-11-19"
 ::attribute dlg unguarded             -- its dialog's OodDlg
@@ -149,7 +149,7 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.22.0"
+  return "0.23.0"
 ::method module_lastChanged class
   return "2026-11-19"
 ::method module_version unguarded
@@ -1107,6 +1107,376 @@ noPackage:
   return 0
 ::method dlgctrl_clearRect unguarded
   return 0
+
+/* ReBar and ReBarBandInfo (oodReBar.cpp).  A band holds another control of the same dialog.
+   A ReBarBandInfo's peer is a directory.  Bands are numbered from 1 in Rexx.  The page keeps
+   id, text, style, child, width and colours of each band; the rest of what a ReBarBandInfo
+   says (the other sizes, image index, item data, chevron) is kept here, by the band's id, and
+   answered back, and changes nothing that is drawn. */
+::method rbbi_init_cls unguarded
+  return 0
+::method rbbi_unInit unguarded
+  return 0
+::method rbbi_init unguarded       -- ReBarBandInfo~new(child, text, style, itemData, id, cx, mask)
+  use arg self_, msg, a
+  info = .directory~new
+  if a~hasIndex(1) then info~child = a[1]
+  if a~hasIndex(2) then info~text = a[2]
+  if a~hasIndex(3) then info~style = a[3]~upper
+  if a~hasIndex(4) then info~itemData = a[4]
+  if a~hasIndex(5) then info~id = self~resolveId(.nil, a[5])
+  if a~hasIndex(6) then info~cx = a[6]
+  if a~hasIndex(7) then info~mask = a[7]~upper
+  self_~oodPeer = info
+  return 0
+::method rbbi_child unguarded
+  use arg self_
+  return self_~oodPeer~child
+::method rbbi_setChild unguarded
+  use arg self_, msg, a
+  self_~oodPeer~child = a[1]
+::method rbbi_id unguarded
+  use arg self_
+  return self~lviGet(self_, "ID", 0)
+::method rbbi_setId unguarded
+  use arg self_, msg, a
+  self_~oodPeer~id = self~resolveId(.nil, a[1])
+::method rbbi_style unguarded
+  use arg self_
+  return self~lviGet(self_, "STYLE", "")
+::method rbbi_setStyle unguarded
+  use arg self_, msg, a
+  self_~oodPeer~style = a[1]~upper
+::method rbbi_mask unguarded       -- the mask given, or the one that follows from what is set
+  use arg self_
+  info = self_~oodPeer
+  if info~hasIndex("MASK") then return info~mask
+  names = "CHILD CHILD TEXT TEXT STYLE STYLE ITEMDATA LPARAM ID ID CX SIZE CLRBACK COLORS CLRFORE COLORS BITMAPBACK BACKGROUND IMAGEINDEX IMAGE CXMINCHILD CHILDSIZE CYMINCHILD CHILDSIZE CXIDEAL IDEALSIZE CXHEADER HEADERSIZE CHEVRONLOCATION CHEVRONLOCATION CHEVRONSTATE CHEVRONSTATE"
+  mask = ""
+  do i = 1 to names~words by 2
+    if info~hasIndex(names~word(i)) then if mask~wordPos(names~word(i + 1)) == 0 then mask = mask names~word(i + 1)
+  end
+  return mask~strip
+::method rbbi_setMask unguarded
+  use arg self_, msg, a
+  self_~oodPeer~mask = a[1]~upper
+::method rbbi_bitmapBack unguarded
+  use arg self_
+  return self~lviGet(self_, "BITMAPBACK", .nil)
+::method rbbi_setBitmapBack unguarded
+  use arg self_, msg, a
+  self_~oodPeer["BITMAPBACK"] = a[1]
+::method rbbi_chevronLocation unguarded
+  use arg self_
+  return self~lviGet(self_, "CHEVRONLOCATION", .nil)
+::method rbbi_setChevronLocation unguarded
+  use arg self_, msg, a
+  self_~oodPeer["CHEVRONLOCATION"] = a[1]
+::method rbbi_chevronState unguarded
+  use arg self_
+  return self~lviGet(self_, "CHEVRONSTATE", "")
+::method rbbi_setChevronState unguarded
+  use arg self_, msg, a
+  self_~oodPeer["CHEVRONSTATE"] = a[1]
+::method rbbi_clrBack unguarded
+  use arg self_
+  return self~lviGet(self_, "CLRBACK", 4278190080)
+::method rbbi_setClrBack unguarded
+  use arg self_, msg, a
+  self_~oodPeer["CLRBACK"] = a[1]
+::method rbbi_clrFore unguarded
+  use arg self_
+  return self~lviGet(self_, "CLRFORE", 4278190080)
+::method rbbi_setClrFore unguarded
+  use arg self_, msg, a
+  self_~oodPeer["CLRFORE"] = a[1]
+::method rbbi_cx unguarded
+  use arg self_
+  return self~lviGet(self_, "CX", 0)
+::method rbbi_setCx unguarded
+  use arg self_, msg, a
+  self_~oodPeer["CX"] = a[1]
+::method rbbi_cxHeader unguarded
+  use arg self_
+  return self~lviGet(self_, "CXHEADER", 0)
+::method rbbi_setCxHeader unguarded
+  use arg self_, msg, a
+  self_~oodPeer["CXHEADER"] = a[1]
+::method rbbi_cxIdeal unguarded
+  use arg self_
+  return self~lviGet(self_, "CXIDEAL", 0)
+::method rbbi_setCxIdeal unguarded
+  use arg self_, msg, a
+  self_~oodPeer["CXIDEAL"] = a[1]
+::method rbbi_cxMinChild unguarded
+  use arg self_
+  return self~lviGet(self_, "CXMINCHILD", 0)
+::method rbbi_setCxMinChild unguarded
+  use arg self_, msg, a
+  self_~oodPeer["CXMINCHILD"] = a[1]
+::method rbbi_cyChild unguarded
+  use arg self_
+  return self~lviGet(self_, "CYCHILD", 0)
+::method rbbi_setCyChild unguarded
+  use arg self_, msg, a
+  self_~oodPeer["CYCHILD"] = a[1]
+::method rbbi_cyIntegral unguarded
+  use arg self_
+  return self~lviGet(self_, "CYINTEGRAL", 0)
+::method rbbi_setCyIntegral unguarded
+  use arg self_, msg, a
+  self_~oodPeer["CYINTEGRAL"] = a[1]
+::method rbbi_cyMaxChild unguarded
+  use arg self_
+  return self~lviGet(self_, "CYMAXCHILD", 0)
+::method rbbi_setCyMaxChild unguarded
+  use arg self_, msg, a
+  self_~oodPeer["CYMAXCHILD"] = a[1]
+::method rbbi_cyMinChild unguarded
+  use arg self_
+  return self~lviGet(self_, "CYMINCHILD", 0)
+::method rbbi_setCyMinChild unguarded
+  use arg self_, msg, a
+  self_~oodPeer["CYMINCHILD"] = a[1]
+::method rbbi_imageIndex unguarded
+  use arg self_
+  return self~lviGet(self_, "IMAGEINDEX", -1)
+::method rbbi_setImageIndex unguarded
+  use arg self_, msg, a
+  self_~oodPeer["IMAGEINDEX"] = a[1]
+::method rbbi_itemData unguarded
+  use arg self_
+  return self~lviGet(self_, "ITEMDATA", .nil)
+::method rbbi_setItemData unguarded
+  use arg self_, msg, a
+  self_~oodPeer["ITEMDATA"] = a[1]
+::method rbbi_text unguarded
+  use arg self_
+  return self~lviGet(self_, "TEXT", "")
+::method rbbi_setText unguarded
+  use arg self_, msg, a
+  self_~oodPeer["TEXT"] = a[1]
+::method rbJson unguarded          -- what a ReBarBandInfo says to the page, as JSON; only what the info has
+  use arg info
+  json = ""
+  if info~hasIndex("ID") then json = json',"id":'info~id
+  if info~hasIndex("TEXT") then json = json',"text":'self~ttJson(info~text)
+  if info~hasIndex("STYLE") then json = json',"style":'self~ttJson(info~style)
+  if info~hasIndex("CX") then json = json',"cx":'info~cx
+  if info~hasIndex("CHILD") then do
+    child = 0
+    if info~child \== .nil then child = info~child~oodPeer~id
+    json = json',"child":'child
+  end
+  if info~hasIndex("CLRBACK") then if info~clrBack \== 4278190080 then json = json',"bg":"'self~colorOf(info~clrBack)'"'
+  if info~hasIndex("CLRFORE") then if info~clrFore \== 4278190080 then json = json',"fg":"'self~colorOf(info~clrFore)'"'
+  return "{"json~substr(2)"}"
+::method rbKeep unguarded          -- what the page does not keep of a band, by the band's id
+  use arg self_, info
+  if \info~hasIndex("ID") then return
+  p = self_~oodPeer
+  kept = p~dlg~store[p~id "rbband" info~id]
+  if kept == .nil then kept = .directory~new
+  do name over info~allIndexes
+    kept[name] = info[name]
+  end
+  kept~remove("MASK")
+  p~dlg~store[p~id "rbband" info~id] = kept
+::method rbInfoArg unguarded
+  use arg a
+  if \a~hasIndex(1) then raise syntax 93.903 array(1)
+  if \a[1]~isA(self~classOf("ReBarBandInfo")) then raise syntax 93.948 array(1, "ReBarBandInfo")
+  return a[1]~oodPeer
+::method rebar_insertBand unguarded    -- insertBand(bandInfo, index): omitted index: the band is the last
+  use arg self_, msg, a
+  info = self~rbInfoArg(a)
+  at = -1
+  if a~hasIndex(2) then at = a[2] - 1
+  if \info~hasIndex("ID") then do      -- a band is known by its id: one without gets the next free one
+    p = self_~oodPeer
+    next = p~dlg~store[p~id "rbnext"]
+    if next == .nil then next = 60000
+    p~dlg~store[p~id "rbnext"] = next + 1
+    info~id = next
+  end
+  self~rbKeep(self_, info)
+  return self~op(self_, "rb.insert", at, self~rbJson(info)) == 1
+::method rebar_setBandInfo unguarded   -- setBandInfo(bandInfo, index)
+  use arg self_, msg, a
+  info = self~rbInfoArg(a)
+  described = self~op(self_, "rb.get", a[2] - 1)
+  if described == "" then return .false
+  if \info~hasIndex("ID") then do
+    parse var described '"id":' id ','
+    info~id = id
+    self~rbKeep(self_, info)
+    info~remove("ID")
+  end
+  else self~rbKeep(self_, info)
+  return self~op(self_, "rb.set", a[2] - 1, self~rbJson(info)) == 1
+::method rebar_getBandInfo unguarded   -- getBandInfo(index, mask): a ReBarBandInfo; .nil if there is no such band
+  use arg self_, msg, a
+  described = self~op(self_, "rb.get", a[1] - 1)
+  if described == "" then return .nil
+  p = self_~oodPeer
+  parse var described '"id":' id ',"text":"' text '","style":"' style '","child":' child ',"cx":' cx ','
+  band = self~classOf("ReBarBandInfo")~new
+  info = band~oodPeer
+  kept = p~dlg~store[p~id "rbband" id]
+  if kept \== .nil then do name over kept~allIndexes
+    info[name] = kept[name]
+  end
+  info~id = id
+  info~text = text~changeStr('\"', '"')~changeStr("\\", "\")
+  info~style = style
+  info~cx = cx
+  if child > 0 then info~child = self~controlObject(p~dlg, child)
+  return band
+::method rebar_deleteBand unguarded
+  use arg self_, msg, a
+  return self~op(self_, "rb.del", a[1] - 1) == 1
+::method rebar_getBandCount unguarded
+  use arg self_
+  return self~op(self_, "rb.count")
+::method rebar_idToIndex unguarded     -- 0 if no band has that id
+  use arg self_, msg, a
+  return self~op(self_, "rb.indexOf", a[1]) + 1
+::method rebar_moveBand unguarded
+  use arg self_, msg, a
+  return self~op(self_, "rb.move", a[1] - 1, a[2] - 1) == 1
+::method rebar_showBand unguarded      -- showBand(index, show): omitted: the band is hidden
+  use arg self_, msg, a
+  show = .false
+  if a~hasIndex(2) then show = (a[2] == .true)
+  return self~op(self_, "rb.show", a[1] - 1, show) == 1
+::method rebar_setBandWidth unguarded
+  use arg self_, msg, a
+  return self~op(self_, "rb.set", a[1] - 1, '{"cx":'a[2]'}') == 1
+::method rebar_maximizeBand unguarded  -- the band takes what is left of its row
+  use arg self_, msg, a
+  self~op(self_, "rb.set", a[1] - 1, '{"cx":0}')
+  return 0
+::method rebar_minimizeBand unguarded  -- (a band is as narrow as its control: nothing to do)
+  return 0
+::method rebar_getRect unguarded       -- the band's rectangle in the bar; .nil if there is no such band or it is hidden
+  use arg self_, msg, a
+  parse value self~op(self_, "rb.rect", a[1] - 1) with left top right bottom
+  if left == "" then return .nil
+  return self~classOf("Rect")~new(left, top, right, bottom)
+::method rebar_getBarHeight unguarded
+  use arg self_
+  return self~op(self_, "rb.height")
+::method rebar_getRowCount unguarded
+  use arg self_
+  return self~op(self_, "rb.rows")
+::method rebar_getRowHeight unguarded  -- the height of the row the band is in
+  use arg self_, msg, a
+  parse value self~op(self_, "rb.rect", a[1] - 1) with . top . bottom
+  if top == "" then return 0
+  return bottom - top
+::method rebar_hitTestInfo unguarded   -- hitTestInfo(point | x, y, directory): the band's index, 0 if none; the directory takes component
+  use arg self_, msg, a
+  if a[1]~isA(.String) then do
+    x = a[1]
+    y = a[2]
+    info = a[3]
+  end
+  else do
+    x = a[1]~x
+    y = a[1]~y
+    info = a[2]
+  end
+  parse value self~op(self_, "rb.hit", x, y) with index component
+  if info \== .nil then do
+    info~component = component~strip
+    info~band = index + 1
+  end
+  return index + 1
+::method rbColor unguarded
+  use arg self_, which, a, set
+  p = self_~oodPeer
+  old = p~dlg~store[p~id which]
+  if old == .nil then old = 4278190080      -- CLR_DEFAULT
+  if set then do
+    color = 4278190080
+    if a~hasIndex(1) then color = a[1]
+    p~dlg~store[p~id which] = color
+    css = ""
+    if color \== 4278190080 then css = self~colorOf(color)
+    if which == "rbbk" then self~op(self_, "rb.colors", css, "")
+    else self~op(self_, "rb.colors", "", css)
+  end
+  return old
+::method rebar_getBkColor unguarded
+  use arg self_, msg, a
+  return self~rbColor(self_, "rbbk", a, .false)
+::method rebar_setBkColor unguarded    -- answers the colour before
+  use arg self_, msg, a
+  return self~rbColor(self_, "rbbk", a, .true)
+::method rebar_getTextColor unguarded
+  use arg self_, msg, a
+  return self~rbColor(self_, "rbtext", a, .false)
+::method rebar_setTextColor unguarded
+  use arg self_, msg, a
+  return self~rbColor(self_, "rbtext", a, .true)
+::method rebar_getBandBorders unguarded
+  return self~classOf("Rect")~new(4, 2, 4, 2)
+::method rebar_getBandMargins unguarded
+  return self~classOf("Rect")~new(0, 0, 0, 0)
+::method rbKept unguarded          -- get or set something that is only kept; answers what was there
+  use arg self_, name, value, set
+  p = self_~oodPeer
+  old = p~dlg~store[p~id name]
+  if set then p~dlg~store[p~id name] = value
+  return old
+::method rebar_getBarInfo unguarded    -- the bar's image list; .nil if none
+  use arg self_
+  return self~rbKept(self_, "rbimages", .nil, .false)
+::method rebar_setBarInfo unguarded
+  use arg self_, msg, a
+  return self~rbKept(self_, "rbimages", a[1], .true)
+::method rebar_getColorScheme unguarded
+  use arg self_
+  scheme = self~rbKept(self_, "rbscheme", .nil, .false)
+  if scheme \== .nil then return scheme
+  scheme = .directory~new
+  scheme~clrBtnHighlight = 4278190080
+  scheme~clrBtnShadow = 4278190080
+  return scheme
+::method rebar_setColorScheme unguarded    -- setColorScheme(directory) or setColorScheme(highlight, shadow)
+  use arg self_, msg, a
+  if a[1]~isA(.Directory) then scheme = a[1]
+  else do
+    scheme = .directory~new
+    scheme~clrBtnHighlight = a[1]
+    scheme~clrBtnShadow = 4278190080
+    if a~hasIndex(2) then scheme~clrBtnShadow = a[2]
+  end
+  self~rbKept(self_, "rbscheme", scheme, .true)
+  return 0
+::method rebar_getExtendedStyle unguarded
+  use arg self_
+  style = self~rbKept(self_, "rbex", "", .false)
+  if style == .nil then return ""
+  return style
+::method rebar_setExtendedStyle unguarded  -- setExtendedStyle(mask, style): answers the style before
+  use arg self_, msg, a
+  old = self~rebar_getExtendedStyle(self_)
+  self~rbKept(self_, "rbex", self~opt(a, 2)~upper, .true)
+  return old
+::method rebar_getPalette unguarded
+  return 0
+::method rebar_setPalette unguarded
+  return 0
+::method rebar_setParent unguarded     -- (a control stays with its dialog) answers the dialog
+  use arg self_
+  return self_~oodPeer~dlg~rexxSelf
+::method rebar_setWindowTheme unguarded
+  return 0
+::method rebar_pushChevron unguarded
+  return 0
+::method rebar_sizeToRect unguarded    -- (the bar is as wide as the dialog)
+  return .true
 
 /* ToolBar and TbButton (oodToolBar.cpp).  A TbButton's peer is a directory.  Buttons are
    numbered from 1 in Rexx.  The page keeps command ID, text, style and state of each button;
@@ -5585,6 +5955,9 @@ noPackage:
 ::method en_connectMonthCalendarEvent unguarded
   use arg self_, msg, a
   return self~connectNotify(self_, a, "GETDAYSTATE GETDAYSTATE SELCHANGE SELCHANGE SELECT SELECT")
+::method en_connectReBarEvent unguarded     -- (the RBN_ events are not produced)
+  use arg self_, msg, a
+  return self~notProduced("re-bar", a)
 ::method en_connectToolBarEvent unguarded   -- (a button's click is a command: connectButtonEvent. The TBN_ events are not produced)
   use arg self_, msg, a
   return self~notProduced("tool bar", a)
@@ -7840,6 +8213,12 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
 .ood-deliverbar span{flex:1 1 12em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ood-deliveract{color:#1f3f66;background:#fff;border-radius:3px;padding:.25em .8em;text-decoration:none}
 .ood-deliverview{flex:1;border:0;width:100%;background:#888}
+.ood-rb{position:absolute;display:flex;flex-wrap:wrap;box-sizing:border-box;background:#f0f0f0;border-bottom:1px solid #d0d0d0;font:12px 'Segoe UI',Tahoma,sans-serif;color:#222}
+.ood-rbband{display:flex;align-items:center;gap:4px;box-sizing:border-box;min-height:26px;padding:2px 4px;border-right:1px solid #d0d0d0;min-width:0}
+.ood-rbbreak{flex-basis:100%;height:0}
+.ood-rbgrip{width:3px;align-self:stretch;margin:2px 1px;border-left:1px dotted #888;border-right:1px dotted #888}
+.ood-rbtext{white-space:nowrap}
+.ood-rb .ood-tb{border-bottom:0;background:transparent;padding:0}
 .ood-tb{position:absolute;display:flex;flex-wrap:wrap;align-items:center;gap:2px;box-sizing:border-box;padding:2px 3px;background:#f0f0f0;border-bottom:1px solid #d0d0d0}
 .ood-tbbtn{font:12px 'Segoe UI',Tahoma,sans-serif;padding:2px 8px;border:1px solid transparent;border-radius:2px;background:transparent;color:#222}
 .ood-tbbtn:hover:not(:disabled){border-color:#7a9ac0;background:#e5f1fb}
@@ -8106,14 +8485,27 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
     });
   }
 
-  function fit(dlg) {                                         // a dialog larger than the window is scaled down to it
+  /* A dialog must be within reach: the page has no desktop to move a window on.  One larger
+     than the window is scaled down to it and centred.  One that fits, but whose place puts
+     part of it outside the window (a resource script's x and y are for a large screen), is
+     moved in, by as little as is needed.  Done when a dialog is first shown and when the
+     window changes size (a phone is turned). */
+  function fit(dlg) {
     const el = dlg.el, w = el.offsetWidth, h = el.offsetHeight;
     const k = Math.min(1, (W.innerWidth - 8) / w, (W.innerHeight - 8) / h);
-    if (k >= 1) return;
-    el.style.transformOrigin = '0 0'; el.style.transform = 'scale(' + k + ')';
-    el.style.left = Math.max(0, Math.round((W.innerWidth - w * k) / 2)) + 'px';
-    el.style.top = Math.max(0, Math.round((W.innerHeight - h * k) / 2)) + 'px';
+    if (k < 1) {
+      el.style.transformOrigin = '0 0'; el.style.transform = 'scale(' + k + ')';
+      el.style.left = Math.max(0, Math.round((W.innerWidth - w * k) / 2)) + 'px';
+      el.style.top = Math.max(0, Math.round((W.innerHeight - h * k) / 2)) + 'px';
+      return;
+    }
+    if (el.style.transform) el.style.transform = '';
+    const left = el.offsetLeft, top = el.offsetTop;
+    const inLeft = Math.max(0, Math.min(left, W.innerWidth - w - 4)), inTop = Math.max(0, Math.min(top, W.innerHeight - h - 4));
+    if (inLeft !== left) el.style.left = inLeft + 'px';
+    if (inTop !== top) el.style.top = inTop + 'px';
   }
+  W.addEventListener('resize', () => { for (const d of ood.dialogs.values()) if (d.shown && !d.child && d.el.style.visibility !== 'hidden') fit(d); });
   ood.show = function (key, how) {
     const dlg = ood.dialogs.get(Number(key)); if (!dlg) return '0';
     how = String(how || '').toUpperCase();
@@ -8311,6 +8703,10 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
         };
         up.addEventListener('click', () => step(1)); dn.addEventListener('click', () => step(-1));
         break; }
+      case 'REBAR':                                         // bands along the top of the dialog; each holds another control
+        el = main = D.createElement('div'); el.className = 'ood-rb'; c.focusable = false; c.docked = 'top';
+        c.bands = [];
+        break;
       case 'TOOLBAR':                                       // a row of buttons along the top of the dialog
         el = main = D.createElement('div'); el.className = 'ood-tb'; el.setAttribute('role', 'toolbar'); c.focusable = false; c.docked = 'top';
         c.btns = [];
@@ -9369,12 +9765,68 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
     if (c && name.startsWith('lv.')) { if (!LV_DATA_OPS.has(name)) flushRender(c); return lvOp(dlg, c, name.slice(3), a, b, c2); }
     if (c && c.parts && name.startsWith('sb.')) return stbOp(dlg, c, name.slice(3), a, b);
     if (c && c.btns && name.startsWith('tb.')) return tbOp(dlg, c, name.slice(3), a, b, c2);
+    if (c && c.bands && name.startsWith('rb.')) return rbOp(dlg, c, name.slice(3), a, b);
     if (c && name.startsWith('cd.')) return cdOp(dlg, c, name.slice(3), a);
     if (c && name.startsWith('tv.')) return tvOp(dlg, c, name.slice(3), a, b, c2);
     if (c && name.startsWith('tab.')) return tabOp(dlg, c, name.slice(4), a, b, c2);
     ood.log.push('op ' + name);
     return '';
   };
+
+  /* ---- Re-bar ----
+     A band: {id, text, style (a set of the Windows keywords: BREAK HIDDEN HIDETITLE NOGRIPPER
+     FIXEDSIZE ...), child (the ID of a control of the same dialog, or 0), cx (width in pixels,
+     0: share what is left), fg, bg}.  The child control's element is put inside its band and
+     gives up its own place; when its band is deleted it goes back to the dialog, hidden.
+     A band with BREAK starts a new row.  Indexes are from 0 here. */
+  function rbRender(dlg, c) {
+    for (const band of c.bands) { const k = band.child ? dlg.ctrls.get(band.child) : null; if (k && k.el.parentNode && k.el.parentNode !== dlg.client && !c.el.contains(k.el)) continue; }
+    c.el.textContent = '';
+    c.bands.forEach((band, i) => {
+      if (band.style.has('BREAK') && i > 0) { const br = D.createElement('div'); br.className = 'ood-rbbreak'; c.el.appendChild(br); }
+      const e = D.createElement('div'); e.className = 'ood-rbband'; e.dataset.band = String(i);
+      if (band.style.has('HIDDEN')) e.hidden = true;
+      e.style.flex = band.cx > 0 ? '0 0 ' + band.cx + 'px' : '1 1 0';
+      if (band.bg) e.style.background = band.bg; if (band.fg) e.style.color = band.fg;
+      if (!band.style.has('NOGRIPPER')) { const g = D.createElement('span'); g.className = 'ood-rbgrip'; e.appendChild(g); }
+      if (band.text && !band.style.has('HIDETITLE')) { const t = D.createElement('span'); t.className = 'ood-rbtext'; t.textContent = band.text; e.appendChild(t); }
+      const k = band.child ? dlg.ctrls.get(band.child) : null;
+      if (k) { const ke = k.el; ke.style.position = 'static'; ke.style.left = ''; ke.style.top = ''; ke.style.right = ''; ke.style.bottom = ''; ke.style.flex = '1 1 auto'; ke.style.width = 'auto'; ke.style.visibility = ''; ke.hidden = false; e.appendChild(ke); }
+      c.el.appendChild(e);
+    });
+  }
+  function rbRelease(dlg, band) {                              // a child whose band is gone: back to the dialog, hidden
+    const k = band.child ? dlg.ctrls.get(band.child) : null; if (!k) return;
+    k.el.style.position = ''; k.el.style.flex = ''; k.el.hidden = true; dlg.client.appendChild(k.el);
+  }
+  function rbOp(dlg, c, name, a, b) {
+    const i = Number(a), band = c.bands[i];
+    const make = (j) => ({ id: Number(j.id) || 0, text: String(j.text || ''), style: new Set(String(j.style || '').toUpperCase().split(' ').filter(Boolean)), child: Number(j.child) || 0, cx: Number(j.cx) || 0, fg: j.fg || '', bg: j.bg || '' });
+    const show = (x) => JSON.stringify({ id: x.id, text: x.text, style: [...x.style].join(' '), child: x.child, cx: x.cx, fg: x.fg, bg: x.bg });
+    switch (name) {
+      case 'insert': { const n = make(JSON.parse(String(b))); if (i < 0 || i >= c.bands.length) c.bands.push(n); else c.bands.splice(i, 0, n); rbRender(dlg, c); return '1'; }
+      case 'del': if (!band) return '0'; c.bands.splice(i, 1); rbRelease(dlg, band); rbRender(dlg, c); return '1';
+      case 'count': return String(c.bands.length);
+      case 'get': return band ? show(band) : '';
+      case 'set': { if (!band) return '0'; const j = JSON.parse(String(b)), n = make(Object.assign(JSON.parse(show(band)), j));
+        if (n.child !== band.child) rbRelease(dlg, band); c.bands[i] = n; rbRender(dlg, c); return '1'; }
+      case 'indexOf': return String(c.bands.findIndex((x) => x.id === Number(a)));
+      case 'move': { const to = Number(b); if (!band || to < 0 || to >= c.bands.length) return '0'; c.bands.splice(i, 1); c.bands.splice(to, 0, band); rbRender(dlg, c); return '1'; }
+      case 'show': if (!band) return '0'; if (b === '1') band.style.delete('HIDDEN'); else band.style.add('HIDDEN'); rbRender(dlg, c); return '1';
+      case 'rect': { const e = c.el.querySelector('[data-band="' + i + '"]'); if (!e || e.hidden) return ''; const o = c.el.getBoundingClientRect(), r = e.getBoundingClientRect();
+        return [r.left - o.left, r.top - o.top, r.right - o.left, r.bottom - o.top].map(Math.round).join(' '); }
+      case 'height': return String(Math.round(c.el.getBoundingClientRect().height));
+      case 'rows': { const tops = new Set([...c.el.querySelectorAll('.ood-rbband')].filter((e) => !e.hidden).map((e) => Math.round(e.getBoundingClientRect().top))); return String(tops.size); }
+      case 'hit': { const o = c.el.getBoundingClientRect(), x = o.left + Number(a), y = o.top + Number(b);     // by the bands' rectangles: the dialog may not be shown yet
+        const inside = (e) => { const r = e.getBoundingClientRect(); return x >= r.left && x < r.right && y >= r.top && y < r.bottom; };
+        const e = [...c.el.querySelectorAll('.ood-rbband')].find((q) => !q.hidden && inside(q));
+        if (!e) return '-1 NOWHERE';
+        const g = e.querySelector('.ood-rbgrip'), t = e.querySelector('.ood-rbtext');
+        return e.dataset.band + ' ' + (g && inside(g) ? 'GRABBER' : t && inside(t) ? 'CAPTION' : 'CLIENT'); }
+      case 'colors': if (a !== '') c.el.style.background = String(a); if (b !== '') c.el.style.color = String(b); return '1';
+    }
+    return '';
+  }
 
   /* ---- Tool bar ----
      A button: {cmd, text, style, state, image}.  style and state are sets of the Windows

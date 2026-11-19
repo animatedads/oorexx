@@ -50,6 +50,12 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
 .ood-deliverbar span{flex:1 1 12em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ood-deliveract{color:#1f3f66;background:#fff;border-radius:3px;padding:.25em .8em;text-decoration:none}
 .ood-deliverview{flex:1;border:0;width:100%;background:#888}
+.ood-rb{position:absolute;display:flex;flex-wrap:wrap;box-sizing:border-box;background:#f0f0f0;border-bottom:1px solid #d0d0d0;font:12px 'Segoe UI',Tahoma,sans-serif;color:#222}
+.ood-rbband{display:flex;align-items:center;gap:4px;box-sizing:border-box;min-height:26px;padding:2px 4px;border-right:1px solid #d0d0d0;min-width:0}
+.ood-rbbreak{flex-basis:100%;height:0}
+.ood-rbgrip{width:3px;align-self:stretch;margin:2px 1px;border-left:1px dotted #888;border-right:1px dotted #888}
+.ood-rbtext{white-space:nowrap}
+.ood-rb .ood-tb{border-bottom:0;background:transparent;padding:0}
 .ood-tb{position:absolute;display:flex;flex-wrap:wrap;align-items:center;gap:2px;box-sizing:border-box;padding:2px 3px;background:#f0f0f0;border-bottom:1px solid #d0d0d0}
 .ood-tbbtn{font:12px 'Segoe UI',Tahoma,sans-serif;padding:2px 8px;border:1px solid transparent;border-radius:2px;background:transparent;color:#222}
 .ood-tbbtn:hover:not(:disabled){border-color:#7a9ac0;background:#e5f1fb}
@@ -316,14 +322,27 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
     });
   }
 
-  function fit(dlg) {                                         // a dialog larger than the window is scaled down to it
+  /* A dialog must be within reach: the page has no desktop to move a window on.  One larger
+     than the window is scaled down to it and centred.  One that fits, but whose place puts
+     part of it outside the window (a resource script's x and y are for a large screen), is
+     moved in, by as little as is needed.  Done when a dialog is first shown and when the
+     window changes size (a phone is turned). */
+  function fit(dlg) {
     const el = dlg.el, w = el.offsetWidth, h = el.offsetHeight;
     const k = Math.min(1, (W.innerWidth - 8) / w, (W.innerHeight - 8) / h);
-    if (k >= 1) return;
-    el.style.transformOrigin = '0 0'; el.style.transform = 'scale(' + k + ')';
-    el.style.left = Math.max(0, Math.round((W.innerWidth - w * k) / 2)) + 'px';
-    el.style.top = Math.max(0, Math.round((W.innerHeight - h * k) / 2)) + 'px';
+    if (k < 1) {
+      el.style.transformOrigin = '0 0'; el.style.transform = 'scale(' + k + ')';
+      el.style.left = Math.max(0, Math.round((W.innerWidth - w * k) / 2)) + 'px';
+      el.style.top = Math.max(0, Math.round((W.innerHeight - h * k) / 2)) + 'px';
+      return;
+    }
+    if (el.style.transform) el.style.transform = '';
+    const left = el.offsetLeft, top = el.offsetTop;
+    const inLeft = Math.max(0, Math.min(left, W.innerWidth - w - 4)), inTop = Math.max(0, Math.min(top, W.innerHeight - h - 4));
+    if (inLeft !== left) el.style.left = inLeft + 'px';
+    if (inTop !== top) el.style.top = inTop + 'px';
   }
+  W.addEventListener('resize', () => { for (const d of ood.dialogs.values()) if (d.shown && !d.child && d.el.style.visibility !== 'hidden') fit(d); });
   ood.show = function (key, how) {
     const dlg = ood.dialogs.get(Number(key)); if (!dlg) return '0';
     how = String(how || '').toUpperCase();
@@ -521,6 +540,10 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
         };
         up.addEventListener('click', () => step(1)); dn.addEventListener('click', () => step(-1));
         break; }
+      case 'REBAR':                                         // bands along the top of the dialog; each holds another control
+        el = main = D.createElement('div'); el.className = 'ood-rb'; c.focusable = false; c.docked = 'top';
+        c.bands = [];
+        break;
       case 'TOOLBAR':                                       // a row of buttons along the top of the dialog
         el = main = D.createElement('div'); el.className = 'ood-tb'; el.setAttribute('role', 'toolbar'); c.focusable = false; c.docked = 'top';
         c.btns = [];
@@ -1579,12 +1602,68 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
     if (c && name.startsWith('lv.')) { if (!LV_DATA_OPS.has(name)) flushRender(c); return lvOp(dlg, c, name.slice(3), a, b, c2); }
     if (c && c.parts && name.startsWith('sb.')) return stbOp(dlg, c, name.slice(3), a, b);
     if (c && c.btns && name.startsWith('tb.')) return tbOp(dlg, c, name.slice(3), a, b, c2);
+    if (c && c.bands && name.startsWith('rb.')) return rbOp(dlg, c, name.slice(3), a, b);
     if (c && name.startsWith('cd.')) return cdOp(dlg, c, name.slice(3), a);
     if (c && name.startsWith('tv.')) return tvOp(dlg, c, name.slice(3), a, b, c2);
     if (c && name.startsWith('tab.')) return tabOp(dlg, c, name.slice(4), a, b, c2);
     ood.log.push('op ' + name);
     return '';
   };
+
+  /* ---- Re-bar ----
+     A band: {id, text, style (a set of the Windows keywords: BREAK HIDDEN HIDETITLE NOGRIPPER
+     FIXEDSIZE ...), child (the ID of a control of the same dialog, or 0), cx (width in pixels,
+     0: share what is left), fg, bg}.  The child control's element is put inside its band and
+     gives up its own place; when its band is deleted it goes back to the dialog, hidden.
+     A band with BREAK starts a new row.  Indexes are from 0 here. */
+  function rbRender(dlg, c) {
+    for (const band of c.bands) { const k = band.child ? dlg.ctrls.get(band.child) : null; if (k && k.el.parentNode && k.el.parentNode !== dlg.client && !c.el.contains(k.el)) continue; }
+    c.el.textContent = '';
+    c.bands.forEach((band, i) => {
+      if (band.style.has('BREAK') && i > 0) { const br = D.createElement('div'); br.className = 'ood-rbbreak'; c.el.appendChild(br); }
+      const e = D.createElement('div'); e.className = 'ood-rbband'; e.dataset.band = String(i);
+      if (band.style.has('HIDDEN')) e.hidden = true;
+      e.style.flex = band.cx > 0 ? '0 0 ' + band.cx + 'px' : '1 1 0';
+      if (band.bg) e.style.background = band.bg; if (band.fg) e.style.color = band.fg;
+      if (!band.style.has('NOGRIPPER')) { const g = D.createElement('span'); g.className = 'ood-rbgrip'; e.appendChild(g); }
+      if (band.text && !band.style.has('HIDETITLE')) { const t = D.createElement('span'); t.className = 'ood-rbtext'; t.textContent = band.text; e.appendChild(t); }
+      const k = band.child ? dlg.ctrls.get(band.child) : null;
+      if (k) { const ke = k.el; ke.style.position = 'static'; ke.style.left = ''; ke.style.top = ''; ke.style.right = ''; ke.style.bottom = ''; ke.style.flex = '1 1 auto'; ke.style.width = 'auto'; ke.style.visibility = ''; ke.hidden = false; e.appendChild(ke); }
+      c.el.appendChild(e);
+    });
+  }
+  function rbRelease(dlg, band) {                              // a child whose band is gone: back to the dialog, hidden
+    const k = band.child ? dlg.ctrls.get(band.child) : null; if (!k) return;
+    k.el.style.position = ''; k.el.style.flex = ''; k.el.hidden = true; dlg.client.appendChild(k.el);
+  }
+  function rbOp(dlg, c, name, a, b) {
+    const i = Number(a), band = c.bands[i];
+    const make = (j) => ({ id: Number(j.id) || 0, text: String(j.text || ''), style: new Set(String(j.style || '').toUpperCase().split(' ').filter(Boolean)), child: Number(j.child) || 0, cx: Number(j.cx) || 0, fg: j.fg || '', bg: j.bg || '' });
+    const show = (x) => JSON.stringify({ id: x.id, text: x.text, style: [...x.style].join(' '), child: x.child, cx: x.cx, fg: x.fg, bg: x.bg });
+    switch (name) {
+      case 'insert': { const n = make(JSON.parse(String(b))); if (i < 0 || i >= c.bands.length) c.bands.push(n); else c.bands.splice(i, 0, n); rbRender(dlg, c); return '1'; }
+      case 'del': if (!band) return '0'; c.bands.splice(i, 1); rbRelease(dlg, band); rbRender(dlg, c); return '1';
+      case 'count': return String(c.bands.length);
+      case 'get': return band ? show(band) : '';
+      case 'set': { if (!band) return '0'; const j = JSON.parse(String(b)), n = make(Object.assign(JSON.parse(show(band)), j));
+        if (n.child !== band.child) rbRelease(dlg, band); c.bands[i] = n; rbRender(dlg, c); return '1'; }
+      case 'indexOf': return String(c.bands.findIndex((x) => x.id === Number(a)));
+      case 'move': { const to = Number(b); if (!band || to < 0 || to >= c.bands.length) return '0'; c.bands.splice(i, 1); c.bands.splice(to, 0, band); rbRender(dlg, c); return '1'; }
+      case 'show': if (!band) return '0'; if (b === '1') band.style.delete('HIDDEN'); else band.style.add('HIDDEN'); rbRender(dlg, c); return '1';
+      case 'rect': { const e = c.el.querySelector('[data-band="' + i + '"]'); if (!e || e.hidden) return ''; const o = c.el.getBoundingClientRect(), r = e.getBoundingClientRect();
+        return [r.left - o.left, r.top - o.top, r.right - o.left, r.bottom - o.top].map(Math.round).join(' '); }
+      case 'height': return String(Math.round(c.el.getBoundingClientRect().height));
+      case 'rows': { const tops = new Set([...c.el.querySelectorAll('.ood-rbband')].filter((e) => !e.hidden).map((e) => Math.round(e.getBoundingClientRect().top))); return String(tops.size); }
+      case 'hit': { const o = c.el.getBoundingClientRect(), x = o.left + Number(a), y = o.top + Number(b);     // by the bands' rectangles: the dialog may not be shown yet
+        const inside = (e) => { const r = e.getBoundingClientRect(); return x >= r.left && x < r.right && y >= r.top && y < r.bottom; };
+        const e = [...c.el.querySelectorAll('.ood-rbband')].find((q) => !q.hidden && inside(q));
+        if (!e) return '-1 NOWHERE';
+        const g = e.querySelector('.ood-rbgrip'), t = e.querySelector('.ood-rbtext');
+        return e.dataset.band + ' ' + (g && inside(g) ? 'GRABBER' : t && inside(t) ? 'CAPTION' : 'CLIENT'); }
+      case 'colors': if (a !== '') c.el.style.background = String(a); if (b !== '') c.el.style.color = String(b); return '1';
+    }
+    return '';
+  }
 
   /* ---- Tool bar ----
      A button: {cmd, text, style, state, image}.  style and state are sets of the Windows

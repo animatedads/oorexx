@@ -24,4 +24,5 @@ eval [...document.querySelectorAll(".ood-dlg button")].find(x => x.textContent =
 sleep 600
 expect window.__kids() ==> Special Offers|Home Electronics|Computers|Communications|Car Audio and Car Products|Books|Audio Video and Home Entertainment
 expect (window.oodOut.join('').match(/(native function \w+|Error \d+\.\d+[^\n]*|error in event method[^\n]*)/g) || []).length ==> 0
-eval (() => { const b = [...document.querySelectorAll(".ood-dlg button")].find(x => x.textContent === "Close"), r = b.getBoundingClientRect(); b.click(); return "close button bottom " + Math.round(r.bottom) + " of window " + innerHeight; })()
+expect (() => { const r = document.querySelector(".ood-dlg").getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; })() ==> True
+click .ood-dlg button:text-is("Close")

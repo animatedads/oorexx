@@ -1,0 +1,13 @@
+wait .ood-dlg >> text=Close
+eval (() => { window.__in = () => { const r = document.querySelector('.ood-dlg').getBoundingClientRect(); return r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight; }; const r = document.querySelector('.ood-dlg').getBoundingClientRect(); return [r.left, r.top, r.width, r.height].map(Math.round).join(',') + ' in ' + innerWidth + 'x' + innerHeight; })()
+expect window.__in() ==> True
+expect document.querySelector('.ood-dlg').style.transform === '' ==> True
+viewport 300 180
+sleep 300
+expect window.__in() ==> True
+expect /^scale\(0\.\d+\)$/.test(document.querySelector('.ood-dlg').style.transform) ==> True
+viewport 1000 700
+sleep 300
+expect window.__in() ==> True
+expect document.querySelector('.ood-dlg').style.transform === '' ==> True
+click .ood-dlg >> text=Close

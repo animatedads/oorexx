@@ -280,6 +280,9 @@ def main():
                                 js, _, want = rest.rpartition(' ==> ')
                                 got = str(pg.evaluate(js))
                                 if got != want: raise Exception(f'expected {want!r}, got {got!r}')
+                            elif verb == 'viewport':   # viewport WIDTH HEIGHT: the window changes size (a phone is turned)
+                                vw, vh = rest.split()
+                                pg.set_viewport_size({'width': int(vw), 'height': int(vh)})
                             elif verb == 'pdf':    # pdf EXPR ==> PAGES ; text ; text ...   EXPR gives a PDF's bytes as hex (may be a promise).
                                 # The file is read by pdfinfo and pdftotext, programs that have nothing to do with the writer.
                                 expr, _, want = rest.partition(' ==> ')

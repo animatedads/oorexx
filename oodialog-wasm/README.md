@@ -1,4 +1,4 @@
-# ooDialog for ooRexx/WASM — v0.22.0
+# ooDialog for ooRexx/WASM — v0.23.0
 
 Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: Josep Maria Blasco's
 ooRexx/WASM (`oorexxwasm` 0.2.4, ooRexx 5.3.0) and its `js.cls`.
@@ -55,16 +55,17 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
     python3 tools/oodtest.py --poke upstream/examples 0 24
     python3 tools/oodtest.py --tree upstream/examples tests/t*.rex tests/up/calculator.rex tests/up/oodpbar.rex tests/up/oodStandardRoutines.rex
 
-## State on 2026-11-19 (v0.22.0)
+## State on 2026-11-19 (v0.23.0)
 
-- Natives ported: 955 of 1,182 (80.8%). v0.22.0 added 74: tool bar and custom
-  draw (see "Tool bar" and "Custom draw"). v0.21.0 added 192 (see "Natives added
+- Natives ported: 1,033 of 1,182 (87.4%). v0.23.0 added 78: the re-bar (see
+  "Re-bar"). v0.22.0 added 74: tool bar and custom draw (see "Tool bar" and
+  "Custom draw"). v0.21.0 added 192 (see "Natives added
   in v0.21.0" for what each family does, and which of them do nothing).
   12 of the 43 added in v0.18.0 accept their call and do nothing (see "Tool
   tips"). (The total was given as 1,181
   in v0.16.0 and v0.17.0; `dist/natives.txt` has 1,182 lines. It fell from 1,196 because 12
   natives are now plain Rexx in `src/patches.txt`.)
-- Tests: 55 of 55 pass in headless Chromium (`tests/t01`..`t23` with expected
+- Tests: 57 of 57 pass in headless Chromium (`tests/t01`..`t25` with expected
   output, the binary resource hand-off test `tests/res/t07_resdialog_binary`,
   four unmodified upstream samples: `calculator.rex`,
   `oodpbar.rex`, `oodStandardRoutines.rex`, and the tutorial
@@ -102,9 +103,9 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
 - Depth probe (`oodtest.py --poke`, results in `poke.tsv`): the 70 examples
   that show a dialog or a message box are used automatically (tabs, rows,
   check boxes, lists, edits, menus, every button, then closed; last full run
-  at v0.22.0, on its final build). Of 89, 73 come through with no error, no unhandled Windows
+  at v0.23.0, on its final build). Of 89, 73 come through with no error, no unhandled Windows
   message and a clean end (`oograph.rex` did not end in one run of four at
-  v0.22.0; its own test passes). 12 more have no fault except connecting an event
+  v0.22.0 and ended in the run at v0.23.0; its own test passes). 12 more have no fault except connecting an event
   this layer does not produce. 4 have a problem, each named in `poke.tsv`, and
   none of them is a fault of this layer's own code: 2 are components started
   alone, `sample.rex` (ResourceImage) needs a reader of binary resources, and
@@ -238,9 +239,37 @@ Three things these two examples brought with them:
   (`"treeViewCustomDrawi.inp"` for `treeViewCustomDrawI.inp`).
   `site/oodfiles.js` 0.2.0 gives the interpreter those names too.
 
-Known and not fixed: a dialog taller than the window keeps its lower part
-out of reach (`treeViewCustomDraw.rex` is 311 dialog units tall; its Close
-button is below a 700 pixel window).
+(Until v0.23.0 this example's Close button was out of reach: see "A dialog
+is kept within reach".)
+
+## A dialog is kept within reach
+
+The page has no desktop to move a window on. A dialog larger than the window
+is scaled down to it and centred (as before). Since v0.23.0 a dialog that
+fits, but whose place puts part of it outside the window, is moved in by as
+little as is needed: a resource script's x and y are meant for a large
+screen. Both are done when a dialog is first shown and again when the window
+changes size, for example when a phone is turned (`tests/t24_fit`; the
+harness step `viewport WIDTH HEIGHT` changes the window).
+
+## Re-bar
+
+A ReBar is a real control: bands along the top of the dialog, each holding
+another control of the same dialog (`tests/t25_rebar`: a tool bar, a combo
+box and an edit in three bands on two rows; upstream has no re-bar example).
+ReBarBandInfo with child, text, style, item data, id and width; insertBand,
+setBandInfo, getBandInfo, deleteBand, moveBand, showBand, getBandCount,
+idToIndex, setBandWidth, maximizeBand, getRect, getBarHeight, getRowCount,
+getRowHeight, hitTestInfo, setBkColor, setTextColor. The control in a band
+works as it does anywhere: a tool bar button there is still a command.
+Styles drawn: BREAK (a new row), HIDDEN, HIDETITLE, NOGRIPPER.
+
+Kept and answered back, and nothing drawn from them: a band's other sizes
+(cxMinChild, cyChild, cxIdeal, cxHeader ...), image index, background
+bitmap and chevron; the bar's image list, colour scheme and extended style.
+The user cannot drag a band. The RBN_ events are accepted and not produced.
+minimizeBand, pushChevron, setPalette, setWindowTheme and sizeToRect do
+nothing.
 
 ## Natives added in v0.21.0
 
@@ -466,7 +495,7 @@ WASM file system as bytes.
 
 ## Not yet (the sweep's order of need)
 
-Re-bar; the parts of a combo box
+The parts of a combo box
 as windows (getComboBoxInfo); connectActivate,
 connectHelp, connectPosChanged and connectResizing (accepted, not produced);
 drawing the icons of image lists; a modeless property sheet; wizard header and
