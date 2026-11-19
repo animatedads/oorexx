@@ -1516,6 +1516,25 @@ inline Value conditionEntry(const std::shared_ptr<ObjectDispatch> &object, const
     return v ? *v : nil();
 }
 struct CatchBlock;
+// What a CATCH clause with a code looks at (RFE #31): a SYNTAX condition's CODE, an ERROR / FAILURE condition's RC.
+struct CatchKey {
+    std::string syntaxCode;
+    std::optional<Value> rc;
+    static CatchKey of(const std::string &c, const std::shared_ptr<ObjectDispatch> &o) {
+        CatchKey k;
+        if (!o) return k;
+        if (c == "SYNTAX") { Value code = conditionEntry(o, "CODE"); if (!code.isObject()) k.syntaxCode = code.bytes.str(); }
+        else if (c == "ERROR" || c == "FAILURE") {
+            Value rc = conditionEntry(o, "RC");
+            if (!(rc.isObject() && dynamic_cast<NilObject *>(rc.object.get()))) k.rc = rc;
+        }
+        return k;
+    }
+    static CatchKey of(const RaisedCondition &r) {
+        if (r.name == "SYNTAX" && !r.code.empty()) { CatchKey k; k.syntaxCode = r.code; return k; }
+        return of(r.name, r.object);
+    }
+};
 struct MethodTraps {
     enum Kind { SYNTAX, ERROR, FAILURE, NOVALUE, NOTREADY, LOSTDIGITS, NOSTRING, ANY, HALT, NOMETHOD, KINDS,
                 USERS = 16, SLOTS = KINDS + USERS };   // slots past KINDS: USER conditions, in the order first trapped
@@ -1544,8 +1563,33 @@ struct MethodTraps {
     MethodTraps *saved = nullptr;
     bool internal = false;                     // an internal routine's activation (inherited from its caller)
     CatchBlock *catches = nullptr;             // the innermost running block with CATCH clauses (RFE #31), if any
-    // Does a running block of this activation catch condition c (object o: its RC for a coded ERROR / FAILURE clause)?
-    bool catching(const std::string &c, const std::shared_ptr<ObjectDispatch> &o) const;
+    MethodTraps *caller = nullptr;             // an internal routine's: its caller's (whose blocks catch here too)
+    // the next caller out with running CATCH blocks (theirs do not change while this runs: RexxActivation catchAncestor)
+    const MethodTraps *catchAncestor = nullptr;
+    // When each trap was enabled, and when this activation was entered (RexxActivation entrySequence): a trap that an
+    // internal routine enabled for itself wins over the CATCH clauses of the code that called it (enabledBelow).
+    unsigned long sequence[SLOTS] = {};
+    unsigned long entrySequence = 0;
+    static unsigned long &trapSequence() { static thread_local unsigned long n = 0; return n; }
+    // The running block that catches condition c (object o: its CODE / RC for a coded clause), here or in the code that
+    // called this internal routine (RexxActivation::findCatch); owner: the activation of the block.
+    const CatchBlock *findCatch(const std::string &c, const CatchKey &key, const MethodTraps *&owner) const;
+    bool catching(const std::string &c, const std::shared_ptr<ObjectDispatch> &o) const {
+        const MethodTraps *owner = nullptr;
+        return findCatch(c, CatchKey::of(c, o), owner) != nullptr;
+    }
+    // Was trap slot k enabled by an internal routine that runs for owner (this one, or one of its callers on the way)?
+    bool enabledBelow(int k, const MethodTraps *owner) const {
+        for (const MethodTraps *t = this; t && t != owner; t = t->caller)
+            if (t->internal && sequence[k] > t->entrySequence) return true;
+        return false;
+    }
+    // Does a CATCH clause take condition c, ahead of trap slot use (-1: none)? (RexxActivation::trap)
+    bool catchWins(const std::string &c, const CatchKey &key, int use) const {
+        const MethodTraps *owner = nullptr;
+        if (!findCatch(c, key, owner)) return false;
+        return use < 0 || !enabledBelow(use, owner);
+    }
     bool catchesKind(const char *c) const;     // a clause names c, or ANY (for arming: NOVALUE, LOSTDIGITS, ...)
     // An internal routine (CALL label, label(...), a CALL ON handler) starts with a copy of its caller's trap settings
     // and condition information (RexxActivation INTERNALCALL); the caller sets inheritNext just before entering it.
@@ -1561,7 +1605,11 @@ struct MethodTraps {
             std::memcpy(delayed, from->delayed, sizeof delayed); std::memcpy(label, from->label, sizeof label);
             if (from->names_) names_ = std::make_unique<Names>(*from->names_);
             users = from->users; has = from->has; name = from->name; instruction = from->instruction; object = from->object;
+            std::memcpy(sequence, from->sequence, sizeof sequence);
+            caller = from;
+            catchAncestor = from->catches ? from : from->catchAncestor;
         }
+        entrySequence = trapSequence();
         Handing &h = handing();
         if (h.active) { has = true; name = h.name; instruction = "CALL"; object = h.object; h = Handing(); }
         if (ActivationScope *a = t.scope) { saved = a->traps; a->traps = this; }
@@ -1584,8 +1632,9 @@ struct MethodTraps {
         return ANY;
     }
     void syncNovalue() {
-        novalueOn = (on[NOVALUE] && !callMode[NOVALUE]) || (on[ANY] && !callMode[ANY]) || (catches && catchesKind("NOVALUE"));
-        lostDigitsOn = (on[LOSTDIGITS] && !callMode[LOSTDIGITS]) || (on[ANY] && !callMode[ANY]) || (catches && catchesKind("LOSTDIGITS"));
+        const bool catching = catches || catchAncestor;
+        novalueOn = (on[NOVALUE] && !callMode[NOVALUE]) || (on[ANY] && !callMode[ANY]) || (catching && catchesKind("NOVALUE"));
+        lostDigitsOn = (on[LOSTDIGITS] && !callMode[LOSTDIGITS]) || (on[ANY] && !callMode[ANY]) || (catching && catchesKind("LOSTDIGITS"));
     }
     MethodTraps(const MethodTraps &) = delete;
     MethodTraps &operator=(const MethodTraps &) = delete;
@@ -1654,9 +1703,9 @@ struct MethodTraps {
     }
     int find(const std::string &c) const { return const_cast<MethodTraps *>(this)->slotOf(c, false); }
     // (names_->missing[k]: SIGNAL ON c NAME label with no such label: 16.1 when c is raised)
-    void set(const char *c, int target) { const int k = slotOf(c, true); on[k] = true; callMode[k] = false; label[k] = target; if (names_) names_->missing[k].clear(); syncNovalue(); }
-    void setMissing(const char *c, const std::string &name) { const int k = slotOf(c, true); on[k] = true; callMode[k] = false; label[k] = -1; names().missing[k] = name; syncNovalue(); }
-    void setCall(const char *c, int target) { const int k = slotOf(c, true); on[k] = true; callMode[k] = true; delayed[k] = false; label[k] = target; if (names_) names_->missing[k].clear(); syncNovalue(); }
+    void set(const char *c, int target) { const int k = slotOf(c, true); on[k] = true; sequence[k] = ++trapSequence(); callMode[k] = false; label[k] = target; if (names_) names_->missing[k].clear(); syncNovalue(); }
+    void setMissing(const char *c, const std::string &name) { const int k = slotOf(c, true); on[k] = true; sequence[k] = ++trapSequence(); callMode[k] = false; label[k] = -1; names().missing[k] = name; syncNovalue(); }
+    void setCall(const char *c, int target) { const int k = slotOf(c, true); on[k] = true; sequence[k] = ++trapSequence(); callMode[k] = true; delayed[k] = false; label[k] = target; if (names_) names_->missing[k].clear(); syncNovalue(); }
     void clear(const char *c) { const int k = slotOf(c, true); on[k] = false; callMode[k] = false; syncNovalue(); }
     // An exception reached the activation: the label to continue at (the trap is turned off), or -1 to let it go on.
     int fire(Variables &vars, std::size_t line, std::exception_ptr e) {
@@ -1666,6 +1715,8 @@ struct MethodTraps {
         RaisedCondition raised;
         if (!describeRaised(e, raised)) return -1;
         const int use = trapping(raised.name, find(raised.name));
+        // a block of the code that called this internal routine catches it: unwound to it (an own trap of the routine wins)
+        if (catchAncestor && catchWins(raised.name, CatchKey::of(raised), use)) return -1;
         if (use < 0 || callMode[use]) return -1;    // a CALL ON trap never unwinds (conditions reach it by deliver)
         on[use] = false;
         syncNovalue();
@@ -1694,8 +1745,8 @@ struct MethodTraps {
         if (!a || !a->traps) return false;
         MethodTraps &m = *a->traps;
         // a block of this activation with a clause for it: raised now, to the block (before CALL ON and SIGNAL ON)
-        if (m.catches && m.catching(c, o)) throw NotReadyCondition(o, c);
         const int use = m.trapping(c, m.find(c));
+        if ((m.catches || m.catchAncestor) && m.catchWins(c, CatchKey::of(c, o), use)) throw NotReadyCondition(o, c);
         if (use < 0) return false;
         if (!m.callMode[use]) throw NotReadyCondition(o, c);
         o->sendMessage("PUT", {Value::string("CALL"), Value::string("INSTRUCTION")});
@@ -1788,38 +1839,62 @@ struct CatchBlock {
         for (const auto &clause : clauses) for (const auto &k : clause) if (k.name == c || k.name == "ANY") return true;
         return false;
     }
-    std::string codeOf(const CatchCondition &k) const {
-        if (k.codeVariable.empty()) return k.code;
-        if (const Value *v = lookup(vars, k.codeVariable)) return v->isObject() ? std::string() : v->bytes.str();
-        return k.codeVariable;   // (unset: its own name, as a symbol's value)
+    // A code given as a simple symbol: read now, in the block's activation; with no value, its name (no NOVALUE).
+    Value codeOf(const CatchCondition &k) const {
+        if (k.codeVariable.empty()) return Value::string(k.code);
+        if (const Value *v = lookup(vars, k.codeVariable)) return *v;
+        return Value::string(k.codeVariable);
     }
-    // The clause that takes condition c (code: the SYNTAX code, or RC for ERROR / FAILURE), or -1.
-    int clauseFor(const std::string &c, const std::string &code) const {
+    // RexxInstructionCatch::errorNumber: "major" or "major.minor" (1-99, 1-999) as major * 1000 + minor, or -1.
+    static long errorNumber(const std::string &text) {
+        std::size_t i = 0, digits = 0;
+        long major = 0, minor = 0;
+        for (; i < text.size() && text[i] >= '0' && text[i] <= '9' && digits < 3; ++i, ++digits) major = major * 10 + (text[i] - '0');
+        bool valid = digits > 0 && major >= 1 && major <= 99;
+        if (valid && i < text.size()) {
+            valid = text[i++] == '.';
+            digits = 0;
+            for (; i < text.size() && text[i] >= '0' && text[i] <= '9' && digits < 4; ++i, ++digits) minor = minor * 10 + (text[i] - '0');
+            valid = valid && digits > 0 && i == text.size() && minor >= 1 && minor <= 999;
+        }
+        return valid ? major * 1000 + minor : -1;
+    }
+    // RexxInstructionCatch::sameCode: two strings as ==; a string and an object never; two objects by their "==".
+    static bool sameCode(const Value &code, const Value &rc) {
+        if (!code.isObject() && !rc.isObject()) return code.bytes.str() == rc.bytes.str();
+        if (!code.isObject() || !rc.isObject()) return false;
+        Value answer = sendBinary(code, "==", rc);
+        return !answer.isObject() && answer.bytes.str() == "1";
+    }
+    // The clause that takes condition c (RexxInstructionCatch::handles, in clause order), or -1.
+    int clauseFor(const std::string &c, const CatchKey &key) const {
         for (std::size_t i = 0; i < clauses.size(); ++i)
             for (const CatchCondition &k : clauses[i]) {
-                if (k.name != "ANY" && k.name != c) continue;
-                if (k.name == "ANY" || (k.code.empty() && k.codeVariable.empty())) return static_cast<int>(i);
-                const std::string want = codeOf(k);
+                if (k.name == "ANY") return static_cast<int>(i);
+                if (k.name != c) continue;
+                if (k.code.empty() && k.codeVariable.empty()) return static_cast<int>(i);
                 if (c == "SYNTAX") {
-                    if (want == code || (want.find('.') == std::string::npos && code.compare(0, want.size() + 1, want + ".") == 0))
-                        return static_cast<int>(i);
+                    if (key.syntaxCode.empty()) return static_cast<int>(i);   // (no condition object yet)
+                    const Value want = codeOf(k);
+                    if (want.isObject()) continue;
+                    const long wanted = errorNumber(want.bytes.str());
+                    if (wanted < 0) continue;
+                    const std::string &text = key.syntaxCode;
+                    const std::size_t point = text.find('.');
+                    const long raised = std::strtol(text.c_str(), nullptr, 10) * 1000 +
+                                        (point == std::string::npos ? 0 : std::strtol(text.c_str() + point + 1, nullptr, 10));
+                    if (wanted % 1000 == 0 ? raised / 1000 == wanted / 1000 : raised == wanted) return static_cast<int>(i);
                 }
-                else if (want == code) return static_cast<int>(i);
+                else if (key.rc && sameCode(codeOf(k), *key.rc)) return static_cast<int>(i);
             }
         return -1;
-    }
-    static std::string rcOf(const std::shared_ptr<ObjectDispatch> &o) {
-        if (!o) return std::string();
-        Value rc = conditionEntry(o, "RC");
-        return rc.isObject() ? std::string() : rc.bytes.str();
     }
     // A condition reached the block (its C++ catch): the clause to run, with the condition information set as a trap
     // sets it but CONDITION('I') = CATCH, and the block ended; or -1 (not this block's: rethrow it).
     int take(std::exception_ptr e, std::size_t line, std::shared_ptr<ObjectDispatch> &object) {
         RaisedCondition raised;
         if (!describeRaised(e, raised)) return -1;
-        const std::string code = raised.name == "SYNTAX" ? raised.code : rcOf(raised.object);
-        const int clause = clauseFor(raised.name, code);
+        const int clause = clauseFor(raised.name, CatchKey::of(raised));
         if (clause < 0) return -1;
         end();
         if (!raised.object) {
@@ -1842,14 +1917,50 @@ struct CatchBlock {
         return r ? *r : nil();
     }
 };
+// INTERPRET in a running block with CATCH clauses (here, or in the code that called this internal routine): the
+// interpreted code runs inside a block with one CATCH clause for all their conditions (each code as its value now), so
+// a condition one of them takes ends the interpreted code as it ends the block (RexxActivation::findCatch looks through
+// an INTERPRET); the condition comes back and is raised here. "" when there are none.
+inline std::string interpretCatchConditions() {
+    ActivationScope *a = ActivationScope::current();
+    if (!a || !a->traps) return std::string();
+    std::string out;
+    std::vector<std::string> items;
+    auto quoted = [](const std::string &v) {
+        std::string q = "'";
+        for (char ch : v) { q += ch; if (ch == '\'') q += ch; }
+        return q + "'";
+    };
+    for (const MethodTraps *t = a->traps; t; t = t->catchAncestor)
+        for (const CatchBlock *b = t->catches; b; b = b->outer)
+            for (const auto &clause : b->clauses)
+                for (const CatchCondition &k : clause) {
+                    std::string item = k.name;
+                    if (!k.code.empty() || !k.codeVariable.empty()) {
+                        const Value want = b->codeOf(k);
+                        if (want.isObject()) continue;   // (an object code: not written in source)
+                        if (k.name == "SYNTAX") {
+                            if (CatchBlock::errorNumber(want.bytes.str()) < 0) continue;   // never matches
+                            item += " " + want.bytes.str();
+                        }
+                        else item += " " + quoted(want.bytes.str());
+                    }
+                    if (std::find(items.begin(), items.end(), item) != items.end()) continue;
+                    items.push_back(item);
+                    out += (out.empty() ? "" : ", ") + item;
+                }
+    return out;
+}
 inline bool MethodTraps::catchesKind(const char *c) const {
-    for (const CatchBlock *b = catches; b; b = b->outer) if (b->names(c)) return true;
+    for (const MethodTraps *t = this; t; t = t->catchAncestor)
+        for (const CatchBlock *b = t->catches; b; b = b->outer) if (b->names(c)) return true;
     return false;
 }
-inline bool MethodTraps::catching(const std::string &c, const std::shared_ptr<ObjectDispatch> &o) const {
-    const std::string code = CatchBlock::rcOf(o);
-    for (const CatchBlock *b = catches; b; b = b->outer) if (b->clauseFor(c, code) >= 0) return true;
-    return false;
+inline const CatchBlock *MethodTraps::findCatch(const std::string &c, const CatchKey &key, const MethodTraps *&owner) const {
+    for (const MethodTraps *t = this; t; t = t->catchAncestor)
+        for (const CatchBlock *b = t->catches; b; b = b->outer)
+            if (b->clauseFor(c, key) >= 0) { owner = t; return b; }
+    return nullptr;
 }
 // A RAISE that ended a compiled callee reaches its compiled caller (RexxActivation::raise: the sender's trap). A caller
 // that traps the condition with SIGNAL ON (it or ANY) gets it now: it is rethrown, delivered, to the caller's
@@ -1859,8 +1970,10 @@ inline std::optional<Value> raisedInCaller(const RaiseToCaller &r) {
     if (ActivationScope *a = ActivationScope::current()) if (a->traps) {
         MethodTraps &m = *a->traps;
         // a running block of the caller with a clause for it takes it first (RFE #31 CATCH)
-        if (m.catches && m.catching(r.name, raisedConditionObject(r))) { RaiseToCaller d = r; d.delivered = true; throw d; }
         const int use = m.trapping(r.name, m.find(r.name));
+        if ((m.catches || m.catchAncestor) && m.catchWins(r.name, CatchKey::of(r.name, raisedConditionObject(r)), use)) {
+            RaiseToCaller d = r; d.delivered = true; throw d;
+        }
         if (use >= 0) {
             if (!m.callMode[use]) { RaiseToCaller d = r; d.delivered = true; throw d; }
             if (auto o = raisedConditionObject(r)) {
@@ -3966,7 +4079,11 @@ inline std::optional<Value> interpretInActivation(Variables &vars, const Value &
     }
     const std::string queueKey = key + ".Q";
     if (callArmed) t->DirectoryPut(local, temps((RexxObjectPtr)t->NewArray(0)), queueKey.c_str());
+    const std::string caught = interpretCatchConditions();
+    if (!caught.empty()) source += "do\n";
     source += code.bytes.str();
+    if (!caught.empty())
+        source += "\ncatch " + caught + "\nreturn .array~of('" + key + "', RX2CPP_CALLER_CONTEXT()~variables, digits(), fuzz(), form(), condition('O'))\nend";
     source += "\nreturn .array~of('" + key + "', RX2CPP_CALLER_CONTEXT()~variables, digits(), fuzz(), form())\n";
     if (signalArmed)
         source += "rx2cppTrapped: return .array~of('" + key + "', RX2CPP_CALLER_CONTEXT()~variables, digits(), fuzz(), form(), condition('O'))\n";
