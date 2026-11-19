@@ -47,6 +47,7 @@
     s~skipSeparators
     s~expect('THEN')
     s~skipSeparators
+    if s~atCatch then s~fail('Error 10.9: CATCH must not immediately follow THEN')
     if count == 0 then keyword = 'if'
     else keyword = 'else if'
     ctx~line(depth, keyword || ' (' || condition || ') {')
