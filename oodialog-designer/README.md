@@ -159,9 +159,12 @@ one `kind` line; a new code-insertion action is one `action` line.
   that page while you design.
 - **New in v0.16 (ooDialog/WASM v0.21):**
   - **Up-down:** dropped right after an entry field, it takes that field as
-    its *buddy*. The program calls `setBuddy` in initDialog instead of using
-    AUTOBUDDY: Windows moves an AUTOBUDDY up-down to its buddy's edge and
-    the page does not, so `setBuddy` keeps it where it was drawn on both.
+    its *buddy*. The program calls `setBuddy` in initDialog, with no ALIGN
+    style, so the up-down stays where it was drawn. With RIGHT or LEFT and a
+    buddy, Windows and ooDialog/WASM both move it into the buddy's edge
+    (oodialog-web.js does so since v0.21); that is offered, but then the
+    form you designed is not the form that runs. (v0.16's README and commit
+    said the page does not move it: wrong, corrected in v0.17.)
     With SETBUDDYINT, the buddy's data starts at the up-down's position
     (`execute` sets the field from its data after initDialog, so a
     `setPosition` there alone would be wiped). DELTAPOS:
