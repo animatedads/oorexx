@@ -775,7 +775,48 @@ def sc_labdrag(pg):
     pg.locator('#dbGraph').screenshot(path=str(SHOTS / 'lab_drag.png'))
 
 
-SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views, 'gadgets': sc_gadgets, 'libraries': sc_libraries, 'graph': sc_graph, 'trace': sc_trace, 'languages': sc_languages, 'ui_de': sc_ui_de, 'plugins': sc_plugins, 'assist': sc_assist, 'source': sc_source, 'bound': sc_bound, 'overview': sc_overview, 'labgraph': sc_labgraph, 'catch': sc_catch, 'labdrag': sc_labdrag}
+def sc_newkinds(pg):
+    """v0.16, on ooDialog/WASM v0.21: an up-down dropped after an entry field
+    takes it as buddy; a month calendar; a tool tip; the track bar's DRAG. Run:
+    the arrow changes the buddy's number, DELTAPOS runs, a day picked runs
+    SELECT, the tip shows on hover."""
+    ready(pg)
+    set_prop(pg, 'w', 270); set_prop(pg, 'h', 180)          # the form: room for a calendar
+    drop_kind(pg, 'Entry field', 20, 30); set_prop(pg, 'name', 'txtCount')
+    set_prop(pg, 'tip', 'How many, 1 to 9')
+    drop_kind(pg, 'Up-down', 190, 30)
+    expect('the up-down took the entry field as buddy', [c for c in snap(pg)['controls'] if c['type'] == 'UPDOWN'][0]['buddy'], 'txtCount')
+    set_prop(pg, 'min', 1); set_prop(pg, 'max', 9); set_prop(pg, 'pos', 3)
+    drop_kind(pg, 'Month calendar', 20, 80); set_prop(pg, 'name', 'calDay')
+    expect('the calendar is drawn on the form', pg.locator('#client .dz[data-name="calDay"] .dz-cal-grid span.today').count(), 1)
+    drop_kind(pg, 'Text', 290, 30); set_prop(pg, 'name', 'lblOut'); set_prop(pg, 'w', 110)
+    drop_kind(pg, 'Push button', 400, 300); set_prop(pg, 'text', 'OK'); pg.select_option('#props [data-prop="role"]', 'OK'); settle(pg)
+    pick_event(pg, 'ud1', 'DELTAPOS')
+    expect_in('the arguments named in the heading', 'pos, delta, id, hwnd, ud', pg.inner_text('#codeTitle') if pg.locator('#codeTitle').count() else pg.inner_text('body'))
+    type_code(pg, 'use arg pos, delta\nself~lblOut~setText("Up-down:" pos + delta)')
+    pick_event(pg, 'calDay', 'SELECT')
+    type_code(pg, 'use arg startDate\nself~lblOut~setText("Picked:" startDate~standardDate)')
+    m = pg.locator('#client .dz[data-name="ud1"] .dz-code')
+    expect('the narrow up-down shows its code mark beside it', m.is_visible() and m.bounding_box()['x'] >= pg.locator('#client .dz[data-name="ud1"]').bounding_box()['x'] + 18, True)
+    src = program_text(pg)
+    expect_in('setBuddy, not AUTOBUDDY', 'self~ud1~setBuddy(self~txtCount)', src)
+    expect_in('the tip in the program', 'tips~addTool(self~txtCount, "How many, 1 to 9")', src)
+    pg.screenshot(path=str(SHOTS / 'newkinds_design.png'))
+    run(pg)
+    expect('the buddy shows the first position', pg.input_value('.ood-dlg input'), '3')
+    pg.locator('.ood-dlg .ood-ud button').first.click(); settle(pg, 600)
+    expect('up: the buddy follows', pg.input_value('.ood-dlg input'), '4')
+    expect_in('DELTAPOS ran with pos and delta', 'Up-down: 4', dlg_text(pg))
+    day = pg.locator('.ood-dlg .ood-mc-day:not(.ood-mc-other)', has_text=re.compile('^15$')).first
+    iso = day.get_attribute('data-date'); day.click(); settle(pg, 600)
+    expect_in('SELECT ran with the day', 'Picked: ' + iso.replace('-', ''), dlg_text(pg))
+    box = pg.locator('.ood-dlg input').first.bounding_box()
+    pg.mouse.move(box['x'] + 8, box['y'] + 5); settle(pg, 1200)
+    expect('the tip shows on hover', pg.evaluate("(() => { const t = document.querySelector('.ood-tip'); return t && !t.hidden ? t.textContent : null })()"), 'How many, 1 to 9')
+    pg.screenshot(path=str(SHOTS / 'newkinds_run.png'))
+    press(pg, 'OK'); expect('ended with OK', wait_end(pg)['rc'], 1)
+
+SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views, 'gadgets': sc_gadgets, 'libraries': sc_libraries, 'graph': sc_graph, 'trace': sc_trace, 'languages': sc_languages, 'ui_de': sc_ui_de, 'plugins': sc_plugins, 'assist': sc_assist, 'source': sc_source, 'bound': sc_bound, 'overview': sc_overview, 'labgraph': sc_labgraph, 'catch': sc_catch, 'labdrag': sc_labdrag, 'newkinds': sc_newkinds}
 def main():
     names = sys.argv[1:] or list(SCENARIOS)
     srv = subprocess.Popen(['node', str(SITE / 'serve.mjs'), str(SITE), '--port', str(PORT)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

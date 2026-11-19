@@ -334,6 +334,29 @@
         const span = (Number(c.max) - Number(c.min)) || 1;
         const k = D.createElement('i'); k.style.left = 'calc(' + Math.max(0, Math.min(100, (Number(c.pos) - Number(c.min)) * 100 / span)) + '% - 4px)';
         body.appendChild(k); break; }
+      case 'UPDOWN': {
+        body.className = 'dz-ud';
+        body.append(Object.assign(D.createElement('span'), { textContent: '\u25B4' }), Object.assign(D.createElement('span'), { textContent: '\u25BE' }));
+        break; }
+      case 'MONTHCALENDAR': {                       // this month, as ooDialog/WASM first shows it (Sunday first)
+        body.className = 'dz-cal';
+        const now = new Date(), y = now.getFullYear(), m = now.getMonth();
+        const head = D.createElement('div'); head.className = 'dz-cal-head';
+        head.textContent = '\u2039  ' + now.toLocaleString('en-US', { month: 'long' }) + ' ' + y + '  \u203A';
+        const grid = D.createElement('div'); grid.className = 'dz-cal-grid';
+        for (const w of ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']) grid.appendChild(Object.assign(D.createElement('span'), { className: 'wd', textContent: w }));
+        // six weeks, as the running calendar shows them: the days around the month greyed
+        const first = new Date(y, m, 1 - new Date(y, m, 1).getDay());
+        for (let k = 0; k < 42; k++) {
+          const d = new Date(first.getFullYear(), first.getMonth(), first.getDate() + k), e = D.createElement('span');
+          e.textContent = String(d.getDate());
+          if (d.getMonth() !== m) e.className = 'other';
+          else if (d.getDate() === now.getDate()) e.className = 'today';
+          grid.appendChild(e);
+        }
+        body.append(head, grid);
+        if (!opts.includes('NOTODAY')) body.appendChild(Object.assign(D.createElement('div'), { className: 'dz-cal-foot', textContent: 'Today: ' + now.toLocaleDateString('en-US') }));
+        break; }
       case 'DATETIME': {
         body.className = 'dz-edit dz-date';
         const now = new Date();
@@ -360,6 +383,8 @@
     const m = D.createElement('span'); m.className = 'dz-code'; m.textContent = k; m.title = T('tree.count.tip', k);
     m.addEventListener('pointerdown', (e) => e.stopPropagation());
     m.addEventListener('click', (e) => { e.stopPropagation(); openInTree(name); select(name); });
+    // a narrow control (an up-down) would be covered by its mark: it goes just outside
+    if (parseFloat(el.style.width) < 30) { m.classList.add('dz-code-out'); el.classList.add('dz-narrow'); }
     el.appendChild(m);
   }
   async function select(name) {

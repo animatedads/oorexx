@@ -21,13 +21,13 @@
 
 ::class OodModule public mixinclass Object
 ::method module_version class
-  return "0.15.0"
+  return "0.16.0"
 ::method module_lastChanged class
-  return "2026-11-17"
+  return "2026-11-19"
 ::method module_version
-  return "0.15.0"
+  return "0.16.0"
 ::method module_lastChanged
-  return "2026-11-17"
+  return "2026-11-19"
 
 
 /* One kind of control in the catalogue (a "kind" line of ::RESOURCE oodCatalog). */
@@ -333,6 +333,18 @@
     c~setProp("max", 100)
     c~setProp("pos", 0)
   end
+  if k~type == "UPDOWN" then do
+    c~setProp("min", 0)
+    c~setProp("max", 100)
+    c~setProp("pos", 0)
+    -- the buddy: the entry field just before it, if there is one
+    buddy = ""
+    if controls~items > 0 then do
+      last = controls~lastItem
+      if last~type == "EDIT" then buddy = last~name
+    end
+    c~setProp("buddy", buddy)
+  end
   if k~type == "MENUITEM" then do
     popup = "&File"
     do o over controls
@@ -563,6 +575,22 @@
       if \datatype(value, "W") then raise syntax 93.900 array(oodT("err.whole", key))
       c~setProp(key, value)
     end
+    when key == "buddy" then do
+      if value \== "" then do
+        b = .nil
+        do o over controls
+          if o~name~caselessEquals(value) then b = o
+        end
+        if b == .nil | b == c then raise syntax 93.900 array(oodT("err.buddy", value))
+        if b~kind~nonvisual then raise syntax 93.900 array(oodT("err.buddy", value))
+        value = b~name
+      end
+      c~setProp(key, value)
+    end
+    when key == "tip" then do
+      if value~pos("0a"x) > 0 | value~pos("0d"x) > 0 then raise syntax 93.900 array(oodT("err.oneLine", key))
+      c~setProp(key, value)
+    end
     when key == "interval" then do
       if \datatype(value, "N") then raise syntax 93.900 array(oodT("err.interval"))
       if value <= 0 then raise syntax 93.900 array(oodT("err.interval.positive"))
@@ -615,6 +643,7 @@
   do o over controls
     p = o~prop("page")
     if p~caselessPos(old":") = 1 then o~setProp("page", newName":"p~substr(length(old) + 2))
+    if o~prop("buddy")~caselessEquals(old) then o~setProp("buddy", newName)
   end
   -- its strings' keys follow it, in every language
   do lang over translations~allIndexes
@@ -1004,7 +1033,10 @@
 ::method nlsProps
   use strict arg c
   select
-    when c~type == "EDIT" then return ""
+    when c~type == "EDIT" then do
+      if c~prop("tip") \== "" then return "tip"
+      return ""
+    end
     when c~type == "MENUITEM" then do
       -- the menu's (popup's) name: on its first item; a separator has no text
       p = "text"
@@ -1018,6 +1050,8 @@
   do p over "text items tabs columns"~makeArray(" ")
     if c~kind~props~wordpos(p) > 0 then out = out p
   end
+  -- a tool tip is a text only when there is one
+  if c~kind~props~wordpos("tip") > 0, c~prop("tip") \== "" then out = out "tip"
   return out~strip
 
 ::method firstInPopup
@@ -1620,7 +1654,13 @@
       if c~type == "CHECKBOX" then out~append("  self~"c~name"_data = (oodValueOf(self~object," oodRx(c~prop("bind"))") == 1)")
       iterate
     end
-    if c~type == "EDIT" then out~append("  self~"c~name"_data =" oodRx(c~prop("text")))
+    if c~type == "EDIT" then do
+      -- an up-down's buddy that shows its number starts at the up-down's
+      -- position: execute sets the field from this after initDialog
+      ud = self~upDownOf(c)
+      if ud \== .nil, c~prop("text") == "" then out~append("  self~"c~name"_data =" ud~prop("pos"))
+      else out~append("  self~"c~name"_data =" oodRx(c~prop("text")))
+    end
     if c~type == "CHECKBOX" | c~type == "RADIOBUTTON" then out~append("  self~"c~name"_data =" oodNum(c~prop("checked")))
   end
   do c over controls
@@ -1747,6 +1787,16 @@
       out~append("  self~"c~name"~initRange("c~prop("min")"," c~prop("max")")")
       out~append("  self~"c~name"~pos =" c~prop("pos"))
     end
+    if c~type == "UPDOWN" then do
+      -- setBuddy, not AUTOBUDDY: the up-down stays where it was drawn,
+      -- on Windows as in the browser
+      -- a buddy no longer on the form is a problem (problems), not a failure
+      do o over controls
+        if o \== c, o~name~caselessEquals(c~prop("buddy")) then out~append("  self~"c~name"~setBuddy(self~"o~name")")
+      end
+      out~append("  self~"c~name"~setRange("c~prop("min")"," c~prop("max")")")
+      out~append("  self~"c~name"~setPosition("c~prop("pos")")")
+    end
     if c~type == "TAB" then do
       line = ""
       do t over c~prop("tabs")~makeArray("|")
@@ -1762,6 +1812,7 @@
       if self~pageMembers(c)~items > 0 then out~append("  self~"c~name"_show(1)")
     end
   end
+  self~generateTips(out)
   self~generateMenu(out)
   -- execute sets the controls from their data attributes after initDialog,
   -- so INIT runs between a setData and a getData: it sees the first values,
@@ -2174,6 +2225,35 @@
 -- The menu bar: menu items, in creation order, grouped by the menu (popup)
 -- each is in; an item whose text is - is a separator.  Attached in
 -- initDialog; upstream keeps it as self~menuBar.
+-- the up-down whose buddy c is and shows its number (SETBUDDYINT), or .nil
+::method upDownOf
+  expose controls
+  use strict arg c
+  do o over controls
+    if o~type \== "UPDOWN" then iterate
+    if \o~prop("buddy")~caselessEquals(c~name) then iterate
+    if o~prop("opts")~upper~wordpos("SETBUDDYINT") > 0 then return o
+  end
+  return .nil
+
+-- Tool tips: one ToolTip for the dialog, its id after the controls' ids,
+-- and a tool for each control with a tip (the page draws it on hover; on a
+-- phone there is no hover, so a tip must not be the only place a thing is said)
+::method generateTips
+  expose controls
+  use strict arg out
+  tipped = .array~new
+  top = 0
+  do c over controls
+    if datatype(c~id, "W") then top = max(top, c~id)
+    if c~kind~props~wordpos("tip") > 0, c~prop("tip") \== "" then tipped~append(c)
+  end
+  if tipped~items = 0 then return
+  out~append("  tips = self~createToolTip(" || top + 1 || ")")
+  do c over tipped
+    out~append("  tips~addTool(self~"c~name"," self~textExpr(c, "tip", c~prop("tip"))")")
+  end
+
 -- a text in the program: self~nls(key) with languages, else the literal
 ::method textExpr
   use strict arg owner, prop, text
@@ -2283,6 +2363,15 @@
     if c~x + c~w > form["W"] | c~y + c~h > form["H"] then out~append(c~name "is outside the form")
   end
   if \hasClose then out~append("No button has role OK or CANCEL: the dialog closes only with its X")
+  do c over controls
+    b = c~prop("buddy")
+    if b == "" then iterate
+    found = .false
+    do o over controls
+      if o \== c, o~name~caselessEquals(b) then found = .true
+    end
+    if \found then out~append(oodT("err.buddy.gone", c~name, b))
+  end
   bound = .false
   do c over controls
     if c~prop("bind") \== "" then bound = .true
@@ -2513,20 +2602,22 @@
    action: a line the code pane inserts when a control is dropped on it
    (types: kinds it applies to, * for every visual kind; %n: the name). */
 ::resource oodKinds
-kind type=PUSHBUTTON label="Push button" prefix=btn create=createPushButton access=newPushButton args=text w=50 h=14 text=Button events=CLICKED connect=connectButtonEvent opts="DEFAULT GROUP NOTAB DISABLED HIDDEN" props="text role bind opts"
-kind type=STATIC label=Text prefix=lbl create=createStaticText access=newStatic args=text w=60 h=10 text=Text opts="LEFT RIGHT CENTER GROUP DISABLED HIDDEN" props="text bind opts"
-kind type=EDIT label="Entry field" prefix=txt create=createEdit access=newEdit args=attr w=80 h=12 events="CHANGE UPDATE" connect=connectEditEvent opts="READONLY RIGHT CENTER PASSWORD MULTILINE NUMBER UPPER GROUP NOTAB DISABLED HIDDEN" props="text bind opts"
-kind type=CHECKBOX label="Check box" prefix=chk create=createCheckBox access=newCheckBox args="text attr" w=60 h=10 text=Check events=CLICKED connect=connectButtonEvent opts="GROUP NOTAB DISABLED HIDDEN" props="text checked bind opts"
-kind type=RADIOBUTTON label="Radio button" prefix=opt create=createRadioButton access=newRadioButton args="text attr" w=60 h=10 text=Option events=CLICKED connect=connectButtonEvent opts="GROUP NOTAB DISABLED HIDDEN" props="text checked groupstart opts"
-kind type=GROUPBOX label="Group box" prefix=grp create=createGroupBox access=newGroupBox args=text w=100 h=50 text=Group opts="HIDDEN" props="text opts"
-kind type=LISTBOX label="List box" prefix=lst create=createListBox access=newListBox args=attr w=80 h=50 events="SELCHANGE DBLCLK" connect=connectListBoxEvent opts="SORT MULTI GROUP NOTAB DISABLED HIDDEN" props="items opts"
-kind type=COMBOBOX label="Combo box" prefix=cbo create=createComboBox access=newComboBox args=attr w=80 h=60 events=SELCHANGE connect=connectComboBoxEvent opts="LIST SIMPLE SORT GROUP NOTAB DISABLED HIDDEN" defopts=LIST props="items bind opts"
-kind type=PROGRESSBAR label="Progress bar" prefix=prg create=createProgressBar access=newProgressBar args="" w=100 h=10 opts="SMOOTH VERTICAL HIDDEN" props="min max pos opts"
-kind type=LISTVIEW label="List view" prefix=lv create=createListView access=newListView args="" w=120 h=60 events="SELECTCHANGED COLUMNCLICK CHECKBOXCHANGED" connect=connectListViewEvent opts="REPORT LIST ICON SMALLICON SINGLESEL SHOWSELALWAYS GROUP NOTAB DISABLED HIDDEN" defopts="REPORT SHOWSELALWAYS" exopts="FULLROWSELECT GRIDLINES CHECKBOXES" props="columns rows bind exstyles opts"
-kind type=TAB label="Tab strip" prefix=tab create=createTab access=newTab args="" w=120 h=14 events=SELCHANGE connect=connectTabEvent opts="BUTTONS MULTILINE GROUP NOTAB DISABLED HIDDEN" props="tabs opts"
-kind type=TREEVIEW label="Tree view" prefix=tv create=createTreeView access=newTreeView args="" w=100 h=60 events=SELCHANGED connect=connectTreeViewEvent opts="LINES BUTTONS ATROOT SHOWSELALWAYS GROUP NOTAB DISABLED HIDDEN" defopts="LINES BUTTONS ATROOT SHOWSELALWAYS" props="nodes opts"
-kind type=TRACKBAR label="Track bar" prefix=trk create=createTrackBar access=newTrackBar args="" w=100 h=16 opts="HORIZONTAL VERTICAL AUTOTICKS NOTICKS BOTH TOP BOTTOM GROUP NOTAB DISABLED HIDDEN" defopts="HORIZONTAL AUTOTICKS" props="min max pos opts"
-kind type=DATETIME label="Date picker" prefix=dtp create=createDateTimePicker access=newDateTimePicker args="" w=80 h=12 events=DATETIMECHANGE connect=connectDateTimePickerEvent opts="SHORT LONG TIME SHOWNONE UPDOWN GROUP NOTAB DISABLED HIDDEN" defopts=SHORT props="opts"
+kind type=PUSHBUTTON label="Push button" prefix=btn create=createPushButton access=newPushButton args=text w=50 h=14 text=Button events=CLICKED connect=connectButtonEvent opts="DEFAULT GROUP NOTAB DISABLED HIDDEN" props="text role bind opts tip"
+kind type=STATIC label=Text prefix=lbl create=createStaticText access=newStatic args=text w=60 h=10 text=Text opts="LEFT RIGHT CENTER GROUP DISABLED HIDDEN" props="text bind opts tip"
+kind type=EDIT label="Entry field" prefix=txt create=createEdit access=newEdit args=attr w=80 h=12 events="CHANGE UPDATE" connect=connectEditEvent opts="READONLY RIGHT CENTER PASSWORD MULTILINE NUMBER UPPER GROUP NOTAB DISABLED HIDDEN" props="text bind opts tip"
+kind type=CHECKBOX label="Check box" prefix=chk create=createCheckBox access=newCheckBox args="text attr" w=60 h=10 text=Check events=CLICKED connect=connectButtonEvent opts="GROUP NOTAB DISABLED HIDDEN" props="text checked bind opts tip"
+kind type=RADIOBUTTON label="Radio button" prefix=opt create=createRadioButton access=newRadioButton args="text attr" w=60 h=10 text=Option events=CLICKED connect=connectButtonEvent opts="GROUP NOTAB DISABLED HIDDEN" props="text checked groupstart opts tip"
+kind type=GROUPBOX label="Group box" prefix=grp create=createGroupBox access=newGroupBox args=text w=100 h=50 text=Group opts="HIDDEN" props="text opts tip"
+kind type=LISTBOX label="List box" prefix=lst create=createListBox access=newListBox args=attr w=80 h=50 events="SELCHANGE DBLCLK" connect=connectListBoxEvent opts="SORT MULTI GROUP NOTAB DISABLED HIDDEN" props="items opts tip"
+kind type=COMBOBOX label="Combo box" prefix=cbo create=createComboBox access=newComboBox args=attr w=80 h=60 events=SELCHANGE connect=connectComboBoxEvent opts="LIST SIMPLE SORT GROUP NOTAB DISABLED HIDDEN" defopts=LIST props="items bind opts tip"
+kind type=PROGRESSBAR label="Progress bar" prefix=prg create=createProgressBar access=newProgressBar args="" w=100 h=10 opts="SMOOTH VERTICAL HIDDEN" props="min max pos opts tip"
+kind type=LISTVIEW label="List view" prefix=lv create=createListView access=newListView args="" w=120 h=60 events="SELECTCHANGED COLUMNCLICK CHECKBOXCHANGED" connect=connectListViewEvent opts="REPORT LIST ICON SMALLICON SINGLESEL SHOWSELALWAYS GROUP NOTAB DISABLED HIDDEN" defopts="REPORT SHOWSELALWAYS" exopts="FULLROWSELECT GRIDLINES CHECKBOXES" props="columns rows bind exstyles opts tip"
+kind type=TAB label="Tab strip" prefix=tab create=createTab access=newTab args="" w=120 h=14 events=SELCHANGE connect=connectTabEvent opts="BUTTONS MULTILINE GROUP NOTAB DISABLED HIDDEN" props="tabs opts tip"
+kind type=TREEVIEW label="Tree view" prefix=tv create=createTreeView access=newTreeView args="" w=100 h=60 events=SELCHANGED connect=connectTreeViewEvent opts="LINES BUTTONS ATROOT SHOWSELALWAYS GROUP NOTAB DISABLED HIDDEN" defopts="LINES BUTTONS ATROOT SHOWSELALWAYS" props="nodes opts tip"
+kind type=TRACKBAR label="Track bar" prefix=trk create=createTrackBar access=newTrackBar args="" w=100 h=16 events="DRAG ENDTRACK" connect=connectTrackBarEvent opts="HORIZONTAL VERTICAL AUTOTICKS NOTICKS BOTH TOP BOTTOM GROUP NOTAB DISABLED HIDDEN" defopts="HORIZONTAL AUTOTICKS" props="min max pos opts tip"
+kind type=DATETIME label="Date picker" prefix=dtp create=createDateTimePicker access=newDateTimePicker args="" w=80 h=12 events=DATETIMECHANGE connect=connectDateTimePickerEvent opts="SHORT LONG TIME SHOWNONE UPDOWN GROUP NOTAB DISABLED HIDDEN" defopts=SHORT props="opts tip"
+kind type=UPDOWN label="Up-down" prefix=ud create=createUpDown access=newUpDown args="" w=10 h=12 events=DELTAPOS connect=connectUpDownEvent opts="SETBUDDYINT ARROWKEYS WRAP NOTHOUSANDS AUTOBUDDY RIGHT LEFT DISABLED HIDDEN" defopts="SETBUDDYINT ARROWKEYS" props="min max pos buddy opts tip"
+kind type=MONTHCALENDAR label="Month calendar" prefix=cal create=createMonthCalendar access=newMonthCalendar args="" w=120 h=96 events="SELECT SELCHANGE" connect=connectMonthCalendarEvent opts="NOTODAY GROUP NOTAB DISABLED HIDDEN" props="opts tip"
 kind type=MENUITEM label="Menu item" prefix=mnu nonvisual=1 events=CLICKED props="popup text checked grayed"
 kind type=TIMER label="Timer thread" prefix=tmr nonvisual=1 events=TICK props="interval enabled"
 form events="INIT OK CANCEL SAVED"
@@ -2537,6 +2628,11 @@ evargs type=TAB event=SELCHANGE args="id, hwnd, tab"
 evargs type=MENUITEM event=CLICKED args="info"
 evargs type=TREEVIEW event=SELCHANGED args="id, old, oldData, new, newData, action, tree"
 evargs type=DATETIME event=DATETIMECHANGE args="dt, valid, id, hwnd, code, dtp"
+evargs type=TRACKBAR event=DRAG args="info, hwnd"
+evargs type=TRACKBAR event=ENDTRACK args="info, hwnd"
+evargs type=UPDOWN event=DELTAPOS args="pos, delta, id, hwnd, ud"
+evargs type=MONTHCALENDAR event=SELECT args="startDate, endDate, id, hwnd"
+evargs type=MONTHCALENDAR event=SELCHANGE args="startDate, endDate, id, hwnd"
 action types=* label="Set its text" code="self~%n~setText(""text"")"
 action types=* label="Get its text" code="text = self~%n~getText"
 action types=* label="Disable it" code="self~%n~disable"
@@ -2566,6 +2662,13 @@ action types=TREEVIEW label="Add a child to the last node" code="node = self~%n~
 action types=TREEVIEW label="Remove all nodes" code="self~%n~deleteAll"
 action types=TRACKBAR label="Its position" code="pos = self~%n~pos"
 action types=TRACKBAR label="Set its position" code="self~%n~pos = 50"
+action types=TRACKBAR label="The position, in DRAG or ENDTRACK" code="pos = .DlgUtil~hiWord(info)"
+action types=UPDOWN label="Its position" code="pos = self~%n~getPosition"
+action types=UPDOWN label="Set its position" code="self~%n~setPosition(1)"
+action types=UPDOWN label="Set its range" code="self~%n~setRange(0, 100)"
+action types=MONTHCALENDAR label="The selected date" code="day = self~%n~date"
+action types=MONTHCALENDAR label="Select today" code="self~%n~date = .DateTime~today"
+action types=MONTHCALENDAR label="Limit the dates" code="self~%n~setRange(.array~of(.DateTime~fromStandardDate(""20260101""), .DateTime~fromStandardDate(""20261231"")))"
 action types=DATETIME label="Its date and time" code="dt = self~%n~getDateTime"
 action types=DATETIME label="Set it to now" code="self~%n~setDateTime(.DateTime~new)"
 action types=MENUITEM label="Check it" code="self~menuBar~check(self~%n)"

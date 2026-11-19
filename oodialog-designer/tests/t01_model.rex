@@ -82,7 +82,7 @@ call check "actions name the control", acts~pos("self~lcd~setText(") > 0
 call check "list actions for a list only", acts~pos("~add(") == 0
 
 -- 8. versions
-call check "module_version", .OodDesign~module_version == "0.15.0" & d~module_version == "0.15.0"
+call check "module_version", .OodDesign~module_version == "0.16.0" & d~module_version == "0.16.0"
 
 -- CATCH and FINALLY: found in the code, guarded in the program, refused on an older ooRexx
 k = .calcDesign~build
@@ -153,6 +153,43 @@ call check "shared entry made in init", ssrc~pos('self~sharedScope["logging"] = 
 call check "shared scope round trip", .OodDesign~fromSource(ssrc)~generate == ssrc
 call refuses "sharedScope as a control name", "d~setProp('lcd', 'name', 'sharedScope')"
 call refuses "a shared entry with no value", "g~setShared('x', '')"
+
+-- 12. v0.16 (ooDialog/WASM v0.21): up-down with its buddy, month calendar,
+-- tool tips, track bar DRAG and ENDTRACK
+g = .gadgetsDesign~build
+e = g~addControl("EDIT", 10, 150)
+u = g~addControl("UPDOWN", 92, 150)
+call check "an up-down dropped after an entry field takes it as buddy", g~getProp(u, "buddy") == e
+call check "  and SETBUDDYINT ARROWKEYS, not AUTOBUDDY", g~getProp(u, "opts") == "SETBUDDYINT ARROWKEYS"
+g~setProp(u, "min", 1); g~setProp(u, "max", 9); g~setProp(u, "pos", 3)
+g~setEventCode(u, "DELTAPOS", "say pos delta")
+cal = g~addControl("MONTHCALENDAR", 110, 120)
+g~setEventCode(cal, "SELECT", "say startDate~standardDate")
+g~setEventCode("trkLevel", "DRAG", "say .DlgUtil~hiWord(info)")
+g~setProp(e, "tip", "How many, 1 to 9")
+g~setProp("trkLevel", "tip", 'Drag me, or use the "arrow" keys')
+usrc = g~generate
+call check "up-down made with createUpDown", usrc~pos("self~createUpDown(") > 0 & usrc~pos('"SETBUDDYINT ARROWKEYS")') > 0
+call check "  its buddy set in initDialog", usrc~pos("self~"u"~setBuddy(self~"e")") > 0
+call check "  its range and position", usrc~pos("self~"u"~setRange(1, 9)") > 0 & usrc~pos("self~"u"~setPosition(3)") > 0
+call check "  its buddy's data starts at its position (execute sets it after initDialog)", usrc~pos("self~"e"_data = 3") > 0
+call check "  DELTAPOS connected, with its arguments", usrc~pos('self~connectUpDownEvent(') > 0 & usrc~pos('"DELTAPOS", "on_'u'_deltapos")') > 0 & g~eventArgs(u, "DELTAPOS") == "pos, delta, id, hwnd, ud"
+call check "month calendar made and SELECT connected", usrc~pos("self~createMonthCalendar(") > 0 & usrc~pos('"SELECT", "on_'cal'_select")') > 0 & g~eventArgs(cal, "SELECT") == "startDate, endDate, id, hwnd"
+call check "track bar DRAG connected", usrc~pos('self~connectTrackBarEvent(') > 0 & usrc~pos('"DRAG", "on_trkLevel_drag")') > 0 & g~eventArgs("trkLevel", "DRAG") == "info, hwnd"
+call check "one ToolTip, its id after the controls'", usrc~pos("tips = self~createToolTip(") > 0 & usrc~countStr("createToolTip(") = 1
+call check "  a tool per tip, quotes doubled", usrc~pos('tips~addTool(self~'e', "How many, 1 to 9")') > 0 & usrc~pos('tips~addTool(self~trkLevel, "Drag me, or use the ""arrow"" keys")') > 0
+call check "new kinds round trip", .OodDesign~fromSource(usrc)~generate == usrc
+call refuses "a buddy that is not on the form", "g~setProp('"u"', 'buddy', 'nobody')"
+call refuses "an up-down as its own buddy", "g~setProp('"u"', 'buddy', '"u"')"
+call refuses "a tip of two lines", "g~setProp('trkLevel', 'tip', 'one' || '0a'x || 'two')"
+g~setProp(e, "name", "txtHowMany")
+call check "renaming the buddy follows it", g~getProp(u, "buddy") == "txtHowMany"
+g~removeControl("txtHowMany")
+call check "a buddy removed is a problem", g~problems~pos(u": its buddy txtHowMany is not on the form any more") > 0
+g~setLanguages("en de")
+nsrc = g~generate
+call check "with languages, a tip is a text of the table", nsrc~pos('tips~addTool(self~trkLevel, self~nls("trkLevel.tip"))') > 0 & g~nlsKeys~hasItem("trkLevel.tip")
+call check "  a control with no tip has no key", \g~nlsKeys~hasItem(cal".tip")
 
 say "t01_model:" checks - fails "of" checks "checks passed"
 if fails > 0 then return 1

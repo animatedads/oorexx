@@ -1,7 +1,8 @@
-# ooDialog Designer — v0.15.0
+# ooDialog Designer — v0.16.0
 
 Architecture: Tom Dyer. Code: Claude (Opus 5.5). README written by Claude (Opus 5.5).
-It runs on ooDialog/WASM v0.7.0 (code: Claude (Fable 5.2)) and on Josep Maria
+It runs on ooDialog/WASM v0.21.0 (code: Claude (Fable 5.2); v0.7.0 up to
+designer v0.15) and on Josep Maria
 Blasco's ooRexx/WASM 0.2.4 runtime. The graph view parses event code with Josep
 Maria Blasco's Rexx Parser (beta 0.7, refresh 20261115, with CATCH and
 FINALLY; Apache License 2.0), shipped unchanged in
@@ -75,10 +76,9 @@ two such keys becomes a junction. A drag from a column that is not a key
 does nothing. A table is selected by clicking its title, since its column
 rows are link targets.
 
-The current `oodialog-wasm` branch is at v0.13.1; the Designer's earlier
-v0.8 qualification was against v0.7.0. This new lab is independent of the
-ooDialog native-function port, but cross-branch browser regression remains a
-separate qualification requirement.
+Designer v0.16 is qualified against ooDialog/WASM v0.21.0 (branch
+`oodialog-wasm`, be78d99); every browser scenario, the Database Lab's
+included, ran on it.
 
 ## What it writes
 
@@ -157,6 +157,28 @@ one `kind` line; a new code-insertion action is one `action` line.
   the control takes), role OK/Cancel, list items (`a|b|c`), the page a
   control is on, and so on. Clicking a tab of a tab strip on the form shows
   that page while you design.
+- **New in v0.16 (ooDialog/WASM v0.21):**
+  - **Up-down:** dropped right after an entry field, it takes that field as
+    its *buddy*. The program calls `setBuddy` in initDialog instead of using
+    AUTOBUDDY: Windows moves an AUTOBUDDY up-down to its buddy's edge and
+    the page does not, so `setBuddy` keeps it where it was drawn on both.
+    With SETBUDDYINT, the buddy's data starts at the up-down's position
+    (`execute` sets the field from its data after initDialog, so a
+    `setPosition` there alone would be wiped). DELTAPOS:
+    `pos, delta, id, hwnd, ud`. Renaming the buddy follows it; removing it
+    is a problem in the list, not a failure.
+  - **Month calendar:** SELECT and SELCHANGE (`startDate, endDate, id,
+    hwnd`), drawn as the running one shows it (six weeks, Sunday first).
+    Style NOTODAY only: one month, one selected day, as on the page.
+  - **Tool tips:** a *tool tip* property on every visual control. The
+    program makes one ToolTip (its id after the controls') and a tool per
+    control with a tip; with languages, each tip is a text of the table
+    (`<control>.tip`). A touch screen has no hover: a tip must not be the
+    only place a thing is said.
+  - **Track bar events:** DRAG and ENDTRACK (`info, hwnd`; the position is
+    `.DlgUtil~hiWord(info)`, an action inserts it).
+  - The page fits the window: the palette, the stage and the properties
+    scroll in their own columns, and the code pane is always in view.
 - **Variables:** the dialog's attributes; each first value is a Rexx expression.
 - **Events view (VisPro's):** objects and their events on the left (● has
   code, ⇉ background); the code pane on the right. Drag a control's name onto
@@ -416,15 +438,27 @@ a built `site/plugins`, or skips them and says so. t07–t09 start their own
 stand-in servers with node; under native ooRexx (no ADDRESS FETCH) their
 network checks say SKIP, and t08's git-command checks still run.
 
-## State (2026-11-17, v0.15.0)
+## State (2026-11-19, v0.16.0)
 
-- `tests/t01_model.rex`: 78 of 78 checks pass under ooRexx/WASM in Node. They
+On ooDialog/WASM v0.21.0 (be78d99). `tools/pkgcheck.rex PACKAGE_DIR` is run
+before a submission: the folder, integration.json's version and publish
+path, `module_version` and this title must agree (v0.15 passed its tests at
+Autobuild but was not published: its publish path still named v0.14).
+
+
+- `tests/t01_model.rex`: 97 of 97 checks pass under ooRexx/WASM in Node. They
   cover generation, a byte-identical round trip through the `::RESOURCE`,
   background and timer threads, renames that rewrite `self~old` (and move a
   tab's pages), fifteen refusals, the tab page handler, list-view columns and
   rows, the menu bar, tree depth and expansion, track bar and date picker,
   actions, `module_version`, and (v0.13) CATCH and FINALLY found, the
-  program's guard, and the refusals.
+  program's guard, and the refusals; (v0.16) the up-down: buddy taken on
+  drop, its opts, `setBuddy`, range and position, the buddy's first data,
+  DELTAPOS; the month calendar's SELECT; the track bar's DRAG; one ToolTip
+  and its tools (quotes doubled); a round trip; a missing buddy, the
+  up-down as its own buddy and a two-line tip refused; a renamed buddy
+  followed, a removed one a problem; a tip as a language key, and none for
+  a control with no tip.
 - `tests/t02_graph.rex`: 50 of 50 checks pass. They cover block kinds,
   nesting and labels; insert, delete, move (within and between slots),
   replace and wrap; the refusals (into a THEN's single instruction, a block
@@ -505,7 +539,12 @@ network checks say SKIP, and t08's git-command checks still run.
     button naming no bound list, no SINGLESEL, Add without row fields);
   - an unbound design written as before;
   - German.
-- `tools/dztest.py`: 20 of 20 scenarios pass in headless Chromium:
+- `tools/dztest.py`: 21 of 21 scenarios pass in headless Chromium, on
+  ooDialog/WASM v0.21.0 (21. **newkinds**, v0.16: an up-down dropped after
+  an entry field takes it as buddy; a month calendar drawn; a tip set; the
+  code mark of the narrow up-down beside it; in the run, the buddy starts
+  at 3, the up arrow makes it 4 and DELTAPOS reports it, a day picked runs
+  SELECT with that date, and the tip shows on hover):
   1. **hand:** a dialog built with the mouse (drop, rename, styles,
      variable, drag-an-action, move and resize), then run. The event code sees
      the variable and the field, and INIT's text survives `execute`.
@@ -646,8 +685,13 @@ network checks say SKIP, and t08's git-command checks still run.
   The designer's own methods have no Document… yet (its program is written
   by the designer; a comment there would need a place in the program
   format).
-- Controls: up-down (it must follow its buddy), month calendar and images.
-- Track bar events: ooDialog/WASM has none yet.
+- Controls: images, and the rest of what ooDialog/WASM v0.21 ports (status
+  bar, scroll bar, ResizingAdmin's pinned edges for a resizable form,
+  drawing with connectDraw, the file dialogs as actions).
+- Up-down: no ALIGN placement (by design: see above); HORIZONTAL is not
+  offered (the page draws it vertical).
+- Month calendar: one month, one day; no day states (bold days) yet.
+- Tool tips: one fixed text per control; no NEEDTEXT, no balloon.
 - Tab pages as ControlDialogs. A page here is a set of controls shown and
   hidden; the tab strip is a strip, with its controls placed beside it, not
   over it (Windows draws controls over a tab control in z-order).
