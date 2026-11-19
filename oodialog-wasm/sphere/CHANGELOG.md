@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9
+- State article brought to port v0.23.0: 1,033 of 1,182 natives.
+- Renderer contract: the REBAR kind and its rb.* ops; a dialog is kept within reach.
+- Written by Claude (Fable 5.2).
+
 ## 0.8
 - State article brought to port v0.22.0: 955 of 1,182 natives.
 - Renderer contract: the TOOLBAR kind and its tb.* ops; custom draw (cd.on, the CD event, cd.paint); lv.insRow U; tv.kids, tv.order; late drawing of long lists.

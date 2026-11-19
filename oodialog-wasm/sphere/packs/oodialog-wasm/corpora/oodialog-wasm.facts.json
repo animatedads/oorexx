@@ -1,7 +1,7 @@
 {
   "kind": "corpus",
   "id": "oodialog-wasm.facts",
-  "version": "0.8",
+  "version": "0.9",
   "sphere": "oodialog-wasm",
   "title": "ooDialog/WASM: every statement of the articles, one a record, for search",
   "records": [
@@ -301,6 +301,18 @@
       "article": "ref.oodialog-wasm.renderer-contract",
       "field": "op_families",
       "rule": "Also v0.22.0: lv.insRow with a fourth argument U answers index and uid; tv.kids(item) and tv.order(item, items); a list of more than 100 rows may be drawn late (when changes pause), but an op that reads the drawing must draw first."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "op_families",
+      "rule": "New in v0.23.0. Control kind REBAR: bands docked at the top of the dialog. A band is {id, text, style, child, cx, fg, bg}: child is the id of another control of the same dialog, whose element the renderer shows inside the band; cx is the width in pixels, 0 means share what is left of the row; a band whose style has BREAK starts a new row; HIDDEN hides it; HIDETITLE hides its text; NOGRIPPER leaves out the grip. Ops, indexes from 0: rb.insert(index or -1, JSON band), rb.set(index, JSON with the fields to change), rb.get(index) (JSON with the fields in the order id, text, style, child, cx, fg, bg), rb.del(index) (the child goes back to the dialog, hidden), rb.count, rb.indexOf(id), rb.move(from, to), rb.show(index, 1|0), rb.rect(index), rb.height, rb.rows, rb.hit(x, y) answers index and GRABBER, CAPTION or CLIENT, or -1 NOWHERE, rb.colors(background, text)."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "op_families",
+      "rule": "Also v0.23.0: a renderer keeps every dialog within reach. Larger than the window: scale it down and centre it. Partly outside the window: move it in. Do both at the first show and when the window changes size."
     },
     {
       "topic": "renderer-contract",
@@ -721,25 +733,25 @@
     {
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
-      "rule": "State at v0.22.0 and where the current state is recorded. This article is a snapshot. The current figures are always in README.md of the project, with the version they were measured on; sweep.tsv and poke.tsv hold the per-example results."
+      "rule": "State at v0.23.0 and where the current state is recorded. This article is a snapshot. The current figures are always in README.md of the project, with the version they were measured on; sweep.tsv and poke.tsv hold the per-example results."
     },
     {
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
       "field": "snapshot",
-      "rule": "Version 0.22.0, 19 November 2026."
+      "rule": "Version 0.23.0, 19 November 2026."
     },
     {
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
       "field": "snapshot",
-      "rule": "Natives ported: 955 of 1,182 (74 added in v0.22.0: tool bar and custom draw; 192 added in v0.21.0; 26 of those accept their call and do nothing, 18 system metrics are fixed values). 12 of the 43 added in v0.18.0 accept their call and do nothing."
+      "rule": "Natives ported: 1,033 of 1,182 (78 added in v0.23.0: the re-bar; 74 added in v0.22.0: tool bar and custom draw; 192 added in v0.21.0; 26 of those accept their call and do nothing, 18 system metrics are fixed values). 12 of the 43 added in v0.18.0 accept their call and do nothing."
     },
     {
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
       "field": "snapshot",
-      "rule": "Tests: 55 of 55 pass in headless Chromium. 35 of them are upstream examples or the designer's programs, run unchanged."
+      "rule": "Tests: 57 of 57 pass in headless Chromium. 35 of them are upstream examples or the designer's programs, run unchanged."
     },
     {
       "topic": "state",
@@ -812,6 +824,12 @@
       "article": "ref.oodialog-wasm.state",
       "field": "done",
       "rule": "Since v0.22.0: the ToolBar control and TbButton (text buttons; images are kept, not drawn); custom draw of a list-view and a tree-view (customDrawControl, LvCustomDrawSimple, TvCustomDrawSimple); the tree-view's sortChildrenCB; the tree-view's itemInfo answers a stem as upstream."
+    },
+    {
+      "topic": "state",
+      "article": "ref.oodialog-wasm.state",
+      "field": "done",
+      "rule": "Since v0.23.0: the ReBar control and ReBarBandInfo (bands that hold other controls; the user cannot drag a band); a dialog whose place puts part of it outside the window is moved in, also when the window changes size."
     },
     {
       "topic": "state",

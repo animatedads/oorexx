@@ -1,9 +1,9 @@
 {
   "kind": "article",
   "id": "ref.oodialog-wasm.state",
-  "version": "0.8",
+  "version": "0.9",
   "sphere": "oodialog-wasm",
-  "title": "State at v0.22.0 and where the current state is recorded",
+  "title": "State at v0.23.0 and where the current state is recorded",
   "summary": "This article is a snapshot. The current figures are always in README.md of the project, with the version they were measured on; sweep.tsv and poke.tsv hold the per-example results.",
   "authority": "implementation-record",
   "section": "reference",
@@ -13,9 +13,9 @@
     "not-done"
   ],
   "snapshot": [
-    "Version 0.22.0, 19 November 2026.",
-    "Natives ported: 955 of 1,182 (74 added in v0.22.0: tool bar and custom draw; 192 added in v0.21.0; 26 of those accept their call and do nothing, 18 system metrics are fixed values). 12 of the 43 added in v0.18.0 accept their call and do nothing.",
-    "Tests: 55 of 55 pass in headless Chromium. 35 of them are upstream examples or the designer's programs, run unchanged.",
+    "Version 0.23.0, 19 November 2026.",
+    "Natives ported: 1,033 of 1,182 (78 added in v0.23.0: the re-bar; 74 added in v0.22.0: tool bar and custom draw; 192 added in v0.21.0; 26 of those accept their call and do nothing, 18 system metrics are fixed values). 12 of the 43 added in v0.18.0 accept their call and do nothing.",
+    "Tests: 57 of 57 pass in headless Chromium. 35 of them are upstream examples or the designer's programs, run unchanged.",
     "Sweep of the 140 upstream examples: 81 show their dialog, 7 run to the end, 8 show only a message box, 3 stop at a native not ported, 10 stop on an error (8 of them wait for a reader of binary resources), 24 are components, 7 are outside ooDialog.",
     "Probe at v0.19.0, 88 examples: 73 clean, 11 connect an event that is not produced, 4 with a problem, none of them in the port's own code. This run found four faults of the port in examples the sweep called shows; all four are fixed in v0.19.0.",
     "\"shows\" in the sweep means a dialog appeared. It does not mean every feature of the example works. Only an example that is a test (with steps and assertions) is known to work."
@@ -30,6 +30,7 @@
     "Printing since v0.20.0: oodPrint.cls makes a PDF with the estate's oorexx_pdf and the page hands it to the user (Print, Open, Save). A list-view as a table, a text, a report of the program, any file. Not checked in a real browser.",
     "Since v0.21.0: LvItem, LvSubItem, LvFullRow and the list-view methods on them, with sortItems; the StatusBar control; windows by handle (getWindowText, setWindowText, showWindow, sendMessageToControl, sendMessageToWindow); a control's connectKeyPress; the dialog's backgroundColor; item data of a combo box; the old addXxx names of the create methods; SM, SPI, OS, DlgUtil's arithmetic.",
     "Since v0.22.0: the ToolBar control and TbButton (text buttons; images are kept, not drawn); custom draw of a list-view and a tree-view (customDrawControl, LvCustomDrawSimple, TvCustomDrawSimple); the tree-view's sortChildrenCB; the tree-view's itemInfo answers a stem as upstream.",
+    "Since v0.23.0: the ReBar control and ReBarBandInfo (bands that hold other controls; the user cannot drag a band); a dialog whose place puts part of it outside the window is moved in, also when the window changes size.",
     "File dialogs and shell dialogs over the WASM machine's file system."
   ],
   "not_done": [
@@ -49,22 +50,22 @@
   ],
   "provenance": [
     {
-      "artifact": "oodialog-wasm-0727c19.zip",
-      "sha256": "3f63b1cb4df8c837f2920091c449a70754c57a3f17a44bcd8cd8784699c60747",
+      "artifact": "oodialog-wasm-2619180.zip",
+      "sha256": "f20691afe5a99e4d86183e4936ba063adc71dc522ed7ea06e6d600e21b4fccfe",
       "member": "oodialog-wasm/README.md",
-      "line_start": 293,
-      "line_end": 312,
+      "line_start": 322,
+      "line_end": 341,
       "claim": "What printing is here and what it needs.",
-      "note": "git archive of animatedads/oorexx commit 0727c19 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 2619180 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-0727c19.zip",
-      "sha256": "3f63b1cb4df8c837f2920091c449a70754c57a3f17a44bcd8cd8784699c60747",
+      "artifact": "oodialog-wasm-2619180.zip",
+      "sha256": "f20691afe5a99e4d86183e4936ba063adc71dc522ed7ea06e6d600e21b4fccfe",
       "member": "oodialog-wasm/README.md",
       "line_start": 58,
       "line_end": 107,
       "claim": "The state section with counts.",
-      "note": "git archive of animatedads/oorexx commit 0727c19 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 2619180 (branch oodialog-wasm)"
     }
   ]
 }

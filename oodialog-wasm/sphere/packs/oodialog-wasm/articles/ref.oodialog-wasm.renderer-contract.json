@@ -1,7 +1,7 @@
 {
   "kind": "article",
   "id": "ref.oodialog-wasm.renderer-contract",
-  "version": "0.8",
+  "version": "0.9",
   "sphere": "oodialog-wasm",
   "title": "The renderer contract: what the native layer asks of the page, and what the page sends back",
   "summary": "oodWeb.cls talks to a renderer through one object, window.__ood in the browser. Any renderer (the browser page, the Qt6 renderer) that answers the same calls and sends the same events can run the same ooDialog programs. The reference implementation is src/oodialog-web.js. This article names the calls and the rules; the source is the authority for each argument.",
@@ -36,6 +36,8 @@
     "New in v0.22.0. Control kind TOOLBAR: a row of buttons docked at the top of the dialog; ops tb.insert(index or -1, cmd SEP text SEP style SEP state SEP image), tb.count, tb.indexOf(cmd), tb.get(index), tb.byCmd(cmd) (both answer cmd, text, style, state, image joined by the separator), tb.setText(cmd, text), tb.setImage(cmd, image), tb.setState(cmd, WORD, 1|0), tb.has(cmd, WORD); indexes from 0; a click on a button whose state has ENABLED sends the event CMD with the button's cmd and code 0; a CHECK button toggles CHECKED first; a CHECKGROUP button becomes the only CHECKED one of its run of CHECKGROUP buttons.",
     "Custom draw, v0.22.0. op cd.on on a list-view or tree-view: from then on, after each drawing of the control, after a scroll, and after a row's check box changes, send the event kind CD with code ROWS and extra = what is in view: for a list-view the first and last row index, for a tree-view the items in view as item:level joined by spaces. Send no second CD for a control until the answer to the first has come. The answer is op cd.paint with JSON: list-view rows of [uid, [[column or -1 for the whole row, text colour, background, font], ...]]; tree-view rows of [item, text colour, background, font]; an empty string in a place means as drawn; the answer may be []. Keep a row's paint until the next answer for that row. Reference: cdAsk, cdOp, cdPaintLv, cdPaintTv in src/oodialog-web.js.",
     "Also v0.22.0: lv.insRow with a fourth argument U answers index and uid; tv.kids(item) and tv.order(item, items); a list of more than 100 rows may be drawn late (when changes pause), but an op that reads the drawing must draw first.",
+    "New in v0.23.0. Control kind REBAR: bands docked at the top of the dialog. A band is {id, text, style, child, cx, fg, bg}: child is the id of another control of the same dialog, whose element the renderer shows inside the band; cx is the width in pixels, 0 means share what is left of the row; a band whose style has BREAK starts a new row; HIDDEN hides it; HIDETITLE hides its text; NOGRIPPER leaves out the grip. Ops, indexes from 0: rb.insert(index or -1, JSON band), rb.set(index, JSON with the fields to change), rb.get(index) (JSON with the fields in the order id, text, style, child, cx, fg, bg), rb.del(index) (the child goes back to the dialog, hidden), rb.count, rb.indexOf(id), rb.move(from, to), rb.show(index, 1|0), rb.rect(index), rb.height, rb.rows, rb.hit(x, y) answers index and GRABBER, CAPTION or CLIENT, or -1 NOWHERE, rb.colors(background, text).",
+    "Also v0.23.0: a renderer keeps every dialog within reach. Larger than the window: scale it down and centre it. Partly outside the window: move it in. Do both at the first show and when the window changes size.",
     "mouseSub and mouse: the Mouse class. mouse verbs: capture release getCapture state cursor.",
     "tip.*: tool tips, since v0.18.0. The id is the tool tip's ID, not a control's: route tip.* before looking the id up as a control. tip.add takes one JSON text {key, host, rect, text}: host is a control's id or 0 for the dialog; rect is null (the whole window) or [l, t, r, b] in that window's client area; text null means the text is asked from the program. Others: tip.del(key), tip.text(key, text; one separator character means asked), tip.relay(hostId, 1|0), tip.count, tip.delay(ms), tip.maxWidth(px), tip.title(text), tip.active(1|0), tip.events(words), tip.show(text), tip.pos(x, y in screen pixels), tip.pop, tip.shown (toolKey, separator, text; empty if no tip), tip.tree(treeViewId).",
     "The renderer decides when a tip is due: the pointer rests on a tool for the delay. Fixed text: show the box, then send TT SHOW if tip.events names SHOW. Asked text: send TT NEEDTEXT; the program answers with tip.show. An empty text shows nothing. tip.pop ends the tip; if the pointer is still on the tool, the tip is due again after the delay. A tree-view named by tip.tree asks the text of the item under the pointer with NOTIFY GETINFOTIP (extra: the item); the answer is tip.show on tool tip ID 60000 + the tree-view's id.",
@@ -59,76 +61,76 @@
   ],
   "provenance": [
     {
-      "artifact": "oodialog-wasm-0727c19.zip",
-      "sha256": "3f63b1cb4df8c837f2920091c449a70754c57a3f17a44bcd8cd8784699c60747",
+      "artifact": "oodialog-wasm-2619180.zip",
+      "sha256": "f20691afe5a99e4d86183e4936ba063adc71dc522ed7ea06e6d600e21b4fccfe",
       "member": "oodialog-wasm/src/oodialog-web.js",
-      "line_start": 1445,
-      "line_end": 1450,
+      "line_start": 1468,
+      "line_end": 1473,
       "claim": "op(key, id, name, a, b, c) is the entry for everything that is not a Win32 message.",
-      "note": "git archive of animatedads/oorexx commit 0727c19 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 2619180 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-0727c19.zip",
-      "sha256": "3f63b1cb4df8c837f2920091c449a70754c57a3f17a44bcd8cd8784699c60747",
+      "artifact": "oodialog-wasm-2619180.zip",
+      "sha256": "f20691afe5a99e4d86183e4936ba063adc71dc522ed7ea06e6d600e21b4fccfe",
       "member": "oodialog-wasm/src/oodialog-web.js",
-      "line_start": 968,
-      "line_end": 973,
+      "line_start": 991,
+      "line_end": 996,
       "claim": "msg(key, id, msg, w, l) is the entry for Win32 control messages.",
-      "note": "git archive of animatedads/oorexx commit 0727c19 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 2619180 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-0727c19.zip",
-      "sha256": "3f63b1cb4df8c837f2920091c449a70754c57a3f17a44bcd8cd8784699c60747",
+      "artifact": "oodialog-wasm-2619180.zip",
+      "sha256": "f20691afe5a99e4d86183e4936ba063adc71dc522ed7ea06e6d600e21b4fccfe",
       "member": "oodialog-wasm/src/oodialog-web.js",
-      "line_start": 564,
-      "line_end": 564,
+      "line_start": 587,
+      "line_end": 587,
       "claim": "The separator character is hex 1F.",
-      "note": "git archive of animatedads/oorexx commit 0727c19 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 2619180 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-0727c19.zip",
-      "sha256": "3f63b1cb4df8c837f2920091c449a70754c57a3f17a44bcd8cd8784699c60747",
+      "artifact": "oodialog-wasm-2619180.zip",
+      "sha256": "f20691afe5a99e4d86183e4936ba063adc71dc522ed7ea06e6d600e21b4fccfe",
       "member": "oodialog-wasm/src/oodialog-web.js",
-      "line_start": 1145,
-      "line_end": 1149,
+      "line_start": 1168,
+      "line_end": 1172,
       "claim": "The gdi verbs and the style fields.",
-      "note": "git archive of animatedads/oorexx commit 0727c19 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 2619180 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-0727c19.zip",
-      "sha256": "3f63b1cb4df8c837f2920091c449a70754c57a3f17a44bcd8cd8784699c60747",
+      "artifact": "oodialog-wasm-2619180.zip",
+      "sha256": "f20691afe5a99e4d86183e4936ba063adc71dc522ed7ea06e6d600e21b4fccfe",
       "member": "oodialog-wasm/src/oodialog-web.js",
-      "line_start": 238,
-      "line_end": 262,
+      "line_start": 244,
+      "line_end": 268,
       "claim": "The ResizingAdmin arithmetic.",
-      "note": "git archive of animatedads/oorexx commit 0727c19 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 2619180 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-0727c19.zip",
-      "sha256": "3f63b1cb4df8c837f2920091c449a70754c57a3f17a44bcd8cd8784699c60747",
+      "artifact": "oodialog-wasm-2619180.zip",
+      "sha256": "f20691afe5a99e4d86183e4936ba063adc71dc522ed7ea06e6d600e21b4fccfe",
       "member": "oodialog-wasm/src/oodialog-web.js",
-      "line_start": 1263,
-      "line_end": 1276,
+      "line_start": 1286,
+      "line_end": 1299,
       "claim": "The tool tip operations and events.",
-      "note": "git archive of animatedads/oorexx commit 0727c19 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 2619180 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-0727c19.zip",
-      "sha256": "3f63b1cb4df8c837f2920091c449a70754c57a3f17a44bcd8cd8784699c60747",
+      "artifact": "oodialog-wasm-2619180.zip",
+      "sha256": "f20691afe5a99e4d86183e4936ba063adc71dc522ed7ea06e6d600e21b4fccfe",
       "member": "oodialog-wasm/src/oodialog-web.js",
-      "line_start": 1822,
-      "line_end": 1829,
+      "line_start": 1901,
+      "line_end": 1908,
       "claim": "deliver: what the page does with a file.",
-      "note": "git archive of animatedads/oorexx commit 0727c19 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 2619180 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-0727c19.zip",
-      "sha256": "3f63b1cb4df8c837f2920091c449a70754c57a3f17a44bcd8cd8784699c60747",
+      "artifact": "oodialog-wasm-2619180.zip",
+      "sha256": "f20691afe5a99e4d86183e4936ba063adc71dc522ed7ea06e6d600e21b4fccfe",
       "member": "oodialog-wasm/src/oodialog-web.js",
-      "line_start": 265,
-      "line_end": 276,
+      "line_start": 271,
+      "line_end": 282,
       "claim": "The pages of a paged tab take its display area after each layout.",
-      "note": "git archive of animatedads/oorexx commit 0727c19 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 2619180 (branch oodialog-wasm)"
     }
   ]
 }

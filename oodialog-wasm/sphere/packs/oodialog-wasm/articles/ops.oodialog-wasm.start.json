@@ -1,7 +1,7 @@
 {
   "kind": "article",
   "id": "ops.oodialog-wasm.start",
-  "version": "0.8",
+  "version": "0.9",
   "sphere": "oodialog-wasm",
   "title": "Start here: what ooDialog/WASM is and where it lives",
   "summary": "ooDialog/WASM runs unchanged ooDialog programs in a web browser on Josep Maria Blasco's ooRexx/WASM runtime. Upstream's Rexx classes are kept. Only the Windows DLL is replaced: by a native layer in Rexx (oodWeb.cls) and a page runtime in JavaScript (oodialog-web.js). The code is in animatedads/oorexx, branch oodialog-wasm, directory oodialog-wasm/. The README.md there is the current state; this sphere explains how the parts fit and what other tasks may rely on.",
@@ -38,13 +38,13 @@
   ],
   "provenance": [
     {
-      "artifact": "oodialog-wasm-0727c19.zip",
-      "sha256": "3f63b1cb4df8c837f2920091c449a70754c57a3f17a44bcd8cd8784699c60747",
+      "artifact": "oodialog-wasm-2619180.zip",
+      "sha256": "f20691afe5a99e4d86183e4936ba063adc71dc522ed7ea06e6d600e21b4fccfe",
       "member": "oodialog-wasm/README.md",
       "line_start": 7,
       "line_end": 30,
       "claim": "The parts of the port and their roles.",
-      "note": "git archive of animatedads/oorexx commit 0727c19 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 2619180 (branch oodialog-wasm)"
     }
   ]
 }
