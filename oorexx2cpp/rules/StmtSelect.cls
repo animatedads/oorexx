@@ -10,6 +10,7 @@
 ::method emit
   use arg ctx, depth
   s = ctx~stream
+  catchState = .RxCatchClauses~open(ctx, depth)   /* CATCH clauses (RFE #31): .nil when the block has none */
   s~expect('SELECT')
   /* SELECT [LABEL name]: LEAVE name leaves the SELECT (a labeled block, not a loop) */
   label = ''
@@ -59,9 +60,9 @@
     s~skipSeparators
     /* OTHERWISE permits a sequence of instructions and standalone DO
        blocks mixed together. A DO's END closes only its block. */
-    do while s~peek~kind \= 'EOF' & \s~atEnd
+    do while s~peek~kind \= 'EOF' & \s~atEnd & \(catchState \== .nil & s~atCatch)
       if s~is('WHEN') | s~is('OTHERWISE') then s~fail('WHEN or OTHERWISE after OTHERWISE')
-      if s~is('DO') & s~lookAheadText(1) == '<sep>' then do
+      if s~is('DO') & s~lookAheadText(1) == '<sep>' & s~catchClausesAhead~items = 0 then do
         s~expect('DO')
         s~separator
         ctx~block(depth + 1, .true)
@@ -76,6 +77,14 @@
     ctx~line(depth + 1, 'throw rx::SyntaxCondition("7.3", "All WHEN expressions of SELECT are false; OTHERWISE expected", false);')
     ctx~line(depth, '}')
   end
+  if catchState \== .nil then do
+    if caseVar \== '' then ctx~line(depth, '}')
+    ctx~popLoop
+    ctx~line(depth, exitLabel || ':;')
+    ctx~line(depth, '}')
+    .RxCatchClauses~close(ctx, depth, catchState, label, .false)
+    return
+  end
   s~expect('END')
   if s~peek~kind == 'IDENT' then do
     suffix = s~next~text
@@ -89,10 +98,11 @@
 ::method whenBody private
   use arg ctx, depth
   s = ctx~stream
-  if s~is('DO') & s~lookAheadText(1) == '<sep>' then do
+  if s~is('DO') & s~lookAheadText(1) == '<sep>' & s~catchClausesAhead~items = 0 then do
     s~expect('DO')
     s~separator
     ctx~block(depth, .true)
   end
   else ctx~statement(depth)
 ::requires 'rules/ConditionList.cls'
+::requires 'rules/CatchClauses.cls'

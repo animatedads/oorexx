@@ -9,6 +9,10 @@
 /* END closing a block: END = 1 is an assignment to a variable named END. */
 ::method atEnd
   return self~is('END') & \(self~lookAheadText(1) == '=' & self~lookAheadKind(1) == 'OP')
+/* A CATCH clause (RFE #31): the symbol CATCH starting a clause that is neither an assignment nor a label. */
+::method atCatch
+  if \self~is('CATCH') then return .false
+  return \(self~lookAheadKind(1) == 'OP' & wordpos(self~lookAheadText(1), '= :') > 0)
 ::method atLabel
   return self~labelNameAt(0) & self~lookAheadText(1) == ':' & self~lookAheadKind(1) \= 'STRING'
 /* A label is any symbol, constant symbols too (15:, 15.3:, .:), or a literal string ("Classic Do/Loop":, named exactly
@@ -113,6 +117,64 @@
   if self~lookAheadKind(n - 1) == 'SEP' then return .true
   if n < 2 then return .false
   return self~lookAheadKind(n - 1) == 'OP' & self~lookAheadText(n - 1) == ':' & self~labelNameAt(n - 2)
+/* The CATCH clauses that end the DO / LOOP / SELECT block starting at the current token (RFE #31, trunk r13514): an
+   array with one entry per clause, each its conditions, each condition the array of its tokens (SYNTAX 42.3, USER X,
+   ERROR code), empty when the block has none. A CATCH clause is a clause at the block's own depth that starts with the
+   symbol CATCH and is neither an assignment nor a label; the blocks inside it are counted by their DO / SELECT and
+   END (clause starts, THEN / ELSE / OTHERWISE included, as the interpreter's clauses go). Read ahead only: the clause
+   parser checks them again when it reaches them. */
+::method catchClausesAhead
+  expose tokens anyCatch
+  clauses = .array~new
+  /* (a source without the symbol CATCH, almost every one: nothing to read ahead) */
+  if var('ANYCATCH') = 0 then do
+    anyCatch = .false
+    do t over tokens
+      if t~kind == 'IDENT' then if t~text == 'CATCH' then do; anyCatch = .true; leave; end
+    end
+  end
+  if \anyCatch then return clauses
+  depth = 0
+  n = 0
+  do forever
+    kind = self~lookAheadKind(n)
+    if kind == 'EOF' then return .array~new
+    text = self~lookAheadText(n)
+    if kind == 'OP' & text == '::' & self~clauseStartAt(n) then return .array~new
+    start = self~clauseStartAt(n)
+    if \start & n > 0 & self~lookAheadKind(n - 1) == 'IDENT' then
+      start = wordpos(self~lookAheadText(n - 1), 'THEN ELSE OTHERWISE') > 0
+    if start & kind == 'IDENT' then do
+      next = self~lookAheadText(n + 1)
+      nextOp = self~lookAheadKind(n + 1) == 'OP'
+      plain = \(nextOp & (next == '=' | next == ':'))
+      select
+        when plain & (text == 'DO' | text == 'SELECT') then depth = depth + 1
+        when plain & text == 'END' then do
+          depth = depth - 1
+          if depth = 0 then return clauses
+        end
+        when plain & text == 'CATCH' & depth = 1 then do
+          /* [variable =] condition [code] {, condition [code]} up to the end of the clause */
+          k = n + 1
+          if self~lookAheadKind(k + 1) == 'OP' & self~lookAheadText(k + 1) == '=' then k = k + 2
+          conds = .array~new
+          item = .array~new
+          do while self~lookAheadKind(k) \== 'SEP' & self~lookAheadKind(k) \== 'EOF'
+            if self~lookAheadKind(k) == 'OP' & self~lookAheadText(k) == ',' then do
+              conds~append(item); item = .array~new
+            end
+            else item~append(self~lookAheadToken(k))
+            k = k + 1
+          end
+          if item~items > 0 then conds~append(item)
+          clauses~append(conds)
+        end
+        otherwise nop
+      end
+    end
+    n = n + 1
+  end
 /* CALL ON condition [NAME label] at token n (the condition): the handler's label (USER name: name). */
 ::method callOnTarget
   use arg n
@@ -188,7 +250,11 @@
   do while self~lookAheadKind(n) \= 'EOF'
     if n > 0 then if self~lookAheadKind(n - 1) == 'SEP' then
       if self~lookAheadKind(n) == 'OP' & self~lookAheadText(n) == '::' then leave
-    if self~lookAheadKind(n) == 'IDENT' & self~lookAheadText(n) == 'SIGNAL' then do
+    /* (a CATCH clause too: its block takes conditions through the activation's traps, RFE #31) */
+    word = ''
+    if self~lookAheadKind(n) == 'IDENT' then word = self~lookAheadText(n)
+    if word == 'CATCH' then if self~lookAheadKind(n + 1) == 'OP' then if wordpos(self~lookAheadText(n + 1), '= :') > 0 then word = ''
+    if word == 'SIGNAL' | word == 'CATCH' then do
       atClause = n == 0
       if n > 0 then atClause = self~lookAheadKind(n - 1) == 'SEP' | wordpos(self~lookAheadText(n - 1), 'THEN ELSE OTHERWISE') > 0
       if atClause then return .true

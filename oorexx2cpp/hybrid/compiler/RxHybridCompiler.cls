@@ -305,17 +305,22 @@
   self~emitStatement(depth)
   self~leaveControl
 ::method block
-  use arg depth, hasEnd, expectedName
+  use arg depth, hasEnd, expectedName, stopAtCatch = .false
   if arg(3, 'O') then expectedName = ''
   s = self~stream
   s~skipSeparators
   self~enterControl
   do while s~peek~kind \= 'EOF' & \s~atEnd & \s~is('::')
     if s~is('ELSE') & s~lookAheadText(1) \== '=' then s~fail('ELSE without matching IF')
+    if s~atCatch then do
+      if stopAtCatch then leave
+      s~fail('CATCH has no corresponding DO, LOOP, or SELECT')
+    end
     self~emitStatement(depth)
     s~skipSeparators
   end
   self~leaveControl
+  if stopAtCatch & s~atCatch then return 'CATCH'   /* the clauses and END are the block rule's (RxCatchClauses) */
   s~expect('END')
   if s~peek~kind == 'IDENT' then do
     suffix = s~next~text

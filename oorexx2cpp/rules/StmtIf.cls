@@ -27,7 +27,7 @@
   s = ctx~stream
   /* Only a bare DO followed by a clause boundary is an IF block.
      DO UNTIL and DO var=... are complete registered statement rules. */
-  if s~is('DO') & s~lookAheadText(1) == '<sep>' then do
+  if s~is('DO') & s~lookAheadText(1) == '<sep>' & s~catchClausesAhead~items = 0 then do
     s~expect('DO')
     s~separator
     ctx~block(depth, .true)
