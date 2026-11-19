@@ -39,4 +39,6 @@ check address_with "$OUT/src/address_with.rex"   # ADDRESS env command WITH INPU
 check command_variables "$OUT/src/command_variables.rex"   # HOSTEMU EXECIO DISKW / DISKR ... STEM through the variable pool: compiled stems in and out, new and existing, procedure, method; shells carry nothing
 check catch_clauses "$OUT/src/catch_clauses.rex"   # CATCH (RFE #31; needs a trunk r13514+ interpreter): block end, CONDITION(), RC / SIGL, codes, the variable copy, ahead of SIGNAL ON, LEAVE
 check catch_precedence "$OUT/src/catch_precedence.rex"   # CATCH: an internal routine's own trap wins, inherited ones do not; ERROR codes by ==; code variables; INTERPRET in a block
+check bif_errors "$OUT/src/bif_errors.rex"   # one argument error per built-in function, as the interpreter reports it (40.x in trunk, some 93.x before)
+check condition_options "$OUT/src/condition_options.rex"   # CONDITION('E') and ('R'), 'O' a copy, 40.904 for a null or unknown option
 echo "PASS program constructs (4): $(ls "$OUT"/*.expected | wc -l) programs, $(cat "$OUT"/*.expected | wc -l) lines identical to the interpreter"

@@ -1775,14 +1775,36 @@ struct MethodTraps {
         throw std::runtime_error("no CALL ON condition is ready");
     }
     void undelay(int slot) { delayed[slot] = false; }
+    // CONDITION([option]): the option letter (BUILTIN(CONDITION): a null string or an unknown letter is 40.904).
+    static char conditionOption(const std::optional<Value> &arg) {
+        if (!arg || arg->isObject()) return 'I';
+        const char option = arg->bytes.empty() ? '\0' : static_cast<char>(std::toupper(static_cast<unsigned char>(arg->bytes[0])));
+        if (option == '\0' || std::string("ACDEIORS").find(option) == std::string::npos) {
+            SyntaxCondition e("40.904", "CONDITION argument 1 must be one of ACDEIORS; found \"" + arg->bytes.str() + "\"", false);
+            e.substitutions = {Value::string("CONDITION"), Value::string("1"), Value::string("ACDEIORS"), *arg};
+            throw e;
+        }
+        return option;
+    }
     // CONDITION([option]) of this activation.
-    Value condition(const std::optional<Value> &arg) const {
-        char option = 'I';
-        if (arg && !arg->isObject() && !arg->bytes.empty())
-            option = static_cast<char>(std::toupper(static_cast<unsigned char>(arg->bytes[0])));
+    Value condition(const std::optional<Value> &arg) {
+        const char option = conditionOption(arg);
         switch (option) {
         case 'A': return has ? conditionEntry(object, "ADDITIONAL") : nil();
-        case 'O': return has ? Value::fromObject(object) : nil();
+        case 'O': {   // a copy of the condition object
+            if (!has) return nil();
+            MessageResult copy = object->sendMessage("COPY", {});
+            return copy ? *copy : Value::fromObject(object);
+        }
+        case 'R': has = false; name.clear(); instruction.clear(); object.reset(); return Value::string(std::string());
+        case 'E': {   // the error subcode: what follows the dot of CODE
+            if (!has) return Value::string(std::string());
+            Value code = conditionEntry(object, "CODE");
+            if (code.isObject()) return Value::string(std::string());
+            const std::string text = code.bytes.str();
+            const std::size_t dot = text.find('.');
+            return Value::string(dot == std::string::npos ? std::string() : text.substr(dot + 1));
+        }
         case 'C': return Value::string(has ? name : std::string());
         case 'I': return Value::string(has ? instruction : std::string());
         case 'D': {
@@ -1796,7 +1818,7 @@ struct MethodTraps {
             if (k < 0 || !on[k]) return Value::string("OFF");
             return Value::string(delayed[k] ? "DELAY" : "ON");
         }
-        default: throw SyntaxCondition("40.904", "CONDITION option must be one of ACDIOS", false);
+        default: return Value::string(std::string());
         }
     }
     // RAISE PROPAGATE: the trapped condition again, to the caller.
@@ -2079,9 +2101,7 @@ template <class Call> Value runRaising(Call &&call) {
 }
 // CONDITION() in an activation that traps nothing: no condition information.
 inline Value noCondition(const std::optional<Value> &arg) {
-    char option = 'I';
-    if (arg && !arg->isObject() && !arg->bytes.empty())
-        option = static_cast<char>(std::toupper(static_cast<unsigned char>(arg->bytes[0])));
+    const char option = MethodTraps::conditionOption(arg);
     if (option == 'A' || option == 'O') return nil();
     return Value::string(std::string());
 }

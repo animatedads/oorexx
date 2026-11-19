@@ -476,7 +476,9 @@ inline boost::multiprecision::cpp_int byteRange(std::size_t n) {
 // zeros added, never exponential, the sign only when the result is not zero: -0.0001 -> 0.00). The method (method =
 // true, a[0] the receiver): not a number 93.943, more than one argument 93.902, places not a non-negative whole number
 // 93.906 with the argument as given. nullopt (the interpreter's) for objects, NUMERIC settings this code does not
-// hold, exponents beyond the native range and results of more than a million decimals.
+// hold, exponents beyond the native range and results of more than a million decimals. Also nullopt for the function's
+// 93.943 / 93.906: trunk (r13365 at the latest) reports them as 40.11 / 40.13 (BuiltinFunctionScope), so the
+// interpreter's own TRUNC raises whichever its version does.
 inline std::optional<Value> truncRexx(const std::vector<BifSlot> &a, const ActivationNumeric &num, bool method) {
     for (const auto &x : a) if (x && x->isObject()) return std::nullopt;
     if (num.digits < 1 || num.digits > 100000 || num.fuzz >= num.digits) return std::nullopt;
@@ -509,8 +511,11 @@ inline std::optional<Value> truncRexx(const std::vector<BifSlot> &a, const Activ
     RexxDecimal d; const char *err = nullptr;
     if (!tryParseRexxDecimal(*a[0], d, err)) {
         if (err && std::strstr(err, "supported")) return std::nullopt;
+        if (!method) return std::nullopt;   // (the function's error is the interpreter's: 93.943 before trunk's
+                                            // BuiltinFunctionScope, 40.11 with it; its own TRUNC raises the right one)
         fail("93.943", "TRUNC method target must be a number; found \"" + a[0]->bytes.str() + "\".", {name, *a[0]});
     }
+    if (places < 0 && !method) return std::nullopt;   // (93.906 or 40.13, as above)
     if (places < 0)
         fail("93.906", "Method argument 1 must be zero or a positive whole number; found \"" + placesShown->bytes.str() + "\".",
              {Value::string("1"), *placesShown});
