@@ -90,25 +90,29 @@ Session::Session(const Catalogue &catalogue, bool enableExperimental)
     : catalogue_(catalogue), experimental_(enableExperimental) {}
 
 std::uint64_t Session::create(std::int64_t resourceId, const std::string &type) {
-    while (issuedUids_.count(nextUid_)) {
-        if (nextUid_ == std::numeric_limits<std::uint64_t>::max())
-            throw Error(ErrorCode::StaleOccurrence, "occurrence UID exhausted");
-        ++nextUid_;
-    }
     if (nextUid_ == std::numeric_limits<std::uint64_t>::max())
         throw Error(ErrorCode::StaleOccurrence, "occurrence UID exhausted");
-    return createWithUid(resourceId, type, nextUid_++);
+    const std::uint64_t uid = registerControl(resourceId, type, nextUid_);
+    ++nextUid_;
+    return uid;
 }
 
 std::uint64_t Session::createWithUid(std::int64_t resourceId, const std::string &type,
                                      std::uint64_t authoredUid) {
+    if (authoredUid == 0 || authoredUid >= AutomaticUidBase)
+        throw Error(ErrorCode::StaleOccurrence, "authored occurrence UID outside reserved range [1, 2^63)");
+    return registerControl(resourceId, type, authoredUid);
+}
+
+std::uint64_t Session::registerControl(std::int64_t resourceId, const std::string &type,
+                                      std::uint64_t uid) {
     const auto &spec = catalogue_.type(type);
     if (spec.availability != "stable" && !experimental_)
         throw Error(ErrorCode::ExperimentalDisabled, "control requires an optional capability: " + type);
-    if (!authoredUid || !issuedUids_.insert(authoredUid).second)
-        throw Error(ErrorCode::StaleOccurrence, "zero or previously used occurrence UID: " + std::to_string(authoredUid));
-    controls_.emplace(authoredUid, Control{authoredUid, resourceId, type, 0, {}, {}});
-    return authoredUid;
+    if (!uid || !issuedUids_.insert(uid).second)
+        throw Error(ErrorCode::StaleOccurrence, "zero or previously used occurrence UID: " + std::to_string(uid));
+    controls_.emplace(uid, Control{uid, resourceId, type, 0, {}, {}});
+    return uid;
 }
 
 const Control &Session::control(std::uint64_t uid) const {

@@ -92,17 +92,24 @@
 ::method dispatchPending
   expose dialog
   /* Called by the ooDialog/Rexx activity at a safe dispatch point, never from XAML. */
-  use strict arg limit = 64
+  use strict arg limit = 64, includeRevision = .false
   if limit < 1 then raise user OodFluent additional ('limit must be positive')
   dispatched = 0
   do limit
     event = self~pollEvent
     if event == .nil then leave
-    /* The handler is an ooDialog instance method. */
-    dialog~sendWith(event~handler, .array~of(event~resourceId, event~uid, event~value))
+    /* The legacy three-argument shape is unchanged unless versioned is selected. */
+    if includeRevision then
+      dialog~sendWith(event~handler, .array~of(event~resourceId, event~uid, event~value, event~revision))
+    else
+      dialog~sendWith(event~handler, .array~of(event~resourceId, event~uid, event~value))
     dispatched += 1
   end
   return dispatched
+
+::method dispatchPendingVersioned
+  use strict arg limit = 64
+  return self~dispatchPending(limit, .true)
 
 ::method close
   expose token controls

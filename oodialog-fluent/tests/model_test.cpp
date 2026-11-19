@@ -8,6 +8,7 @@
 #include <functional>
 #include <iostream>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <thread>
 
@@ -56,6 +57,8 @@ int main(int argc, char **argv) {
         Session first(catalogue);
         const auto a = first.create(-1, "Button");
         const auto b = first.create(-1, "Button");
+        CHECK(a == Session::AutomaticUidBase);
+        CHECK(b == Session::AutomaticUidBase + 1);
         CHECK(a != b);
         CHECK(first.control(a).resourceId == first.control(b).resourceId);
         CHECK(first.size() == 2);
@@ -64,6 +67,15 @@ int main(int argc, char **argv) {
         const auto authored = first.createWithUid(-1, "Button", 881005);
         CHECK(authored == 881005);
         CHECK(first.control(authored).resourceId == -1);
+        // An authored UID must not collide with earlier auto allocations,
+        // regardless of creation order (review A1, REQ-00003737).
+        const auto lowAuthored = first.createWithUid(1001, "Button", 1);
+        CHECK(lowAuthored == 1);
+        CHECK(lowAuthored != a);
+        first.remove(lowAuthored);
+        expects(ErrorCode::StaleOccurrence, [&] { first.createWithUid(1001, "Button", 1); });
+        expects(ErrorCode::StaleOccurrence, [&] { first.createWithUid(1001, "Button", Session::AutomaticUidBase); });
+        expects(ErrorCode::StaleOccurrence, [&] { first.createWithUid(1001, "Button", std::numeric_limits<std::uint64_t>::max()); });
         expects(ErrorCode::StaleOccurrence, [&] { first.createWithUid(9, "Button", 881005); });
         expects(ErrorCode::StaleOccurrence, [&] { first.createWithUid(9, "Button", 0); });
         first.bind(authored, "click", "onAuthored");
@@ -116,6 +128,7 @@ int main(int argc, char **argv) {
         expects(ErrorCode::StaleOccurrence, [&] { first.remove(b); });
 
         const auto newUid = first.create(2401, "ToggleSwitch");
+        CHECK(newUid == Session::AutomaticUidBase + 2);
         CHECK(newUid != a && newUid != b); // never recycle within session
         first.set(newUid, "isOn", "true");
         first.bind(newUid, "toggled", "onNightModeChanged");

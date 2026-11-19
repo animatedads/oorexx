@@ -31,6 +31,7 @@
 #include <string>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 namespace ui = winrt::Microsoft::UI;
 namespace xaml = winrt::Microsoft::UI::Xaml;
@@ -197,7 +198,44 @@ bool wrongThread(OodfWinHost *host) noexcept {
     return host->uiThread != GetCurrentThreadId();
 }
 
+struct DeferredEvent {
+    uint64_t uid;
+    std::string name;
+    std::string value;
+};
+
+struct EventDeferScope {
+    OodfSession *model;
+    EventDeferScope *previous;
+    std::vector<DeferredEvent> pending;
+    explicit EventDeferScope(OodfSession *session);
+    ~EventDeferScope();
+    void flush();
+};
+
+// A WinUI setter can fire its native callback synchronously. Queueing that
+// callback before oodf_set increments the model revision would report stale
+// provenance. Buffer only these property-driven callbacks on their STA;
+// user-generated events outside an update still enter the model immediately.
+thread_local EventDeferScope *activeEventScope = nullptr;
+
+EventDeferScope::EventDeferScope(OodfSession *session)
+    : model(session), previous(activeEventScope) { activeEventScope = this; }
+EventDeferScope::~EventDeferScope() { activeEventScope = previous; }
+void EventDeferScope::flush() {
+    activeEventScope = previous;
+    for (auto const &item : pending) {
+        int queued = 0;
+        (void)oodf_raise(model, item.uid, item.name.c_str(), item.value.c_str(), &queued);
+    }
+    pending.clear();
+}
+
 void event(OodfSession *model, uint64_t uid, const char *name, const std::string &value) {
+    if (activeEventScope && activeEventScope->model == model) {
+        activeEventScope->pending.push_back(DeferredEvent{uid, name, value});
+        return;
+    }
     int queued = 0;
     // Callback enqueues only; Rexx handlers execute later in the ooDialog pump.
     (void)oodf_raise(model, uid, name, value.c_str(), &queued);
@@ -404,6 +442,7 @@ HRESULT __stdcall oodf_win_set(OodfWinHost *host, uint64_t uid,
               (isProgress && (name == "value" || name == "maximum" || name == "isIndeterminate")) ||
               (isInfo && (name == "message" || name == "isOpen")) || (isNumber && name == "value")))
             winrt::throw_hresult(E_NOTIMPL);
+        EventDeferScope deferred(host->model);
         if (isButton) control.as<controls::Button>().Content(winrt::box_value(winrt::hstring(value)));
         if (isToggle && name == "text") control.as<controls::ToggleSwitch>().Header(winrt::box_value(winrt::hstring(value)));
         if (isToggle && name == "isOn") control.as<controls::ToggleSwitch>().IsOn(parseBoolean(utf8));
@@ -449,6 +488,7 @@ HRESULT __stdcall oodf_win_set(OodfWinHost *host, uint64_t uid,
         if (isInfo && name == "isOpen") control.as<controls::InfoBar>().IsOpen(parseBoolean(utf8));
         if (isNumber) control.as<controls::NumberBox>().Value(parseNumber(utf8));
         winrt::check_hresult(status(oodf_set(host->model, uid, name.c_str(), utf8.c_str())));
+        deferred.flush();
     });
 }
 

@@ -141,7 +141,7 @@ int wmain(int argc, wchar_t **argv) {
         return code;
     }
     stage("ISLAND_OPEN_OK");
-    uint64_t button = 0, toggle = 0, check = 0, toggleButton = 0;
+    uint64_t button = 0, toggle = 0, check = 0, toggleButton = 0, lowAuthored = 0;
     uint64_t slider = 0, textBox = 0, progress = 0, info = 0, number = 0;
     wchar_t preUnload[32]{};
     (void)GetEnvironmentVariableW(L"OODF_PREUNLOAD", preUnload, 32);
@@ -167,6 +167,15 @@ int wmain(int argc, wchar_t **argv) {
         if (button != 71001) { result = E_UNEXPECTED; goto cleanup; }
     }
     if (wantToggle && FAILED(result = oodf_win_add(host, 4102, L"ToggleSwitch", L"Dark mode", &toggle))) goto cleanup;
+    if (wantToggle && toggle < (uint64_t{1} << 63)) {
+        result = E_UNEXPECTED;
+        goto cleanup;
+    }
+    if (qualified) {
+        // Resource UID 1 must remain available after automatic allocation.
+        if (FAILED(result = oodf_win_add_authored(host, 4115, L"Button", L"Low authored", 1, &lowAuthored))) goto cleanup;
+        if (lowAuthored != 1) { result = E_UNEXPECTED; goto cleanup; }
+    }
     if (wantCheck && FAILED(result = oodf_win_add(host, 4110, L"CheckBox", L"Accept", &check))) goto cleanup;
     if (wantToggleButton && FAILED(result = oodf_win_add(host, 4111, L"ToggleButton", L"Pin", &toggleButton))) goto cleanup;
     if (wantSlider && FAILED(result = oodf_win_add(host, 4112, L"Slider", L"Zoom", &slider))) goto cleanup;
@@ -242,6 +251,7 @@ int wmain(int argc, wchar_t **argv) {
         }
     }
     if (wantButton && FAILED(result = oodf_win_remove(host, button))) goto cleanup;
+    if (qualified && FAILED(result = oodf_win_remove(host, lowAuthored))) goto cleanup;
     if (wantCheck && FAILED(result = oodf_win_remove(host, check))) goto cleanup;
     if (wantCheck && oodf_win_set(host, check, L"isChecked", L"false") !=
                      HRESULT_FROM_WIN32(ERROR_NOT_FOUND)) {

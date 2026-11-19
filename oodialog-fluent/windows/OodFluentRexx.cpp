@@ -169,10 +169,17 @@ Session *get(RexxCallContext *context, const char *token) {
 }
 
 bool occurrence(RexxCallContext *context, const char *text, uint64_t &uid) {
-    if (decimal(text, uid) && uid != 0) return true;
-    error(context, "invalid occurrence UID");
+    // The public token is deliberately NONNUMERIC: ooRexx's ordinary '='
+    // applies NUMERIC DIGITS to numeric strings. Distinct uint64 decimal UIDs
+    // could therefore compare as equal under the default DIGITS 9.
+    // Accept legacy bare decimals as inputs, but always emit U-prefixed IDs.
+    const char *raw = text && text[0] == 'U' ? text + 1 : text;
+    if (decimal(raw, uid) && uid != 0) return true;
+    error(context, "invalid occurrence UID (expected U<decimal> token)");
     return false;
 }
+
+std::string uidToken(uint64_t uid) { return "U" + std::to_string(uid); }
 
 std::wstring wide(const char *utf8) {
     int length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8, -1, nullptr, 0);
@@ -229,7 +236,7 @@ RexxRoutine4(RexxObjectPtr, OodfNativeCreate,
             return oodf_win_add(session->host, id, type.c_str(), label.c_str(), &uid);
         });
         if (FAILED(result)) return error(context, "control creation failed: " + hex(result));
-        return context->String(std::to_string(uid).c_str());
+        return context->String(uidToken(uid).c_str());
     } catch (const std::exception &e) { return error(context, e.what()); }
 }
 
@@ -250,7 +257,7 @@ RexxRoutine5(RexxObjectPtr, OodfNativeCreateAuthored,
             return oodf_win_add_authored(session->host, id, type.c_str(), label.c_str(), authoredUid, &uid);
         });
         if (FAILED(result)) return error(context, "authored occurrence creation failed: " + hex(result));
-        return context->String(std::to_string(uid).c_str());
+        return context->String(uidToken(uid).c_str());
     } catch (const std::exception &e) { return error(context, e.what()); }
 }
 
@@ -330,7 +337,7 @@ RexxRoutine1(RexxObjectPtr, OodfNativePoll, CSTRING, token) {
     if (status != OODF_OK) return error(context, oodf_last_error());
     RexxDirectoryObject event = context->NewDirectory();
     put(context, event, "RESOURCEID", std::to_string(buffer.resourceId));
-    put(context, event, "UID", std::to_string(buffer.uid));
+    put(context, event, "UID", uidToken(buffer.uid));
     put(context, event, "REVISION", std::to_string(buffer.revision));
     put(context, event, "NAME", name.data());
     put(context, event, "VALUE", value.data());

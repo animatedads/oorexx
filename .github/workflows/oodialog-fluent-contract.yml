@@ -183,10 +183,13 @@ jobs:
             if ($process.ExitCode -ne 0 -or
                 $output -notmatch 'REXX_SMOKE_STAGE=CONTROLS_READY' -or
                 $output -notmatch 'REXX_SMOKE_STAGE=FLUENT_CLOSED' -or
-                $output -notmatch 'REXX_SMOKE_EVENT=toggle' -or
-                $output -notmatch 'REXX_SMOKE_EVENT=check' -or
-                $output -notmatch 'REXX_SMOKE_EVENT=toggleButton' -or
-                $output -notmatch 'REXX_SMOKE_EVENT=slider' -or
+                $output -notmatch 'REXX_SMOKE_AUTO_UID=U9223372036854775808' -or
+                $output -notmatch 'REXX_SMOKE_LOW_AUTHORED_UID=U1' -or
+                $output -notmatch 'REXX_SMOKE_EVENT=toggle 202 U800000002 true 2' -or
+                $output -notmatch 'REXX_SMOKE_EVENT=check 203 U800000003 true 2' -or
+                $output -notmatch 'REXX_SMOKE_EVENT=toggleButton 204 U800000004 true 2' -or
+                $output -notmatch 'REXX_SMOKE_EVENT=slider 205 U800000005 42.500000 1' -or
+                $output -notmatch 'REXX_SMOKE_EVENTS_DISPATCHED=4' -or
                 $output -notmatch 'REXX_SMOKE_PASS=1') {
               $failedTrials++
               Write-Output "REXX_PROBE_TRIAL_FAILED=$trial"

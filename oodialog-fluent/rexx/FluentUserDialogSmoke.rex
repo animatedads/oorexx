@@ -41,15 +41,21 @@ exit 0
   self~createPushButton(1, 224, 162, 58, 15, 'DEFAULT', '&Close')
 
 ::method initDialog
-  expose fluent button toggle check toggleButton slider
+  expose fluent button toggle check toggleButton slider auto
   say 'REXX_SMOKE_STAGE=INIT_DIALOG'
   fluent = .OodFluentHost~attach(self, self~catalogue)
   fluent~move(16, 42, 390, 150)
+  /* Automatic UID is intentionally allocated BEFORE low authored IDs. */
+  auto = fluent~newButton(206, 'Auto identity collision probe')
+  say 'REXX_SMOKE_AUTO_UID='auto~uid
+  if left(auto~uid, 1) \== 'U' then raise user OodFluent additional ('automatic UID lacks opaque prefix')
   button = fluent~newButton(201, 'Native WinUI 3 Button', '800000001')
   toggle = fluent~newToggleSwitch(202, 'Native WinUI 3 Toggle', '800000002')
   check = fluent~newCheckBox(203, 'WinUI 3 CheckBox', '800000003')
   toggleButton = fluent~newToggleButton(204, 'WinUI 3 ToggleButton', '800000004')
   slider = fluent~newSlider(205, 'WinUI 3 Slider', '800000005')
+  low = fluent~newButton(207, 'Low authored occurrence', '1')
+  say 'REXX_SMOKE_LOW_AUTHORED_UID='low~uid
   button~setText('WinUI button through Rexx')
   button~connectEvent('click', 'onFluentButton')
   toggle~connectEvent('toggled', 'onFluentToggle')
@@ -64,29 +70,29 @@ exit 0
   say 'REXX_SMOKE_STAGE=CONTROLS_READY'
 
 ::method onFluentButton
-  use strict arg resourceId, uid, value
-  say 'REXX_SMOKE_EVENT=button' resourceId uid value
+  use strict arg resourceId, uid, value, revision
+  say 'REXX_SMOKE_EVENT=button' resourceId uid value revision
 
 ::method onFluentToggle
-  use strict arg resourceId, uid, value
-  say 'REXX_SMOKE_EVENT=toggle' resourceId uid value
+  use strict arg resourceId, uid, value, revision
+  say 'REXX_SMOKE_EVENT=toggle' resourceId uid value revision
 
 ::method onFluentCheck
-  use strict arg resourceId, uid, value
-  say 'REXX_SMOKE_EVENT=check' resourceId uid value
+  use strict arg resourceId, uid, value, revision
+  say 'REXX_SMOKE_EVENT=check' resourceId uid value revision
 
 ::method onFluentToggleButton
-  use strict arg resourceId, uid, value
-  say 'REXX_SMOKE_EVENT=toggleButton' resourceId uid value
+  use strict arg resourceId, uid, value, revision
+  say 'REXX_SMOKE_EVENT=toggleButton' resourceId uid value revision
 
 ::method onFluentSlider
-  use strict arg resourceId, uid, value
-  say 'REXX_SMOKE_EVENT=slider' resourceId uid value
+  use strict arg resourceId, uid, value, revision
+  say 'REXX_SMOKE_EVENT=slider' resourceId uid value revision
 
 ::method ok
   expose fluent
   say 'REXX_SMOKE_STAGE=OO_DIALOG_OK'
-  count = fluent~dispatchPending
+  count = fluent~dispatchPendingVersioned
   say 'REXX_SMOKE_EVENTS_DISPATCHED='count
   fluent~close
   say 'REXX_SMOKE_STAGE=FLUENT_CLOSED'

@@ -65,6 +65,9 @@ struct Event {
 
 class Session final {
 public:
+    // Authored identities use [1, 2^63); automatic identities use
+    // [2^63, 2^64). This prevents order-dependent collisions.
+    static constexpr std::uint64_t AutomaticUidBase = std::uint64_t{1} << 63;
     explicit Session(const Catalogue &catalogue, bool enableExperimental = false);
     std::uint64_t create(std::int64_t resourceId, const std::string &type);
     std::uint64_t createWithUid(std::int64_t resourceId, const std::string &type, std::uint64_t authoredUid);
@@ -78,11 +81,13 @@ public:
     std::size_t size() const noexcept { return controls_.size(); }
     std::size_t pending() const noexcept { return events_.size(); }
 private:
+    std::uint64_t registerControl(std::int64_t resourceId, const std::string &type,
+                                  std::uint64_t uid);
     const Catalogue &catalogue_;
     bool experimental_;
-    std::uint64_t nextUid_ = 1;
+    std::uint64_t nextUid_ = AutomaticUidBase;
     std::unordered_map<std::uint64_t, Control> controls_;
-    // An authored UID must not be reassigned to a distinct lifecycle in one session.
+    // No UID is reassigned within a session, including after removal.
     std::unordered_set<std::uint64_t> issuedUids_;
     std::deque<Event> events_;
 };
