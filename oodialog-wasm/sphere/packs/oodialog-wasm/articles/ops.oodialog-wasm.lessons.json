@@ -1,7 +1,7 @@
 {
   "kind": "article",
   "id": "ops.oodialog-wasm.lessons",
-  "version": "0.7",
+  "version": "0.8",
   "sphere": "oodialog-wasm",
   "title": "Lessons from the port: faults made and how each is now prevented",
   "summary": "Each lesson is a fault that happened in this work, its cause, and the rule that prevents it. They are here so that the next task does not repeat them.",
@@ -14,6 +14,7 @@
   ],
   "lessons": [
     "A build was pushed with a failing test. Cause: the last run's result was not read. Rule: read every summary line on the final build before the commit.",
+    "A test passed once and was taken as done; on the final build it failed two runs in three. The page drew a 1,000-row list again for every row added, and the time depended on the machine's load. Rule: a new test with waits in it is run three times before it counts; a fill of 1,000 rows is a case every list control gets.",
     "Native coverage went 643, 686, 688, 688, 689 over four releases while samples, printing and the sphere took the time. The architect named it. Whole families were cheap: plain data classes and one-line calls on operations the page already had. Rule: every release states the native count next to the last one, and a release that adds none says why.",
     "A source file was corrected and the test was run without a build. The test ran the old file from dist and showed nothing, because an error in an event method is a message box, not a line of output. Half an hour went on the wrong cause. Rule: build before every test run; when an event method seems to do nothing, look at the page for a message box first.",
     "The probe was not run for three releases. In that time four faults sat in examples the sweep called shows; one put a tab control's pages at the dialog's corner. Rule: run the probe on every release, not only the sweep.",
@@ -36,22 +37,22 @@
   ],
   "provenance": [
     {
-      "artifact": "oodialog-wasm-6b1589f.zip",
-      "sha256": "55e3e8a1765c91ff7e40ddd25c69b3471b8e61a568d94583200eca1770157d5c",
+      "artifact": "oodialog-wasm-0727c19.zip",
+      "sha256": "3f63b1cb4df8c837f2920091c449a70754c57a3f17a44bcd8cd8784699c60747",
       "member": "oodialog-wasm/src/oodWeb.cls",
-      "line_start": 598,
-      "line_end": 603,
+      "line_start": 599,
+      "line_end": 604,
       "claim": "onPumpThread: the rule that came from the msSleep race.",
-      "note": "git archive of animatedads/oorexx commit 6b1589f (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 0727c19 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-6b1589f.zip",
-      "sha256": "55e3e8a1765c91ff7e40ddd25c69b3471b8e61a568d94583200eca1770157d5c",
+      "artifact": "oodialog-wasm-0727c19.zip",
+      "sha256": "3f63b1cb4df8c837f2920091c449a70754c57a3f17a44bcd8cd8784699c60747",
       "member": "oodialog-wasm/README.md",
-      "line_start": 175,
-      "line_end": 190,
+      "line_start": 177,
+      "line_end": 192,
       "claim": "ResizingAdmin was not ported until v0.17.0.",
-      "note": "git archive of animatedads/oorexx commit 6b1589f (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 0727c19 (branch oodialog-wasm)"
     }
   ]
 }

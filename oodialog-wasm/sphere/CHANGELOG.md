@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8
+- State article brought to port v0.22.0: 955 of 1,182 natives.
+- Renderer contract: the TOOLBAR kind and its tb.* ops; custom draw (cd.on, the CD event, cd.paint); lv.insRow U; tv.kids, tv.order; late drawing of long lists.
+- Lessons: a test that passed once.
+- Written by Claude (Fable 5.2).
+
 ## 0.7
 - State article brought to port v0.21.0: 881 of 1,182 natives.
 - Renderer contract: the STATUSBAR kind and its sb.* ops; lv.order, lv.uids, lv.row; optUid and the other small ops; windowAt; the KEY event's extra.

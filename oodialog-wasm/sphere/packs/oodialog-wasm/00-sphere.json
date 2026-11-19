@@ -1,7 +1,7 @@
 {
   "kind": "sphere",
   "id": "oodialog-wasm",
-  "version": "0.7",
+  "version": "0.8",
   "title": "ooDialog on ooRexx/WASM",
   "access_policy": "oodialog-wasm-access",
   "purpose": "How ooDialog runs in a web browser on ooRexx/WASM: where the code is, how it is built and tested, the contract between the native layer and a renderer, the seams other tasks build on, how it differs from Windows, how to port a native, and the lessons of the work. For any task that uses, extends, renders or tests ooDialog/WASM.",
