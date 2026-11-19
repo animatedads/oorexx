@@ -88,18 +88,26 @@ inline SymbolScan scanSymbol(std::string_view s) {
     };
     auto digit = [](unsigned char c) { return c >= '0' && c <= '9'; };
     std::size_t compound = 0, i = 0;
-    bool haveExponent = false;
     while (i < n && symbolChar(static_cast<unsigned char>(s[i]))) { if (s[i] == '.') ++compound; ++i; }
     if (i < n) {
         if (i + 1 >= n) return SymbolScan::Bad;
         if (s[i] != '-' && s[i] != '+') return SymbolScan::Bad;
         if (i == 0 || std::toupper(static_cast<unsigned char>(s[i - 1])) != 'E') return SymbolScan::Bad;
         for (std::size_t k = i + 1; k < n; ++k) if (!digit(static_cast<unsigned char>(s[k]))) return SymbolScan::Bad;
-        haveExponent = true;
+        // trunk (bug #2080): before the 'E', a mantissa of digits with at most one period ("A23E+2", ".E+2", "1AE+2",
+        // "1E2E+3" are not symbols at all); r13196 and earlier took any symbol characters there
+        std::size_t digits = 0, periods = 0;
+        for (std::size_t k = 0; k + 1 < i; ++k) {
+            if (digit(static_cast<unsigned char>(s[k]))) ++digits;
+            else if (s[k] == '.') ++periods;
+            else return SymbolScan::Bad;
+        }
+        if (digits == 0 || periods > 1) return SymbolScan::Bad;
+        return SymbolScan::Numeric;
     }
     if (s[0] == '.' || digit(static_cast<unsigned char>(s[0]))) {
         if (compound == 1 && n == 1) return SymbolScan::LiteralDot;
-        if (compound > 1) return haveExponent ? SymbolScan::Bad : SymbolScan::Literal;
+        if (compound > 1) return SymbolScan::Literal;
         std::size_t k = 0;
         while (k < n && (digit(static_cast<unsigned char>(s[k])) || s[k] == '.')) ++k;
         if (k >= n) return SymbolScan::Numeric;
