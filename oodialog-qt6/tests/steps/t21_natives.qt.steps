@@ -1,0 +1,12 @@
+# Qt dialect of oodialog-wasm tests/t21_natives.steps (v0.21.0): the edit and the multi-line edit by their kinds.
+wait .ood-dlg >> text=Close
+click .ood-dlg input
+press a
+press b
+press c
+press F5
+click .ood-dlg textarea
+press F6
+press a
+sleep 400
+click .ood-dlg >> text=Close

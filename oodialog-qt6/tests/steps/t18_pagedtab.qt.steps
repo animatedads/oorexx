@@ -1,0 +1,21 @@
+# Qt dialect of oodialog-wasm tests/t18_pagedtab.steps (v0.19.0): pages are the embedded dialogs, numbered as created;
+# control 0 is the tab.
+wait .ood-dlg
+sleep 800
+marklayout .ood-dlg
+expect pages ==> 2
+expect pagesSame ==> True
+click .ood-dlg >> text=Two
+sleep 300
+marklayout .ood-dlg
+resize .ood-dlg => +200 +120
+sleep 600
+expect delta 0 ==> 0 0 200 120
+expect pageDelta 0 ==> 0 0 200 120
+expect pageDelta 1 ==> 0 0 200 120
+expect pageInTab 1 0 ==> True
+expect pageCtlDelta 1 0 ==> 0 0 200 120
+expect pageCtlDelta 0 0 ==> 0 0 0 0
+shot pagedTab_grown
+output count native function ==> 0
+click .ood-dlg button.ood-def
