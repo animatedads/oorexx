@@ -1,0 +1,17 @@
+wait .ood-lv tbody tr
+sleep 800
+eval (() => { window.__row = (i) => { const td = document.querySelectorAll('.ood-lv tbody tr')[i].cells[1], g = getComputedStyle(td); return g.color + ' on ' + g.backgroundColor + ' ' + g.fontFamily.split(',')[0].replace(/"/g, ''); }; return document.querySelectorAll('.ood-lv tbody tr').length; })()
+expect window.__row(0).split(' Segoe')[0].split(' Tahoma')[0].replace(/ [A-Za-z -]+$/, '') ==> rgb(247, 7, 59) on rgb(245, 245, 127)
+expect window.__row(1).replace(/ [A-Za-z -]+$/, '') ==> rgb(0, 0, 0) on rgb(188, 237, 102)
+expect window.__row(2).replace(/ [A-Za-z -]+$/, '') ==> rgb(247, 7, 59) on rgb(245, 245, 127)
+click .ood-lv tbody tr:nth-child(2) .ood-lvchk
+sleep 600
+expect window.__row(1) ==> rgb(17, 5, 250) on rgb(115, 245, 186) Courier New
+expect window.__row(0).replace(/ [A-Za-z -]+$/, '') ==> rgb(247, 7, 59) on rgb(245, 245, 127)
+shot customDrawListview
+eval (() => { const lv = document.querySelector('.ood-lv'); lv.scrollTop = lv.scrollHeight; return lv.scrollTop > 1000; })()
+sleep 800
+expect window.__row(999).replace(/ [A-Za-z -]+$/, '') ==> rgb(0, 0, 0) on rgb(188, 237, 102)
+expect window.__row(998).replace(/ [A-Za-z -]+$/, '') ==> rgb(247, 7, 59) on rgb(245, 245, 127)
+expect (window.oodOut.join('').match(/(native function \w+|Error \d+\.\d+[^\n]*|error in event method[^\n]*)/g) || []).length ==> 0
+click .ood-dlg button.ood-def

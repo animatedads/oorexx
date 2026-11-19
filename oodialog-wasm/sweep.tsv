@@ -5,19 +5,19 @@ controls/ComboBox/comboBoxTypes.rex	shows
 controls/ListBox/incrementalSearch.rex	shows
 controls/ListView/columnClickListView.rex	shows
 controls/ListView/columnIcons.rex	error:Error 98.900 ooDialog/WASM: a dialog from a resource file needs a reader of binary Windows resources; set .ood
-controls/ListView/customDrawListview.rex	native:CD_CUSTOMDRAWCONTROL
+controls/ListView/customDrawListview.rex	shows
 controls/ListView/subitem.editing/dropDownComboBox.rex	shows
 controls/ListView/subitem.editing/dropDownListComboBox.rex	shows
 controls/ListView/subitem.editing/editControl.rex	shows
 controls/ListView/subitem.editing/importList.rex	message:Could not locate the default importer file list directory.  Do you wish to pick an alterna
 controls/PaidHolidays.rex	shows
-controls/ToolBar/customizeToolBar.rex	native:TBB_INIT
+controls/ToolBar/customizeToolBar.rex	error:Error 98.900 ooDialog/WASM: a dialog from a resource file needs a reader of binary Windows resources; set .ood
 controls/ToolBar/toolBar.rex	error:Error 98.900 ooDialog/WASM: a dialog from a resource file needs a reader of binary Windows resources; set .ood
 controls/ToolTip/comboBoxToolTip.rex	native:CB_GETCOMBOBOXINFO
 controls/ToolTip/customPositionToolTip.rex	shows
 controls/ToolTip/manageControlTool.rex	shows
 controls/ToolTip/toolTip.rex	shows
-controls/TreeView/treeViewCustomDraw.rex	message:The required data file /home/rexx/controls/TreeView/rc\treeViewCustomDraw.bmp does not exi
+controls/TreeView/treeViewCustomDraw.rex	shows
 controls/fiscalReports.rex	shows
 controls/upDown.rex	shows
 controls/userStringDTP.rex	shows

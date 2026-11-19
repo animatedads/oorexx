@@ -7,13 +7,14 @@
 // The interpreter cannot be changed from here, so this gives it that file: for every
 // such name written in a program, the file it means is added once more under the
 // literal name, in each directory from which the name resolves the Windows way.
+// The same is done for data files a program names in a string (since 0.2.0).
 // The programs stay unchanged.
 //
 //   files: { "/abs/path": string | Uint8Array, ... }   (the object given to rexx.run)
 //   returns the number of names added; `files` is changed in place.
 (function (root) {
   'use strict';
-  const version = '0.1.0';
+  const version = '0.2.0';
   function windowsNames(files) {
     const kids = new Map();                       // directory -> Map(lower-case name -> real name)
     const note = (dir, name) => { if (!kids.has(dir)) kids.set(dir, new Map()); kids.get(dir).set(name.toLowerCase(), name); };
@@ -72,6 +73,24 @@
           if (real !== null && real !== alias && !has(alias)) { add[alias] = files[real]; follow(base, real); }
           if (base === '/') break;
         }
+      }
+    }
+    // Data files.  A program also opens files by names it writes as strings: "data\\Items.txt",
+    // or "itemsI.inp" for the file ItemsI.INP.  Windows finds them whatever the case.  For each
+    // string in a program that looks like a file name and means, the Windows way, a file that
+    // exists under another spelling, that file is added under the spelling written, in the
+    // program's directory.
+    const literal = /(["'])([A-Za-z0-9_ .\\\/-]+\.[A-Za-z0-9]{1,5})\1/g;
+    for (const p of Object.keys(files)) {
+      const text = files[p];
+      if (typeof text !== 'string' || !isProgram(p)) continue;
+      let m;
+      literal.lastIndex = 0;
+      while ((m = literal.exec(text)) !== null) {
+        const name = m[2].replace(/\//g, '\\');
+        const real = resolve(up(p), name);
+        const alias = join(up(p), m[2]);
+        if (real !== null && real !== alias && !has(alias)) add[alias] = files[real];
       }
     }
     Object.assign(files, add);

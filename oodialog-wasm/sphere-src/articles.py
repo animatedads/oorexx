@@ -1,8 +1,8 @@
 # Articles of the oodialog-wasm sphere. Architecture: Tom Dyer. Written by Claude (Fable 5.2).
 # Each article: id, title, summary, section, topics, and lists of plain sentences.
 S = "oodialog-wasm"
-VERSION = "0.7"            # the sphere's version; raise it for a material change
-PORT = "0.21.0"             # the version of the port the articles were checked against
+VERSION = "0.8"            # the sphere's version; raise it for a material change
+PORT = "0.22.0"             # the version of the port the articles were checked against
 REPO = "animatedads/oorexx, branch oodialog-wasm, directory oodialog-wasm/"
 
 def art(id, title, summary, section, topics, **lists):
@@ -90,6 +90,9 @@ art("ref.oodialog-wasm.renderer-contract",
         "tab.outer: the whole tab control as \"l t r b\" in the dialog's client area. tab.rect is its display area in the same coordinates. Rexx computes calcDisplayRect from the difference of the two. Control messages new in v0.19.0: BM_SETSTATE (0xF3), bit 4 of BM_GETSTATE (pushed), TCM_SETMINTABWIDTH (0x1331, answers the width before or -1).",
         "deliver, since v0.20.0: a call of the page object like msgBox, not an op: deliver(name, mime, hex, title). hex is the file's bytes as hexadecimal digits. The renderer hands the file to the user: show it, and let the user print, open or save it. Answer the number of bytes as a string. Rexx side: .oodn~deliver(path, title, mime).",
         "New in v0.21.0. Control kind STATUSBAR: a bar docked at the bottom of the dialog whatever rectangle is given; its ops sb.setParts (right edges in pixels joined by spaces, -1 is to the end), sb.parts, sb.setText(part, text), sb.text, sb.has, sb.setTip, sb.tip, sb.simple(1|0), sb.isSimple, sb.rect, sb.minHeight, sb.bk; parts count from 0, part 255 is the text of simple mode; setText and getText on a status bar address part 0. List-view: lv.order (the uids in the order wanted), lv.uids, lv.row. Any control: optUid(index) gives a lasting number for an item of a combo or list box; getCue; lineOf, lineStart, lineLen (edit); tabSize; pad (padding, read or set); rowHeight; tabStop(1|0). The color op on the dialog (id 0) colours its client area. A call of the page object, not an op: windowAt(x, y) answers key and id of the window at a screen point. The KEY event now has extra: the id of the control that has the focus, 0 if none.",
+        "New in v0.22.0. Control kind TOOLBAR: a row of buttons docked at the top of the dialog; ops tb.insert(index or -1, cmd SEP text SEP style SEP state SEP image), tb.count, tb.indexOf(cmd), tb.get(index), tb.byCmd(cmd) (both answer cmd, text, style, state, image joined by the separator), tb.setText(cmd, text), tb.setImage(cmd, image), tb.setState(cmd, WORD, 1|0), tb.has(cmd, WORD); indexes from 0; a click on a button whose state has ENABLED sends the event CMD with the button's cmd and code 0; a CHECK button toggles CHECKED first; a CHECKGROUP button becomes the only CHECKED one of its run of CHECKGROUP buttons.",
+        "Custom draw, v0.22.0. op cd.on on a list-view or tree-view: from then on, after each drawing of the control, after a scroll, and after a row's check box changes, send the event kind CD with code ROWS and extra = what is in view: for a list-view the first and last row index, for a tree-view the items in view as item:level joined by spaces. Send no second CD for a control until the answer to the first has come. The answer is op cd.paint with JSON: list-view rows of [uid, [[column or -1 for the whole row, text colour, background, font], ...]]; tree-view rows of [item, text colour, background, font]; an empty string in a place means as drawn; the answer may be []. Keep a row's paint until the next answer for that row. Reference: cdAsk, cdOp, cdPaintLv, cdPaintTv in src/oodialog-web.js.",
+        "Also v0.22.0: lv.insRow with a fourth argument U answers index and uid; tv.kids(item) and tv.order(item, items); a list of more than 100 rows may be drawn late (when changes pause), but an op that reads the drawing must draw first.",
         "mouseSub and mouse: the Mouse class. mouse verbs: capture release getCapture state cursor.",
         "tip.*: tool tips, since v0.18.0. The id is the tool tip's ID, not a control's: route tip.* before looking the id up as a control. tip.add takes one JSON text {key, host, rect, text}: host is a control's id or 0 for the dialog; rect is null (the whole window) or [l, t, r, b] in that window's client area; text null means the text is asked from the program. Others: tip.del(key), tip.text(key, text; one separator character means asked), tip.relay(hostId, 1|0), tip.count, tip.delay(ms), tip.maxWidth(px), tip.title(text), tip.active(1|0), tip.events(words), tip.show(text), tip.pos(x, y in screen pixels), tip.pop, tip.shown (toolKey, separator, text; empty if no tip), tip.tree(treeViewId).",
         "The renderer decides when a tip is due: the pointer rests on a tool for the delay. Fixed text: show the box, then send TT SHOW if tip.events names SHOW. Asked text: send TT NEEDTEXT; the program answers with tip.show. An empty text shows nothing. tip.pop ends the tip; if the pointer is still on the tool, the tip is due again after the delay. A tree-view named by tip.tree asks the text of the item under the pointer with NOTIFY GETINFOTIP (extra: the item); the answer is tip.show on tool tip ID 60000 + the tree-view's id.",
@@ -211,10 +214,10 @@ art("ref.oodialog-wasm.state",
     "This article is a snapshot. The current figures are always in README.md of the project, with the version they were measured on; sweep.tsv and poke.tsv hold the per-example results.",
     "reference", ["state", "coverage", "not-done"],
     snapshot=[
-        "Version 0.21.0, 18 November 2026.",
-        "Natives ported: 881 of 1,182 (192 added in v0.21.0; 26 of those accept their call and do nothing, 18 system metrics are fixed values). 12 of the 43 added in v0.18.0 accept their call and do nothing.",
-        "Tests: 52 of 52 pass in headless Chromium. 33 of them are upstream examples or the designer's programs, run unchanged.",
-        "Sweep of the 140 upstream examples: 79 show their dialog, 7 run to the end, 9 show only a message box, 5 stop at a native not ported, 9 stop on an error (8 of them wait for a reader of binary resources), 24 are components, 7 are outside ooDialog.",
+        "Version 0.22.0, 19 November 2026.",
+        "Natives ported: 955 of 1,182 (74 added in v0.22.0: tool bar and custom draw; 192 added in v0.21.0; 26 of those accept their call and do nothing, 18 system metrics are fixed values). 12 of the 43 added in v0.18.0 accept their call and do nothing.",
+        "Tests: 55 of 55 pass in headless Chromium. 35 of them are upstream examples or the designer's programs, run unchanged.",
+        "Sweep of the 140 upstream examples: 81 show their dialog, 7 run to the end, 8 show only a message box, 3 stop at a native not ported, 10 stop on an error (8 of them wait for a reader of binary resources), 24 are components, 7 are outside ooDialog.",
         "Probe at v0.19.0, 88 examples: 73 clean, 11 connect an event that is not produced, 4 with a problem, none of them in the port's own code. This run found four faults of the port in examples the sweep called shows; all four are fixed in v0.19.0.",
         "\"shows\" in the sweep means a dialog appeared. It does not mean every feature of the example works. Only an example that is a test (with steps and assertions) is known to work.",
     ],
@@ -227,6 +230,7 @@ art("ref.oodialog-wasm.state",
         "Tool tips since v0.18.0: tools that are windows or rectangles, fixed and asked text, NEEDTEXT SHOW POP RELAY, ToolInfo, manageAtypicalTool, a tree-view's getToolTips with GETINFOTIP.",
         "Printing since v0.20.0: oodPrint.cls makes a PDF with the estate's oorexx_pdf and the page hands it to the user (Print, Open, Save). A list-view as a table, a text, a report of the program, any file. Not checked in a real browser.",
         "Since v0.21.0: LvItem, LvSubItem, LvFullRow and the list-view methods on them, with sortItems; the StatusBar control; windows by handle (getWindowText, setWindowText, showWindow, sendMessageToControl, sendMessageToWindow); a control's connectKeyPress; the dialog's backgroundColor; item data of a combo box; the old addXxx names of the create methods; SM, SPI, OS, DlgUtil's arithmetic.",
+        "Since v0.22.0: the ToolBar control and TbButton (text buttons; images are kept, not drawn); custom draw of a list-view and a tree-view (customDrawControl, LvCustomDrawSimple, TvCustomDrawSimple); the tree-view's sortChildrenCB; the tree-view's itemInfo answers a stem as upstream.",
         "File dialogs and shell dialogs over the WASM machine's file system.",
     ],
     not_done=[
@@ -251,6 +255,7 @@ art("ops.oodialog-wasm.lessons",
     "operations", ["lessons", "faults", "method"],
     lessons=[
         "A build was pushed with a failing test. Cause: the last run's result was not read. Rule: read every summary line on the final build before the commit.",
+        "A test passed once and was taken as done; on the final build it failed two runs in three. The page drew a 1,000-row list again for every row added, and the time depended on the machine's load. Rule: a new test with waits in it is run three times before it counts; a fill of 1,000 rows is a case every list control gets.",
         "Native coverage went 643, 686, 688, 688, 689 over four releases while samples, printing and the sphere took the time. The architect named it. Whole families were cheap: plain data classes and one-line calls on operations the page already had. Rule: every release states the native count next to the last one, and a release that adds none says why.",
         "A source file was corrected and the test was run without a build. The test ran the old file from dist and showed nothing, because an error in an event method is a message box, not a line of output. Half an hour went on the wrong cause. Rule: build before every test run; when an event method seems to do nothing, look at the page for a message box first.",
         "The probe was not run for three releases. In that time four faults sat in examples the sweep called shows; one put a tab control's pages at the dialog's corner. Rule: run the probe on every release, not only the sweep.",

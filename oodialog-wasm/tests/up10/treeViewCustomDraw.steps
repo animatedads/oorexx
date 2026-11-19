@@ -1,0 +1,27 @@
+wait .ood-tvrow >> text=Computers
+sleep 800
+eval (() => { window.__tv = (t) => { const r = [...document.querySelectorAll('.ood-tvrow')].find(x => x.lastElementChild.textContent === t); if (!r) return 'none'; const g = getComputedStyle(r.lastElementChild); return g.color + ' on ' + g.backgroundColor; }; return [...document.querySelectorAll('.ood-tvrow')].map(x => x.lastElementChild.textContent).join('|'); })()
+expect window.__tv('Products') ==> rgb(0, 20, 82) on rgb(250, 250, 250)
+expect window.__tv('Computers') ==> rgb(82, 0, 20) on rgb(250, 250, 250)
+expect window.__tv('Books') ==> rgb(82, 61, 0) on rgb(250, 250, 250)
+click .ood-tvrow >> text=Books
+sleep 600
+expect window.__tv('Books') ==> rgb(82, 0, 20) on rgb(250, 250, 250)
+expect window.__tv('Computers') ==> rgb(82, 61, 0) on rgb(250, 250, 250)
+click .ood-tvrow >> text=Computers
+sleep 400
+click .ood-dlg >> text=Expand All
+sleep 1200
+eval [...document.querySelectorAll('.ood-tvrow')].length
+expect window.__tv('Motherboards') ==> rgb(0, 20, 82) on rgb(250, 250, 250)
+expect window.__tv('SCSI Motherboards') ==> rgb(82, 61, 0) on rgb(250, 250, 250)
+expect window.__tv('Motherboard A') ==> rgb(0, 82, 20) on rgb(250, 250, 250)
+shot treeViewCustomDraw
+click .ood-tvrow >> text=Products
+sleep 300
+eval (() => { window.__kids = () => { const rows = [...document.querySelectorAll('.ood-tvrow')], p = rows.findIndex(x => x.lastElementChild.textContent === 'Products'), pad = parseFloat(rows[p + 1].style.paddingLeft); return rows.slice(p + 1).filter(x => parseFloat(x.style.paddingLeft) === pad).map(x => x.lastElementChild.textContent).join('|'); }; return window.__kids(); })()
+eval [...document.querySelectorAll(".ood-dlg button")].find(x => x.textContent === "Reverse Sort").click()
+sleep 600
+expect window.__kids() ==> Special Offers|Home Electronics|Computers|Communications|Car Audio and Car Products|Books|Audio Video and Home Entertainment
+expect (window.oodOut.join('').match(/(native function \w+|Error \d+\.\d+[^\n]*|error in event method[^\n]*)/g) || []).length ==> 0
+eval (() => { const b = [...document.querySelectorAll(".ood-dlg button")].find(x => x.textContent === "Close"), r = b.getBoundingClientRect(); b.click(); return "close button bottom " + Math.round(r.bottom) + " of window " + innerHeight; })()

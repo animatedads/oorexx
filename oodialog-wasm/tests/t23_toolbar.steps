@@ -1,0 +1,23 @@
+wait .ood-tb >> text=Where Am I?
+expect (() => { const b = document.querySelector('.ood-tb').getBoundingClientRect(), c = document.querySelector('.ood-dlg .ood-client').getBoundingClientRect(); return Math.abs(b.top - c.top) <= 1 && Math.abs(b.left - c.left) <= 1 && Math.abs(b.right - c.right) <= 1 && b.height >= 22; })() ==> True
+expect [...document.querySelector('.ood-tb').children].map(e => e.tagName === 'SPAN' ? '|' : e.textContent + (e.disabled ? '(off)' : '') + (e.classList.contains('ood-pushed') ? '(on)' : '')).join(' ') ==> Press Me Please Pushed Where Am I? | Bold | Left(on) Right Off
+click .ood-tb >> text=Press Me Please
+sleep 300
+expect document.querySelector('.ood-dlg .ood-static').textContent ==> pressed
+click .ood-tb >> text=Where Am I?
+sleep 300
+expect document.querySelector('.ood-dlg .ood-static').textContent ==> There are 9 buttons.
+click .ood-tb >> text=Pushed
+click .ood-tb >> text=Bold
+click .ood-tb >> text=Bold
+click .ood-tb >> text=Bold
+click .ood-tb >> text=Right
+sleep 300
+expect [...document.querySelectorAll('.ood-tbbtn')].filter(e => e.classList.contains('ood-pushed')).map(e => e.textContent).join(' ') ==> Bold Right
+click .ood-dlg >> text=Report
+sleep 300
+expect document.querySelector('.ood-tbbtn').disabled ==> True
+shot toolbar
+click .ood-tb >> text=Off
+sleep 200
+click .ood-dlg >> text=Close

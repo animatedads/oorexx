@@ -24,9 +24,9 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.21.0"
+  return "0.22.0"
 ::method module_lastChanged class
-  return "2026-11-18"
+  return "2026-11-19"
 ::attribute key unguarded
 ::attribute rexxSelf unguarded
 ::attribute library unguarded
@@ -102,9 +102,9 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.21.0"
+  return "0.22.0"
 ::method module_lastChanged class
-  return "2026-11-18"
+  return "2026-11-19"
 ::attribute rexxSelf unguarded
 ::attribute isBar unguarded
 ::attribute wID unguarded
@@ -131,9 +131,9 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.21.0"
+  return "0.22.0"
 ::method module_lastChanged class
-  return "2026-11-18"
+  return "2026-11-19"
 ::attribute dlg unguarded             -- its dialog's OodDlg
 ::attribute id unguarded
 ::attribute kind unguarded
@@ -149,9 +149,9 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.21.0"
+  return "0.22.0"
 ::method module_lastChanged class
-  return "2026-11-18"
+  return "2026-11-19"
 ::method module_version unguarded
   return self~class~module_version
 ::method module_lastChanged unguarded
@@ -312,6 +312,7 @@
     when kind == "MOUSE" then self~mouseEvent(key, id, code, extra)
     when kind == "GC" then self~grandChildEvent(key, id, code)
     when kind == "TT" then self~ttEvent(key, id, code, extra)
+    when kind == "CD" then self~cdEvent(key, id, extra)
     otherwise nop
   end
 
@@ -1107,6 +1108,261 @@ noPackage:
 ::method dlgctrl_clearRect unguarded
   return 0
 
+/* ToolBar and TbButton (oodToolBar.cpp).  A TbButton's peer is a directory.  Buttons are
+   numbered from 1 in Rexx.  The page keeps command ID, text, style and state of each button;
+   item data and what was said about images are kept here, by command ID.  Images are not
+   drawn: a button shows its text. */
+::method tbb_init_cls unguarded
+  return 0
+::method tbb_init unguarded        -- TbButton~new(cmdID, text, style, state, itemData, bitmapID)
+  use arg self_, msg, a
+  info = .directory~new
+  info~cmdID = 0
+  if a~hasIndex(1) then info~cmdID = self~resolveId(.nil, a[1])
+  info~text = ""
+  if a~hasIndex(2) then info~text = a[2]
+  info~style = self~opt(a, 3)~upper
+  if info~style == "" then info~style = "BUTTON"
+  info~state = self~opt(a, 4)~upper
+  info~itemData = .nil
+  if a~hasIndex(5) then info~itemData = a[5]
+  info~bitmapID = -2                -- (I_IMAGENONE)
+  if a~hasIndex(6) then info~bitmapID = a[6]
+  self_~oodPeer = info
+  return 0
+::method tbb_cmdID unguarded
+  use arg self_
+  return self_~oodPeer~cmdID
+::method tbb_setCmdID unguarded
+  use arg self_, msg, a
+  self_~oodPeer~cmdID = self~resolveId(.nil, a[1])
+::method tbb_text unguarded
+  use arg self_
+  return self_~oodPeer~text
+::method tbb_setText unguarded
+  use arg self_, msg, a
+  self_~oodPeer~text = a[1]
+::method tbb_style unguarded
+  use arg self_
+  return self_~oodPeer~style
+::method tbb_setStyle unguarded
+  use arg self_, msg, a
+  self_~oodPeer~style = a[1]~upper
+::method tbb_state unguarded
+  use arg self_
+  return self_~oodPeer~state
+::method tbb_setState unguarded
+  use arg self_, msg, a
+  self_~oodPeer~state = a[1]~upper
+::method tbb_itemData unguarded
+  use arg self_
+  return self_~oodPeer~itemData
+::method tbb_setItemData unguarded
+  use arg self_, msg, a
+  self_~oodPeer~itemData = a[1]
+::method tbb_bitmapID unguarded
+  use arg self_
+  return self_~oodPeer~bitmapID
+::method tbb_setBitmapID unguarded
+  use arg self_, msg, a
+  self_~oodPeer~bitmapID = a[1]
+::method tbb_assignBitmapID unguarded  -- assignBitmapID(bitmapID, imageListID, offset): offset is added
+  use arg self_, msg, a
+  id = a[1]
+  if a~hasIndex(3) then id = id + a[3]
+  self_~oodPeer~bitmapID = id
+  return 0
+::method tbPut unguarded           -- one TbButton into the tool bar at a 0-based index (-1: the end)
+  use arg self_, button, at
+  if \button~isA(self~classOf("TbButton")) then raise syntax 93.948 array(1, "TbButton")
+  info = button~oodPeer
+  p = self_~oodPeer
+  text = info~text
+  if text~datatype("W") then do       -- a number is an index into the strings given with addString
+    pool = p~dlg~store[p~id "tbstrings"]
+    if pool \== .nil then if text >= 1 & text <= pool~items then text = pool[text]
+  end
+  if text == .nil then text = ""
+  self~op(self_, "tb.insert", at, info~cmdID || self~sep || text || self~sep || info~style || self~sep || info~state || self~sep || info~bitmapID)
+  if info~itemData \== .nil then self~setItemDataOf(p~dlg, p~id, "tb" info~cmdID, info~itemData)
+  return .true
+::method tb_addButtons unguarded   -- addButtons(array of TbButton): at the end
+  use arg self_, msg, a
+  if \a[1]~isA(.Array) then raise syntax 93.948 array(1, "Array")
+  do i = 1 to a[1]~size
+    if \a[1]~hasIndex(i) then raise syntax 93.900 array("The buttons array can not be sparse; index" i "is missing")
+    self~tbPut(self_, a[1][i], -1)
+  end
+  return .true
+::method tb_insertButton unguarded -- insertButton(tbButton, index): the button goes before the button at that index
+  use arg self_, msg, a
+  if a[2] < 1 then raise syntax 93.907 array(2, 1, 4294967295, a[2])
+  return self~tbPut(self_, a[1], a[2] - 1)
+::method tb_buttonCount unguarded
+  use arg self_
+  return self~op(self_, "tb.count")
+::method tb_commandToIndex unguarded   -- 0 if there is no such command ID
+  use arg self_, msg, a
+  return self~op(self_, "tb.indexOf", self~resolveId(self_~oodPeer~dlg~rexxSelf, a[1])) + 1
+::method tb_indexTocommand unguarded
+  use arg self_, msg, a
+  parse value self~op(self_, "tb.get", a[1] - 1) with cmd (self~sep) .
+  if cmd == "" then return 0
+  return cmd
+::method tbButtonOf unguarded      -- a TbButton from what the page answers
+  use arg self_, described
+  if described == "" then return .nil
+  parse var described cmd (self~sep) text (self~sep) style (self~sep) state (self~sep) image
+  p = self_~oodPeer
+  return self~classOf("TbButton")~new(cmd, text, style, state, self~itemData(p~dlg, p~id, "tb" cmd), image)
+::method tb_getButton unguarded    -- getButton(index): a TbButton; .nil if there is no such button
+  use arg self_, msg, a
+  return self~tbButtonOf(self_, self~op(self_, "tb.get", a[1] - 1))
+::method tb_getButtonText unguarded    -- by command ID; .nil if there is no such button
+  use arg self_, msg, a
+  described = self~op(self_, "tb.byCmd", self~resolveId(self_~oodPeer~dlg~rexxSelf, a[1]))
+  if described == "" then return .nil
+  parse var described . (self~sep) text (self~sep) .
+  return text
+::method tb_getButtonTextEx unguarded
+  forward message "tb_getButtonText"
+::method tb_setButtonText unguarded    -- setButtonText(text, cmdID)
+  use arg self_, msg, a
+  return self~op(self_, "tb.setText", self~resolveId(self_~oodPeer~dlg~rexxSelf, a[2]), a[1]) == 1
+::method tbState unguarded
+  use arg self_, a, word, on
+  return self~op(self_, "tb.setState", self~resolveId(self_~oodPeer~dlg~rexxSelf, a[1]), word, on) == 1
+::method tb_checkButton unguarded  -- checkButton(cmdID, check)
+  use arg self_, msg, a
+  on = .true
+  if a~hasIndex(2) then on = (a[2] == .true)
+  return self~tbState(self_, a, "CHECKED", on)
+::method tb_enableButton unguarded
+  use arg self_, msg, a
+  on = .true
+  if a~hasIndex(2) then on = (a[2] == .true)
+  return self~tbState(self_, a, "ENABLED", on)
+::method tbHas unguarded
+  use arg self_, a, word
+  return self~op(self_, "tb.has", self~resolveId(self_~oodPeer~dlg~rexxSelf, a[1]), word) == 1
+::method tb_isButtonChecked unguarded
+  use arg self_, msg, a
+  return self~tbHas(self_, a, "CHECKED")
+::method tb_isButtonEnabled unguarded
+  use arg self_, msg, a
+  return self~tbHas(self_, a, "ENABLED")
+::method tb_isButtonHidden unguarded
+  use arg self_, msg, a
+  return self~tbHas(self_, a, "HIDDEN")
+::method tb_isButtonHighlighted unguarded
+  use arg self_, msg, a
+  return self~tbHas(self_, a, "MARKED")
+::method tb_isButtonIndeterminate unguarded
+  use arg self_, msg, a
+  return self~tbHas(self_, a, "INDETERMINATE")
+::method tb_isButtonPressed unguarded
+  use arg self_, msg, a
+  return self~tbHas(self_, a, "PRESSED")
+::method tb_autoSize unguarded     -- (the bar sizes itself to its buttons)
+  return 0
+::method tb_addString unguarded    -- addString(array of strings): the index (from 1) of the first one added; 0 on failure
+  use arg self_, msg, a
+  p = self_~oodPeer
+  if \a[1]~isA(.Array) then return 0     -- (a ResourceImage's string table: no binary resources here)
+  pool = p~dlg~store[p~id "tbstrings"]
+  if pool == .nil then do
+    pool = .array~new
+    p~dlg~store[p~id "tbstrings"] = pool
+  end
+  first = pool~items + 1
+  do text over a[1]
+    pool~append(text)
+  end
+  return first
+::method tb_changeBitmap unguarded -- changeBitmap(cmdID, bitmapID, imageListID, offset)
+  use arg self_, msg, a
+  id = a[2]
+  if a~hasIndex(4) then id = id + a[4]
+  return self~op(self_, "tb.setImage", self~resolveId(self_~oodPeer~dlg~rexxSelf, a[1]), id) == 1
+::method tbImages unguarded        -- what the program said about the tool bar's images
+  use arg self_
+  p = self_~oodPeer
+  images = p~dlg~store[p~id "tbimages"]
+  if images == .nil then do
+    images = .directory~new
+    images~count = 0
+    images~size = .nil
+    p~dlg~store[p~id "tbimages"] = images
+  end
+  return images
+::method tb_addBitmap unguarded    -- addBitmap(source, count, id): the index of the first new image
+  use arg self_, msg, a
+  images = self~tbImages(self_)
+  first = images~count
+  count = 1
+  if a~hasIndex(2) then count = a[2]
+  images~count = first + count
+  return first
+::method tb_loadImages unguarded   -- (the system's button images: STDSMALL has 15, VIEWSMALL 12, HISTSMALL 5)
+  use arg self_, msg, a
+  images = self~tbImages(self_)
+  first = images~count
+  word = a[1]~upper
+  count = 15
+  if word~left(4) == "VIEW" then count = 12
+  if word~left(4) == "HIST" then count = 5
+  images~count = first + count
+  return first
+::method tb_setBitmapSize unguarded
+  use arg self_, msg, a
+  images = self~tbImages(self_)
+  if images~count > 0 then return .false     -- (only before any bitmap is added)
+  if a[1]~isA(.String) then images~size = self~classOf("Size")~new(a[1], a[2])
+  else images~size = a[1]
+  return .true
+::method tbList unguarded          -- get or set one of the tool bar's image lists; answers the list before
+  use arg self_, which, a, set
+  images = self~tbImages(self_)
+  old = images[which]
+  if set then images[which] = a[1]
+  return old
+::method tb_getImageList unguarded
+  use arg self_, msg, a
+  return self~tbList(self_, "NORMAL", a, .false)
+::method tb_setImageList unguarded
+  use arg self_, msg, a
+  return self~tbList(self_, "NORMAL", a, .true)
+::method tb_getDisabledImageList unguarded
+  use arg self_, msg, a
+  return self~tbList(self_, "DISABLED", a, .false)
+::method tb_setDisabledImageList unguarded
+  use arg self_, msg, a
+  return self~tbList(self_, "DISABLED", a, .true)
+::method tb_getHotImageList unguarded
+  use arg self_, msg, a
+  return self~tbList(self_, "HOT", a, .false)
+::method tb_setHotImageList unguarded
+  use arg self_, msg, a
+  return self~tbList(self_, "HOT", a, .true)
+::method tb_getPressedImageList unguarded
+  use arg self_, msg, a
+  return self~tbList(self_, "PRESSED", a, .false)
+::method tb_setPressedImageList unguarded
+  use arg self_, msg, a
+  return self~tbList(self_, "PRESSED", a, .true)
+::method tb_getExtendedStyle unguarded
+  use arg self_
+  style = self~tbImages(self_)~exStyle
+  if style == .nil then return ""
+  return style
+::method tb_setExtendedStyle unguarded -- answers the style before
+  use arg self_, msg, a
+  old = self~tb_getExtendedStyle(self_)
+  self~tbImages(self_)~exStyle = a[1]~upper
+  return old
+::method tb_customize unguarded    -- (Windows' Customize Toolbar dialog: there is none)
+  return 0
+
 /* StatusBar (oodStatusBar.cpp).  Parts are numbered from 1 in Rexx. */
 ::method stb_setParts unguarded    -- setParts(array of right edges in pixels; -1: to the end)
   use arg self_, msg, a
@@ -1324,6 +1580,27 @@ noPackage:
 ::method e_getCue unguarded
   use arg self_
   return self~op(self_, "getCue")
+/* sortChildrenCB(parent, method, param): the direct children of the item are put in the order
+   a method of the dialog gives.  The method gets the item data of two children and param,
+   and answers a negative number, 0 or a positive number. */
+::method tv_sortChildrenCB unguarded
+  use arg self_, msg, a
+  p = self_~oodPeer
+  parent = self~tvItem(a, 1)
+  dlg = p~dlg~rexxSelf
+  if \dlg~hasMethod(a[2]) then raise syntax 93.900 array('sortChildrenCB: the dialog has no method "'a[2]'"')
+  param = .nil
+  if a~hasIndex(3) then param = a[3]
+  keys = .array~new
+  do h over self~op(self_, "tv.kids", parent)~makeArray(" ")
+    keys~append(.array~of(self~itemData(p~dlg, p~id, h), h))
+  end
+  if keys~items < 2 then return .true
+  order = ""
+  do pair over keys~stableSortWith(.OodCallOrder~new(dlg, a[2], param))
+    order = order pair[2]
+  end
+  return self~op(self_, "tv.order", parent, order~strip) == 1
 ::method tv_removeItemData unguarded   -- answers the data that was there
   use arg self_, msg, a
   p = self_~oodPeer
@@ -2105,6 +2382,165 @@ noPackage:
   return d~ctlInfo
 ::method cd_init unguarded
   return 0
+::method cd_init_cls unguarded
+  return 0
+/* customDrawControl(id, "ListView" | "TreeView", method, flags): the method (onCustomDraw if
+   omitted) is asked how to draw each row in view (lvSimpleCustomDraw of oodListView.cpp).
+   It gets one LvCustomDrawSimple or TvCustomDrawSimple, sets clrText, clrTextBk, font and
+   reply on it, and answers .true to have them used.  A reply with CDRF_NOTIFYSUBITEMDRAW from
+   a list-view's row asks the method again for each of its columns. */
+::method cd_customDrawControl unguarded
+  use arg self_, msg, a
+  d = self_~oodPeer
+  id = self~resolveId(self_, a[1])
+  if id < 1 then return .false
+  name = self~opt(a, 2)~upper
+  if name \== "LISTVIEW" & name \== "TREEVIEW" then raise syntax 93.900 array('customDrawControl: custom draw is not implemented for "'a[2]'"; ListView and TreeView are')
+  method = "onCustomDraw"
+  if a~hasIndex(3) then if a[3] \== "" then method = a[3]
+  d~store["CD" id] = .array~of(name, method)
+  self~ctlOpWhenLive(d, id, "cd.on")
+  return .true
+::method cdCss unguarded           -- a colour of a custom draw answer: '' if none was set
+  use arg color
+  if color == .nil then return '""'
+  if color == 4278190080 | color == 4294967295 then return '""'      -- CLR_DEFAULT, CLR_NONE
+  return '"'self~colorOf(color)'"'
+::method cdFont unguarded
+  use arg font
+  if font == .nil then return '""'
+  return self~ttJson(self~gdiFontCss(font))
+::method cdAskOne unguarded        -- one question to the program; the paint as JSON fields, or "" if it answered no
+  use arg dlg, method, cls, info
+  answer = self~invokeResult(dlg, method, .array~of(self~classOf(cls)~new(info)))
+  if answer \== .true then return ""
+  return self~cdCss(info~clrText)","self~cdCss(info~clrTextBk)","self~cdFont(info~font)
+::method cdEvent unguarded         -- the page drew rows: ask the program about each
+  use arg key, id, rows
+  d = self~dialogOf(key)
+  if d == .nil then return
+  entry = d~store["CD" id]
+  if entry == .nil then return
+  dlg = d~rexxSelf
+  json = ""
+  if entry[1] == "LISTVIEW" then do
+    parse var rows first last .
+    columns = self~ctlOp(d, id, "lv.colCount")
+    do i = first to last
+      if \d~live then return
+      uid = self~ctlOp(d, id, "lv.uid", i)
+      if uid == 0 then leave
+      info = .directory~new
+      info~drawStage = 65537         -- CDDS_ITEMPREPAINT
+      info~item = i
+      info~subItem = 0
+      info~id = id
+      info~itemData = self~itemData(d, id, uid)
+      info~reply = 0
+      paint = self~cdAskOne(dlg, entry[2], "LvCustomDrawSimple", info)
+      if paint == "" then iterate
+      cells = "[-1,"paint"]"
+      if info~reply~datatype("W") then if info~reply // 64 >= 32 then do c = 0 to columns - 1    -- CDRF_NOTIFYSUBITEMDRAW
+        sub = .directory~new
+        sub~drawStage = 196609       -- CDDS_SUBITEMPREPAINT
+        sub~item = i
+        sub~subItem = c
+        sub~id = id
+        sub~itemData = info~itemData
+        sub~reply = 0
+        subPaint = self~cdAskOne(dlg, entry[2], "LvCustomDrawSimple", sub)
+        if subPaint \== "" then cells = cells",["c","subPaint"]"
+      end
+      if json \== "" then json = json","
+      json = json"["uid",["cells"]]"
+    end
+  end
+  else do item over rows~makeArray(" ")
+    if \d~live then return
+    parse var item h ":" level
+    info = .directory~new
+    info~drawStage = 65537
+    info~item = self~tvHandle(h)
+    info~level = level
+    info~id = id
+    info~itemData = self~itemData(d, id, h)
+    info~reply = 0
+    paint = self~cdAskOne(dlg, entry[2], "TvCustomDrawSimple", info)
+    if paint == "" then iterate
+    if json \== "" then json = json","
+    json = json"["h","paint"]"
+  end
+  self~ctlOp(d, id, "cd.paint", "["json"]")         -- (always: the page waits for the answer before it asks again)
+::method lvcds_init_cls unguarded
+  return 0
+::method lvcds_init unguarded      -- (made by cdEvent with the directory that is its state)
+  use arg self_, msg, a
+  if \a~hasIndex(1) then raise syntax 93.900 array("The LvCustomDrawSimple class can not be instantiated from Rexx code")
+  if \a[1]~isA(.Directory) then raise syntax 93.900 array("The LvCustomDrawSimple class can not be instantiated from Rexx code")
+  self_~oodPeer = a[1]
+  return 0
+::method lvcds_getDrawStage unguarded
+  use arg self_
+  return self_~oodPeer~drawStage
+::method lvcds_getID unguarded
+  use arg self_
+  return self_~oodPeer~id
+::method lvcds_getItem unguarded
+  use arg self_
+  return self_~oodPeer~item
+::method lvcds_getItemData unguarded
+  use arg self_
+  return self_~oodPeer~itemData
+::method lvcds_getSubItem unguarded
+  use arg self_
+  return self_~oodPeer~subItem
+::method lvcds_setClrText unguarded
+  use arg self_, msg, a
+  self_~oodPeer~clrText = a[1]
+::method lvcds_setClrTextBk unguarded
+  use arg self_, msg, a
+  self_~oodPeer~clrTextBk = a[1]
+::method lvcds_setFont unguarded
+  use arg self_, msg, a
+  self_~oodPeer~font = a[1]
+::method lvcds_setReply unguarded
+  use arg self_, msg, a
+  self_~oodPeer~reply = a[1]
+::method tvcds_init_cls unguarded
+  return 0
+::method tvcds_init unguarded
+  use arg self_, msg, a
+  if \a~hasIndex(1) then raise syntax 93.900 array("The TvCustomDrawSimple class can not be instantiated from Rexx code")
+  if \a[1]~isA(.Directory) then raise syntax 93.900 array("The TvCustomDrawSimple class can not be instantiated from Rexx code")
+  self_~oodPeer = a[1]
+  return 0
+::method tvcds_getDrawStage unguarded
+  use arg self_
+  return self_~oodPeer~drawStage
+::method tvcds_getID unguarded
+  use arg self_
+  return self_~oodPeer~id
+::method tvcds_getItem unguarded
+  use arg self_
+  return self_~oodPeer~item
+::method tvcds_getItemData unguarded
+  use arg self_
+  return self_~oodPeer~itemData
+::method tvcds_getLevel unguarded
+  use arg self_
+  return self_~oodPeer~level
+::method tvcds_setClrText unguarded
+  use arg self_, msg, a
+  self_~oodPeer~clrText = a[1]
+::method tvcds_setClrTextBk unguarded
+  use arg self_, msg, a
+  self_~oodPeer~clrTextBk = a[1]
+::method tvcds_setFont unguarded
+  use arg self_, msg, a
+  self_~oodPeer~font = a[1]
+::method tvcds_setReply unguarded
+  use arg self_, msg, a
+  self_~oodPeer~reply = a[1]
 ::method cd_controlDlgInit unguarded
   return 0
 ::method cd_get_extraOptions unguarded
@@ -5149,7 +5585,7 @@ noPackage:
 ::method en_connectMonthCalendarEvent unguarded
   use arg self_, msg, a
   return self~connectNotify(self_, a, "GETDAYSTATE GETDAYSTATE SELCHANGE SELCHANGE SELECT SELECT")
-::method en_connectToolBarEvent unguarded
+::method en_connectToolBarEvent unguarded   -- (a button's click is a command: connectButtonEvent. The TBN_ events are not produced)
   use arg self_, msg, a
   return self~notProduced("tool bar", a)
 ::method en_connectStatusBarEvent unguarded
@@ -5686,10 +6122,10 @@ noPackage:
   end
   return extra
 ::method lvPutItem unguarded       -- what an LvItem says, onto the row at index
-  use arg self_, index, item, withText
+  use arg self_, index, item, withText, uid = ""
   info = item~oodPeer
   mask = self~lvi_mask(item)~upper
-  uid = self~op(self_, "lv.uid", index)
+  if uid == "" then uid = self~op(self_, "lv.uid", index)
   if uid == 0 then return .false
   if withText & info~text \== .nil & mask~wordPos("TEXT") > 0 then self~op(self_, "lv.setCell", index, 0, info~text)
   extra = self~lvExtra(self_, uid)
@@ -5714,16 +6150,16 @@ noPackage:
   do sub over r~subs
     texts = texts || self~sep || self~lvsi_text(sub)
   end
-  index = self~op(self_, "lv.insRow", at, texts)
-  if index < 0 then return -1
+  parse value self~op(self_, "lv.insRow", at, texts, "U") with index uid .
+  if index == "" | index < 0 then return -1
   r~item~oodPeer["INDEX"] = index
-  self~lvPutItem(self_, index, r~item, .false)
-  extra = self~lvExtra(self_, self~op(self_, "lv.uid", index))
+  self~lvPutItem(self_, index, r~item, .false, uid)
+  extra = self~lvExtra(self_, uid)
   do sub over r~subs
     sub~oodPeer~item = index
     if sub~oodPeer~imageIndex \== .nil then extra~images[sub~oodPeer~subItem] = sub~oodPeer~imageIndex
   end
-  if r~forSorting then self~setItemDataOf(self_~oodPeer~dlg, self_~oodPeer~id, self~op(self_, "lv.uid", index), row)
+  if r~forSorting then self~setItemDataOf(self_~oodPeer~dlg, self_~oodPeer~id, uid, row)
   return index
 ::method lvRowArg unguarded
   use arg a
@@ -5918,10 +6354,13 @@ noPackage:
   end
   h = self~op(self_, "tv.ins", parent, after, self~opt(a, 3) || self~sep || self~opt(a, 6)~upper)
   if h == "" | h == 0 then return 0
-  if a~hasIndex(8) then do
-    p = self_~oodPeer
-    self~setItemDataOf(p~dlg, p~id, h, a[8])
-  end
+  p = self_~oodPeer
+  if a~hasIndex(8) then self~setItemDataOf(p~dlg, p~id, h, a[8])
+  image = -1                         -- (image indexes are kept and answered; the page draws no item images)
+  if a~hasIndex(4) then image = a[4]
+  selected = image
+  if a~hasIndex(5) then selected = a[5]
+  if image \== -1 | selected \== -1 then p~dlg~store[p~id "tvimg" h] = .array~of(image, selected)
   return self~tvHandle(h)
 ::method tv_delete unguarded
   use arg self_, msg, a
@@ -5958,12 +6397,17 @@ noPackage:
   if info == "" then return -1
   sep = self~sep
   parse var info text (sep) children (sep) state
-  d = .directory~new
-  d~text = text
-  d~children = children
-  d~image = -1
-  d~selectedImage = -1
-  d~state = state
+  p = self_~oodPeer
+  h = self~tvItem(a, 1)
+  images = p~dlg~store[p~id "tvimg" h]
+  if images == .nil then images = .array~of(-1, -1)
+  d = .stem~new("InternalTVItemInfo")      -- a stem, as upstream answers: info.!Text, info.!State ...
+  d["!TEXT"] = text
+  d["!CHILDREN"] = (children > 0)
+  d["!IMAGE"] = images[1]
+  d["!SELECTEDIMAGE"] = images[2]
+  d["!STATE"] = state
+  d["!ITEMDATA"] = self~itemData(p~dlg, p~id, h)
   return d
 ::method tv_modify unguarded       -- modify(item, label, image, selectedImage, opts, children, userData)
   use arg self_, msg, a
@@ -5973,6 +6417,15 @@ noPackage:
   if a~hasIndex(2) then flag = flag"T"
   if a~hasIndex(5) then flag = flag"O"
   change = flag || self~sep || self~opt(a, 2) || self~sep || self~opt(a, 5)~upper
+  if a~hasIndex(3) | a~hasIndex(4) then do       -- the image indexes
+    p = self_~oodPeer
+    images = p~dlg~store[p~id "tvimg" h]
+    if images == .nil then images = .array~of(-1, -1)
+    if a~hasIndex(3) then images[1] = a[3]
+    if a~hasIndex(4) then images[2] = a[4]
+    p~dlg~store[p~id "tvimg" h] = images
+  end
+  if a~hasIndex(7) then self~setItemDataOf(self_~oodPeer~dlg, self_~oodPeer~id, h, a[7])
   if self~op(self_, "tv.modify", h, change) == 1 then return 0
   return -1
 ::method tv_selectItem unguarded   -- select, makeFirstVisible, dropHighlight
@@ -7387,6 +7840,11 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
 .ood-deliverbar span{flex:1 1 12em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ood-deliveract{color:#1f3f66;background:#fff;border-radius:3px;padding:.25em .8em;text-decoration:none}
 .ood-deliverview{flex:1;border:0;width:100%;background:#888}
+.ood-tb{position:absolute;display:flex;flex-wrap:wrap;align-items:center;gap:2px;box-sizing:border-box;padding:2px 3px;background:#f0f0f0;border-bottom:1px solid #d0d0d0}
+.ood-tbbtn{font:12px 'Segoe UI',Tahoma,sans-serif;padding:2px 8px;border:1px solid transparent;border-radius:2px;background:transparent;color:#222}
+.ood-tbbtn:hover:not(:disabled){border-color:#7a9ac0;background:#e5f1fb}
+.ood-tbbtn:disabled{color:#999}
+.ood-tbsep{width:1px;align-self:stretch;margin:2px 3px;background:#bbb}
 .ood-stb{position:absolute;display:flex;box-sizing:border-box;background:#f0f0f0;border-top:1px solid #d0d0d0;font:12px 'Segoe UI',Tahoma,sans-serif;color:#222}
 .ood-stbpart{box-sizing:border-box;padding:3px 6px;border-right:1px solid #c8c8c8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ood-stbpart:last-child{border-right:0}
@@ -7853,6 +8311,10 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
         };
         up.addEventListener('click', () => step(1)); dn.addEventListener('click', () => step(-1));
         break; }
+      case 'TOOLBAR':                                       // a row of buttons along the top of the dialog
+        el = main = D.createElement('div'); el.className = 'ood-tb'; el.setAttribute('role', 'toolbar'); c.focusable = false; c.docked = 'top';
+        c.btns = [];
+        break;
       case 'STATUSBAR':                                     // a bar along the bottom of the dialog, in parts
         el = main = D.createElement('div'); el.className = 'ood-stb'; c.focusable = false; c.docked = true;
         c.parts = [{ edge: -1, text: '', tip: '' }]; c.simple = false; c.simpleText = '';
@@ -7863,7 +8325,8 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
     }
     c.el = el; c.main = main;
     place(dlg, el, c);
-    if (c.docked) { el.style.left = '0'; el.style.right = '0'; el.style.bottom = '0'; el.style.top = ''; el.style.width = ''; if (!c.h) el.style.height = '22px'; }   // Windows puts a status bar at the bottom, whatever rectangle is given
+    if (c.docked === 'top') { el.style.left = '0'; el.style.right = '0'; el.style.top = '0'; el.style.width = ''; el.style.height = ''; el.style.minHeight = '24px'; }   // Windows puts a tool bar at the top
+    else if (c.docked) { el.style.left = '0'; el.style.right = '0'; el.style.bottom = '0'; el.style.top = ''; el.style.width = ''; if (!c.h) el.style.height = '22px'; }   // Windows puts a status bar at the bottom, whatever rectangle is given
     if (c.kind === 'COMBO' && c.droplist) el.style.height = Math.round(12 * dlg.fy) + 'px';   // cy is the dropped height
     if (c.kind === 'COMBO' && !c.droplist) el.style.height = Math.round(12 * dlg.fy) + 'px';
     if (c.kind === 'UPDOWN' && c.buddy && (has(o, 'RIGHT') || has(o, 'LEFT'))) {   // sits inside its buddy's edge
@@ -7892,7 +8355,79 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
   function note(dlg, c, ev, extra) {                           // a WM_NOTIFY to Rexx, if connected
     if (dlg.subs.has(c.id + '.' + ev)) fire(dlg.key, 'NOTIFY', c.id, ev, extra);
   }
-  function later(c, fn) { if (c.dirty) return; c.dirty = true; queueMicrotask(() => { c.dirty = false; fn(c); }); }
+  /* ---- Custom draw ----
+     op(key, id, 'cd.on') : the program wants to colour the rows of this list-view or tree-view.
+     After each time the control is drawn, and after it is scrolled, the page sends
+     ('CD', id, 'ROWS', what is in view): for a list-view "first last" (row indexes), for a
+     tree-view the items in view as "item:level item:level ...".  The program answers with
+     op(key, id, 'cd.paint', JSON): for a list-view rows of [uid, [[column or -1 for the whole
+     row, text colour, background, font], ...]]; for a tree-view rows of [item, text colour,
+     background, font].  '' leaves a value as it is drawn.  A row keeps its paint until the
+     next answer for it.  The page sends no second question for a control before the first is
+     answered: the program answers every question, with '[]' if it has nothing to say. */
+  function cdApply(el, fg, bg, font) { el.style.color = fg || ''; el.style.background = bg || ''; el.style.font = font || ''; }
+  function cdPaintLv(c) {
+    c.rows.forEach((row, i) => {
+      const tr = c.tbody.children[i]; if (!tr || !row.cd) return;
+      for (const [col, fg, bg, font] of row.cd) {
+        if (col < 0) [...tr.children].forEach((td) => cdApply(td, fg, bg, font));
+        else if (tr.children[col]) cdApply(tr.children[col], fg, bg, font);
+      }
+    });
+  }
+  function cdPaintTv(c) {
+    c.body.querySelectorAll('.ood-tvrow').forEach((row) => { const nd = c.nodes.get(Number(row.dataset.h)); if (nd && nd.cd) cdApply(row.lastElementChild, nd.cd[0], nd.cd[1], nd.cd[2]); });
+  }
+  function cdAsk(c) {                                          // one question at a time: the next waits for the answer
+    if (!c.cdDlg || c.cdTimer) return;
+    if (c.cdBusy) { c.cdAgain = true; return; }
+    c.cdTimer = setTimeout(() => {
+      c.cdTimer = 0;
+      const dlg = c.cdDlg; if (!ood.dialogs.has(dlg.key)) return;
+      const box = c.el.getBoundingClientRect(), seen = (e) => { const r = e.getBoundingClientRect(); return r.bottom > box.top && r.top < box.bottom; };
+      if (c.kind === 'LISTVIEW') {
+        const trs = [...c.tbody.children]; let first = trs.findIndex(seen), last = first;
+        if (first < 0) return;
+        while (last + 1 < trs.length && seen(trs[last + 1])) last++;
+        c.cdBusy = true; fire(dlg.key, 'CD', c.id, 'ROWS', first + ' ' + last);
+      } else {
+        const rows = [...c.body.querySelectorAll('.ood-tvrow')].filter(seen); if (!rows.length) return;
+        const level = (h) => { let n = 0, nd = c.nodes.get(h); while (nd && nd.parent) { n++; nd = c.nodes.get(nd.parent); } return n; };
+        c.cdBusy = true; fire(dlg.key, 'CD', c.id, 'ROWS', rows.map((r) => r.dataset.h + ':' + level(Number(r.dataset.h))).join(' '));
+      }
+    }, 30);
+  }
+  function cdOp(dlg, c, name, a) {
+    if (name === 'on') { if (!c.cdDlg) { c.cdDlg = dlg; c.el.addEventListener('scroll', () => cdAsk(c)); } cdAsk(c); return '1'; }
+    if (name === 'paint') {                                    // the answer; an empty one ('[]') says "as drawn"
+      const rows = JSON.parse(String(a));
+      c.cdBusy = false; if (c.cdAgain) { c.cdAgain = false; cdAsk(c); }
+      if (c.kind === 'LISTVIEW') { const by = new Map(c.rows.map((r) => [r.uid, r])); for (const [uid, paint] of rows) { const r = by.get(uid); if (r) r.cd = paint; } cdPaintLv(c); }
+      else { for (const [h, fg, bg, font] of rows) { const nd = c.nodes.get(h); if (nd) nd.cd = [fg, bg, font]; } cdPaintTv(c); }
+      return '1';
+    }
+    return '';
+  }
+  /* Drawing a control again is put off to the end of the current call.  A long list that is
+     being filled row by row would be drawn, laid out and painted once for each row.  So a
+     control of more than 100 rows is drawn when no change has come for 50 ms, and at the
+     latest 300 ms after the first change.  An operation that reads the drawing
+     (flushRender) draws first. */
+  function later(c, fn) {
+    const run = () => { if (!c.dirty) return; c.dirty = false; clearTimeout(c.drawTimer); c.drawTimer = 0; fn(c); c.draws = (c.draws || 0) + 1; };
+    if (c.rows && c.rows.length > 100) {
+      const now = performance.now();
+      if (!c.dirty) { c.dirty = true; c.dirtySince = now; }
+      c.drawNow = run;
+      clearTimeout(c.drawTimer);
+      c.drawTimer = setTimeout(run, now - c.dirtySince > 300 ? 0 : 50);
+      return;
+    }
+    if (c.dirty) return; c.dirty = true;
+    c.drawNow = run;
+    queueMicrotask(run);
+  }
+  function flushRender(c) { if (c.dirty && c.drawTimer) { clearTimeout(c.drawTimer); c.drawNow(); } }
 
   function lvRender(c) {
     const report = c.view === 'REPORT';
@@ -7922,7 +8457,9 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       }
       c.tbody.appendChild(tr);
     });
+    if (c.cdDlg) { cdPaintLv(c); cdAsk(c); }
   }
+  const LV_DATA_OPS = new Set(['lv.insRow', 'lv.setCell', 'lv.cell', 'lv.uid', 'lv.uids', 'lv.row', 'lv.count', 'lv.colCount', 'lv.find', 'lv.itemState', 'lv.state', 'lv.check', 'lv.isChecked', 'lv.order']);   // these do not read the drawing
   function lvSel(dlg, c, i, on) {
     const row = c.rows[i]; if (!row || !!row.sel === on) return;
     row.sel = on; later(c, lvRender);
@@ -7965,7 +8502,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       if (th) { note(dlg, c, 'COLUMNCLICK', th.cellIndex); return; }
       const [i, sub] = hit(e);
       if (e.target.classList.contains('ood-lvchk')) {
-        c.rows[i].chk = e.target.checked; note(dlg, c, 'CHECK', i + SEP + (e.target.checked ? 'CHECKED' : 'UNCHECKED')); return;
+        c.rows[i].chk = e.target.checked; note(dlg, c, 'CHECK', i + SEP + (e.target.checked ? 'CHECKED' : 'UNCHECKED')); if (c.cdDlg) cdAsk(c); return;   // (Windows draws the item again)
       }
       lvPick(dlg, c, i, e);
       note(dlg, c, 'CLICK', i + SEP + sub + SEP + keysOf(e));
@@ -8006,6 +8543,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       if (nd.open) walk(nd.kids, depth + 1);
     });
     walk(c.roots, 0);
+    if (c.cdDlg) { cdPaintTv(c); cdAsk(c); }
   }
   function tvSelect(dlg, c, h, action) {
     if (c.selH === h) return;
@@ -8828,13 +9366,67 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
     if (c && name === 'pointFont') { m.style.fontFamily = '"' + a + '","Segoe UI",Tahoma,sans-serif'; m.style.fontSize = Math.round(Number(b) * 96 / 72 * ood.scale * 100) / 100 + 'px'; const st = String(c2); m.style.fontWeight = st.includes('B') ? 'bold' : 'normal'; m.style.fontStyle = st.includes('I') ? 'italic' : 'normal'; m.style.textDecoration = st.includes('U') ? 'underline' : 'none'; return '1'; }
     if (c && name === 'ud.range') return c.min + ' ' + c.max;
     if (c && name === 'ud.buddy') { const old = c.buddy; if (a !== '') c.buddy = Number(a); return String(old); }
-    if (c && name.startsWith('lv.')) return lvOp(dlg, c, name.slice(3), a, b, c2);
+    if (c && name.startsWith('lv.')) { if (!LV_DATA_OPS.has(name)) flushRender(c); return lvOp(dlg, c, name.slice(3), a, b, c2); }
     if (c && c.parts && name.startsWith('sb.')) return stbOp(dlg, c, name.slice(3), a, b);
+    if (c && c.btns && name.startsWith('tb.')) return tbOp(dlg, c, name.slice(3), a, b, c2);
+    if (c && name.startsWith('cd.')) return cdOp(dlg, c, name.slice(3), a);
     if (c && name.startsWith('tv.')) return tvOp(dlg, c, name.slice(3), a, b, c2);
     if (c && name.startsWith('tab.')) return tabOp(dlg, c, name.slice(4), a, b, c2);
     ood.log.push('op ' + name);
     return '';
   };
+
+  /* ---- Tool bar ----
+     A button: {cmd, text, style, state, image}.  style and state are sets of the Windows
+     keywords (style: BUTTON SEP CHECK GROUP CHECKGROUP DROPDOWN ...; state: ENABLED CHECKED
+     PRESSED HIDDEN INDETERMINATE MARKED ...).  A click on an enabled button sends
+     ('CMD', cmd, 0), as a push button does.  A CHECK button turns CHECKED on and off; a
+     CHECKGROUP button is checked and the others of its run of CHECKGROUP buttons are not.
+     Indexes are from 0 here.  Images are not drawn: a button shows its text. */
+  function tbRender(dlg, c) {
+    c.el.textContent = '';
+    c.btns.forEach((b, i) => {
+      if (b.state.has('HIDDEN')) return;
+      if (b.style.has('SEP')) { const sp = D.createElement('span'); sp.className = 'ood-tbsep'; c.el.appendChild(sp); return; }
+      const e = D.createElement('button'); e.type = 'button'; e.className = 'ood-tbbtn'; e.dataset.cmd = String(b.cmd); e.textContent = b.text;
+      e.disabled = !b.state.has('ENABLED');
+      if (b.state.has('CHECKED') || b.state.has('PRESSED')) e.classList.add('ood-pushed');
+      if (b.state.has('INDETERMINATE')) e.style.opacity = '.6';
+      if (b.style.has('CHECK') || b.style.has('CHECKGROUP')) e.setAttribute('aria-pressed', b.state.has('CHECKED') ? 'true' : 'false');
+      e.addEventListener('click', () => {
+        if (b.style.has('CHECKGROUP')) {
+          let lo = i, hi = i;
+          while (lo > 0 && c.btns[lo - 1].style.has('CHECKGROUP')) lo--;
+          while (hi < c.btns.length - 1 && c.btns[hi + 1].style.has('CHECKGROUP')) hi++;
+          for (let k = lo; k <= hi; k++) c.btns[k].state.delete('CHECKED');
+          b.state.add('CHECKED'); tbRender(dlg, c);
+        } else if (b.style.has('CHECK')) { if (b.state.has('CHECKED')) b.state.delete('CHECKED'); else b.state.add('CHECKED'); tbRender(dlg, c); }
+        fire(dlg.key, 'CMD', b.cmd, 0);
+      });
+      c.el.appendChild(e);
+    });
+  }
+  function tbOp(dlg, c, name, a, b, c2) {
+    const words = (t) => new Set(String(t).toUpperCase().split(' ').filter(Boolean));
+    const byCmd = (cmd) => c.btns.find((x) => x.cmd === Number(cmd) && !x.style.has('SEP'));
+    const show = (x) => [x.cmd, x.text, [...x.style].join(' '), [...x.state].join(' '), x.image].join(SEP);
+    switch (name) {
+      case 'insert': { const parts = String(b).split(SEP), at = Number(a);            // insert(index or -1, cmd SEP text SEP style SEP state SEP image)
+        const btn = { cmd: Number(parts[0]), text: parts[1] || '', style: words(parts[2] || 'BUTTON'), state: words(parts[3] || ''), image: Number(parts[4] || -1) };
+        if (at < 0 || at >= c.btns.length) c.btns.push(btn); else c.btns.splice(at, 0, btn);
+        tbRender(dlg, c); return '1'; }
+      case 'count': return String(c.btns.length);
+      case 'indexOf': return String(c.btns.findIndex((x) => x.cmd === Number(a) && !x.style.has('SEP')));
+      case 'get': return c.btns[Number(a)] ? show(c.btns[Number(a)]) : '';
+      case 'byCmd': { const x = byCmd(a); return x ? show(x) : ''; }
+      case 'setText': { const x = byCmd(a); if (!x) return '0'; x.text = String(b); tbRender(dlg, c); return '1'; }
+      case 'setImage': { const x = byCmd(a); if (!x) return '0'; x.image = Number(b); return '1'; }
+      case 'setState': { const x = byCmd(a); if (!x) return '0'; if (c2 === '1') x.state.add(String(b)); else x.state.delete(String(b)); tbRender(dlg, c); return '1'; }
+      case 'has': { const x = byCmd(a); return x && x.state.has(String(b)) ? '1' : '0'; }
+      case 'height': return String(Math.round(c.el.getBoundingClientRect().height));
+    }
+    return '';
+  }
 
   /* ---- Status bar ----
      Parts are numbered from 0 here.  A part's edge is its right edge in pixels of the bar; -1 is
@@ -8903,7 +9495,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
         const at = i < 0 || i > c.rows.length ? c.rows.length : i;
         c.rows.splice(at, 0, { cells: String(b).split(SEP), sel: false, chk: false, uid: ++c.uid });
         if (c.focusIdx >= at) c.focusIdx++;
-        later(c, lvRender); return String(at); }
+        later(c, lvRender); return c2 === 'U' ? at + ' ' + c.uid : String(at); }       // (with 'U': the index and the new row's uid)
       case 'setCell': if (!c.rows[i]) return '0'; c.rows[i].cells[Number(b)] = String(c2); later(c, lvRender); return '1';
       case 'cell': return c.rows[i] && c.rows[i].cells[Number(b)] != null ? c.rows[i].cells[Number(b)] : '';
       case 'del': if (!c.rows[i]) return '0'; c.rows.splice(i, 1); if (c.focusIdx === i) c.focusIdx = -1; else if (c.focusIdx > i) c.focusIdx--; later(c, lvRender); return '1';
@@ -8988,6 +9580,9 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
         const l = b.endsWith('VISIBLE') ? tvVisible(c) : sibs(nd), k = l.indexOf(h);
         if (k < 0) return '0';
         return String((b.startsWith('NEXT') ? l[k + 1] : l[k - 1]) || 0); }
+      case 'kids': return (nd ? nd.kids : c.roots).join(' ');                 // the children of an item; of item 0: the root items
+      case 'order': { const list = nd ? nd.kids : c.roots, want = String(b).split(' ').map(Number).filter((x) => list.includes(x));
+        const rest = list.filter((x) => !want.includes(x)); list.length = 0; list.push(...want, ...rest); later(c, tvRender); return '1'; }
       case 'special': return String(a === 'ROOT' ? (c.roots[0] || 0) : a === 'SELECTED' ? c.selH : a === 'FIRSTVISIBLE' ? (c.roots[0] || 0) : 0);
       case 'info': return nd ? nd.text + SEP + nd.kids.length + SEP + [(nd.open ? 'EXPANDED' : ''), (nd.bold ? 'BOLD' : ''), (h === c.selH ? 'SELECTED' : '')].filter(Boolean).join(' ') : '';
       case 'text': return nd ? nd.text : '';

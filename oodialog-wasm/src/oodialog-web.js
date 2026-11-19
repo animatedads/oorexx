@@ -50,6 +50,11 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
 .ood-deliverbar span{flex:1 1 12em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ood-deliveract{color:#1f3f66;background:#fff;border-radius:3px;padding:.25em .8em;text-decoration:none}
 .ood-deliverview{flex:1;border:0;width:100%;background:#888}
+.ood-tb{position:absolute;display:flex;flex-wrap:wrap;align-items:center;gap:2px;box-sizing:border-box;padding:2px 3px;background:#f0f0f0;border-bottom:1px solid #d0d0d0}
+.ood-tbbtn{font:12px 'Segoe UI',Tahoma,sans-serif;padding:2px 8px;border:1px solid transparent;border-radius:2px;background:transparent;color:#222}
+.ood-tbbtn:hover:not(:disabled){border-color:#7a9ac0;background:#e5f1fb}
+.ood-tbbtn:disabled{color:#999}
+.ood-tbsep{width:1px;align-self:stretch;margin:2px 3px;background:#bbb}
 .ood-stb{position:absolute;display:flex;box-sizing:border-box;background:#f0f0f0;border-top:1px solid #d0d0d0;font:12px 'Segoe UI',Tahoma,sans-serif;color:#222}
 .ood-stbpart{box-sizing:border-box;padding:3px 6px;border-right:1px solid #c8c8c8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ood-stbpart:last-child{border-right:0}
@@ -516,6 +521,10 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
         };
         up.addEventListener('click', () => step(1)); dn.addEventListener('click', () => step(-1));
         break; }
+      case 'TOOLBAR':                                       // a row of buttons along the top of the dialog
+        el = main = D.createElement('div'); el.className = 'ood-tb'; el.setAttribute('role', 'toolbar'); c.focusable = false; c.docked = 'top';
+        c.btns = [];
+        break;
       case 'STATUSBAR':                                     // a bar along the bottom of the dialog, in parts
         el = main = D.createElement('div'); el.className = 'ood-stb'; c.focusable = false; c.docked = true;
         c.parts = [{ edge: -1, text: '', tip: '' }]; c.simple = false; c.simpleText = '';
@@ -526,7 +535,8 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
     }
     c.el = el; c.main = main;
     place(dlg, el, c);
-    if (c.docked) { el.style.left = '0'; el.style.right = '0'; el.style.bottom = '0'; el.style.top = ''; el.style.width = ''; if (!c.h) el.style.height = '22px'; }   // Windows puts a status bar at the bottom, whatever rectangle is given
+    if (c.docked === 'top') { el.style.left = '0'; el.style.right = '0'; el.style.top = '0'; el.style.width = ''; el.style.height = ''; el.style.minHeight = '24px'; }   // Windows puts a tool bar at the top
+    else if (c.docked) { el.style.left = '0'; el.style.right = '0'; el.style.bottom = '0'; el.style.top = ''; el.style.width = ''; if (!c.h) el.style.height = '22px'; }   // Windows puts a status bar at the bottom, whatever rectangle is given
     if (c.kind === 'COMBO' && c.droplist) el.style.height = Math.round(12 * dlg.fy) + 'px';   // cy is the dropped height
     if (c.kind === 'COMBO' && !c.droplist) el.style.height = Math.round(12 * dlg.fy) + 'px';
     if (c.kind === 'UPDOWN' && c.buddy && (has(o, 'RIGHT') || has(o, 'LEFT'))) {   // sits inside its buddy's edge
@@ -555,7 +565,79 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
   function note(dlg, c, ev, extra) {                           // a WM_NOTIFY to Rexx, if connected
     if (dlg.subs.has(c.id + '.' + ev)) fire(dlg.key, 'NOTIFY', c.id, ev, extra);
   }
-  function later(c, fn) { if (c.dirty) return; c.dirty = true; queueMicrotask(() => { c.dirty = false; fn(c); }); }
+  /* ---- Custom draw ----
+     op(key, id, 'cd.on') : the program wants to colour the rows of this list-view or tree-view.
+     After each time the control is drawn, and after it is scrolled, the page sends
+     ('CD', id, 'ROWS', what is in view): for a list-view "first last" (row indexes), for a
+     tree-view the items in view as "item:level item:level ...".  The program answers with
+     op(key, id, 'cd.paint', JSON): for a list-view rows of [uid, [[column or -1 for the whole
+     row, text colour, background, font], ...]]; for a tree-view rows of [item, text colour,
+     background, font].  '' leaves a value as it is drawn.  A row keeps its paint until the
+     next answer for it.  The page sends no second question for a control before the first is
+     answered: the program answers every question, with '[]' if it has nothing to say. */
+  function cdApply(el, fg, bg, font) { el.style.color = fg || ''; el.style.background = bg || ''; el.style.font = font || ''; }
+  function cdPaintLv(c) {
+    c.rows.forEach((row, i) => {
+      const tr = c.tbody.children[i]; if (!tr || !row.cd) return;
+      for (const [col, fg, bg, font] of row.cd) {
+        if (col < 0) [...tr.children].forEach((td) => cdApply(td, fg, bg, font));
+        else if (tr.children[col]) cdApply(tr.children[col], fg, bg, font);
+      }
+    });
+  }
+  function cdPaintTv(c) {
+    c.body.querySelectorAll('.ood-tvrow').forEach((row) => { const nd = c.nodes.get(Number(row.dataset.h)); if (nd && nd.cd) cdApply(row.lastElementChild, nd.cd[0], nd.cd[1], nd.cd[2]); });
+  }
+  function cdAsk(c) {                                          // one question at a time: the next waits for the answer
+    if (!c.cdDlg || c.cdTimer) return;
+    if (c.cdBusy) { c.cdAgain = true; return; }
+    c.cdTimer = setTimeout(() => {
+      c.cdTimer = 0;
+      const dlg = c.cdDlg; if (!ood.dialogs.has(dlg.key)) return;
+      const box = c.el.getBoundingClientRect(), seen = (e) => { const r = e.getBoundingClientRect(); return r.bottom > box.top && r.top < box.bottom; };
+      if (c.kind === 'LISTVIEW') {
+        const trs = [...c.tbody.children]; let first = trs.findIndex(seen), last = first;
+        if (first < 0) return;
+        while (last + 1 < trs.length && seen(trs[last + 1])) last++;
+        c.cdBusy = true; fire(dlg.key, 'CD', c.id, 'ROWS', first + ' ' + last);
+      } else {
+        const rows = [...c.body.querySelectorAll('.ood-tvrow')].filter(seen); if (!rows.length) return;
+        const level = (h) => { let n = 0, nd = c.nodes.get(h); while (nd && nd.parent) { n++; nd = c.nodes.get(nd.parent); } return n; };
+        c.cdBusy = true; fire(dlg.key, 'CD', c.id, 'ROWS', rows.map((r) => r.dataset.h + ':' + level(Number(r.dataset.h))).join(' '));
+      }
+    }, 30);
+  }
+  function cdOp(dlg, c, name, a) {
+    if (name === 'on') { if (!c.cdDlg) { c.cdDlg = dlg; c.el.addEventListener('scroll', () => cdAsk(c)); } cdAsk(c); return '1'; }
+    if (name === 'paint') {                                    // the answer; an empty one ('[]') says "as drawn"
+      const rows = JSON.parse(String(a));
+      c.cdBusy = false; if (c.cdAgain) { c.cdAgain = false; cdAsk(c); }
+      if (c.kind === 'LISTVIEW') { const by = new Map(c.rows.map((r) => [r.uid, r])); for (const [uid, paint] of rows) { const r = by.get(uid); if (r) r.cd = paint; } cdPaintLv(c); }
+      else { for (const [h, fg, bg, font] of rows) { const nd = c.nodes.get(h); if (nd) nd.cd = [fg, bg, font]; } cdPaintTv(c); }
+      return '1';
+    }
+    return '';
+  }
+  /* Drawing a control again is put off to the end of the current call.  A long list that is
+     being filled row by row would be drawn, laid out and painted once for each row.  So a
+     control of more than 100 rows is drawn when no change has come for 50 ms, and at the
+     latest 300 ms after the first change.  An operation that reads the drawing
+     (flushRender) draws first. */
+  function later(c, fn) {
+    const run = () => { if (!c.dirty) return; c.dirty = false; clearTimeout(c.drawTimer); c.drawTimer = 0; fn(c); c.draws = (c.draws || 0) + 1; };
+    if (c.rows && c.rows.length > 100) {
+      const now = performance.now();
+      if (!c.dirty) { c.dirty = true; c.dirtySince = now; }
+      c.drawNow = run;
+      clearTimeout(c.drawTimer);
+      c.drawTimer = setTimeout(run, now - c.dirtySince > 300 ? 0 : 50);
+      return;
+    }
+    if (c.dirty) return; c.dirty = true;
+    c.drawNow = run;
+    queueMicrotask(run);
+  }
+  function flushRender(c) { if (c.dirty && c.drawTimer) { clearTimeout(c.drawTimer); c.drawNow(); } }
 
   function lvRender(c) {
     const report = c.view === 'REPORT';
@@ -585,7 +667,9 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       }
       c.tbody.appendChild(tr);
     });
+    if (c.cdDlg) { cdPaintLv(c); cdAsk(c); }
   }
+  const LV_DATA_OPS = new Set(['lv.insRow', 'lv.setCell', 'lv.cell', 'lv.uid', 'lv.uids', 'lv.row', 'lv.count', 'lv.colCount', 'lv.find', 'lv.itemState', 'lv.state', 'lv.check', 'lv.isChecked', 'lv.order']);   // these do not read the drawing
   function lvSel(dlg, c, i, on) {
     const row = c.rows[i]; if (!row || !!row.sel === on) return;
     row.sel = on; later(c, lvRender);
@@ -628,7 +712,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       if (th) { note(dlg, c, 'COLUMNCLICK', th.cellIndex); return; }
       const [i, sub] = hit(e);
       if (e.target.classList.contains('ood-lvchk')) {
-        c.rows[i].chk = e.target.checked; note(dlg, c, 'CHECK', i + SEP + (e.target.checked ? 'CHECKED' : 'UNCHECKED')); return;
+        c.rows[i].chk = e.target.checked; note(dlg, c, 'CHECK', i + SEP + (e.target.checked ? 'CHECKED' : 'UNCHECKED')); if (c.cdDlg) cdAsk(c); return;   // (Windows draws the item again)
       }
       lvPick(dlg, c, i, e);
       note(dlg, c, 'CLICK', i + SEP + sub + SEP + keysOf(e));
@@ -669,6 +753,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       if (nd.open) walk(nd.kids, depth + 1);
     });
     walk(c.roots, 0);
+    if (c.cdDlg) { cdPaintTv(c); cdAsk(c); }
   }
   function tvSelect(dlg, c, h, action) {
     if (c.selH === h) return;
@@ -1491,13 +1576,67 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
     if (c && name === 'pointFont') { m.style.fontFamily = '"' + a + '","Segoe UI",Tahoma,sans-serif'; m.style.fontSize = Math.round(Number(b) * 96 / 72 * ood.scale * 100) / 100 + 'px'; const st = String(c2); m.style.fontWeight = st.includes('B') ? 'bold' : 'normal'; m.style.fontStyle = st.includes('I') ? 'italic' : 'normal'; m.style.textDecoration = st.includes('U') ? 'underline' : 'none'; return '1'; }
     if (c && name === 'ud.range') return c.min + ' ' + c.max;
     if (c && name === 'ud.buddy') { const old = c.buddy; if (a !== '') c.buddy = Number(a); return String(old); }
-    if (c && name.startsWith('lv.')) return lvOp(dlg, c, name.slice(3), a, b, c2);
+    if (c && name.startsWith('lv.')) { if (!LV_DATA_OPS.has(name)) flushRender(c); return lvOp(dlg, c, name.slice(3), a, b, c2); }
     if (c && c.parts && name.startsWith('sb.')) return stbOp(dlg, c, name.slice(3), a, b);
+    if (c && c.btns && name.startsWith('tb.')) return tbOp(dlg, c, name.slice(3), a, b, c2);
+    if (c && name.startsWith('cd.')) return cdOp(dlg, c, name.slice(3), a);
     if (c && name.startsWith('tv.')) return tvOp(dlg, c, name.slice(3), a, b, c2);
     if (c && name.startsWith('tab.')) return tabOp(dlg, c, name.slice(4), a, b, c2);
     ood.log.push('op ' + name);
     return '';
   };
+
+  /* ---- Tool bar ----
+     A button: {cmd, text, style, state, image}.  style and state are sets of the Windows
+     keywords (style: BUTTON SEP CHECK GROUP CHECKGROUP DROPDOWN ...; state: ENABLED CHECKED
+     PRESSED HIDDEN INDETERMINATE MARKED ...).  A click on an enabled button sends
+     ('CMD', cmd, 0), as a push button does.  A CHECK button turns CHECKED on and off; a
+     CHECKGROUP button is checked and the others of its run of CHECKGROUP buttons are not.
+     Indexes are from 0 here.  Images are not drawn: a button shows its text. */
+  function tbRender(dlg, c) {
+    c.el.textContent = '';
+    c.btns.forEach((b, i) => {
+      if (b.state.has('HIDDEN')) return;
+      if (b.style.has('SEP')) { const sp = D.createElement('span'); sp.className = 'ood-tbsep'; c.el.appendChild(sp); return; }
+      const e = D.createElement('button'); e.type = 'button'; e.className = 'ood-tbbtn'; e.dataset.cmd = String(b.cmd); e.textContent = b.text;
+      e.disabled = !b.state.has('ENABLED');
+      if (b.state.has('CHECKED') || b.state.has('PRESSED')) e.classList.add('ood-pushed');
+      if (b.state.has('INDETERMINATE')) e.style.opacity = '.6';
+      if (b.style.has('CHECK') || b.style.has('CHECKGROUP')) e.setAttribute('aria-pressed', b.state.has('CHECKED') ? 'true' : 'false');
+      e.addEventListener('click', () => {
+        if (b.style.has('CHECKGROUP')) {
+          let lo = i, hi = i;
+          while (lo > 0 && c.btns[lo - 1].style.has('CHECKGROUP')) lo--;
+          while (hi < c.btns.length - 1 && c.btns[hi + 1].style.has('CHECKGROUP')) hi++;
+          for (let k = lo; k <= hi; k++) c.btns[k].state.delete('CHECKED');
+          b.state.add('CHECKED'); tbRender(dlg, c);
+        } else if (b.style.has('CHECK')) { if (b.state.has('CHECKED')) b.state.delete('CHECKED'); else b.state.add('CHECKED'); tbRender(dlg, c); }
+        fire(dlg.key, 'CMD', b.cmd, 0);
+      });
+      c.el.appendChild(e);
+    });
+  }
+  function tbOp(dlg, c, name, a, b, c2) {
+    const words = (t) => new Set(String(t).toUpperCase().split(' ').filter(Boolean));
+    const byCmd = (cmd) => c.btns.find((x) => x.cmd === Number(cmd) && !x.style.has('SEP'));
+    const show = (x) => [x.cmd, x.text, [...x.style].join(' '), [...x.state].join(' '), x.image].join(SEP);
+    switch (name) {
+      case 'insert': { const parts = String(b).split(SEP), at = Number(a);            // insert(index or -1, cmd SEP text SEP style SEP state SEP image)
+        const btn = { cmd: Number(parts[0]), text: parts[1] || '', style: words(parts[2] || 'BUTTON'), state: words(parts[3] || ''), image: Number(parts[4] || -1) };
+        if (at < 0 || at >= c.btns.length) c.btns.push(btn); else c.btns.splice(at, 0, btn);
+        tbRender(dlg, c); return '1'; }
+      case 'count': return String(c.btns.length);
+      case 'indexOf': return String(c.btns.findIndex((x) => x.cmd === Number(a) && !x.style.has('SEP')));
+      case 'get': return c.btns[Number(a)] ? show(c.btns[Number(a)]) : '';
+      case 'byCmd': { const x = byCmd(a); return x ? show(x) : ''; }
+      case 'setText': { const x = byCmd(a); if (!x) return '0'; x.text = String(b); tbRender(dlg, c); return '1'; }
+      case 'setImage': { const x = byCmd(a); if (!x) return '0'; x.image = Number(b); return '1'; }
+      case 'setState': { const x = byCmd(a); if (!x) return '0'; if (c2 === '1') x.state.add(String(b)); else x.state.delete(String(b)); tbRender(dlg, c); return '1'; }
+      case 'has': { const x = byCmd(a); return x && x.state.has(String(b)) ? '1' : '0'; }
+      case 'height': return String(Math.round(c.el.getBoundingClientRect().height));
+    }
+    return '';
+  }
 
   /* ---- Status bar ----
      Parts are numbered from 0 here.  A part's edge is its right edge in pixels of the bar; -1 is
@@ -1566,7 +1705,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
         const at = i < 0 || i > c.rows.length ? c.rows.length : i;
         c.rows.splice(at, 0, { cells: String(b).split(SEP), sel: false, chk: false, uid: ++c.uid });
         if (c.focusIdx >= at) c.focusIdx++;
-        later(c, lvRender); return String(at); }
+        later(c, lvRender); return c2 === 'U' ? at + ' ' + c.uid : String(at); }       // (with 'U': the index and the new row's uid)
       case 'setCell': if (!c.rows[i]) return '0'; c.rows[i].cells[Number(b)] = String(c2); later(c, lvRender); return '1';
       case 'cell': return c.rows[i] && c.rows[i].cells[Number(b)] != null ? c.rows[i].cells[Number(b)] : '';
       case 'del': if (!c.rows[i]) return '0'; c.rows.splice(i, 1); if (c.focusIdx === i) c.focusIdx = -1; else if (c.focusIdx > i) c.focusIdx--; later(c, lvRender); return '1';
@@ -1651,6 +1790,9 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
         const l = b.endsWith('VISIBLE') ? tvVisible(c) : sibs(nd), k = l.indexOf(h);
         if (k < 0) return '0';
         return String((b.startsWith('NEXT') ? l[k + 1] : l[k - 1]) || 0); }
+      case 'kids': return (nd ? nd.kids : c.roots).join(' ');                 // the children of an item; of item 0: the root items
+      case 'order': { const list = nd ? nd.kids : c.roots, want = String(b).split(' ').map(Number).filter((x) => list.includes(x));
+        const rest = list.filter((x) => !want.includes(x)); list.length = 0; list.push(...want, ...rest); later(c, tvRender); return '1'; }
       case 'special': return String(a === 'ROOT' ? (c.roots[0] || 0) : a === 'SELECTED' ? c.selH : a === 'FIRSTVISIBLE' ? (c.roots[0] || 0) : 0);
       case 'info': return nd ? nd.text + SEP + nd.kids.length + SEP + [(nd.open ? 'EXPANDED' : ''), (nd.bold ? 'BOLD' : ''), (h === c.selH ? 'SELECTED' : '')].filter(Boolean).join(' ') : '';
       case 'text': return nd ? nd.text : '';

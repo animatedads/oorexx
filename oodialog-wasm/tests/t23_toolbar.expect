@@ -1,0 +1,9 @@
+button 303 Please Push Me BUTTON ENABLED data-push 4
+add 1 1 3
+index 2 0 302 0
+strings 1 4
+getButton 303 Please Push Me BUTTON ENABLED data-push 4 1
+text Left 1 1 Pushed 0
+states 0 1 1 0 1 1 1 0 0 0 0 0
+images 1 0 3 5 0 1 2 1 il  MIXEDBUTTONS 0
+log:  press where push bold:1 bold:0 bold:1 align:01

@@ -3,6 +3,7 @@ calculator.rex	11
 controls/ComboBox/comboBoxTypes.rex	8	
 controls/ListBox/incrementalSearch.rex	1	
 controls/ListView/columnClickListView.rex	3	
+controls/ListView/customDrawListview.rex	3	
 controls/ListView/subitem.editing/dropDownComboBox.rex	3	event-not-produced
 controls/ListView/subitem.editing/dropDownListComboBox.rex	3	event-not-produced
 controls/ListView/subitem.editing/editControl.rex	3	event-not-produced
@@ -11,7 +12,7 @@ controls/PaidHolidays.rex	1
 controls/ToolTip/customPositionToolTip.rex	3	
 controls/ToolTip/manageControlTool.rex	3	
 controls/ToolTip/toolTip.rex	2	
-controls/TreeView/treeViewCustomDraw.rex	0	
+controls/TreeView/treeViewCustomDraw.rex	10	event-not-produced
 controls/fiscalReports.rex	8	event-not-produced
 controls/upDown.rex	10	
 controls/userStringDTP.rex	3	event-not-produced

@@ -1,4 +1,4 @@
-# ooDialog for ooRexx/WASM — v0.21.0
+# ooDialog for ooRexx/WASM — v0.22.0
 
 Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: Josep Maria Blasco's
 ooRexx/WASM (`oorexxwasm` 0.2.4, ooRexx 5.3.0) and its `js.cls`.
@@ -55,15 +55,16 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
     python3 tools/oodtest.py --poke upstream/examples 0 24
     python3 tools/oodtest.py --tree upstream/examples tests/t*.rex tests/up/calculator.rex tests/up/oodpbar.rex tests/up/oodStandardRoutines.rex
 
-## State on 2026-11-18 (v0.21.0)
+## State on 2026-11-19 (v0.22.0)
 
-- Natives ported: 881 of 1,182 (74.5%). v0.21.0 added 192 (see "Natives added
+- Natives ported: 955 of 1,182 (80.8%). v0.22.0 added 74: tool bar and custom
+  draw (see "Tool bar" and "Custom draw"). v0.21.0 added 192 (see "Natives added
   in v0.21.0" for what each family does, and which of them do nothing).
   12 of the 43 added in v0.18.0 accept their call and do nothing (see "Tool
   tips"). (The total was given as 1,181
   in v0.16.0 and v0.17.0; `dist/natives.txt` has 1,182 lines. It fell from 1,196 because 12
   natives are now plain Rexx in `src/patches.txt`.)
-- Tests: 52 of 52 pass in headless Chromium (`tests/t01`..`t22` with expected
+- Tests: 55 of 55 pass in headless Chromium (`tests/t01`..`t23` with expected
   output, the binary resource hand-off test `tests/res/t07_resdialog_binary`,
   four unmodified upstream samples: `calculator.rex`,
   `oodpbar.rex`, `oodStandardRoutines.rex`, and the tutorial
@@ -84,9 +85,9 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
   tutorial's `drawing3.rex` and `drawing5.rex`; and the three
   programs written by ooDialog Designer v0.3.0, in `tests/designer`).
 - Sweep of all 140 upstream example programs (`oodtest.py --sweep`, results in
-  `sweep.tsv`), each run from its own directory: 79 show their dialog, 7 run to
-  the end, 9 show only a message box, 5 stop at a native not ported yet, 9
-  stop on an error (8 need a reader of binary resources, which is another
+  `sweep.tsv`), each run from its own directory: 81 show their dialog, 7 run to
+  the end, 8 show only a message box, 3 stop at a native not ported yet, 10
+  stop on an error (9 need a reader of binary resources, which is another
   task's work; `oovideo.rex` is broken upstream), 24 are components: parts of
   the user guide's Order Manager, which name their files from the program's
   directory and fail the same way on Windows when started alone, and 7 are
@@ -101,8 +102,9 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
 - Depth probe (`oodtest.py --poke`, results in `poke.tsv`): the 70 examples
   that show a dialog or a message box are used automatically (tabs, rows,
   check boxes, lists, edits, menus, every button, then closed; last full run
-  at v0.21.0, on its final build). Of 88, 73 come through with no error, no unhandled Windows
-  message and a clean end. 11 more have no fault except connecting an event
+  at v0.22.0, on its final build). Of 89, 73 come through with no error, no unhandled Windows
+  message and a clean end (`oograph.rex` did not end in one run of four at
+  v0.22.0; its own test passes). 12 more have no fault except connecting an event
   this layer does not produce. 4 have a problem, each named in `poke.tsv`, and
   none of them is a fault of this layer's own code: 2 are components started
   alone, `sample.rex` (ResourceImage) needs a reader of binary resources, and
@@ -191,6 +193,54 @@ Until v0.17.0 this class was not ported at all: its examples showed their
 dialog, which the sweep counted, but the dialog could not be resized by its
 rules. Resizing with DlgAreaU and connectResize (`tests/t13_resize`) is a
 different mechanism and worked before.
+
+## Tool bar
+
+A ToolBar is a real control: a row of buttons along the top of the dialog
+(`tests/t23_toolbar`, which follows upstream `toolBar.rex`; upstream's own
+needs its compiled `toolBar.dll`). TbButton with command ID, text, style,
+state, item data and bitmap ID; addButtons, insertButton, buttonCount,
+commandToIndex, indexTocommand, getButton, getButtonText, setButtonText,
+checkButton, enableButton and the six isButton... questions; addString (a
+button's text may be an index into those strings). A click on an enabled
+button is a command, as a push button's: connect it with connectButtonEvent.
+A CHECK button toggles; a CHECKGROUP button is the one checked of its run.
+
+Not done: images. addBitmap, loadImages, changeBitmap, setBitmapSize and the
+four image lists are kept and answered, and a button shows its text only.
+The TBN_ events (connectToolBarEvent) are accepted and not produced;
+customize does nothing.
+
+## Custom draw
+
+customDrawControl for a list-view and a tree-view, with LvCustomDrawSimple
+and TvCustomDrawSimple. Upstream `customDrawListview.rex` (1,000 rows) and
+`treeViewCustomDraw.rex` run unchanged as tests (`tests/up10`): the rows'
+text colour, background and font are checked, after a check box is ticked,
+after the list is scrolled to its end, and after the selection moves.
+
+The page cannot wait for the program while it draws, as Windows does. It
+draws, then sends the rows in view to the program, and paints them when the
+answer comes: a row may show for a moment in the default colours. Only the
+rows in view are asked about, as on Windows. The stages are ITEMPREPAINT
+and, for a list-view row whose reply has CDRF_NOTIFYSUBITEMDRAW,
+SUBITEMPREPAINT for each column. Custom draw for other controls raises an
+error, as upstream does.
+
+Three things these two examples brought with them:
+- Filling a long list was slow: 1,000 full rows took 24 seconds, because the
+  list was drawn again for each row. A list of more than 100 rows is now
+  drawn when changes pause; the same fill takes 0.6 seconds.
+- The tree-view's itemInfo answered a directory. Upstream answers a stem
+  (`info.!Text`, `info.!State`, `info.!Image` ...). It does now, with the
+  image indexes and item data of the item. sortChildrenCB is ported.
+- A program opens data files by names written in strings, in any case
+  (`"treeViewCustomDrawi.inp"` for `treeViewCustomDrawI.inp`).
+  `site/oodfiles.js` 0.2.0 gives the interpreter those names too.
+
+Known and not fixed: a dialog taller than the window keeps its lower part
+out of reach (`treeViewCustomDraw.rex` is 311 dialog units tall; its Close
+button is below a 700 pixel window).
 
 ## Natives added in v0.21.0
 
@@ -416,7 +466,7 @@ WASM file system as bytes.
 
 ## Not yet (the sweep's order of need)
 
-Tool bar, re-bar; custom draw; the parts of a combo box
+Re-bar; the parts of a combo box
 as windows (getComboBoxInfo); connectActivate,
 connectHelp, connectPosChanged and connectResizing (accepted, not produced);
 drawing the icons of image lists; a modeless property sheet; wizard header and
