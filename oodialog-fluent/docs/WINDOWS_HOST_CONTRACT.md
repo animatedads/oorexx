@@ -38,19 +38,23 @@ The Designer may author an optional `fluentType` and its properties in a resourc
 ## Provenance and status
 
 The Windows x64 DLL compiles and the standalone HWND subset (empty island,
-`Button`, `ToggleSwitch`, `CheckBox`, `ToggleButton`, `Slider`) runs through
-clean teardown both individually and all together. GitHub CI run
-[43761615206](https://github.com/animatedads/oorexx/actions/runs/43761615206)
-also runs a real ooRexx 5.2.0 `UserDialog` three times through the
-**diagnostic opt-in same-process UI-thread broker**. Each process creates five
-native controls, dispatches four property-triggered native events to distinct
-Rexx methods, closes through `endAsyncExecution`, and exits with code 0.
+`Button`, `ToggleSwitch`, `CheckBox`, `ToggleButton`, `Slider`, `RadioButton`,
+`RepeatButton`, `HyperlinkButton`, `AppBarButton`, `AppBarToggleButton`) runs
+through clean teardown both individually and all together. GitHub CI run
+[44787628623](https://github.com/animatedads/oorexx/actions/runs/44787628623)
+also ran a real ooRexx 5.2.0 `UserDialog` three times through the
+**diagnostic opt-in same-process UI-thread broker**. Each process created all
+ten native control types, dispatched six property-triggered native events to
+distinct Rexx methods, closed through `endAsyncExecution`, and exited code 0.
+The initial workflow overall failed only its expected RadioButton revision
+check (expected 2 but actual 3 after three property mutations); the assertion
+passed in [run 44788561646](https://github.com/animatedads/oorexx/actions/runs/44788561646), including all three native ooRexx sessions.
 The ABI event queue and retained buffer-retry envelope use one session lock
 to protect operations across GUI and Rexx threads (300-event concurrency test).
 `InfoBar`, `NumberBox`, `TextBox` and `ProgressBar` are disabled by default:
 they trigger `0xC0000005` on island close even after native removal in this
 host. This does not qualify unrestricted broker use, modal/resource dialogs,
-physical input, accessibility, complex-template shutdown, or the other 78
+physical input, accessibility, complex-template shutdown, or the other 73
 catalogue targets.
 
 The identity/event provenance update passed **1315/1315** local and
@@ -60,3 +64,7 @@ processes, each with an automatic `U9223372036854775808` followed by authored
 `U1` and four versioned callback events: ToggleSwitch revision 2, CheckBox
 revision 2, ToggleButton revision 2 and Slider revision 1. These are
 **property-triggered callbacks**, not a qualification of physical input.
+The ten-control extension adds RadioButton revision 3 and AppBarToggleButton
+revision 2, plus native property/lifetime probes for RepeatButton,
+HyperlinkButton and AppBarButton. Its model/ABI contract passes **1331/1331**;
+the code is restricted to its catalogued property subset.

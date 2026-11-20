@@ -2,7 +2,7 @@
 
 Architecture: Tom Dyer. Code: ChatGPT (GPT-6).
 
-Status: **v0.3 bridge candidate; Windows native BUILD_PASS, five HWND controls pass creation/property/update/teardown independently and together, and real ooDialog `UserDialog` integration passes 3/3 behind diagnostic thread opt-in**. The native HWND and live ooRexx 5.2.0 smoke qualifies `Button`, `ToggleSwitch`, `CheckBox`, `ToggleButton` and `Slider`; four programmatic native events reach distinct Rexx handlers in each trial. [CI run 44518725960](https://github.com/animatedads/oorexx/actions/runs/44518725960) additionally qualifies separate authored/automatic UID ranges, opaque UID tokens to Rexx and optional revision-aware callbacks in three independent real ooRexx runs. The broker still requires diagnostic opt-in. Physical input, visual/accessibility parity and the other 78 catalogue targets are not thereby qualified. `InfoBar`, `NumberBox`, `TextBox` and `ProgressBar` trigger a Windows App SDK access violation when closing the island and are disabled by default.
+Status: **v0.4 bridge candidate; Windows native BUILD_PASS, ten HWND control types pass creation/property/update/teardown independently and together, and real ooDialog `UserDialog` integration exits cleanly 3/3 behind diagnostic thread opt-in**. The qualified native subset is `Button`, `ToggleSwitch`, `CheckBox`, `ToggleButton`, `Slider`, `RadioButton`, `RepeatButton`, `HyperlinkButton`, `AppBarButton` and `AppBarToggleButton`. Six programmatic native events reach distinct Rexx handlers in each live trial. The ten-control expansion has native HWND evidence in [run 44787628623](https://github.com/animatedads/oorexx/actions/runs/44787628623); its Rexx gate initially failed solely because the expected RadioButton revision was 2 instead of the **observed 3** after `text`, `groupName` and `isChecked` mutations. The corrected expectation is gated in [run 44788561646](https://github.com/animatedads/oorexx/actions/runs/44788561646). The broker still requires diagnostic opt-in. Physical input, visual/accessibility parity and the other 73 catalogue targets are not thereby qualified. `InfoBar`, `NumberBox`, `TextBox` and `ProgressBar` trigger a Windows App SDK access violation when closing the island and are disabled by default.
 
 ## Objective
 
@@ -21,9 +21,9 @@ The extension is deliberately distinct from:
 | --- | --- | --- |
 | 83-control and pattern inventory | Catalogue and automated validation | Compare every entry with current Microsoft WinUI 3 Gallery |
 | Resource occurrence identity, proxy properties, event routing and lifecycle | Native-independent C++ core and C ABI, executable tests; native-event queue and pending-retry envelope protected across GUI/Rexx threads | Qualify concurrent physical user input and bounded broker |
-| Windows provider | Windows App SDK 2.6.5 DLL/ooRexx package BUILD_PASS; five separate HWND control families and one combined island close cleanly ([run 43761615206](https://github.com/animatedads/oorexx/actions/runs/43761615206)) | Fix `InfoBar`/`NumberBox`/`TextBox`/`ProgressBar` island shutdown crash; qualify focus/keyboard |
-| ooDialog integration | `::requires`-loading, native package calls, a real asynchronous five-control `UserDialog`, four property-triggered WinUI → Rexx events and clean close PASS 3/3 ([run 43761615206](https://github.com/animatedads/oorexx/actions/runs/43761615206)) with `OODF_TEST_CROSS_THREAD_HOOK=1` | Make cross-thread dispatch bounded/release-safe; verify `ResDialog`/`RcDialog`, physical user input and accessibility |
-| Full coverage | Classification for stable, optional and unsupported controls; **5/83** control types currently pass individual native HWND lifetime | Each control must pass functional and visual Windows tests |
+| Windows provider | Windows App SDK 2.6.5 DLL/ooRexx package BUILD_PASS; **ten** separate HWND control types and one combined island close cleanly ([run 44787628623](https://github.com/animatedads/oorexx/actions/runs/44787628623)) | Fix `InfoBar`/`NumberBox`/`TextBox`/`ProgressBar` island shutdown crash; qualify focus/keyboard |
+| ooDialog integration | `::requires`-loading, native package calls, a real asynchronous **ten-control-type** `UserDialog`, **six** property-triggered WinUI → Rexx events and clean close PASS 3/3 on real ooRexx 5.2.0 ([green run 44788561646](https://github.com/animatedads/oorexx/actions/runs/44788561646)) with `OODF_TEST_CROSS_THREAD_HOOK=1` | Make cross-thread dispatch bounded/release-safe; verify `ResDialog`/`RcDialog`, physical user input and accessibility |
+| Full coverage | Classification for stable, optional and unsupported controls; **10/83** catalogue types currently pass individual native HWND lifetime | Each control must pass functional and visual Windows tests |
 
 `catalogue/controls.tsv` is a **target coverage catalogue, not an implementation claim**. Availability `stable` means Microsoft's API is available in the Windows App SDK stable channel, *not* that this project has implemented it. Experimental entries remain gated off by default. Existing Win32-compatible controls can retain their old ooDialog object behavior with a Fluent alternative selected explicitly.
 
@@ -43,6 +43,16 @@ accept~connectEvent('checked', 'onAccepted')
 pin = host~newToggleButton(2404, 'Pin')
 level = host~newSlider(2405, 'Volume')
 level~setValue(42.5)
+radio = host~newRadioButton(2406, 'Alternate mode')
+radio~setGroupName('Mode')
+repeat = host~newRepeatButton(2407, 'Hold to repeat')
+repeat~setDelay(500)
+repeat~setInterval(100)
+link = host~newHyperlinkButton(2408, 'Project website')
+link~setNavigateUri('https://www.oorexx.org/')
+barButton = host~newAppBarButton(2409, 'Save')
+barToggle = host~newAppBarToggleButton(2410, 'Pin')
+barToggle~setChecked(.true)
 host~dispatchPendingVersioned  /* opt-in handler args: id, uid, value, revision */
 ```
 
@@ -50,7 +60,7 @@ host~dispatchPendingVersioned  /* opt-in handler args: id, uid, value, revision 
 
 The native provider queues XAML events without calling Rexx from a XAML callback; Rexx drains them explicitly through the dialog activity. Native callbacks fired synchronously during a property write are deferred until the model revision advances, so the queued event records the revision of the updated property. `dispatchPending(limit)` keeps the legacy three handler arguments `(resourceId, uid, value)`; `dispatchPendingVersioned(limit)` or `dispatchPending(limit, .true)` passes `(resourceId, uid, value, revision)`. The event model and pending event-buffer retry use a single lock across those OS threads (tested with 300 concurrently produced events). ooDialog's HWND belongs to a different Windows thread than its Rexx `initDialog` activity. The prototype broker synchronously dispatches native host operations onto the HWND-owning thread. **It is not enabled by default**; `OODF_TEST_CROSS_THREAD_HOOK=1` is a CI/diagnostic switch until bounded cancellation and reentrancy are qualified. Add/update/remove operations use occurrence UID; callback envelopes include resource ID, UID, event, value and revision.
 
-The Windows CI runtime gate requires the Microsoft-signed runtime and clean exit for the empty island, all five supported controls individually and in one combined island, and refusal of four unqualified controls. It also gates **three real ooRexx 5.2.0 `UserDialog` processes** (native-package load, five controls, properties, native property-triggered events → Rexx, async join and close) using the diagnostic GUI-thread broker. Separate **diagnostic** modes opt into unqualified `InfoBar`, `NumberBox`, `TextBox` and `ProgressBar` and record crashes without failing the limited supported-set gate. A green workflow badge qualifies **only these named cases**. The run-specific log and short-lived crash dump identify `Microsoft_UI_Xaml!DirectUI::XamlIsland::Close` dereferencing a null internal `IContentIsland` interface for `InfoBar` and `NumberBox`; `TextBox` and `ProgressBar` also crash at `CLOSE_ISLAND_BEGIN` in the same host, without separately symbolizing those dumps. **All four unsafe controls return `E_NOTIMPL` by default**; `OODF_ALLOW_UNQUALIFIED_NATIVE=1` is only for diagnostics. See `windows/README.md` for the qualification boundary.
+The Windows CI runtime gate requires the Microsoft-signed runtime and clean exit for the empty island, all ten candidate controls individually and in one combined island, and refusal of four unqualified controls. It also gates **three real ooRexx 5.2.0 `UserDialog` processes** (native-package load, ten control types, properties, six native property-triggered events → Rexx, async join and close) using the diagnostic GUI-thread broker. Separate **diagnostic** modes opt into unqualified `InfoBar`, `NumberBox`, `TextBox` and `ProgressBar` and record crashes without failing the limited supported-set gate. A green workflow badge qualifies **only these named cases**. The run-specific log and short-lived crash dump identify `Microsoft_UI_Xaml!DirectUI::XamlIsland::Close` dereferencing a null internal `IContentIsland` interface for `InfoBar` and `NumberBox`; `TextBox` and `ProgressBar` also crash at `CLOSE_ISLAND_BEGIN` in the same host, without separately symbolizing those dumps. **All four unsafe controls return `E_NOTIMPL` by default**; `OODF_ALLOW_UNQUALIFIED_NATIVE=1` is only for diagnostics. See `windows/README.md` for the qualification boundary.
 
 ## Tests
 
@@ -60,7 +70,7 @@ From this directory:
 sh tests/run_tests.sh
 ```
 
-Tests compile the native-independent core and its C-compatible ABI with a C++17 compiler, load and validate every catalogue entry, and exercise resource-ID collisions, authored occurrence UIDs, authored/automatic partitioning, rejected UID reuse, bound/unbound events, property validation, experimental gating, destruction, stale-event suppression, a lossless event-buffer retry and a 300-event cross-thread producer/consumer exchange. Current local count: **1315/1315 PASS**. No Python runtime is used in the product. These are *not* Windows visual or ooRexx compatibility tests. Open identity questions: dynamic UID reuse/generation semantics across application lifetimes and the Designer's authored text-token canonicalization.
+Tests compile the native-independent core and its C-compatible ABI with a C++17 compiler, load and validate every catalogue entry, and exercise resource-ID collisions, authored occurrence UIDs, authored/automatic partitioning, rejected UID reuse, bound/unbound events, property validation, the five added button-family type contracts, experimental gating, destruction, stale-event suppression, a lossless event-buffer retry and a 300-event cross-thread producer/consumer exchange. Current local count: **1331/1331 PASS**. No Python runtime is used in the product. These are *not* Windows visual or ooRexx compatibility tests. Open identity questions: dynamic UID reuse/generation semantics across application lifetimes and the Designer's authored text-token canonicalization.
 
 ## Platform and fallback contract
 
