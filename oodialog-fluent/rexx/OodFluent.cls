@@ -43,6 +43,26 @@
   use strict arg resourceId, caption = '', authoredUid = ''
   return self~newControl(resourceId, 'ToggleButton', caption, authoredUid)
 
+::method newRadioButton
+  use strict arg resourceId, caption = '', authoredUid = ''
+  return self~newControl(resourceId, 'RadioButton', caption, authoredUid)
+
+::method newRepeatButton
+  use strict arg resourceId, caption = '', authoredUid = ''
+  return self~newControl(resourceId, 'RepeatButton', caption, authoredUid)
+
+::method newHyperlinkButton
+  use strict arg resourceId, caption = '', authoredUid = ''
+  return self~newControl(resourceId, 'HyperlinkButton', caption, authoredUid)
+
+::method newAppBarButton
+  use strict arg resourceId, label = '', authoredUid = ''
+  return self~newControl(resourceId, 'AppBarButton', label, authoredUid)
+
+::method newAppBarToggleButton
+  use strict arg resourceId, label = '', authoredUid = ''
+  return self~newControl(resourceId, 'AppBarToggleButton', label, authoredUid)
+
 ::method newSlider
   use strict arg resourceId, caption = '', authoredUid = ''
   return self~newControl(resourceId, 'Slider', caption, authoredUid)
@@ -137,6 +157,26 @@
 ::method setText
   use strict arg text
   return self~setProperty('text', text)
+
+::method setLabel
+  use strict arg label
+  return self~setProperty('label', label)
+
+::method setGroupName
+  use strict arg groupName
+  return self~setProperty('groupName', groupName)
+
+::method setDelay
+  use strict arg milliseconds
+  return self~setProperty('delay', milliseconds)
+
+::method setInterval
+  use strict arg milliseconds
+  return self~setProperty('interval', milliseconds)
+
+::method setNavigateUri
+  use strict arg uri
+  return self~setProperty('navigateUri', uri)
 
 ::method setValue
   use strict arg value

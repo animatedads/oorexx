@@ -54,6 +54,43 @@ int main(int argc, char **argv) {
         CHECK(catalogue.type("WebView2").renderer == "webview2");
         CHECK(catalogue.type("MicaBackdrop").renderer == "composition");
 
+        // Each new WinUI button-family control has a separate catalogue
+        // property/event contract before native Windows qualification.
+        Session extended(catalogue);
+        const auto radioUid = extended.create(701, "RadioButton");
+        extended.set(radioUid, "text", "Choice");
+        extended.set(radioUid, "groupName", "Mode");
+        extended.set(radioUid, "isChecked", "true");
+        extended.bind(radioUid, "checked", "onRadio");
+        CHECK(extended.raise(radioUid, "checked", "true"));
+        Event extendedEvent{};
+        CHECK(extended.take(extendedEvent));
+        CHECK(extendedEvent.resourceId == 701);
+        CHECK(extendedEvent.revision == 3);
+        const auto repeatUid = extended.create(702, "RepeatButton");
+        extended.set(repeatUid, "delay", "500");
+        extended.set(repeatUid, "interval", "100");
+        extended.bind(repeatUid, "click", "onRepeat");
+        CHECK(extended.raise(repeatUid, "click", ""));
+        CHECK(extended.take(extendedEvent));
+        CHECK(extendedEvent.uid == repeatUid);
+        CHECK(extendedEvent.revision == 2);
+        const auto linkUid = extended.create(703, "HyperlinkButton");
+        extended.set(linkUid, "navigateUri", "https://www.oorexx.org/");
+        CHECK(extended.control(linkUid).properties.at("navigateUri") == "https://www.oorexx.org/");
+        const auto appbarUid = extended.create(704, "AppBarButton");
+        extended.set(appbarUid, "label", "Save");
+        CHECK(extended.control(appbarUid).properties.at("label") == "Save");
+        const auto appbarToggleUid = extended.create(705, "AppBarToggleButton");
+        extended.set(appbarToggleUid, "isChecked", "true");
+        extended.bind(appbarToggleUid, "checked", "onAppBarToggle");
+        CHECK(extended.raise(appbarToggleUid, "checked", "true"));
+        CHECK(extended.take(extendedEvent));
+        CHECK(extendedEvent.uid == appbarToggleUid);
+        CHECK(extendedEvent.revision == 1);
+        expects(ErrorCode::InvalidProperty, [&] { extended.set(repeatUid, "isChecked", "true"); });
+        expects(ErrorCode::InvalidEvent, [&] { extended.bind(appbarUid, "checked", "badHandler"); });
+
         Session first(catalogue);
         const auto a = first.create(-1, "Button");
         const auto b = first.create(-1, "Button");

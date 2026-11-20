@@ -41,7 +41,7 @@ exit 0
   self~createPushButton(1, 224, 162, 58, 15, 'DEFAULT', '&Close')
 
 ::method initDialog
-  expose fluent button toggle check toggleButton slider auto
+  expose fluent button toggle check toggleButton slider auto radio repeat hyperlink appbar appbarToggle
   say 'REXX_SMOKE_STAGE=INIT_DIALOG'
   fluent = .OodFluentHost~attach(self, self~catalogue)
   fluent~move(16, 42, 390, 150)
@@ -56,17 +56,31 @@ exit 0
   slider = fluent~newSlider(205, 'WinUI 3 Slider', '800000005')
   low = fluent~newButton(207, 'Low authored occurrence', '1')
   say 'REXX_SMOKE_LOW_AUTHORED_UID='low~uid
+  radio = fluent~newRadioButton(208, 'Mode A', '800000006')
+  repeat = fluent~newRepeatButton(209, 'Repeat', '800000007')
+  hyperlink = fluent~newHyperlinkButton(210, 'ooRexx', '800000008')
+  appbar = fluent~newAppBarButton(211, 'Save', '800000009')
+  appbarToggle = fluent~newAppBarToggleButton(212, 'Favourite', '800000010')
   button~setText('WinUI button through Rexx')
   button~connectEvent('click', 'onFluentButton')
   toggle~connectEvent('toggled', 'onFluentToggle')
   check~connectEvent('checked', 'onFluentCheck')
   toggleButton~connectEvent('checked', 'onFluentToggleButton')
   slider~connectEvent('valueChanged', 'onFluentSlider')
+  radio~connectEvent('checked', 'onFluentRadio')
+  appbarToggle~connectEvent('checked', 'onFluentAppBarToggle')
   /* A property-driven native event tests the GUI queue -> Rexx boundary. */
   toggle~setOn(.true)
   check~setChecked(.true)
   toggleButton~setChecked(.true)
   slider~setValue(42.5)
+  radio~setGroupName('Mode')
+  radio~setChecked(.true)
+  repeat~setDelay(500)
+  repeat~setInterval(100)
+  hyperlink~setNavigateUri('https://www.oorexx.org/')
+  appbar~setLabel('Save changes')
+  appbarToggle~setChecked(.true)
   say 'REXX_SMOKE_STAGE=CONTROLS_READY'
 
 ::method onFluentButton
@@ -88,6 +102,14 @@ exit 0
 ::method onFluentSlider
   use strict arg resourceId, uid, value, revision
   say 'REXX_SMOKE_EVENT=slider' resourceId uid value revision
+
+::method onFluentRadio
+  use strict arg resourceId, uid, value, revision
+  say 'REXX_SMOKE_EVENT=radio' resourceId uid value revision
+
+::method onFluentAppBarToggle
+  use strict arg resourceId, uid, value, revision
+  say 'REXX_SMOKE_EVENT=appBarToggle' resourceId uid value revision
 
 ::method ok
   expose fluent

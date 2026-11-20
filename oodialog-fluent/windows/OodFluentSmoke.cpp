@@ -74,6 +74,11 @@ int wmain(int argc, wchar_t **argv) {
     const bool toggleOnly = wcscmp(mode, L"toggle") == 0;
     const bool checkOnly = wcscmp(mode, L"check") == 0;
     const bool toggleButtonOnly = wcscmp(mode, L"togglebutton") == 0;
+    const bool radioOnly = wcscmp(mode, L"radio") == 0;
+    const bool repeatOnly = wcscmp(mode, L"repeat") == 0;
+    const bool hyperlinkOnly = wcscmp(mode, L"hyperlink") == 0;
+    const bool appbarOnly = wcscmp(mode, L"appbar") == 0;
+    const bool appbarToggleOnly = wcscmp(mode, L"appbartoggle") == 0;
     const bool sliderOnly = wcscmp(mode, L"slider") == 0;
     const bool textBoxOnly = wcscmp(mode, L"textbox") == 0;
     const bool progressOnly = wcscmp(mode, L"progress") == 0;
@@ -84,11 +89,15 @@ int wmain(int argc, wchar_t **argv) {
     const bool noNumber = wcscmp(mode, L"no-number") == 0;
     const bool guard = wcscmp(mode, L"guard") == 0;
     if (!(all || empty || buttonOnly || toggleOnly || checkOnly || toggleButtonOnly ||
+          radioOnly || repeatOnly || hyperlinkOnly || appbarOnly || appbarToggleOnly ||
           sliderOnly || textBoxOnly || progressOnly || expanded || qualified ||
           infoOnly || numberOnly || noNumber || guard)) return 2;
     fprintf(stderr, "STAGE MODE_%s\n", all ? "all" : empty ? "empty" :
             buttonOnly ? "button" : toggleOnly ? "toggle" : checkOnly ? "check" :
             toggleButtonOnly ? "togglebutton" : sliderOnly ? "slider" :
+            radioOnly ? "radio" : repeatOnly ? "repeat" :
+            hyperlinkOnly ? "hyperlink" : appbarOnly ? "appbar" :
+            appbarToggleOnly ? "appbartoggle" :
             textBoxOnly ? "textbox" : progressOnly ? "progress" :
             expanded ? "expanded" : qualified ? "qualified" : infoOnly ? "info" :
             numberOnly ? "number" : noNumber ? "no-number" : "guard");
@@ -97,6 +106,11 @@ int wmain(int argc, wchar_t **argv) {
     const bool wantToggle = all || toggleOnly || noNumber || expanded || qualified;
     const bool wantCheck = all || checkOnly || expanded || qualified;
     const bool wantToggleButton = all || toggleButtonOnly || expanded || qualified;
+    const bool wantRadio = all || radioOnly || expanded || qualified;
+    const bool wantRepeat = all || repeatOnly || expanded || qualified;
+    const bool wantHyperlink = all || hyperlinkOnly || expanded || qualified;
+    const bool wantAppBar = all || appbarOnly || expanded || qualified;
+    const bool wantAppBarToggle = all || appbarToggleOnly || expanded || qualified;
     const bool wantSlider = all || sliderOnly || expanded || qualified;
     const bool wantTextBox = all || textBoxOnly || expanded;
     const bool wantProgress = all || progressOnly || expanded;
@@ -143,6 +157,7 @@ int wmain(int argc, wchar_t **argv) {
     stage("ISLAND_OPEN_OK");
     uint64_t button = 0, toggle = 0, check = 0, toggleButton = 0, lowAuthored = 0;
     uint64_t slider = 0, textBox = 0, progress = 0, info = 0, number = 0;
+    uint64_t radio = 0, repeat = 0, hyperlink = 0, appbar = 0, appbarToggle = 0;
     wchar_t preUnload[32]{};
     (void)GetEnvironmentVariableW(L"OODF_PREUNLOAD", preUnload, 32);
     const bool unload = wcscmp(preUnload, L"unload") == 0 ||
@@ -178,6 +193,11 @@ int wmain(int argc, wchar_t **argv) {
     }
     if (wantCheck && FAILED(result = oodf_win_add(host, 4110, L"CheckBox", L"Accept", &check))) goto cleanup;
     if (wantToggleButton && FAILED(result = oodf_win_add(host, 4111, L"ToggleButton", L"Pin", &toggleButton))) goto cleanup;
+    if (wantRadio && FAILED(result = oodf_win_add(host, 4120, L"RadioButton", L"Mode A", &radio))) goto cleanup;
+    if (wantRepeat && FAILED(result = oodf_win_add(host, 4121, L"RepeatButton", L"Hold", &repeat))) goto cleanup;
+    if (wantHyperlink && FAILED(result = oodf_win_add(host, 4122, L"HyperlinkButton", L"Documentation", &hyperlink))) goto cleanup;
+    if (wantAppBar && FAILED(result = oodf_win_add(host, 4123, L"AppBarButton", L"Save", &appbar))) goto cleanup;
+    if (wantAppBarToggle && FAILED(result = oodf_win_add(host, 4124, L"AppBarToggleButton", L"Favourite", &appbarToggle))) goto cleanup;
     if (wantSlider && FAILED(result = oodf_win_add(host, 4112, L"Slider", L"Zoom", &slider))) goto cleanup;
     if (wantTextBox && FAILED(result = oodf_win_add(host, 4113, L"TextBox", L"Search", &textBox))) goto cleanup;
     if (wantProgress && FAILED(result = oodf_win_add(host, 4114, L"ProgressBar", L"Progress", &progress))) goto cleanup;
@@ -206,6 +226,27 @@ int wmain(int argc, wchar_t **argv) {
         goto cleanup;
     }
     if (wantToggleButton && FAILED(result = oodf_win_set(host, toggleButton, L"isChecked", L"true"))) goto cleanup;
+    if (wantRadio && FAILED(result = oodf_win_set(host, radio, L"groupName", L"Mode"))) goto cleanup;
+    if (wantRadio && FAILED(result = oodf_win_set(host, radio, L"isChecked", L"true"))) goto cleanup;
+    if (wantRadio && oodf_win_set(host, radio, L"isChecked", L"null") != E_NOTIMPL) {
+        result = E_UNEXPECTED;
+        goto cleanup;
+    }
+    if (wantRepeat && FAILED(result = oodf_win_set(host, repeat, L"delay", L"500"))) goto cleanup;
+    if (wantRepeat && FAILED(result = oodf_win_set(host, repeat, L"interval", L"100"))) goto cleanup;
+    if (wantRepeat && (oodf_win_set(host, repeat, L"delay", L"-1") != E_INVALIDARG ||
+                       oodf_win_set(host, repeat, L"interval", L"999999999999") != E_INVALIDARG)) {
+        result = E_UNEXPECTED;
+        goto cleanup;
+    }
+    if (wantHyperlink && FAILED(result = oodf_win_set(host, hyperlink, L"navigateUri", L"https://www.oorexx.org/"))) goto cleanup;
+    if (wantAppBar && FAILED(result = oodf_win_set(host, appbar, L"label", L"Save changes"))) goto cleanup;
+    if (wantAppBarToggle && FAILED(result = oodf_win_set(host, appbarToggle, L"isChecked", L"true"))) goto cleanup;
+    if (wantAppBarToggle && FAILED(result = oodf_win_set(host, appbarToggle, L"label", L"Pinned"))) goto cleanup;
+    if (wantAppBarToggle && oodf_win_set(host, appbarToggle, L"isChecked", L"maybe") != E_INVALIDARG) {
+        result = E_UNEXPECTED;
+        goto cleanup;
+    }
     if (wantSlider && FAILED(result = oodf_win_set(host, slider, L"value", L"42.5"))) goto cleanup;
     if (wantSlider && (oodf_win_set(host, slider, L"value", L"not-a-number") != E_INVALIDARG ||
                        oodf_win_set(host, slider, L"value", L"NaN") != E_INVALIDARG)) {
@@ -259,6 +300,11 @@ int wmain(int argc, wchar_t **argv) {
         goto cleanup;
     }
     if (wantToggleButton && FAILED(result = oodf_win_remove(host, toggleButton))) goto cleanup;
+    if (wantRadio && FAILED(result = oodf_win_remove(host, radio))) goto cleanup;
+    if (wantRepeat && FAILED(result = oodf_win_remove(host, repeat))) goto cleanup;
+    if (wantHyperlink && FAILED(result = oodf_win_remove(host, hyperlink))) goto cleanup;
+    if (wantAppBar && FAILED(result = oodf_win_remove(host, appbar))) goto cleanup;
+    if (wantAppBarToggle && FAILED(result = oodf_win_remove(host, appbarToggle))) goto cleanup;
     if (wantSlider && FAILED(result = oodf_win_remove(host, slider))) goto cleanup;
     if (wantTextBox && FAILED(result = oodf_win_remove(host, textBox))) goto cleanup;
     if (wantProgress && FAILED(result = oodf_win_remove(host, progress))) goto cleanup;

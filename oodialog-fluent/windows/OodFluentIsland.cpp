@@ -24,7 +24,9 @@
 
 #include <cstdio>
 #include <cmath>
+#include <charconv>
 #include <cstring>
+#include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -256,6 +258,15 @@ double parseNumber(const std::string &value) {
     return number;
 }
 
+int32_t parseMilliseconds(const std::string &value) {
+    int32_t number = 0;
+    const auto result = std::from_chars(value.data(), value.data() + value.size(), number);
+    if (value.empty() || result.ec != std::errc{} ||
+        result.ptr != value.data() + value.size() || number < 0)
+        winrt::throw_hresult(E_INVALIDARG);
+    return number;
+}
+
 template<typename Operation>
 HRESULT safe(Operation &&operation) noexcept {
     try {
@@ -291,7 +302,10 @@ static HRESULT oodf_win_add_impl(OodfWinHost *host, int64_t resourceId,
         const auto label = winrt::hstring(caption);
         if (type != "Button" && type != "ToggleSwitch" &&
             type != "CheckBox" && type != "ToggleButton" &&
-            type != "Slider" && type != "TextBox" && type != "ProgressBar" &&
+            type != "RadioButton" && type != "RepeatButton" &&
+            type != "HyperlinkButton" && type != "AppBarButton" &&
+            type != "AppBarToggleButton" && type != "Slider" &&
+            type != "TextBox" && type != "ProgressBar" &&
             type != "InfoBar" && type != "NumberBox") winrt::throw_hresult(E_NOTIMPL);
         // Several templated controls trigger a Windows App SDK 2.6.5
         // access violation at DesktopWindowXamlSource.Close even after
@@ -356,6 +370,52 @@ static HRESULT oodf_win_add_impl(OodfWinHost *host, int64_t resourceId,
                 });
                 element = button;
                 winrt::check_hresult(status(oodf_set(host->model, id, "text", winrt::to_string(label).c_str())));
+            } else if (type == "RadioButton") {
+                controls::RadioButton radio{};
+                radio.Content(winrt::box_value(label));
+                radio.Checked([model = host->model, id](auto const &, auto const &) {
+                    event(model, id, "checked", "true");
+                });
+                radio.Unchecked([model = host->model, id](auto const &, auto const &) {
+                    event(model, id, "unchecked", "false");
+                });
+                element = radio;
+                winrt::check_hresult(status(oodf_set(host->model, id, "text", winrt::to_string(label).c_str())));
+            } else if (type == "RepeatButton") {
+                primitives::RepeatButton repeat{};
+                repeat.Content(winrt::box_value(label));
+                repeat.Click([model = host->model, id](auto const &, auto const &) {
+                    event(model, id, "click", "");
+                });
+                element = repeat;
+                winrt::check_hresult(status(oodf_set(host->model, id, "text", winrt::to_string(label).c_str())));
+            } else if (type == "HyperlinkButton") {
+                controls::HyperlinkButton link{};
+                link.Content(winrt::box_value(label));
+                link.Click([model = host->model, id](auto const &, auto const &) {
+                    event(model, id, "click", "");
+                });
+                element = link;
+                winrt::check_hresult(status(oodf_set(host->model, id, "text", winrt::to_string(label).c_str())));
+            } else if (type == "AppBarButton") {
+                controls::AppBarButton appbar{};
+                appbar.Label(label);
+                appbar.Click([model = host->model, id](auto const &, auto const &) {
+                    event(model, id, "click", "");
+                });
+                element = appbar;
+                winrt::check_hresult(status(oodf_set(host->model, id, "label", winrt::to_string(label).c_str())));
+            } else if (type == "AppBarToggleButton") {
+                controls::AppBarToggleButton appbar{};
+                appbar.Label(label);
+                appbar.Checked([model = host->model, id](auto const &, auto const &) {
+                    event(model, id, "checked", "true");
+                });
+                appbar.Unchecked([model = host->model, id](auto const &, auto const &) {
+                    event(model, id, "unchecked", "false");
+                });
+                element = appbar;
+                winrt::check_hresult(status(oodf_set(host->model, id, "label", winrt::to_string(label).c_str())));
             } else if (type == "Slider") {
                 controls::Slider slider{};
                 slider.Header(winrt::box_value(label));
@@ -425,10 +485,19 @@ HRESULT __stdcall oodf_win_set(OodfWinHost *host, uint64_t uid,
         auto utf8 = winrt::to_string(winrt::hstring(value));
         // Check the supported native mapping before changing either projection.
         const auto control = it->second;
-        const bool isButton = control.try_as<controls::Button>() != nullptr;
+        // AppBarButton subclasses Button; RadioButton/AppBarToggleButton both
+        // subclass ToggleButton. Classify the most-derived types first so
+        // their distinct property contracts do not leak through base classes.
+        const bool isAppBar = control.try_as<controls::AppBarButton>() != nullptr;
+        const bool isAppBarToggle = control.try_as<controls::AppBarToggleButton>() != nullptr;
+        const bool isRadio = control.try_as<controls::RadioButton>() != nullptr;
+        const bool isRepeat = control.try_as<primitives::RepeatButton>() != nullptr;
+        const bool isLink = control.try_as<controls::HyperlinkButton>() != nullptr;
+        const bool isButton = !isAppBar && control.try_as<controls::Button>() != nullptr;
         const bool isToggle = control.try_as<controls::ToggleSwitch>() != nullptr;
         const bool isCheck = control.try_as<controls::CheckBox>() != nullptr;
-        const bool isToggleButton = control.try_as<primitives::ToggleButton>() != nullptr;
+        const bool isToggleButton = !isRadio && !isAppBarToggle && !isCheck &&
+                                    control.try_as<primitives::ToggleButton>() != nullptr;
         const bool isSlider = control.try_as<controls::Slider>() != nullptr;
         const bool isTextBox = control.try_as<controls::TextBox>() != nullptr;
         const bool isProgress = control.try_as<controls::ProgressBar>() != nullptr;
@@ -437,6 +506,11 @@ HRESULT __stdcall oodf_win_set(OodfWinHost *host, uint64_t uid,
         if (!((isButton && name == "text") || (isToggle && (name == "text" || name == "isOn")) ||
               (isCheck && (name == "text" || name == "isChecked" || name == "isThreeState")) ||
               (isToggleButton && (name == "text" || name == "isChecked")) ||
+              (isRadio && (name == "text" || name == "isChecked" || name == "groupName")) ||
+              (isRepeat && (name == "text" || name == "delay" || name == "interval")) ||
+              (isLink && (name == "text" || name == "navigateUri")) ||
+              (isAppBar && name == "label") ||
+              (isAppBarToggle && (name == "label" || name == "isChecked")) ||
               (isSlider && (name == "value" || name == "minimum" || name == "maximum" || name == "stepFrequency")) ||
               (isTextBox && (name == "text" || name == "placeholderText" || name == "isReadOnly")) ||
               (isProgress && (name == "value" || name == "maximum" || name == "isIndeterminate")) ||
@@ -464,6 +538,35 @@ HRESULT __stdcall oodf_win_set(OodfWinHost *host, uint64_t uid,
             if (name == "text") button.Content(winrt::box_value(winrt::hstring(value)));
             if (name == "isChecked")
                 button.IsChecked(winrt::box_value(parseBoolean(utf8)).as<winrt::Windows::Foundation::IReference<bool>>());
+        }
+        if (isRadio) {
+            auto radio = control.as<controls::RadioButton>();
+            if (name == "text") radio.Content(winrt::box_value(winrt::hstring(value)));
+            if (name == "groupName") radio.GroupName(value);
+            if (name == "isChecked") {
+                if (utf8 == "null") winrt::throw_hresult(E_NOTIMPL);
+                radio.IsChecked(winrt::box_value(parseBoolean(utf8)).as<winrt::Windows::Foundation::IReference<bool>>());
+            }
+        }
+        if (isRepeat) {
+            auto repeat = control.as<primitives::RepeatButton>();
+            if (name == "text") repeat.Content(winrt::box_value(winrt::hstring(value)));
+            if (name == "delay") repeat.Delay(parseMilliseconds(utf8));
+            if (name == "interval") repeat.Interval(parseMilliseconds(utf8));
+        }
+        if (isLink) {
+            auto link = control.as<controls::HyperlinkButton>();
+            if (name == "text") link.Content(winrt::box_value(winrt::hstring(value)));
+            if (name == "navigateUri") link.NavigateUri(winrt::Windows::Foundation::Uri{value});
+        }
+        if (isAppBar && name == "label") control.as<controls::AppBarButton>().Label(value);
+        if (isAppBarToggle) {
+            auto button = control.as<controls::AppBarToggleButton>();
+            if (name == "label") button.Label(value);
+            if (name == "isChecked") {
+                if (utf8 == "null") winrt::throw_hresult(E_NOTIMPL);
+                button.IsChecked(winrt::box_value(parseBoolean(utf8)).as<winrt::Windows::Foundation::IReference<bool>>());
+            }
         }
         if (isSlider) {
             auto slider = control.as<controls::Slider>();
