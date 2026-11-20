@@ -23,6 +23,7 @@
 ::requires 'rules/StmtIndexedAssign.cls'
 ::requires 'rules/StmtCompoundAssign.cls'
 ::requires 'rules/StmtRaise.cls'
+::requires 'rules/StmtThrow.cls'
 ::requires 'rules/StmtCall.cls'
 ::requires 'rules/StmtExit.cls'
 ::requires 'rules/StmtNop.cls'

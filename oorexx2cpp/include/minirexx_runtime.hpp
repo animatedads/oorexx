@@ -1477,6 +1477,18 @@ struct RaiseToCaller {
     bool exitForm = false;    // RAISE without RETURN (EXIT): an internal routine's ends the method / routine (raiseExit)
     bool delivered = false;   // reached the caller, which traps it (raisedInCaller)
 };
+// THROW of a condition other than SYNTAX (RFE #31, trunk r13547+), or one the interpreter threw: raised where it was
+// thrown, it goes from caller to caller until a CATCH clause or a SIGNAL ON trap takes it, as a SYNTAX error does
+// (Activity::throwCondition); CALL ON never takes it. Not a std::exception: nothing that turns those into errors stops
+// it. object: the interpreter's condition object (THROWN .true); origin: the MethodTraps of the activation that threw
+// it and of the code that called it, as far as it is an internal routine (levels: a block there takes it on the level
+// of the THROW, RexxActivation::trap through catchAncestor; anything else sees PROPAGATED .true); none when it came
+// from the interpreter, which keeps PROPAGATED itself.
+struct ThrownCondition {
+    std::string name;
+    std::shared_ptr<ObjectDispatch> object;
+    std::vector<const void *> levels;
+};
 // RAISE SYNTAX expr: Interpreter::messageNumber - major 1..99, minor 0..999 (else 33.904); the code is major.minor.
 // exitForm (no RETURN): from an internal routine the error is raised in the method / routine / program (raiseExit),
 // so only that level's trap sees it.

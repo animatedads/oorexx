@@ -44,5 +44,6 @@ check condition_options "$OUT/src/condition_options.rex"   # CONDITION('E') and 
 check symbol_scan "$OUT/src/symbol_scan.rex"   # DATATYPE 'S' / SYMBOL of X1E+2, A23E+2, .E+2 ...: LanguageParser::scanSymbol as of trunk (bug #2080)
 check finally_clauses "$OUT/src/finally_clauses.rex"   # FINALLY (RFE #31; trunk r13519+): every way out of the block runs the clause once
 check condition_position "$OUT/src/condition_position.rex"   # CONDITION('O')~POSITION of an error in compiled code (CATCH, SIGNAL ON)
+check throw_clauses "$OUT/src/throw_clauses.rex"   # THROW (RFE #31; trunk r13547+): levels and PROPAGATED, SYNTAX / ERROR, PROPAGATE, SIGNAL ON (not CALL ON), FINALLY, INTERPRET, Message~send HASERROR
 check interpret_return_vars "$OUT/src/interpret_return_vars.rex"   # INTERPRET with RETURN: its variables reach the activation (trunk: a FINALLY clause stashes them)
 echo "PASS program constructs (4): $(ls "$OUT"/*.expected | wc -l) programs, $(cat "$OUT"/*.expected | wc -l) lines identical to the interpreter"

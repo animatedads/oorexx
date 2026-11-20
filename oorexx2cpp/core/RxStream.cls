@@ -275,7 +275,10 @@
     if self~lookAheadKind(n) == 'IDENT' then word = self~lookAheadText(n)
     if word == 'CATCH' then if self~lookAheadKind(n + 1) == 'OP' then if wordpos(self~lookAheadText(n + 1), '= :') > 0 then word = ''
     if word == 'FINALLY' then if wordpos(self~lookAheadKind(n + 1), 'SEP EOF') = 0 then word = ''
-    if word == 'SIGNAL' | word == 'CATCH' | word == 'FINALLY' then do
+    /* (THROW: the condition knows the activation that threw it; THROW = ..., THROW += ... are assignments) */
+    if word == 'THROW' then if self~lookAheadKind(n + 1) == 'OP' then
+      if wordpos(self~lookAheadText(n + 1), ': ~ ~~ [') > 0 | right(self~lookAheadText(n + 1), 1) == '=' then word = ''
+    if word == 'SIGNAL' | word == 'CATCH' | word == 'FINALLY' | word == 'THROW' then do
       atClause = n == 0
       if n > 0 then atClause = self~lookAheadKind(n - 1) == 'SEP' | wordpos(self~lookAheadText(n - 1), 'THEN ELSE OTHERWISE') > 0
       if atClause then return .true

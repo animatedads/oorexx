@@ -37,7 +37,7 @@ inline bool send(void *t, const std::string &s, const std::vector<Arg> &a, Resul
 #include <clocale>
 #include <cmath>
 #include <map>
-namespace rx { inline std::shared_ptr<ObjectDispatch> takeKeptCondition(); }
+namespace rx { inline std::shared_ptr<ObjectDispatch> takeKeptCondition(); [[noreturn]] inline void throwRaised(SyntaxCondition &raised); }
 namespace rxobj {
 // hold: a pin of obj for the life of the argument (a native instance's interpreter object, which nothing else in the
 // interpreter references, must survive a collection during the send).
@@ -792,21 +792,34 @@ inline bool send(void *target, const std::string &selector, const std::vector<Ar
         if (sel.size() != 4 && sel.size() != 8) return false;
         std::string u(sel);
         for (char &c : u) c = (char)std::toupper((unsigned char)c);
-        return u == "CALL" || u == "CALLWITH";
+        return u == "CALL" || u == "CALLWITH" || u == "SEND" || u == "SENDWITH";
     };
+    // (message~SEND / SENDWITH too: MessageClass::dispatch asks the top frame to tell it of an error, which a Rexx
+    // activation does and a native one does not: sent from compiled code, HASERROR would never be .true)
     RexxObjectPtr viaHelper = NULLOBJECT;
     if (isRoutineCall(selector)) {
-        static RexxClassObject routineClass = NULLOBJECT;
+        const bool messageSend = std::toupper((unsigned char)selector[0]) == 'S';
+        static RexxClassObject routineClass = NULLOBJECT, messageClass = NULLOBJECT;
         if (routineClass == NULLOBJECT) {
             routineClass = t->FindClass("ROUTINE");
             if (routineClass != NULLOBJECT) rxobj::pinRef(t, (RexxObjectPtr)routineClass);
         }
-        if (routineClass != NULLOBJECT && t->IsInstanceOf((RexxObjectPtr)target, routineClass)) {
-            static RexxRoutineObject helper = NULLOBJECT;
+        if (messageSend && messageClass == NULLOBJECT) {
+            messageClass = t->FindClass("MESSAGE");
+            if (messageClass != NULLOBJECT) rxobj::pinRef(t, (RexxObjectPtr)messageClass);
+        }
+        RexxClassObject wanted = messageSend ? messageClass : routineClass;
+        if (wanted != NULLOBJECT && t->IsInstanceOf((RexxObjectPtr)target, wanted)) {
+            static RexxRoutineObject routineHelper = NULLOBJECT, messageHelper = NULLOBJECT;
+            RexxRoutineObject &helper = messageSend ? messageHelper : routineHelper;
             if (helper == NULLOBJECT) {
+                // (a message's own SENDWITH is not Object's: the message SEND / SENDWITH goes in a message of its own)
                 static const char source[] = "use arg rx2cppR, rx2cppM, rx2cppA\nrx2cppR~sendWith(rx2cppM, rx2cppA)\n"
                                              "if var('RESULT') then return result\nreturn\n";
-                helper = rxobj::helperRoutine(t, t->NewRoutine("rx2cpp_routine_call", source, sizeof(source) - 1));
+                static const char messageSource[] = "use arg rx2cppR, rx2cppM, rx2cppA\n.message~new(rx2cppR, rx2cppM, 'A', rx2cppA)~send\n"
+                                                    "if var('RESULT') then return result\nreturn\n";
+                helper = messageSend ? rxobj::helperRoutine(t, t->NewRoutine("rx2cpp_message_send", messageSource, sizeof(messageSource) - 1))
+                                     : rxobj::helperRoutine(t, t->NewRoutine("rx2cpp_routine_call", source, sizeof(source) - 1));
                 if (helper != NULLOBJECT) rxobj::pinRef(t, (RexxObjectPtr)helper);
                 else t->ClearCondition();
             }
@@ -981,7 +994,7 @@ inline std::string callBif(const std::string &name, const std::vector<std::pair<
         rx::SyntaxCondition raised(code, text, false);
         for (const std::string &a : lastAdditional()) raised.substitutions.push_back(rx::Value::string(a));
         raised.conditionObject = rx::takeKeptCondition();
-        throw raised;
+        rx::throwRaised(raised);
     }
     if (r == NULLOBJECT) return std::string();
     RexxStringObject str = (RexxStringObject)temps((RexxObjectPtr)t->ObjectToString(r));
@@ -1212,7 +1225,7 @@ struct EnvObject final : ObjectDispatch {
             SyntaxCondition condition(code, text, false);
             for (const std::string &a : rxobj::lastAdditional()) condition.substitutions.push_back(Value::string(a));
             condition.conditionObject = takeKeptCondition();
-            throw condition;
+            throwRaised(condition);
         }
         if (r.kind == 0) return std::nullopt;
         return wrap(r);
@@ -1503,6 +1516,7 @@ inline bool describeRaised(std::exception_ptr e, RaisedCondition &out) {
         out.object = raisedConditionObject(r);
         return true;
     }
+    catch (const ThrownCondition &c) { out.name = c.name; out.object = c.object; return true; }
     catch (const SignalJump &) { return false; }
     catch (const std::exception &x) {
         if (pendingConditionHook) if (auto o = pendingConditionHook(x)) { out.object = o; return true; }
@@ -1514,6 +1528,101 @@ inline bool describeRaised(std::exception_ptr e, RaisedCondition &out) {
 inline Value conditionEntry(const std::shared_ptr<ObjectDispatch> &object, const char *key) {
     MessageResult v = object->sendMessage("[]", {Value::string(key)});
     return v ? *v : nil();
+}
+// ---- THROW (RFE #31, trunk r13547+) ----
+// An entry of an interpreter condition object set to .true / .false (THROWN, PROPAGATED), as the interpreter keeps them.
+inline void putLogical(const std::shared_ptr<ObjectDispatch> &object, const char *key, bool value) {
+    auto *env = object ? envOf(object.get()) : nullptr;
+    if (!env || !env->handle) return;
+    RexxThreadContext *t = rxobj::need();
+    t->DirectoryPut((RexxDirectoryObject)env->handle, value ? t->True() : t->False(), key);
+}
+inline bool isTrueEntry(const std::shared_ptr<ObjectDispatch> &object, const char *key) {
+    auto *env = object ? envOf(object.get()) : nullptr;
+    if (!env || !env->handle) return false;
+    RexxThreadContext *t = rxobj::need();
+    return t->DirectoryAt((RexxDirectoryObject)env->handle, key) == t->True();
+}
+// A condition the interpreter left pending after a call, turned into a C++ exception: a SYNTAX error (raised), or a
+// condition it threw (THROWN .true, any other name), which goes on as thrown (Activity::isThrown).
+[[noreturn]] inline void throwRaised(SyntaxCondition &raised) {
+    if (raised.conditionObject && isTrueEntry(raised.conditionObject, "THROWN")) {
+        Value name = conditionEntry(raised.conditionObject, "CONDITION");
+        if (!name.isObject() && name.bytes.str() != "SYNTAX") throw ThrownCondition{name.bytes.str(), raised.conditionObject, {}};
+    }
+    throw raised;
+}
+// A SYNTAX condition object as the SyntaxCondition compiled code carries (its CODE, ADDITIONAL and MESSAGE).
+inline SyntaxCondition syntaxConditionOf(const std::shared_ptr<ObjectDispatch> &object) {
+    Value code = conditionEntry(object, "CODE");
+    Value message = conditionEntry(object, "MESSAGE");
+    if (message.isObject()) message = conditionEntry(object, "ERRORTEXT");
+    SyntaxCondition e(code.isObject() ? std::string("98.900") : code.bytes.str(), message.isObject() ? std::string() : message.bytes.str(), false);
+    Value additional = conditionEntry(object, "ADDITIONAL");
+    if (additional.isObject() && !dynamic_cast<NilObject *>(additional.object.get()))
+        for (const Value &item : arrayItems(additional)) e.substitutions.push_back(item);
+    e.conditionObject = object;
+    return e;
+}
+inline std::vector<const void *> thrownLevels(const MethodTraps *origin);
+// THROW condition [rc] [DESCRIPTION d] [ADDITIONAL a | ARRAY (...)] in compiled code (RexxInstructionRaise::
+// throwCondition): the interpreter makes the condition object, by a THROW of its own that a CATCH clause takes at once
+// (THROWN .true, PROPAGATED .false; an error in the THROW itself, a SYNTAX code out of range, is raised as that error).
+// Its TRACEBACK and STACKFRAMES go: the interpreter makes them where the condition leaves compiled code
+// (RaiseConditionObject), as for an error raised there. Raised in this activation (origin, its traps), and thrown on
+// from caller to caller.
+[[noreturn]] inline void throwCondition(const std::string &name, const std::optional<Value> &rc, const std::optional<Value> &description,
+                                        const std::optional<Value> &additional, const MethodTraps *origin, std::size_t line) {
+    RexxThreadContext *t = rxobj::need();
+    rxobj::LocalRefs temps(t);
+    std::string source = "use arg rx2cppR, rx2cppD, rx2cppA\ndo\nthrow " + name;
+    if (rc) source += " (rx2cppR)";
+    if (description) source += " description (rx2cppD)";
+    if (additional) source += " additional (rx2cppA)";
+    source += "\ncatch rx2cppC = any\nreturn rx2cppC\nend\n";
+    static thread_local std::unordered_map<std::string, RexxRoutineObject> *helpers = new std::unordered_map<std::string, RexxRoutineObject>;
+    RexxRoutineObject &helper = (*helpers)[source];
+    const Value none = Value::string(std::string());
+    RexxObjectPtr r = interpreterHelper(t, temps, helper, "rx2cpp_throw", source.c_str(),
+                                        {rc ? *rc : none, description ? *description : none, additional ? *additional : none});
+    auto object = std::make_shared<EnvObject>((void *)rxobj::pinRef(t, r));
+    object->sendMessage("REMOVE", {Value::string("TRACEBACK")});
+    object->sendMessage("REMOVE", {Value::string("STACKFRAMES")});
+    object->sendMessage("PUT", {Value::number(std::to_string(line)), Value::string("POSITION")});
+    Value raisedName = conditionEntry(object, "CONDITION");
+    if (!isTrueEntry(object, "THROWN") || name == "SYNTAX") {
+        SyntaxCondition e = syntaxConditionOf(object);
+        throw e;
+    }
+    throw ThrownCondition{raisedName.isObject() ? name : raisedName.bytes.str(), object, thrownLevels(origin)};
+}
+// A thrown condition leaves compiled code for its interpreter caller: thrown on from there (a thrown condition the
+// native activation keeps goes on, NativeActivation::checkConditions; r13550's RaiseConditionObject keeps THROWN).
+inline void throwToCaller(const std::shared_ptr<ObjectDispatch> &object) {
+    RexxThreadContext *t = rxobj::need();
+    auto *env = object ? envOf(object.get()) : nullptr;
+    if (!env || !env->handle) { t->RaiseException1(Rexx_Error_Execution_user_defined, t->String("a thrown condition has no condition object")); return; }
+#if THREAD_INTERFACE_VERSION >= 104
+    t->RaiseConditionObject((RexxDirectoryObject)env->handle);
+#else
+    RexxObjectPtr name = t->DirectoryAt((RexxDirectoryObject)env->handle, "CONDITION");
+    RexxObjectPtr description = t->DirectoryAt((RexxDirectoryObject)env->handle, "DESCRIPTION");
+    t->RaiseCondition(name != NULLOBJECT && t->IsString(name) ? t->ObjectToStringValue(name) : "SYNTAX",
+                      description != NULLOBJECT && t->IsString(description) ? (RexxStringObject)description : NULLOBJECT,
+                      t->DirectoryAt((RexxDirectoryObject)env->handle, "ADDITIONAL"), NULLOBJECT);
+#endif
+}
+// A thrown condition taken by a trap of an activation other than the one that threw it (block: by a block of one that
+// is not on the level of the THROW, levels) has PROPAGATED .true.
+inline void notePropagated(std::exception_ptr e, const void *here, bool block) {
+    try { std::rethrow_exception(e); }
+    catch (const ThrownCondition &c) {
+        if (c.levels.empty()) return;
+        bool same = c.levels.front() == here;
+        if (block) same = std::find(c.levels.begin(), c.levels.end(), here) != c.levels.end();
+        if (!same) putLogical(c.object, "PROPAGATED", true);
+    }
+    catch (...) {}
 }
 struct CatchBlock;
 // What a CATCH clause with a code looks at (RFE #31): a SYNTAX condition's CODE, an ERROR / FAILURE condition's RC.
@@ -1753,6 +1862,7 @@ struct MethodTraps {
             // raised by compiled code: POSITION is the line of its clause, not the interpreter's (the launcher's)
             raised.object->sendMessage("PUT", {Value::number(std::to_string(line)), Value::string("POSITION")});
         }
+        notePropagated(e, this, false);
         has = true;
         name = raised.name;
         instruction = "SIGNAL";
@@ -1850,9 +1960,23 @@ struct MethodTraps {
         default: return Value::string(std::string());
         }
     }
-    // RAISE PROPAGATE: the trapped condition again, to the caller.
+    // RAISE PROPAGATE: the trapped condition again, to the caller. Any condition but SYNTAX is raised there, as RAISE
+    // raises it (one level; a thrown one too, raised now: RexxActivation::raiseExit).
     [[noreturn]] void propagate() const {
         if (!has) throw SyntaxCondition("93.900", "RAISE PROPAGATE outside a condition trap", false);
+        if (name != "SYNTAX") {
+            RaiseToCaller r;
+            r.name = name;
+            r.exitForm = true;
+            auto entry = [&](const char *key) -> std::optional<Value> {
+                Value v = conditionEntry(object, key);
+                if (v.isObject() && dynamic_cast<NilObject *>(v.object.get())) return std::nullopt;
+                return v;
+            };
+            r.rc = entry("RC"); r.description = entry("DESCRIPTION"); r.additional = entry("ADDITIONAL");
+            if (r.description && !r.description->isObject() && r.description->bytes.empty()) r.description.reset();
+            throw r;
+        }
         Value code = conditionEntry(object, "CODE");
         SyntaxCondition again(code.isObject() ? std::string("98.900") : code.bytes.str(), name, false);
         Value additional = conditionEntry(object, "ADDITIONAL");
@@ -1861,7 +1985,25 @@ struct MethodTraps {
         again.conditionObject = object;
         throw again;
     }
+    // THROW PROPAGATE [DESCRIPTION d] [ADDITIONAL a | ARRAY (...)]: the condition being handled (by a CATCH clause or a
+    // trap), raised or thrown, thrown on from here with DESCRIPTION and ADDITIONAL replaced if given
+    // (RexxInstructionRaise::throwCondition); none: 98.918.
+    [[noreturn]] void throwPropagate(const std::optional<Value> &description, const std::optional<Value> &additional) const {
+        if (!has) throw SyntaxCondition("98.918", "No active condition available for PROPAGATE.", false);
+        if (description) object->sendMessage("PUT", {*description, Value::string("DESCRIPTION")});
+        if (additional) object->sendMessage("PUT", {*additional, Value::string("ADDITIONAL")});
+        putLogical(object, "THROWN", true);
+        putLogical(object, "PROPAGATED", false);
+        if (name == "SYNTAX") { SyntaxCondition e = syntaxConditionOf(object); throw e; }
+        throw ThrownCondition{name, object, thrownLevels(this)};
+    }
 };
+// The activation that throws and the ones whose internal routine it is (ThrownCondition::levels).
+inline std::vector<const void *> thrownLevels(const MethodTraps *origin) {
+    std::vector<const void *> levels;
+    for (const MethodTraps *t = origin; t; t = t->internal ? t->caller : nullptr) levels.push_back(t);
+    return levels;
+}
 // A DO / LOOP / SELECT block with CATCH clauses (RFE #31, trunk r13514), while its body, loop control and SELECT CASE
 // run: registered on its activation's traps, innermost first. A condition raised there that a clause names is taken
 // by the block (the whole block ends; the clause runs; execution goes on after END), before the activation's SIGNAL
@@ -1948,6 +2090,7 @@ struct CatchBlock {
         const int clause = clauseFor(raised.name, CatchKey::of(raised));
         if (clause < 0) return -1;
         end();
+        notePropagated(e, &traps, true);
         if (!raised.object) {
             std::vector<rxobj::Arg> subs; EnvObject::convert(raised.substitutions, subs);
             raised.object = std::make_shared<EnvObject>(rxobj::conditionObject(raised.code, subs));
@@ -2408,7 +2551,7 @@ inline EnvName &envName(const std::string &name) {
     SyntaxCondition raised(code, text, false);
     for (const std::string &a : rxobj::lastAdditional()) raised.substitutions.push_back(Value::string(a));
     raised.conditionObject = takeKeptCondition();
-    throw raised;
+    throwRaised(raised);
 }
 // SecurityManager::callSecurityManager: the message (LOCAL, ENVIRONMENT, STREAM, ...) sent to the manager with its
 // Directory of arguments; a result is required (91.999) and must be exactly 0 or 1 (34.903): true, the manager
@@ -2421,7 +2564,7 @@ inline bool askSecurityManager(RexxThreadContext *t, RexxObjectPtr manager, cons
         SyntaxCondition raised(code, text, false);
         for (const std::string &a : rxobj::lastAdditional()) raised.substitutions.push_back(Value::string(a));
         raised.conditionObject = takeKeptCondition();
-        throw raised;
+        throwRaised(raised);
     }
     if (r.kind == 0) {
         SyntaxCondition missing("91.999", std::string("Message \"") + what + "\" did not return a result.", false);
@@ -3655,7 +3798,7 @@ inline MessageResult interpreterCall(Variables &vars, const std::string &name, c
         SyntaxCondition raised(code, text, false);
         for (const std::string &a : rxobj::lastAdditional()) raised.substitutions.push_back(Value::string(a));
         raised.conditionObject = takeKeptCondition();
-        throw raised;
+        throwRaised(raised);
     }
     // The merge looks at the helper's imports after every call (five interpreter sends) until a call that ended normally
     // found nothing new: from then on that routine name, resolved the same way each time (a routine of the package or one
@@ -3830,7 +3973,7 @@ inline void interpreterCommand(Variables &vars, const Value &environment, const 
         SyntaxCondition raised(code, text, false);
         for (const std::string &a : rxobj::lastAdditional()) raised.substitutions.push_back(Value::string(a));
         raised.conditionObject = takeKeptCondition();
-        throw raised;
+        throwRaised(raised);
     }
     if (r == NULLOBJECT || !t->IsArray(r)) throw std::runtime_error("ADDRESS helper returned no RC");
     RexxObjectPtr rc = t->ArrayAt((RexxArrayObject)r, 1);
@@ -3915,7 +4058,7 @@ inline void hostSay(const std::string &line) {
         SyntaxCondition raised(code, text, false);
         for (const std::string &a : rxobj::lastAdditional()) raised.substitutions.push_back(Value::string(a));
         raised.conditionObject = takeKeptCondition();
-        throw raised;
+        throwRaised(raised);
     }
 }
 inline const bool hostSayInstalled = (sayHook() = &hostSay, true);
@@ -3956,7 +4099,7 @@ inline RexxObjectPtr interpreterHelper(RexxThreadContext *t, rxobj::LocalRefs &t
         SyntaxCondition raised(code, text, false);
         for (const std::string &a : rxobj::lastAdditional()) raised.substitutions.push_back(Value::string(a));
         raised.conditionObject = takeKeptCondition();
-        throw raised;
+        throwRaised(raised);
     }
     return r;
 }
