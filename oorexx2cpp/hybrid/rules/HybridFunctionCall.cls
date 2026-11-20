@@ -87,8 +87,9 @@
       else code = code || '_rxA.emplace_back(' || argExpr || '); '
     end
     /* (a routine the package declares EXTERNAL: no imports to merge after it, see rx::interpreterCall) */
+    /* (and its EXTERNAL string, "LIBRARY rxmath RxCalcSqrt": rx::interpreterCall computes rxmath's natively) */
     merge = 'true'
-    if decl \== '' then merge = 'false'
+    if decl \== '' then merge = 'false, ' || .RxQuote~cpp(.RxExternalSpec~of(decl))
     code = code || 'auto _rxR = rx::interpreterCall(vars, "(dynamic)", _rxA, std::optional<rx::Value>(rx::Value::string(' || .RxQuote~cpp(name) || ')), ' || merge || '); '
     code = code || 'if (!_rxR) { rx::SyntaxCondition _rxNone("44.1", "No data returned from function", false); '
     code = code || '_rxNone.substitutions.push_back(rx::Value::string(' || .RxQuote~cpp(name) || ')); throw _rxNone; } return *_rxR; }())'

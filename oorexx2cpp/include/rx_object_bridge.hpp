@@ -33,6 +33,9 @@ inline bool send(void *t, const std::string &s, const std::vector<Arg> &a, Resul
 #include <sys/time.h>
 #include <ctime>
 #include <unistd.h>
+#include <dlfcn.h>
+#include <clocale>
+#include <cmath>
 #include <map>
 namespace rx { inline std::shared_ptr<ObjectDispatch> takeKeptCondition(); }
 namespace rxobj {
@@ -1512,6 +1515,26 @@ inline Value conditionEntry(const std::shared_ptr<ObjectDispatch> &object, const
     MessageResult v = object->sendMessage("[]", {Value::string(key)});
     return v ? *v : nil();
 }
+struct CatchBlock;
+// What a CATCH clause with a code looks at (RFE #31): a SYNTAX condition's CODE, an ERROR / FAILURE condition's RC.
+struct CatchKey {
+    std::string syntaxCode;
+    std::optional<Value> rc;
+    static CatchKey of(const std::string &c, const std::shared_ptr<ObjectDispatch> &o) {
+        CatchKey k;
+        if (!o) return k;
+        if (c == "SYNTAX") { Value code = conditionEntry(o, "CODE"); if (!code.isObject()) k.syntaxCode = code.bytes.str(); }
+        else if (c == "ERROR" || c == "FAILURE") {
+            Value rc = conditionEntry(o, "RC");
+            if (!(rc.isObject() && dynamic_cast<NilObject *>(rc.object.get()))) k.rc = rc;
+        }
+        return k;
+    }
+    static CatchKey of(const RaisedCondition &r) {
+        if (r.name == "SYNTAX" && !r.code.empty()) { CatchKey k; k.syntaxCode = r.code; return k; }
+        return of(r.name, r.object);
+    }
+};
 struct MethodTraps {
     enum Kind { SYNTAX, ERROR, FAILURE, NOVALUE, NOTREADY, LOSTDIGITS, NOSTRING, ANY, HALT, NOMETHOD, KINDS,
                 USERS = 16, SLOTS = KINDS + USERS };   // slots past KINDS: USER conditions, in the order first trapped
@@ -1539,6 +1562,35 @@ struct MethodTraps {
     std::vector<Queued> queue;                 // CALL ON conditions waiting for the clause boundary (processTraps)
     MethodTraps *saved = nullptr;
     bool internal = false;                     // an internal routine's activation (inherited from its caller)
+    CatchBlock *catches = nullptr;             // the innermost running block with CATCH clauses (RFE #31), if any
+    MethodTraps *caller = nullptr;             // an internal routine's: its caller's (whose blocks catch here too)
+    // the next caller out with running CATCH blocks (theirs do not change while this runs: RexxActivation catchAncestor)
+    const MethodTraps *catchAncestor = nullptr;
+    // When each trap was enabled, and when this activation was entered (RexxActivation entrySequence): a trap that an
+    // internal routine enabled for itself wins over the CATCH clauses of the code that called it (enabledBelow).
+    unsigned long sequence[SLOTS] = {};
+    unsigned long entrySequence = 0;
+    static unsigned long &trapSequence() { static thread_local unsigned long n = 0; return n; }
+    // The running block that catches condition c (object o: its CODE / RC for a coded clause), here or in the code that
+    // called this internal routine (RexxActivation::findCatch); owner: the activation of the block.
+    const CatchBlock *findCatch(const std::string &c, const CatchKey &key, const MethodTraps *&owner) const;
+    bool catching(const std::string &c, const std::shared_ptr<ObjectDispatch> &o) const {
+        const MethodTraps *owner = nullptr;
+        return findCatch(c, CatchKey::of(c, o), owner) != nullptr;
+    }
+    // Was trap slot k enabled by an internal routine that runs for owner (this one, or one of its callers on the way)?
+    bool enabledBelow(int k, const MethodTraps *owner) const {
+        for (const MethodTraps *t = this; t && t != owner; t = t->caller)
+            if (t->internal && sequence[k] > t->entrySequence) return true;
+        return false;
+    }
+    // Does a CATCH clause take condition c, ahead of trap slot use (-1: none)? (RexxActivation::trap)
+    bool catchWins(const std::string &c, const CatchKey &key, int use) const {
+        const MethodTraps *owner = nullptr;
+        if (!findCatch(c, key, owner)) return false;
+        return use < 0 || !enabledBelow(use, owner);
+    }
+    bool catchesKind(const char *c) const;     // a clause names c, or ANY (for arming: NOVALUE, LOSTDIGITS, ...)
     // An internal routine (CALL label, label(...), a CALL ON handler) starts with a copy of its caller's trap settings
     // and condition information (RexxActivation INTERNALCALL); the caller sets inheritNext just before entering it.
     static MethodTraps *&inheritNext() { static thread_local MethodTraps *p = nullptr; return p; }
@@ -1553,7 +1605,11 @@ struct MethodTraps {
             std::memcpy(delayed, from->delayed, sizeof delayed); std::memcpy(label, from->label, sizeof label);
             if (from->names_) names_ = std::make_unique<Names>(*from->names_);
             users = from->users; has = from->has; name = from->name; instruction = from->instruction; object = from->object;
+            std::memcpy(sequence, from->sequence, sizeof sequence);
+            caller = from;
+            catchAncestor = from->catches ? from : from->catchAncestor;
         }
+        entrySequence = trapSequence();
         Handing &h = handing();
         if (h.active) { has = true; name = h.name; instruction = "CALL"; object = h.object; h = Handing(); }
         if (ActivationScope *a = t.scope) { saved = a->traps; a->traps = this; }
@@ -1576,15 +1632,16 @@ struct MethodTraps {
         return ANY;
     }
     void syncNovalue() {
-        novalueOn = (on[NOVALUE] && !callMode[NOVALUE]) || (on[ANY] && !callMode[ANY]);
-        lostDigitsOn = (on[LOSTDIGITS] && !callMode[LOSTDIGITS]) || (on[ANY] && !callMode[ANY]);
+        const bool catching = catches || catchAncestor;
+        novalueOn = (on[NOVALUE] && !callMode[NOVALUE]) || (on[ANY] && !callMode[ANY]) || (catching && catchesKind("NOVALUE"));
+        lostDigitsOn = (on[LOSTDIGITS] && !callMode[LOSTDIGITS]) || (on[ANY] && !callMode[ANY]) || (catching && catchesKind("LOSTDIGITS"));
     }
     MethodTraps(const MethodTraps &) = delete;
     MethodTraps &operator=(const MethodTraps &) = delete;
     // Is NOTREADY trapped in the running activation (SIGNAL / CALL ON NOTREADY, or ANY)?
     static bool notReadyArmed() {
         ActivationScope *a = ActivationScope::current();
-        return a && a->traps && a->traps->trapping("NOTREADY", NOTREADY) >= 0;
+        return a && a->traps && (a->traps->trapping("NOTREADY", NOTREADY) >= 0 || a->traps->catchesKind("NOTREADY"));
     }
     // Which conditions raised inside the interpreter the running activation traps, as bits: 1 NOTREADY (SIGNAL ON),
     // 8 NOTREADY (CALL ON), 2 NOSTRING, 4 LOSTDIGITS; 0 none.
@@ -1594,9 +1651,10 @@ struct MethodTraps {
         const MethodTraps &m = *a->traps;
         int mode = 0;
         const int notReady = m.trapping("NOTREADY", NOTREADY);
-        if (notReady >= 0) mode |= m.callMode[notReady] ? 8 : 1;
-        if (m.trapping("NOSTRING", NOSTRING) >= 0) mode |= 2;
-        if (m.trapping("LOSTDIGITS", LOSTDIGITS) >= 0) mode |= 4;
+        if (m.catchesKind("NOTREADY")) mode |= 1;   // (a CATCH clause takes it as SIGNAL ON does: raised now)
+        else if (notReady >= 0) mode |= m.callMode[notReady] ? 8 : 1;
+        if (m.trapping("NOSTRING", NOSTRING) >= 0 || m.catchesKind("NOSTRING")) mode |= 2;
+        if (m.trapping("LOSTDIGITS", LOSTDIGITS) >= 0 || m.catchesKind("LOSTDIGITS")) mode |= 4;
         return mode;
     }
     // Which command conditions the running activation traps, as bits: 1 ERROR, 2 FAILURE, 4 ANY.
@@ -1604,7 +1662,8 @@ struct MethodTraps {
         ActivationScope *a = ActivationScope::current();
         if (!a || !a->traps) return 0;
         const MethodTraps &m = *a->traps;
-        return (m.on[ERROR] ? 1 : 0) | (m.on[FAILURE] ? 2 : 0) | (m.on[ANY] ? 4 : 0);
+        return (m.on[ERROR] || m.catchesKind("ERROR") ? 1 : 0) | (m.on[FAILURE] || m.catchesKind("FAILURE") ? 2 : 0) |
+               (m.on[ANY] || m.catchesKind("ANY") ? 4 : 0);
     }
     // The running activation's traps, for INTERPRET: the conditions (not SYNTAX) the interpreted string must hand back,
     // each with its form (true: CALL ON).
@@ -1644,9 +1703,9 @@ struct MethodTraps {
     }
     int find(const std::string &c) const { return const_cast<MethodTraps *>(this)->slotOf(c, false); }
     // (names_->missing[k]: SIGNAL ON c NAME label with no such label: 16.1 when c is raised)
-    void set(const char *c, int target) { const int k = slotOf(c, true); on[k] = true; callMode[k] = false; label[k] = target; if (names_) names_->missing[k].clear(); syncNovalue(); }
-    void setMissing(const char *c, const std::string &name) { const int k = slotOf(c, true); on[k] = true; callMode[k] = false; label[k] = -1; names().missing[k] = name; syncNovalue(); }
-    void setCall(const char *c, int target) { const int k = slotOf(c, true); on[k] = true; callMode[k] = true; delayed[k] = false; label[k] = target; if (names_) names_->missing[k].clear(); syncNovalue(); }
+    void set(const char *c, int target) { const int k = slotOf(c, true); on[k] = true; sequence[k] = ++trapSequence(); callMode[k] = false; label[k] = target; if (names_) names_->missing[k].clear(); syncNovalue(); }
+    void setMissing(const char *c, const std::string &name) { const int k = slotOf(c, true); on[k] = true; sequence[k] = ++trapSequence(); callMode[k] = false; label[k] = -1; names().missing[k] = name; syncNovalue(); }
+    void setCall(const char *c, int target) { const int k = slotOf(c, true); on[k] = true; sequence[k] = ++trapSequence(); callMode[k] = true; delayed[k] = false; label[k] = target; if (names_) names_->missing[k].clear(); syncNovalue(); }
     void clear(const char *c) { const int k = slotOf(c, true); on[k] = false; callMode[k] = false; syncNovalue(); }
     // An exception reached the activation: the label to continue at (the trap is turned off), or -1 to let it go on.
     int fire(Variables &vars, std::size_t line, std::exception_ptr e) {
@@ -1656,6 +1715,8 @@ struct MethodTraps {
         RaisedCondition raised;
         if (!describeRaised(e, raised)) return -1;
         const int use = trapping(raised.name, find(raised.name));
+        // a block of the code that called this internal routine catches it: unwound to it (an own trap of the routine wins)
+        if (catchAncestor && catchWins(raised.name, CatchKey::of(raised), use)) return -1;
         if (use < 0 || callMode[use]) return -1;    // a CALL ON trap never unwinds (conditions reach it by deliver)
         on[use] = false;
         syncNovalue();
@@ -1683,7 +1744,9 @@ struct MethodTraps {
         ActivationScope *a = ActivationScope::current();
         if (!a || !a->traps) return false;
         MethodTraps &m = *a->traps;
+        // a block of this activation with a clause for it: raised now, to the block (before CALL ON and SIGNAL ON)
         const int use = m.trapping(c, m.find(c));
+        if ((m.catches || m.catchAncestor) && m.catchWins(c, CatchKey::of(c, o), use)) throw NotReadyCondition(o, c);
         if (use < 0) return false;
         if (!m.callMode[use]) throw NotReadyCondition(o, c);
         o->sendMessage("PUT", {Value::string("CALL"), Value::string("INSTRUCTION")});
@@ -1712,14 +1775,36 @@ struct MethodTraps {
         throw std::runtime_error("no CALL ON condition is ready");
     }
     void undelay(int slot) { delayed[slot] = false; }
+    // CONDITION([option]): the option letter (BUILTIN(CONDITION): a null string or an unknown letter is 40.904).
+    static char conditionOption(const std::optional<Value> &arg) {
+        if (!arg || arg->isObject()) return 'I';
+        const char option = arg->bytes.empty() ? '\0' : static_cast<char>(std::toupper(static_cast<unsigned char>(arg->bytes[0])));
+        if (option == '\0' || std::string("ACDEIORS").find(option) == std::string::npos) {
+            SyntaxCondition e("40.904", "CONDITION argument 1 must be one of ACDEIORS; found \"" + arg->bytes.str() + "\"", false);
+            e.substitutions = {Value::string("CONDITION"), Value::string("1"), Value::string("ACDEIORS"), *arg};
+            throw e;
+        }
+        return option;
+    }
     // CONDITION([option]) of this activation.
-    Value condition(const std::optional<Value> &arg) const {
-        char option = 'I';
-        if (arg && !arg->isObject() && !arg->bytes.empty())
-            option = static_cast<char>(std::toupper(static_cast<unsigned char>(arg->bytes[0])));
+    Value condition(const std::optional<Value> &arg) {
+        const char option = conditionOption(arg);
         switch (option) {
         case 'A': return has ? conditionEntry(object, "ADDITIONAL") : nil();
-        case 'O': return has ? Value::fromObject(object) : nil();
+        case 'O': {   // a copy of the condition object
+            if (!has) return nil();
+            MessageResult copy = object->sendMessage("COPY", {});
+            return copy ? *copy : Value::fromObject(object);
+        }
+        case 'R': has = false; name.clear(); instruction.clear(); object.reset(); return Value::string(std::string());
+        case 'E': {   // the error subcode: what follows the dot of CODE
+            if (!has) return Value::string(std::string());
+            Value code = conditionEntry(object, "CODE");
+            if (code.isObject()) return Value::string(std::string());
+            const std::string text = code.bytes.str();
+            const std::size_t dot = text.find('.');
+            return Value::string(dot == std::string::npos ? std::string() : text.substr(dot + 1));
+        }
         case 'C': return Value::string(has ? name : std::string());
         case 'I': return Value::string(has ? instruction : std::string());
         case 'D': {
@@ -1733,7 +1818,7 @@ struct MethodTraps {
             if (k < 0 || !on[k]) return Value::string("OFF");
             return Value::string(delayed[k] ? "DELAY" : "ON");
         }
-        default: throw SyntaxCondition("40.904", "CONDITION option must be one of ACDIOS", false);
+        default: return Value::string(std::string());
         }
     }
     // RAISE PROPAGATE: the trapped condition again, to the caller.
@@ -1748,6 +1833,157 @@ struct MethodTraps {
         throw again;
     }
 };
+// A DO / LOOP / SELECT block with CATCH clauses (RFE #31, trunk r13514), while its body, loop control and SELECT CASE
+// run: registered on its activation's traps, innermost first. A condition raised there that a clause names is taken
+// by the block (the whole block ends; the clause runs; execution goes on after END), before the activation's SIGNAL
+// ON and CALL ON traps: the block's C++ catch sees it before the activation's fire, and deliver asks the block first.
+// A clause condition: a name (SYNTAX, ERROR, USER X, ANY, ...) and an optional code: SYNTAX n catches every n.m, n.m
+// that one; ERROR / FAILURE code is compared with the condition's RC by ==; codeVariable: a simple symbol for the
+// code, read from the block's activation when the condition is raised.
+struct CatchCondition {
+    std::string name;
+    std::string code;
+    std::string codeVariable;
+};
+struct CatchBlock {
+    MethodTraps &traps;
+    Variables &vars;
+    std::vector<std::vector<CatchCondition>> clauses;
+    CatchBlock *outer;
+    bool active = true;
+    CatchBlock(MethodTraps &m, Variables &v, std::vector<std::vector<CatchCondition>> c)
+        : traps(m), vars(v), clauses(std::move(c)), outer(m.catches) { m.catches = this; m.syncNovalue(); }
+    ~CatchBlock() { end(); }
+    CatchBlock(const CatchBlock &) = delete;
+    CatchBlock &operator=(const CatchBlock &) = delete;
+    void end() { if (active) { active = false; traps.catches = outer; traps.syncNovalue(); } }
+    bool names(const char *c) const {
+        for (const auto &clause : clauses) for (const auto &k : clause) if (k.name == c || k.name == "ANY") return true;
+        return false;
+    }
+    // A code given as a simple symbol: read now, in the block's activation; with no value, its name (no NOVALUE).
+    Value codeOf(const CatchCondition &k) const {
+        if (k.codeVariable.empty()) return Value::string(k.code);
+        if (const Value *v = lookup(vars, k.codeVariable)) return *v;
+        return Value::string(k.codeVariable);
+    }
+    // RexxInstructionCatch::errorNumber: "major" or "major.minor" (1-99, 1-999) as major * 1000 + minor, or -1.
+    static long errorNumber(const std::string &text) {
+        std::size_t i = 0, digits = 0;
+        long major = 0, minor = 0;
+        for (; i < text.size() && text[i] >= '0' && text[i] <= '9' && digits < 3; ++i, ++digits) major = major * 10 + (text[i] - '0');
+        bool valid = digits > 0 && major >= 1 && major <= 99;
+        if (valid && i < text.size()) {
+            valid = text[i++] == '.';
+            digits = 0;
+            for (; i < text.size() && text[i] >= '0' && text[i] <= '9' && digits < 4; ++i, ++digits) minor = minor * 10 + (text[i] - '0');
+            valid = valid && digits > 0 && i == text.size() && minor >= 1 && minor <= 999;
+        }
+        return valid ? major * 1000 + minor : -1;
+    }
+    // RexxInstructionCatch::sameCode: two strings as ==; a string and an object never; two objects by their "==".
+    static bool sameCode(const Value &code, const Value &rc) {
+        if (!code.isObject() && !rc.isObject()) return code.bytes.str() == rc.bytes.str();
+        if (!code.isObject() || !rc.isObject()) return false;
+        Value answer = sendBinary(code, "==", rc);
+        return !answer.isObject() && answer.bytes.str() == "1";
+    }
+    // The clause that takes condition c (RexxInstructionCatch::handles, in clause order), or -1.
+    int clauseFor(const std::string &c, const CatchKey &key) const {
+        for (std::size_t i = 0; i < clauses.size(); ++i)
+            for (const CatchCondition &k : clauses[i]) {
+                if (k.name == "ANY") return static_cast<int>(i);
+                if (k.name != c) continue;
+                if (k.code.empty() && k.codeVariable.empty()) return static_cast<int>(i);
+                if (c == "SYNTAX") {
+                    if (key.syntaxCode.empty()) return static_cast<int>(i);   // (no condition object yet)
+                    const Value want = codeOf(k);
+                    if (want.isObject()) continue;
+                    const long wanted = errorNumber(want.bytes.str());
+                    if (wanted < 0) continue;
+                    const std::string &text = key.syntaxCode;
+                    const std::size_t point = text.find('.');
+                    const long raised = std::strtol(text.c_str(), nullptr, 10) * 1000 +
+                                        (point == std::string::npos ? 0 : std::strtol(text.c_str() + point + 1, nullptr, 10));
+                    if (wanted % 1000 == 0 ? raised / 1000 == wanted / 1000 : raised == wanted) return static_cast<int>(i);
+                }
+                else if (key.rc && sameCode(codeOf(k), *key.rc)) return static_cast<int>(i);
+            }
+        return -1;
+    }
+    // A condition reached the block (its C++ catch): the clause to run, with the condition information set as a trap
+    // sets it but CONDITION('I') = CATCH, and the block ended; or -1 (not this block's: rethrow it).
+    int take(std::exception_ptr e, std::size_t line, std::shared_ptr<ObjectDispatch> &object) {
+        RaisedCondition raised;
+        if (!describeRaised(e, raised)) return -1;
+        const int clause = clauseFor(raised.name, CatchKey::of(raised));
+        if (clause < 0) return -1;
+        end();
+        if (!raised.object) {
+            std::vector<rxobj::Arg> subs; EnvObject::convert(raised.substitutions, subs);
+            raised.object = std::make_shared<EnvObject>(rxobj::conditionObject(raised.code, subs));
+        }
+        raised.object->sendMessage("PUT", {Value::string("CATCH"), Value::string("INSTRUCTION")});
+        traps.has = true;
+        traps.name = raised.name;
+        traps.instruction = "CATCH";
+        traps.object = raised.object;
+        if (raised.name == "SYNTAX" || raised.name == "ERROR" || raised.name == "FAILURE") rx::set(vars, "RC", conditionEntry(raised.object, "RC"));
+        rx::set(vars, "SIGL", Value::string(std::to_string(line)));
+        object = raised.object;
+        return clause;
+    }
+    // CATCH variable = ...: a copy of the condition object (the one CONDITION('O') answers stays as it is)
+    static Value copyOf(const std::shared_ptr<ObjectDispatch> &o) {
+        MessageResult r = o->sendMessage("COPY", {});
+        return r ? *r : nil();
+    }
+};
+// INTERPRET in a running block with CATCH clauses (here, or in the code that called this internal routine): the
+// interpreted code runs inside a block with one CATCH clause for all their conditions (each code as its value now), so
+// a condition one of them takes ends the interpreted code as it ends the block (RexxActivation::findCatch looks through
+// an INTERPRET); the condition comes back and is raised here. "" when there are none.
+inline std::string interpretCatchConditions() {
+    ActivationScope *a = ActivationScope::current();
+    if (!a || !a->traps) return std::string();
+    std::string out;
+    std::vector<std::string> items;
+    auto quoted = [](const std::string &v) {
+        std::string q = "'";
+        for (char ch : v) { q += ch; if (ch == '\'') q += ch; }
+        return q + "'";
+    };
+    for (const MethodTraps *t = a->traps; t; t = t->catchAncestor)
+        for (const CatchBlock *b = t->catches; b; b = b->outer)
+            for (const auto &clause : b->clauses)
+                for (const CatchCondition &k : clause) {
+                    std::string item = k.name;
+                    if (!k.code.empty() || !k.codeVariable.empty()) {
+                        const Value want = b->codeOf(k);
+                        if (want.isObject()) continue;   // (an object code: not written in source)
+                        if (k.name == "SYNTAX") {
+                            if (CatchBlock::errorNumber(want.bytes.str()) < 0) continue;   // never matches
+                            item += " " + want.bytes.str();
+                        }
+                        else item += " " + quoted(want.bytes.str());
+                    }
+                    if (std::find(items.begin(), items.end(), item) != items.end()) continue;
+                    items.push_back(item);
+                    out += (out.empty() ? "" : ", ") + item;
+                }
+    return out;
+}
+inline bool MethodTraps::catchesKind(const char *c) const {
+    for (const MethodTraps *t = this; t; t = t->catchAncestor)
+        for (const CatchBlock *b = t->catches; b; b = b->outer) if (b->names(c)) return true;
+    return false;
+}
+inline const CatchBlock *MethodTraps::findCatch(const std::string &c, const CatchKey &key, const MethodTraps *&owner) const {
+    for (const MethodTraps *t = this; t; t = t->catchAncestor)
+        for (const CatchBlock *b = t->catches; b; b = b->outer)
+            if (b->clauseFor(c, key) >= 0) { owner = t; return b; }
+    return nullptr;
+}
 // A RAISE that ended a compiled callee reaches its compiled caller (RexxActivation::raise: the sender's trap). A caller
 // that traps the condition with SIGNAL ON (it or ANY) gets it now: it is rethrown, delivered, to the caller's
 // MethodTraps; with CALL ON it is queued for the caller's clause boundary. Otherwise HALT is error 4.1 and NOMETHOD
@@ -1755,7 +1991,11 @@ struct MethodTraps {
 inline std::optional<Value> raisedInCaller(const RaiseToCaller &r) {
     if (ActivationScope *a = ActivationScope::current()) if (a->traps) {
         MethodTraps &m = *a->traps;
+        // a running block of the caller with a clause for it takes it first (RFE #31 CATCH)
         const int use = m.trapping(r.name, m.find(r.name));
+        if ((m.catches || m.catchAncestor) && m.catchWins(r.name, CatchKey::of(r.name, raisedConditionObject(r)), use)) {
+            RaiseToCaller d = r; d.delivered = true; throw d;
+        }
         if (use >= 0) {
             if (!m.callMode[use]) { RaiseToCaller d = r; d.delivered = true; throw d; }
             if (auto o = raisedConditionObject(r)) {
@@ -1861,9 +2101,7 @@ template <class Call> Value runRaising(Call &&call) {
 }
 // CONDITION() in an activation that traps nothing: no condition information.
 inline Value noCondition(const std::optional<Value> &arg) {
-    char option = 'I';
-    if (arg && !arg->isObject() && !arg->bytes.empty())
-        option = static_cast<char>(std::toupper(static_cast<unsigned char>(arg->bytes[0])));
+    const char option = MethodTraps::conditionOption(arg);
     if (option == 'A' || option == 'O') return nil();
     return Value::string(std::string());
 }
@@ -2919,6 +3157,282 @@ inline bool mergeExternalCall(RexxThreadContext *t, RexxRoutineObject helper, st
     if (t->CheckCondition()) t->ClearCondition();
     return true;
 }
+// rxmath natively. A call of RxCalcPi / Sqrt / Exp / Log / Log10 / SinH / CosH / TanH / Power / Sin / Cos / Tan / Cotan /
+// ArcSin / ArcCos / ArcTan that the interpreter would run in the rxmath library is computed here: rxmath.cpp's own code
+// (NumericFormatter, TrigFormatter: the same libm calls, its pi as a long double literal in the same expressions), its
+// argument conversions (NativeActivation: a number to double through strtod of its digits, as NumberString::doubleValue;
+// the precision a positive whole number) and DoubleToObjectWithPrecision (NumberString::newInstanceFromDouble: "nan",
+// "+infinity", "-infinity", else "%.*g" at min(16, precision) + 2 digits rounded to precision, shown with precision as
+// its digits, always in SCIENTIFIC form: the native routine's frame is pushed before it is given its caller
+// (newNativeActivation(activity), then accessCallerContext), so the global settings it creates numbers under are the
+// defaults, whatever the caller's NUMERIC FORM). Precision omitted: the caller's NUMERIC DIGITS (GetContextDigits, which
+// does ask the caller), at most 16.
+// Resolution, checked at every call as RexxActivation::externalCall makes it, the routine found must be rxmath's own
+// (rxmath loaded, its LibraryPackage::resolveRoutine): the library package's routine of that name (PackageClass::
+// findRoutine: its own and imported ones; ::REQUIRES 'rxmath' LIBRARY merges rxmath's in), or with none there and no
+// macro of that name first in the macrospace (RexxQueryMacro, RXMACRO_SEARCH_BEFORE), the native routine the
+// interpreter would call (PackageManager::getLoadedRoutine: the loaded libraries' table, then the registered functions).
+// Not followed: a function exit (RXOFNC / RXFNC) installed by the host that loaded the interpreter, which it asks only
+// when the package has no routine of that name. Anything else goes to the interpreter as before: an object, an omitted number, a
+// number given as "nan" / "+infinity" / "-infinity" or not a number, a precision that is not plain digits, a units
+// option that is not D / R / G, too many arguments (its errors), a locale whose radix is not '.', an interpreter without
+// those functions. Claude (Opus 5.5), 2026-11-06.
+namespace rxmath_port {
+enum Fn { Pi, Sqrt, Exp, Log, Log10, SinH, CosH, TanH, Power, Sin, Cos, Tan, Cotan, ArcSin, ArcCos, ArcTan, Count, None };
+inline Fn fnOf(std::string_view n) {
+    if (n.size() < 8 || n.compare(0, 6, "RXCALC") != 0) return None;
+    static const char *names[Count] = {"PI", "SQRT", "EXP", "LOG", "LOG10", "SINH", "COSH", "TANH", "POWER", "SIN", "COS",
+                                       "TAN", "COTAN", "ARCSIN", "ARCCOS", "ARCTAN"};
+    const std::string_view rest = n.substr(6);
+    for (int i = 0; i < Count; ++i) if (rest == names[i]) return static_cast<Fn>(i);
+    return None;
+}
+inline const char *upperName(Fn f) {
+    static const char *upper[Count] = {"RXCALCPI", "RXCALCSQRT", "RXCALCEXP", "RXCALCLOG", "RXCALCLOG10", "RXCALCSINH",
+        "RXCALCCOSH", "RXCALCTANH", "RXCALCPOWER", "RXCALCSIN", "RXCALCCOS", "RXCALCTAN", "RXCALCCOTAN", "RXCALCARCSIN",
+        "RXCALCARCCOS", "RXCALCARCTAN"};
+    return upper[f];
+}
+// the interpreter functions the resolution check calls (exported by librexx; absent: rxmath stays in the interpreter)
+struct Interp {
+    using FindRoutine = void *(*)(void *package, void *name);   // PackageClass::findRoutine
+    using LoadedRoutine = void *(*)(void *name);                // PackageManager::getLoadedRoutine (static)
+    using GetLibrary = void *(*)(void *name);                   // PackageManager::getLibrary (static)
+    using ResolveRoutine = void *(*)(void *library, void *name);   // LibraryPackage::resolveRoutine
+    using QueryMacro = RexxReturnCode (*)(const char *, unsigned short *);   // RexxQueryMacro
+    FindRoutine findRoutine = nullptr; LoadedRoutine loadedRoutine = nullptr; GetLibrary getLibrary = nullptr;
+    ResolveRoutine resolveRoutine = nullptr; QueryMacro queryMacro = nullptr;
+    bool usable = false;
+    RexxObjectPtr libraryName = NULLOBJECT;   // "rxmath"
+    RexxObjectPtr names[Count] = {};          // "RXCALCSIN", ... (upper case, as callNativeRoutine looks them up)
+    void *routines[Count] = {};               // rxmath's routine objects, once found
+    bool resolved = false;
+    std::unordered_map<std::string, RexxObjectPtr> otherNames;   // other names called, as interpreter strings
+    std::unordered_map<std::string, void *> declaredRoutines;      // a declared name's routine as first found
+};
+inline Interp &interp(RexxThreadContext *t) {
+    static Interp i;
+    static bool tried = false;
+    if (tried) return i;
+    tried = true;
+    i.findRoutine = reinterpret_cast<Interp::FindRoutine>(dlsym(RTLD_DEFAULT, "_ZN12PackageClass11findRoutineEP10RexxString"));
+    i.loadedRoutine = reinterpret_cast<Interp::LoadedRoutine>(dlsym(RTLD_DEFAULT, "_ZN14PackageManager16getLoadedRoutineEP10RexxString"));
+    i.getLibrary = reinterpret_cast<Interp::GetLibrary>(dlsym(RTLD_DEFAULT, "_ZN14PackageManager10getLibraryEP10RexxString"));
+    i.resolveRoutine = reinterpret_cast<Interp::ResolveRoutine>(dlsym(RTLD_DEFAULT, "_ZN14LibraryPackage14resolveRoutineEP10RexxString"));
+    i.queryMacro = reinterpret_cast<Interp::QueryMacro>(dlsym(RTLD_DEFAULT, "RexxQueryMacro"));
+    if (!i.findRoutine || !i.loadedRoutine || !i.getLibrary || !i.resolveRoutine || !i.queryMacro) return i;
+    i.libraryName = rxobj::pinRef(t, (RexxObjectPtr)t->String("rxmath"));
+    for (int k = 0; k < Count; ++k) i.names[k] = rxobj::pinRef(t, (RexxObjectPtr)t->String(upperName(static_cast<Fn>(k))));
+    i.usable = i.libraryName != NULLOBJECT;
+    return i;
+}
+// Which of rxmath's routines the interpreter would run for a call of this name now (None: not one of them). The name as
+// called (upper case): an RxCalc name, or any other a package routine stands for, such as an alias declared ::ROUTINE
+// rxf_atan EXTERNAL "LIBRARY rxmath RxCalcArcTan" (PackageManager::resolveRoutine gives the declaration rxmath's own
+// routine object). (Under the kernel lock, as all compiled code runs: the caches need no other.)
+inline Fn resolveRxmath(RexxThreadContext *t, std::string_view called) {
+    Interp &i = interp(t);
+    static const bool dbg = std::getenv("RX2CPP_RXMATH_DEBUG") != nullptr;
+    auto no = [&](const char *why) { if (dbg) std::fprintf(stderr, "rxmath %.*s: %s\n", static_cast<int>(called.size()), called.data(), why); return None; };
+    if (!i.usable) return no("unusable");
+    if (rxobj::libraryPackage() == NULLOBJECT) return no("no package");
+    if (!i.resolved) {
+        void *library = i.getLibrary(reinterpret_cast<void *>(i.libraryName));
+        if (!library) return no("no library");
+        for (int k = 0; k < Count; ++k) i.routines[k] = i.resolveRoutine(library, reinterpret_cast<void *>(i.names[k]));
+        i.resolved = true;
+    }
+    const Fn named = fnOf(called);
+    void *name = nullptr;
+    if (named != None) name = reinterpret_cast<void *>(i.names[named]);
+    else {
+        auto it = i.otherNames.find(std::string(called));
+        if (it == i.otherNames.end()) {
+            if (i.otherNames.size() > 4096) return no("too many names");
+            it = i.otherNames.emplace(std::string(called), rxobj::pinRef(t, (RexxObjectPtr)t->String(std::string(called).c_str()))).first;
+        }
+        name = reinterpret_cast<void *>(it->second);
+    }
+    // step 2: a routine of the package, its own or imported (::REQUIRES 'rxmath' LIBRARY merges rxmath's routines in:
+    // PackageClass::mergeLibrary), runs whatever it is
+    if (void *found = i.findRoutine(reinterpret_cast<void *>(rxobj::libraryPackage()), name)) {
+        for (int k = 0; k < Count; ++k) if (i.routines[k] && found == i.routines[k]) return static_cast<Fn>(k);
+        return no("another package routine");
+    }
+    if (named == None) return no("not a package routine");
+    // step 3: the macrospace first, then the libraries' table (rxmath's names only)
+    unsigned short position = 0;
+    if (i.queryMacro(upperName(named), &position) == 0 && position == RXMACRO_SEARCH_BEFORE) return no("macro");
+    if (!i.routines[named] || i.loadedRoutine(name) != i.routines[named]) return no("another routine");
+    return named;
+}
+// A routine the package declares ::ROUTINE name EXTERNAL "LIBRARY rxmath RxCalcX" (declared: that string, from the
+// compiler): rxmath's RxCalcX, which the interpreter finds first (a routine of the package's own; it keeps the object
+// its declaration made, restored from the library's image, so it is not rxmath's object itself: the string says which).
+// The library must be rxmath by that name (the one this code is) and loaded; the routine must still be the one found the
+// first time (none put in its place since).
+inline Fn declaredRxmath(RexxThreadContext *t, std::string_view called, const char *declared) {
+    Interp &i = interp(t);
+    if (!i.usable || rxobj::libraryPackage() == NULLOBJECT) return None;
+    std::vector<std::string> words;
+    {
+        std::string w;
+        for (const char *c = declared; ; ++c) {
+            if (*c == '\0' || *c == ' ' || *c == '\t') { if (!w.empty()) words.push_back(std::move(w)); w.clear(); if (*c == '\0') break; }
+            else w += *c;
+        }
+    }
+    if (words.size() < 2 || words.size() > 3 || words[1] != "rxmath") return None;
+    std::string library = words[0];
+    for (char &c : library) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    if (library != "LIBRARY") return None;
+    std::string entry = words.size() == 3 ? words[2] : std::string(called);
+    for (char &c : entry) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    const Fn f = fnOf(entry);
+    if (f == None || !i.getLibrary(reinterpret_cast<void *>(i.libraryName))) return None;
+    auto it = i.otherNames.find(std::string(called));
+    if (it == i.otherNames.end()) {
+        if (i.otherNames.size() > 4096) return None;
+        it = i.otherNames.emplace(std::string(called), rxobj::pinRef(t, (RexxObjectPtr)t->String(std::string(called).c_str()))).first;
+    }
+    void *found = i.findRoutine(reinterpret_cast<void *>(rxobj::libraryPackage()), reinterpret_cast<void *>(it->second));
+    if (!found) return None;
+    auto seen = i.declaredRoutines.emplace(std::string(called), found).first;
+    return seen->second == found ? f : None;
+}
+// NativeActivation's double argument: NumberString::doubleValue, strtod of the number's string value, which for a string
+// is the string itself as written (RexxString::numberString keeps it): ' 4 ' is 4, '- 2' (a Rexx number) is 0, strtod
+// stopping at the blank. nullopt: not a number here (the interpreter's: nan / infinity strings, its error).
+inline std::optional<double> doubleArg(const Value &v) {
+    RexxDecimal d; const char *err = nullptr;
+    if (!tryParseRexxDecimal(v, d, err)) return std::nullopt;
+    return std::strtod(v.bytes.str().c_str(), nullptr);
+}
+// OPTIONAL_positive_wholenumber_t, plain digits only (the value the interpreter converts them to); nullopt otherwise
+inline std::optional<std::int64_t> precisionArg(const Value &v) {
+    const std::string_view s = v.bytes.view();
+    if (s.empty() || s.size() > 18 || s.find_first_not_of("0123456789") != std::string_view::npos) return std::nullopt;
+    const std::int64_t n = std::stoll(std::string(s));
+    if (n < 1) return std::nullopt;
+    return n;
+}
+// DoubleToObjectWithPrecision
+inline Value format(double x, std::int64_t precision) {
+    if (std::isnan(x)) return Value::string("nan");
+    if (x == +HUGE_VAL) return Value::string("+infinity");
+    if (x == -HUGE_VAL) return Value::string("-infinity");
+    char text[32];
+    std::snprintf(text, sizeof(text), "%.*g", static_cast<int>(std::min<std::int64_t>(16, precision)) + 2, x);
+    RexxDecimal d; const char *err = nullptr;
+    if (!tryParseRexxDecimal(Value::string(text), d, err)) return Value::string(text);
+    ActivationNumeric shown;
+    shown.digits = static_cast<std::size_t>(precision);
+    shown.fuzz = 0;
+    shown.engineering = false;
+    roundRexx(d, shown);
+    return Value::string(formatRexxDecimal(d, shown));
+}
+constexpr long double pi = 3.14159265358979323846l;   // rxmath.cpp's pi
+enum Trig { SINE = 0, TANGENT = 1, COTANGENT = 2, COSINE = 3, MAXTRIG = 3 };
+enum Arc { ARCSINE = 0, ARCCOSINE = 1, ARCTANGENT = 2 };
+enum Units { DEGREES, RADIANS, GRADES };
+// TrigFormatter::evaluate
+inline double evaluate(double angle, int function, Units units) {
+    double nsi = 1., nco = 1., result = 0.;
+    switch (units) {
+    case DEGREES:
+        nsi = (angle < 0.) ? -1. : 1.;
+        angle = std::fmod(std::fabs(angle), 360.);
+        if (angle <= 45.) angle = angle * pi / 180.;
+        else if (angle < 135.) { angle = (90. - angle) * pi / 180.; function = MAXTRIG - function; nco = nsi; nsi = 1.; }
+        else if (angle <= 225.) { angle = (180. - angle) * pi / 180.; nco = -1.; }
+        else if (angle < 315.) { angle = (angle - 270.) * pi / 180.; function = MAXTRIG - function; nco = -nsi; nsi = 1.; }
+        else angle = (angle - 360.) * pi / 180.;
+        break;
+    case GRADES:
+        nsi = (angle < 0.) ? -1. : 1.;
+        angle = std::fmod(std::fabs(angle), 400.);
+        if (angle <= 50.) angle = angle * pi / 200.;
+        else if (angle < 150.) { angle = (100. - angle) * pi / 200.; function = MAXTRIG - function; nco = nsi; nsi = 1.; }
+        else if (angle <= 250.) { angle = (200. - angle) * pi / 200.; nco = -1.; }
+        else if (angle < 350.) { angle = (angle - 300.) * pi / 200.; function = MAXTRIG - function; nco = -nsi; nsi = 1.; }
+        else angle = (angle - 400.) * pi / 200.;
+        break;
+    case RADIANS: break;
+    }
+    switch (function) {
+    case SINE: result = nsi * std::sin(angle); break;
+    case COSINE: result = nco * std::cos(angle); break;
+    case TANGENT: result = nsi * nco * std::tan(angle); break;
+    case COTANGENT: result = nsi * nco / std::tan(angle); break;
+    }
+    return result;
+}
+// TrigFormatter::evaluateArc
+inline double evaluateArc(double x, int function, Units units) {
+    double angle = 0.;
+    switch (function) {
+    case ARCSINE: angle = std::asin(x); break;
+    case ARCCOSINE: angle = std::acos(x); break;
+    case ARCTANGENT: angle = std::atan(x); break;
+    }
+    if (units == DEGREES) angle = angle * 180. / pi;
+    else if (units == GRADES) angle = angle * 200. / pi;
+    return angle;
+}
+// The call, when every argument is one this code converts as the interpreter would; nullopt: the interpreter's.
+inline std::optional<Value> call(Fn f, const std::vector<std::optional<Value>> &args, const ActivationNumeric &caller) {
+    for (const auto &a : args) if (a && a->isObject()) return std::nullopt;
+    if (*localeconv()->decimal_point != '.') return std::nullopt;
+    const std::size_t maxArgs = f == Pi ? 1 : (f == Power || f >= Sin) ? 3 : 2;
+    if (args.size() > maxArgs) return std::nullopt;
+    const std::size_t numbers = f == Pi ? 0 : f == Power ? 2 : 1;
+    double x[2] = {0., 0.};
+    for (std::size_t k = 0; k < numbers; ++k) {
+        if (k >= args.size() || !args[k]) return std::nullopt;
+        auto v = doubleArg(*args[k]);
+        if (!v) return std::nullopt;
+        x[k] = *v;
+    }
+    std::int64_t precision = static_cast<std::int64_t>(caller.digits);   // GetContextDigits
+    if (numbers < args.size() && args[numbers]) {
+        auto p = precisionArg(*args[numbers]);
+        if (!p) return std::nullopt;
+        precision = *p;
+    }
+    if (precision > 16) precision = 16;   // MAX_PRECISION
+    Units units = DEGREES;
+    if (f >= Sin && args.size() > 2 && args[2]) {
+        const std::string_view u = args[2]->bytes.view();
+        const char c = u.empty() ? '\0' : u[0];
+        if (c == 'D' || c == 'd') units = DEGREES;
+        else if (c == 'R' || c == 'r') units = RADIANS;
+        else if (c == 'G' || c == 'g') units = GRADES;
+        else return std::nullopt;   // (the interpreter's error 88.916)
+    }
+    double r = 0.;
+    switch (f) {
+    case Pi: return format(static_cast<double>(pi), precision);
+    case Sqrt: r = std::sqrt(x[0]); break;
+    case Exp: r = std::exp(x[0]); break;
+    case Log: r = x[0] < 0.0 ? std::nan("") : std::log(x[0]); break;
+    case Log10: r = x[0] < 0.0 ? std::nan("") : std::log10(x[0]); break;
+    case SinH: r = std::sinh(x[0]); break;
+    case CosH: r = std::cosh(x[0]); break;
+    case TanH: r = std::tanh(x[0]); break;
+    case Power: r = std::pow(x[0], x[1]); break;
+    case Sin: r = evaluate(x[0], SINE, units); break;
+    case Cos: r = evaluate(x[0], COSINE, units); break;
+    case Tan: r = evaluate(x[0], TANGENT, units); break;
+    case Cotan: r = evaluate(x[0], COTANGENT, units); break;
+    case ArcSin: r = (x[0] < -1.0 || x[0] > 1.0) ? std::nan("") : evaluateArc(x[0], ARCSINE, units); break;
+    case ArcCos: r = (x[0] < -1.0 || x[0] > 1.0) ? std::nan("") : evaluateArc(x[0], ARCCOSINE, units); break;
+    case ArcTan: r = evaluateArc(x[0], ARCTANGENT, units); break;
+    default: return std::nullopt;
+    }
+    return format(r, precision);
+}
+}  // namespace rxmath_port
 // CALL / function call of a routine only the interpreter can resolve (rexxutil SysXxx, external .rex routines), run in a
 // small interpreter routine under the caller's NUMERIC settings. An argument that names a stem the callee filled
 // (SysFileTree spec, 'files.', ...) is copied back into the caller's compiled variables, as the interpreter would leave it.
@@ -2927,10 +3441,24 @@ inline bool mergeExternalCall(RexxThreadContext *t, RexxRoutineObject helper, st
 // it as a package routine and merges nothing after it (mergeRequired is CALL of an external program only), so the helper's
 // imports are not looked at.
 inline MessageResult interpreterCall(Variables &vars, const std::string &name, const std::vector<std::optional<Value>> &args,
-                                     const std::optional<Value> &dynamicName = std::nullopt, bool mergeImports = true) {
+                                     const std::optional<Value> &dynamicName = std::nullopt, bool mergeImports = true,
+                                     const char *declared = nullptr) {
     RexxThreadContext *t = rxobj::need();
+    // rxmath, when the call would run it (a function call, which the library lane makes in the dynamic form, or CALL;
+    // by an RxCalc name or a name declared for one). A name computed at run time is taken as written only when it is in
+    // upper case already (the interpreter looks a package routine up in upper case, the call by the name as given).
+    if (!dynamicName || !dynamicName->isObject()) {
+        const std::string_view called = dynamicName ? dynamicName->bytes.view() : std::string_view(name);
+        const bool plain = !called.empty() && called.size() <= 64 && called[0] != '(' &&
+                           std::none_of(called.begin(), called.end(), [](char c) { return std::islower(static_cast<unsigned char>(c)) != 0; });
+        if (plain) {
+            const rxmath_port::Fn f = declared ? rxmath_port::declaredRxmath(t, called, declared) : rxmath_port::resolveRxmath(t, called);
+            if (f != rxmath_port::None)
+                if (auto r = rxmath_port::call(f, args, vars.numeric)) return MessageResult(std::move(*r));
+        }
+    }
     rxobj::LocalRefs temps(t);
-    if (rxobj::bifStatsOn()) rxobj::bifStat("CALL " + name);
+    if (rxobj::bifStatsOn()) rxobj::bifStat("CALL " + name + (dynamicName && !dynamicName->isObject() ? " " + dynamicName->bytes.str() : std::string()));
     // The stem copy-back below is needed only when an argument may name a stem (a string ending in '.', or an object,
     // whose string value the helper reads); without one the helper is the call alone.
     bool stemArgs = false;
@@ -3095,15 +3623,67 @@ inline MessageResult interpreterCall(Variables &vars, const std::string &name, c
 // ADDRESS environment command: the interpreter that loaded this library runs the command with its own environment
 // handlers (same shell, same output, same RC); RC is then set in the compiled method's variables.
 // Not yet: ERROR / FAILURE conditions for a SIGNAL ON / CALL ON trap in the compiled method.
-inline void interpreterCommand(Variables &vars, const Value &environment, const Value &command) {
+// ADDRESS environment command WITH ...: one redirection of the command (INPUT, OUTPUT, ERROR), evaluated by the compiled
+// clause. kind: 0 not given, 'N' NORMAL, 'S' STEM (value: the stem, bound to a stem object the interpreter shares),
+// 'T' STREAM (value: the stream name), 'U' USING (value: the object). mode: 0, 'R' REPLACE, 'A' APPEND (OUTPUT, ERROR).
+struct CommandIo {
+    char kind = 0;
+    char mode = 0;
+    Value value = Value::string(std::string());
+};
+inline void interpreterCommand(Variables &vars, const Value &environment, const Value &command, const CommandIo *io = nullptr) {
     RexxThreadContext *t = rxobj::need();
     rxobj::LocalRefs temps(t);
     if (rxobj::bifStatsOn()) rxobj::bifStat("ADDRESS " + environment.bytes.str());
     // ERROR / FAILURE: when the activation traps them, the helper does too (CALL ON: the command completes, RC is set,
     // and its condition comes back), so the interpreter decides which one a command raises (FAILURE untrapped: ERROR).
     const int mode = MethodTraps::commandConditionMode() & 7;
-    static thread_local RexxRoutineObject routines[8] = {};
-    RexxRoutineObject &routine = routines[mode];
+    // WITH: the helper's ADDRESS VALUE gives the environment that redirection for its one command (a Stem object USING
+    // redirects as STEM does: rexxref ADDRESS), with the redirection objects as arguments 5 to 7.
+    std::string with;
+    if (io) {
+        static const char *const names[3] = {" input", " output", " error"};
+        for (int k = 0; k < 3; ++k) {
+            if (!io[k].kind) continue;
+            with += names[k];
+            if (io[k].mode == 'R') with += " replace";
+            else if (io[k].mode == 'A') with += " append";
+            const std::string arg = "(arg(" + std::to_string(5 + k) + "))";
+            switch (io[k].kind) {
+            case 'N': with += " normal"; break;
+            case 'T': with += " stream " + arg; break;
+            default: with += " using " + arg; break;   // 'S' (the stem object) and 'U'
+            }
+        }
+        if (!with.empty()) with = " with" + with;
+    }
+    // A command handler other than a shell (HOSTEMU's EXECIO ... STEM, a registered subcommand handler) reads and sets
+    // the variables of the activation it runs in (RexxVariablePool), the helper's: the compiled variables go in first
+    // (stems bound to stem objects the interpreter shares, the others by value) and the helper's come back after.
+    // The shells (sh, bash, ..., PATH, the default) run a process and touch no variable: nothing is carried for them.
+    std::string envName = environment.isObject() ? std::string("?") : environment.bytes.str();
+    for (char &c : envName) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    static const char *const shells[] = {"", "SYSTEM", "COMMAND", "SH", "BASH", "BSH", "CSH", "KSH", "TCSH", "ZSH", "PATH", "CMD"};
+    bool carry = true;
+    for (const char *shell : shells) if (envName == shell) carry = false;
+    std::vector<std::pair<std::string, Value>> carried;
+    if (carry) {
+        std::unordered_set<std::string> stems;
+        forEachVariable(vars, [&](const std::string &n, const Value &v) {
+            const std::size_t dot = n.find('.');
+            if (dot == std::string::npos) carried.emplace_back(n, v);
+            else stems.insert(n.substr(0, dot + 1));
+        });
+        vars.exposed.any([&](const char *e, std::size_t len) {
+            const std::string n(e, len);
+            if (!n.empty() && n.back() == '.') stems.insert(n);
+            else if (const Value *v = lookup(vars, n)) carried.emplace_back(n, *v);
+            return false;
+        });
+        for (const std::string &st : stems) carried.emplace_back(st, stemArg(vars, st));
+    }
+    static thread_local std::unordered_map<std::string, RexxRoutineObject> routines;
+    RexxRoutineObject &routine = routines[std::to_string(mode) + (carry ? "v" : "-") + with];
     if (routine == NULLOBJECT) {
         // (the activation's TRACE setting: TRACE OFF keeps a failing command quiet, as interpreted)
         std::string source = "use arg rx2cppEnvironment, rx2cppCommand, rx2cppTrace, rx2cppContext\ntrace value rx2cppTrace\nrx2cppQueue = .array~new\n";
@@ -3111,8 +3691,15 @@ inline void interpreterCommand(Variables &vars, const Value &environment, const 
         if (mode & 2) source += "call on failure name rx2cppQueued\n";
         if (mode & 4) source += "call on any name rx2cppQueued\n";
         // (.RS through the caller-context routine: the helper's own, with no environment symbol to look up)
-        source += "address value rx2cppEnvironment\nrx2cppCommand\n"
-                  "if rx2cppContext == .nil then return .array~of(rc, rx2cppQueue, .context~rs)\n"
+        if (carry)   // (a stem object assigned to a stem name: that variable is the shared stem)
+            source += "do rx2cppI = 1 to arg(8)~items; call value arg(8)[rx2cppI], arg(9)[rx2cppI]; end; drop rx2cppI\n";
+        source += "address value rx2cppEnvironment" + with + "\nrx2cppCommand\n";
+        if (carry)
+            source += "rx2cppVariables = .nil; if rx2cppContext == .nil then rx2cppVariables = .context~variables; "
+                      "else rx2cppVariables = rx2cppContext~call~variables\n"
+                      "if rx2cppContext == .nil then return .array~of(rc, rx2cppQueue, .context~rs, rx2cppVariables)\n"
+                      "return .array~of(rc, rx2cppQueue, rx2cppContext~call~rs, rx2cppVariables)\n";
+        source += "if rx2cppContext == .nil then return .array~of(rc, rx2cppQueue, .context~rs)\n"
                   "return .array~of(rc, rx2cppQueue, rx2cppContext~call~rs)\n"
                   "rx2cppQueued: if rx2cppQueue~append(condition('O')) > 0 then nop\nreturn\n";
         routine = rxobj::helperRoutine(t, t->NewRoutine("rx2cpp_address", source.c_str(), source.size()));
@@ -3120,11 +3707,32 @@ inline void interpreterCommand(Variables &vars, const Value &environment, const 
         rxobj::pinRef(t, (RexxObjectPtr)routine);
     }
     std::vector<rxobj::Arg> conv;
-    RexxArrayObject arr = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(4));
+    RexxArrayObject arr = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(carry ? 9 : with.empty() ? 4 : 7));
+    if (carry) {
+        RexxArrayObject names = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(carried.size()));
+        RexxArrayObject values = (RexxArrayObject)temps((RexxObjectPtr)t->NewArray(carried.size()));
+        std::size_t k = 0;
+        for (const auto &nv : carried) {
+            ++k;
+            t->ArrayPut(names, temps((RexxObjectPtr)t->NewString(nv.first.data(), nv.first.size())), k);
+            conv.clear(); EnvObject::convert({nv.second}, conv);   // (a stem: the interpreter's stem object it is bound to)
+            RexxObjectPtr o = conv[0].obj ? (RexxObjectPtr)conv[0].obj : temps((RexxObjectPtr)t->NewString(conv[0].bytes.data(), conv[0].bytes.size()));
+            t->ArrayPut(values, o, k);
+        }
+        t->ArrayPut(arr, (RexxObjectPtr)names, 8);
+        t->ArrayPut(arr, (RexxObjectPtr)values, 9);
+    }
     {
         RexxObjectPtr context = rxobj::callerContextRoutine(t);
         t->ArrayPut(arr, context != NULLOBJECT ? context : t->Nil(), 4);
     }
+    if (!with.empty())
+        for (int k = 0; k < 3; ++k) {
+            if (io[k].kind != 'S' && io[k].kind != 'T' && io[k].kind != 'U') continue;
+            conv.clear(); EnvObject::convert({io[k].value}, conv);   // (a stem: the interpreter's stem object it is bound to)
+            RexxObjectPtr o = conv[0].obj ? (RexxObjectPtr)conv[0].obj : temps((RexxObjectPtr)t->NewString(conv[0].bytes.data(), conv[0].bytes.size()));
+            t->ArrayPut(arr, o, 5 + k);
+        }
     std::size_t index = 0;
     const Value trace = Value::string(traceSetting());
     for (const Value *v : {&environment, &command, &trace}) {
@@ -3155,6 +3763,42 @@ inline void interpreterCommand(Variables &vars, const Value &environment, const 
     if (RexxObjectPtr status = t->ArrayAt((RexxArrayObject)r, 3)) if (ActivationScope *a = ActivationScope::current()) {
         std::int64_t n = 0;
         if (t->ObjectToInt64(status, &n)) a->returnStatus = static_cast<int>(n);
+    }
+    // the variables the handler left: set, dropped, new stems copied in (stems carried in were shared: already changed)
+    if (carry) if (RexxObjectPtr left = t->ArrayAt((RexxArrayObject)r, 4)) if (t->IsDirectory(left)) {
+        RexxDirectoryObject dir = (RexxDirectoryObject)left;
+        auto text = [&](RexxObjectPtr o) { RexxStringObject so = (RexxStringObject)temps((RexxObjectPtr)t->ObjectToString(o)); return std::string(t->StringData(so), t->StringLength(so)); };
+        auto valueOf = [&](RexxObjectPtr o) -> Value {
+            if (o == t->Nil()) return nil();
+            if (rxobj::isPlainString(t, o)) return Value::string(text(o));
+            return EnvObject::adopt((void *)rxobj::pinRef(t, o));
+        };
+        std::unordered_set<std::string> present;
+        RexxArrayObject names = (RexxArrayObject)temps(t->SendMessage0((RexxObjectPtr)dir, "ALLINDEXES"));
+        const std::size_t m = names ? t->ArraySize(names) : 0;
+        for (std::size_t k = 1; k <= m; ++k) {
+            RexxObjectPtr nameObj = t->ArrayAt(names, k);
+            if (nameObj == NULLOBJECT) continue;
+            const std::string n = text(nameObj);
+            present.insert(n);
+            if (n.compare(0, 6, "RX2CPP") == 0 || n == "RC") continue;   // (RC: the command's, set above)
+            RexxObjectPtr v = t->DirectoryAt(dir, n.c_str());
+            if (!n.empty() && n.back() == '.') {
+                bool shared = false;
+                for (const auto &nv : carried) if (nv.first == n) shared = true;
+                if (shared || v == NULLOBJECT) continue;
+                resetStem(vars, n);
+                RexxArrayObject tails = (RexxArrayObject)temps(t->SendMessage0(v, "ALLINDEXES"));
+                const std::size_t tn = tails ? t->ArraySize(tails) : 0;
+                for (std::size_t j = 1; j <= tn; ++j) {
+                    RexxObjectPtr tail = t->ArrayAt(tails, j);
+                    set(vars, n + text(tail), valueOf(temps(t->SendMessage1(v, "[]", tail))));
+                }
+            }
+            else if (v != NULLOBJECT) set(vars, n, valueOf(v));
+        }
+        for (const auto &nv : carried)
+            if (nv.first.back() != '.' && nv.first != "RC" && present.find(nv.first) == present.end()) drop(vars, nv.first);
     }
     // the command's condition, raised in this activation (SIGNAL ON: now; CALL ON: at the clause boundary)
     RexxObjectPtr queued = t->ArrayAt((RexxArrayObject)r, 2);
@@ -3455,7 +4099,11 @@ inline std::optional<Value> interpretInActivation(Variables &vars, const Value &
     }
     const std::string queueKey = key + ".Q";
     if (callArmed) t->DirectoryPut(local, temps((RexxObjectPtr)t->NewArray(0)), queueKey.c_str());
+    const std::string caught = interpretCatchConditions();
+    if (!caught.empty()) source += "do\n";
     source += code.bytes.str();
+    if (!caught.empty())
+        source += "\ncatch " + caught + "\nreturn .array~of('" + key + "', RX2CPP_CALLER_CONTEXT()~variables, digits(), fuzz(), form(), condition('O'))\nend";
     source += "\nreturn .array~of('" + key + "', RX2CPP_CALLER_CONTEXT()~variables, digits(), fuzz(), form())\n";
     if (signalArmed)
         source += "rx2cppTrapped: return .array~of('" + key + "', RX2CPP_CALLER_CONTEXT()~variables, digits(), fuzz(), form(), condition('O'))\n";

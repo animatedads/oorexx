@@ -1,4 +1,4 @@
-# measured at 288be4b: the tracked files each test script read during a full regression (tools/record_reads.sh)
+# measured at 0573b73: the tracked files each test script read during a full regression (tools/record_reads.sh)
 #tracked .gitignore
 #tracked ATTRIBUTE_CONSTANT_SEMANTICS_V0301.md
 #tracked BIF_ACTIVATION_V028.md
@@ -917,9 +917,12 @@
 #tracked native/fixtures/program_constructs/env_epoch.rex
 #tracked native/fixtures/program_constructs/env_lookup.rex
 #tracked native/fixtures/program_constructs/env_security.rex
+#tracked native/fixtures/program_constructs/external_library_calls.rex
+#tracked native/fixtures/program_constructs/external_program_merge.rex
 #tracked native/fixtures/program_constructs/find_routine.rex
 #tracked native/fixtures/program_constructs/identity_eq.rex
 #tracked native/fixtures/program_constructs/init_internal.rex
+#tracked native/fixtures/program_constructs/instance_isa_args.rex
 #tracked native/fixtures/program_constructs/internal_exit.rex
 #tracked native/fixtures/program_constructs/message_receivers.rex
 #tracked native/fixtures/program_constructs/method_exit.rex
@@ -948,6 +951,7 @@
 #tracked native/fixtures/program_constructs/string_send_quick.rex
 #tracked native/fixtures/program_constructs/string_substr.rex
 #tracked native/fixtures/program_constructs/string_words.rex
+#tracked native/fixtures/program_constructs/trunc_native.rex
 #tracked native/fixtures/program_constructs/truth.rex
 #tracked native/fixtures/program_constructs/value_objects.rex
 #tracked native/fixtures/program_constructs/variable_frame.rex
@@ -1559,7 +1563,7 @@
 #tracked tools/session_2026-10-12/mtrun.sh
 #tracked tools/session_2026-10-12/runall.sh
 #test native/test_activation_state.sh
-#seconds native/test_activation_state.sh 51
+#seconds native/test_activation_state.sh 57
 native/test_activation_state.sh	core/RxLexer.cls
 native/test_activation_state.sh	core/RxNumericClause.cls
 native/test_activation_state.sh	core/RxQuote.cls
@@ -1665,7 +1669,7 @@ native/test_activation_state.sh	rules/StmtSelect.cls
 native/test_activation_state.sh	rules/StmtTrace.cls
 native/test_activation_state.sh	rx2cpp_native_library.rex
 #test native/test_address_command.sh
-#seconds native/test_address_command.sh 42
+#seconds native/test_address_command.sh 51
 native/test_address_command.sh	core/RxLexer.cls
 native/test_address_command.sh	core/RxNumericClause.cls
 native/test_address_command.sh	core/RxQuote.cls
@@ -1771,7 +1775,7 @@ native/test_address_command.sh	rules/StmtSelect.cls
 native/test_address_command.sh	rules/StmtTrace.cls
 native/test_address_command.sh	rx2cpp_native_library.rex
 #test native/test_adopt.sh
-#seconds native/test_adopt.sh 48
+#seconds native/test_adopt.sh 56
 native/test_adopt.sh	core/RxLexer.cls
 native/test_adopt.sh	core/RxNumericClause.cls
 native/test_adopt.sh	core/RxQuote.cls
@@ -1877,7 +1881,7 @@ native/test_adopt.sh	rules/StmtSelect.cls
 native/test_adopt.sh	rules/StmtTrace.cls
 native/test_adopt.sh	rx2cpp_native_library.rex
 #test native/test_arglist.sh
-#seconds native/test_arglist.sh 43
+#seconds native/test_arglist.sh 51
 native/test_arglist.sh	core/RxLexer.cls
 native/test_arglist.sh	core/RxNumericClause.cls
 native/test_arglist.sh	core/RxQuote.cls
@@ -1981,7 +1985,7 @@ native/test_arglist.sh	rules/StmtSelect.cls
 native/test_arglist.sh	rules/StmtTrace.cls
 native/test_arglist.sh	rx2cpp_native_library.rex
 #test native/test_arith_oracle.sh
-#seconds native/test_arith_oracle.sh 11
+#seconds native/test_arith_oracle.sh 12
 native/test_arith_oracle.sh	include/minirexx_runtime.hpp
 native/test_arith_oracle.sh	include/rx_compound_symbols.hpp
 native/test_arith_oracle.sh	include/rx_parse_context.hpp
@@ -1995,7 +1999,7 @@ native/test_arith_oracle.sh	native/fixtures/arith_oracle/gen_ops.rex
 native/test_arith_oracle.sh	native/fixtures/arith_oracle/gen_small.rex
 native/test_arith_oracle.sh	native/test_arith_oracle.sh
 #test native/test_array.sh
-#seconds native/test_array.sh 49
+#seconds native/test_array.sh 54
 native/test_array.sh	core/RxLexer.cls
 native/test_array.sh	core/RxNumericClause.cls
 native/test_array.sh	core/RxQuote.cls
@@ -2101,7 +2105,7 @@ native/test_array.sh	rules/StmtSelect.cls
 native/test_array.sh	rules/StmtTrace.cls
 native/test_array.sh	rx2cpp_native_library.rex
 #test native/test_array_dimension.sh
-#seconds native/test_array_dimension.sh 42
+#seconds native/test_array_dimension.sh 50
 native/test_array_dimension.sh	core/RxLexer.cls
 native/test_array_dimension.sh	core/RxNumericClause.cls
 native/test_array_dimension.sh	core/RxQuote.cls
@@ -2207,7 +2211,7 @@ native/test_array_dimension.sh	rules/StmtSelect.cls
 native/test_array_dimension.sh	rules/StmtTrace.cls
 native/test_array_dimension.sh	rx2cpp_native_library.rex
 #test native/test_attribute_constant.sh
-#seconds native/test_attribute_constant.sh 88
+#seconds native/test_attribute_constant.sh 99
 native/test_attribute_constant.sh	core/RxLexer.cls
 native/test_attribute_constant.sh	core/RxNumericClause.cls
 native/test_attribute_constant.sh	core/RxQuote.cls
@@ -2314,7 +2318,7 @@ native/test_attribute_constant.sh	rules/StmtSelect.cls
 native/test_attribute_constant.sh	rules/StmtTrace.cls
 native/test_attribute_constant.sh	rx2cpp_native_library.rex
 #test tests/test_bif_activation_v028.sh
-#seconds tests/test_bif_activation_v028.sh 96
+#seconds tests/test_bif_activation_v028.sh 111
 tests/test_bif_activation_v028.sh	build.sh
 tests/test_bif_activation_v028.sh	core/RxCompiler.cls
 tests/test_bif_activation_v028.sh	core/RxCppEmitter.cls
@@ -2403,7 +2407,7 @@ tests/test_bif_activation_v028.sh	rx2cpp.rex
 tests/test_bif_activation_v028.sh	tests/bif_activation_preflight.cpp
 tests/test_bif_activation_v028.sh	tests/test_bif_activation_v028.sh
 #test tests/test_bif_dynamic_v028.sh
-#seconds tests/test_bif_dynamic_v028.sh 70
+#seconds tests/test_bif_dynamic_v028.sh 76
 tests/test_bif_dynamic_v028.sh	build.sh
 tests/test_bif_dynamic_v028.sh	core/RxCompiler.cls
 tests/test_bif_dynamic_v028.sh	core/RxCppEmitter.cls
@@ -2490,7 +2494,7 @@ tests/test_bif_dynamic_v028.sh	rx2cpp.rex
 tests/test_bif_dynamic_v028.sh	tests/bif_all_81_compile.rex
 tests/test_bif_dynamic_v028.sh	tests/test_bif_dynamic_v028.sh
 #test native/test_bif_in_native.sh
-#seconds native/test_bif_in_native.sh 44
+#seconds native/test_bif_in_native.sh 51
 native/test_bif_in_native.sh	core/RxLexer.cls
 native/test_bif_in_native.sh	core/RxNumericClause.cls
 native/test_bif_in_native.sh	core/RxQuote.cls
@@ -2597,7 +2601,7 @@ native/test_bif_in_native.sh	rx2cpp_native_library.rex
 #seconds native/test_bsf.sh 0
 native/test_bsf.sh	native/test_bsf.sh
 #test native/test_call_on.sh
-#seconds native/test_call_on.sh 48
+#seconds native/test_call_on.sh 57
 native/test_call_on.sh	core/RxLexer.cls
 native/test_call_on.sh	core/RxNumericClause.cls
 native/test_call_on.sh	core/RxQuote.cls
@@ -2703,7 +2707,7 @@ native/test_call_on.sh	rules/StmtSelect.cls
 native/test_call_on.sh	rules/StmtTrace.cls
 native/test_call_on.sh	rx2cpp_native_library.rex
 #test native/test_call_on_routine.sh
-#seconds native/test_call_on_routine.sh 44
+#seconds native/test_call_on_routine.sh 51
 native/test_call_on_routine.sh	core/RxLexer.cls
 native/test_call_on_routine.sh	core/RxNumericClause.cls
 native/test_call_on_routine.sh	core/RxQuote.cls
@@ -2809,7 +2813,7 @@ native/test_call_on_routine.sh	rules/StmtSelect.cls
 native/test_call_on_routine.sh	rules/StmtTrace.cls
 native/test_call_on_routine.sh	rx2cpp_native_library.rex
 #test native/test_class_features.sh
-#seconds native/test_class_features.sh 44
+#seconds native/test_class_features.sh 48
 native/test_class_features.sh	core/RxLexer.cls
 native/test_class_features.sh	core/RxNumericClause.cls
 native/test_class_features.sh	core/RxQuote.cls
@@ -2913,7 +2917,7 @@ native/test_class_features.sh	rules/StmtSelect.cls
 native/test_class_features.sh	rules/StmtTrace.cls
 native/test_class_features.sh	rx2cpp_native_library.rex
 #test native/test_class_runtime.sh
-#seconds native/test_class_runtime.sh 45
+#seconds native/test_class_runtime.sh 49
 native/test_class_runtime.sh	core/RxLexer.cls
 native/test_class_runtime.sh	core/RxNumericClause.cls
 native/test_class_runtime.sh	core/RxQuote.cls
@@ -3019,7 +3023,7 @@ native/test_class_runtime.sh	rules/StmtSelect.cls
 native/test_class_runtime.sh	rules/StmtTrace.cls
 native/test_class_runtime.sh	rx2cpp_native_library.rex
 #test tests/test_claude_hosted_interpret.sh
-#seconds tests/test_claude_hosted_interpret.sh 34
+#seconds tests/test_claude_hosted_interpret.sh 38
 tests/test_claude_hosted_interpret.sh	build.sh
 tests/test_claude_hosted_interpret.sh	core/RxCompiler.cls
 tests/test_claude_hosted_interpret.sh	core/RxCppEmitter.cls
@@ -3106,7 +3110,7 @@ tests/test_claude_hosted_interpret.sh	run-compiler.sh
 tests/test_claude_hosted_interpret.sh	rx2cpp.rex
 tests/test_claude_hosted_interpret.sh	tests/test_claude_hosted_interpret.sh
 #test tests/test_claude_hosted_tier.sh
-#seconds tests/test_claude_hosted_tier.sh 68
+#seconds tests/test_claude_hosted_tier.sh 76
 tests/test_claude_hosted_tier.sh	build.sh
 tests/test_claude_hosted_tier.sh	core/RxCompiler.cls
 tests/test_claude_hosted_tier.sh	core/RxCppEmitter.cls
@@ -3194,7 +3198,7 @@ tests/test_claude_hosted_tier.sh	run-compiler.sh
 tests/test_claude_hosted_tier.sh	rx2cpp.rex
 tests/test_claude_hosted_tier.sh	tests/test_claude_hosted_tier.sh
 #test tests/test_claude_hosted_unit.sh
-#seconds tests/test_claude_hosted_unit.sh 17
+#seconds tests/test_claude_hosted_unit.sh 18
 tests/test_claude_hosted_unit.sh	build.sh
 tests/test_claude_hosted_unit.sh	core/RxCompiler.cls
 tests/test_claude_hosted_unit.sh	core/RxCppEmitter.cls
@@ -3281,7 +3285,7 @@ tests/test_claude_hosted_unit.sh	run-compiler.sh
 tests/test_claude_hosted_unit.sh	rx2cpp.rex
 tests/test_claude_hosted_unit.sh	tests/test_claude_hosted_unit.sh
 #test tests/test_claude_numeric_ops.sh
-#seconds tests/test_claude_numeric_ops.sh 42
+#seconds tests/test_claude_numeric_ops.sh 46
 tests/test_claude_numeric_ops.sh	build.sh
 tests/test_claude_numeric_ops.sh	core/RxCompiler.cls
 tests/test_claude_numeric_ops.sh	core/RxCppEmitter.cls
@@ -3367,7 +3371,7 @@ tests/test_claude_numeric_ops.sh	run-compiler.sh
 tests/test_claude_numeric_ops.sh	rx2cpp.rex
 tests/test_claude_numeric_ops.sh	tests/test_claude_numeric_ops.sh
 #test tests/test_claude_options.sh
-#seconds tests/test_claude_options.sh 133
+#seconds tests/test_claude_options.sh 146
 tests/test_claude_options.sh	build.sh
 tests/test_claude_options.sh	core/RxCompiler.cls
 tests/test_claude_options.sh	core/RxCppEmitter.cls
@@ -3471,7 +3475,7 @@ tests/test_claude_options.sh	run-compiler.sh
 tests/test_claude_options.sh	rx2cpp.rex
 tests/test_claude_options.sh	tests/test_claude_options.sh
 #test tests/test_claude_routine_directive.sh
-#seconds tests/test_claude_routine_directive.sh 82
+#seconds tests/test_claude_routine_directive.sh 94
 tests/test_claude_routine_directive.sh	build.sh
 tests/test_claude_routine_directive.sh	core/RxCompiler.cls
 tests/test_claude_routine_directive.sh	core/RxCppEmitter.cls
@@ -3565,7 +3569,7 @@ tests/test_claude_routine_directive.sh	run-compiler.sh
 tests/test_claude_routine_directive.sh	rx2cpp.rex
 tests/test_claude_routine_directive.sh	tests/test_claude_routine_directive.sh
 #test tests/test_claude_scope.sh
-#seconds tests/test_claude_scope.sh 117
+#seconds tests/test_claude_scope.sh 132
 tests/test_claude_scope.sh	build.sh
 tests/test_claude_scope.sh	core/RxCompiler.cls
 tests/test_claude_scope.sh	core/RxCppEmitter.cls
@@ -3649,7 +3653,7 @@ tests/test_claude_scope.sh	run-compiler.sh
 tests/test_claude_scope.sh	rx2cpp.rex
 tests/test_claude_scope.sh	tests/test_claude_scope.sh
 #test tests/test_claude_signal_labels.sh
-#seconds tests/test_claude_signal_labels.sh 33
+#seconds tests/test_claude_signal_labels.sh 38
 tests/test_claude_signal_labels.sh	build.sh
 tests/test_claude_signal_labels.sh	core/RxCompiler.cls
 tests/test_claude_signal_labels.sh	core/RxCppEmitter.cls
@@ -3735,7 +3739,7 @@ tests/test_claude_signal_labels.sh	run-compiler.sh
 tests/test_claude_signal_labels.sh	rx2cpp.rex
 tests/test_claude_signal_labels.sh	tests/test_claude_signal_labels.sh
 #test tests/test_claude_syntax.sh
-#seconds tests/test_claude_syntax.sh 134
+#seconds tests/test_claude_syntax.sh 142
 tests/test_claude_syntax.sh	build.sh
 tests/test_claude_syntax.sh	core/RxCompiler.cls
 tests/test_claude_syntax.sh	core/RxCppEmitter.cls
@@ -3827,7 +3831,7 @@ tests/test_claude_syntax.sh	rx2cpp.rex
 tests/test_claude_syntax.sh	tests/fixtures/omitted_arg_call.rex
 tests/test_claude_syntax.sh	tests/test_claude_syntax.sh
 #test tests/test_claude_unary_strict.sh
-#seconds tests/test_claude_unary_strict.sh 66
+#seconds tests/test_claude_unary_strict.sh 75
 tests/test_claude_unary_strict.sh	build.sh
 tests/test_claude_unary_strict.sh	core/RxCompiler.cls
 tests/test_claude_unary_strict.sh	core/RxCppEmitter.cls
@@ -3913,7 +3917,7 @@ tests/test_claude_unary_strict.sh	run-compiler.sh
 tests/test_claude_unary_strict.sh	rx2cpp.rex
 tests/test_claude_unary_strict.sh	tests/test_claude_unary_strict.sh
 #test native/test_collection_paths.sh
-#seconds native/test_collection_paths.sh 45
+#seconds native/test_collection_paths.sh 50
 native/test_collection_paths.sh	core/RxLexer.cls
 native/test_collection_paths.sh	core/RxNumericClause.cls
 native/test_collection_paths.sh	core/RxQuote.cls
@@ -4019,7 +4023,7 @@ native/test_collection_paths.sh	rules/StmtSelect.cls
 native/test_collection_paths.sh	rules/StmtTrace.cls
 native/test_collection_paths.sh	rx2cpp_native_library.rex
 #test native/test_command_clause.sh
-#seconds native/test_command_clause.sh 45
+#seconds native/test_command_clause.sh 49
 native/test_command_clause.sh	core/RxLexer.cls
 native/test_command_clause.sh	core/RxNumericClause.cls
 native/test_command_clause.sh	core/RxQuote.cls
@@ -4125,7 +4129,7 @@ native/test_command_clause.sh	rules/StmtSelect.cls
 native/test_command_clause.sh	rules/StmtTrace.cls
 native/test_command_clause.sh	rx2cpp_native_library.rex
 #test native/test_compile_program.sh
-#seconds native/test_compile_program.sh 45
+#seconds native/test_compile_program.sh 50
 native/test_compile_program.sh	core/RxLexer.cls
 native/test_compile_program.sh	core/RxNumericClause.cls
 native/test_compile_program.sh	core/RxQuote.cls
@@ -4231,7 +4235,7 @@ native/test_compile_program.sh	rules/StmtSelect.cls
 native/test_compile_program.sh	rules/StmtTrace.cls
 native/test_compile_program.sh	rx2cpp_native_library.rex
 #test tests/test_compound.sh
-#seconds tests/test_compound.sh 21
+#seconds tests/test_compound.sh 23
 tests/test_compound.sh	core/RxCompiler.cls
 tests/test_compound.sh	core/RxCppEmitter.cls
 tests/test_compound.sh	core/RxLexer.cls
@@ -4306,7 +4310,7 @@ tests/test_compound.sh	run-compiler.sh
 tests/test_compound.sh	rx2cpp.rex
 tests/test_compound.sh	tests/test_compound.sh
 #test tests/test_concat.sh
-#seconds tests/test_concat.sh 61
+#seconds tests/test_concat.sh 68
 tests/test_concat.sh	build.sh
 tests/test_concat.sh	core/RxCompiler.cls
 tests/test_concat.sh	core/RxCppEmitter.cls
@@ -4433,7 +4437,7 @@ tests/test_concat.sh	rx2cpp.rex
 tests/test_concat.sh	rx2cpp_native_library.rex
 tests/test_concat.sh	tests/test_concat.sh
 #test native/test_condition_frame.sh
-#seconds native/test_condition_frame.sh 44
+#seconds native/test_condition_frame.sh 49
 native/test_condition_frame.sh	core/RxLexer.cls
 native/test_condition_frame.sh	core/RxNumericClause.cls
 native/test_condition_frame.sh	core/RxQuote.cls
@@ -4539,7 +4543,7 @@ native/test_condition_frame.sh	rules/StmtSelect.cls
 native/test_condition_frame.sh	rules/StmtTrace.cls
 native/test_condition_frame.sh	rx2cpp_native_library.rex
 #test native/test_condition_traps.sh
-#seconds native/test_condition_traps.sh 45
+#seconds native/test_condition_traps.sh 51
 native/test_condition_traps.sh	core/RxLexer.cls
 native/test_condition_traps.sh	core/RxNumericClause.cls
 native/test_condition_traps.sh	core/RxQuote.cls
@@ -4645,7 +4649,7 @@ native/test_condition_traps.sh	rules/StmtSelect.cls
 native/test_condition_traps.sh	rules/StmtTrace.cls
 native/test_condition_traps.sh	rx2cpp_native_library.rex
 #test native/test_const_concat.sh
-#seconds native/test_const_concat.sh 43
+#seconds native/test_const_concat.sh 49
 native/test_const_concat.sh	core/RxLexer.cls
 native/test_const_concat.sh	core/RxNumericClause.cls
 native/test_const_concat.sh	core/RxQuote.cls
@@ -4751,7 +4755,7 @@ native/test_const_concat.sh	rules/StmtSelect.cls
 native/test_const_concat.sh	rules/StmtTrace.cls
 native/test_const_concat.sh	rx2cpp_native_library.rex
 #test native/test_context.sh
-#seconds native/test_context.sh 48
+#seconds native/test_context.sh 54
 native/test_context.sh	core/RxLexer.cls
 native/test_context.sh	core/RxNumericClause.cls
 native/test_context.sh	core/RxQuote.cls
@@ -4857,7 +4861,7 @@ native/test_context.sh	rules/StmtSelect.cls
 native/test_context.sh	rules/StmtTrace.cls
 native/test_context.sh	rx2cpp_native_library.rex
 #test native/test_control_routines.sh
-#seconds native/test_control_routines.sh 45
+#seconds native/test_control_routines.sh 53
 native/test_control_routines.sh	core/RxLexer.cls
 native/test_control_routines.sh	core/RxNumericClause.cls
 native/test_control_routines.sh	core/RxQuote.cls
@@ -4964,7 +4968,7 @@ native/test_control_routines.sh	rules/StmtSelect.cls
 native/test_control_routines.sh	rules/StmtTrace.cls
 native/test_control_routines.sh	rx2cpp_native_library.rex
 #test native/test_cycle_collection.sh
-#seconds native/test_cycle_collection.sh 189
+#seconds native/test_cycle_collection.sh 210
 native/test_cycle_collection.sh	core/RxLexer.cls
 native/test_cycle_collection.sh	core/RxNumericClause.cls
 native/test_cycle_collection.sh	core/RxQuote.cls
@@ -5074,7 +5078,7 @@ native/test_cycle_collection.sh	rules/StmtSelect.cls
 native/test_cycle_collection.sh	rules/StmtTrace.cls
 native/test_cycle_collection.sh	rx2cpp_native_library.rex
 #test tests/test_developer_registry.sh
-#seconds tests/test_developer_registry.sh 11
+#seconds tests/test_developer_registry.sh 12
 tests/test_developer_registry.sh	build.sh
 tests/test_developer_registry.sh	core/RxCompiler.cls
 tests/test_developer_registry.sh	core/RxCppEmitter.cls
@@ -5150,7 +5154,7 @@ tests/test_developer_registry.sh	tests/fixtures/developer_registry/object_identi
 tests/test_developer_registry.sh	tests/fixtures/developer_registry/object_identity.rex
 tests/test_developer_registry.sh	tests/test_developer_registry.sh
 #test native/test_direct_bifs.sh
-#seconds native/test_direct_bifs.sh 46
+#seconds native/test_direct_bifs.sh 52
 native/test_direct_bifs.sh	core/RxLexer.cls
 native/test_direct_bifs.sh	core/RxNumericClause.cls
 native/test_direct_bifs.sh	core/RxQuote.cls
@@ -5256,7 +5260,7 @@ native/test_direct_bifs.sh	rules/StmtSelect.cls
 native/test_direct_bifs.sh	rules/StmtTrace.cls
 native/test_direct_bifs.sh	rx2cpp_native_library.rex
 #test native/test_directory.sh
-#seconds native/test_directory.sh 47
+#seconds native/test_directory.sh 51
 native/test_directory.sh	core/RxLexer.cls
 native/test_directory.sh	core/RxNumericClause.cls
 native/test_directory.sh	core/RxQuote.cls
@@ -5362,7 +5366,7 @@ native/test_directory.sh	rules/StmtSelect.cls
 native/test_directory.sh	rules/StmtTrace.cls
 native/test_directory.sh	rx2cpp_native_library.rex
 #test native/test_do_forms.sh
-#seconds native/test_do_forms.sh 50
+#seconds native/test_do_forms.sh 53
 native/test_do_forms.sh	core/RxLexer.cls
 native/test_do_forms.sh	core/RxNumericClause.cls
 native/test_do_forms.sh	core/RxQuote.cls
@@ -5468,7 +5472,7 @@ native/test_do_forms.sh	rules/StmtSelect.cls
 native/test_do_forms.sh	rules/StmtTrace.cls
 native/test_do_forms.sh	rx2cpp_native_library.rex
 #test tests/test_do_while_forever.sh
-#seconds tests/test_do_while_forever.sh 38
+#seconds tests/test_do_while_forever.sh 39
 tests/test_do_while_forever.sh	core/RxCompiler.cls
 tests/test_do_while_forever.sh	core/RxCppEmitter.cls
 tests/test_do_while_forever.sh	core/RxLexer.cls
@@ -5547,7 +5551,7 @@ tests/test_do_while_forever.sh	run-compiler.sh
 tests/test_do_while_forever.sh	rx2cpp.rex
 tests/test_do_while_forever.sh	tests/test_do_while_forever.sh
 #test native/test_exposed_refresh.sh
-#seconds native/test_exposed_refresh.sh 44
+#seconds native/test_exposed_refresh.sh 48
 native/test_exposed_refresh.sh	core/RxLexer.cls
 native/test_exposed_refresh.sh	core/RxNumericClause.cls
 native/test_exposed_refresh.sh	core/RxQuote.cls
@@ -5653,7 +5657,7 @@ native/test_exposed_refresh.sh	rules/StmtSelect.cls
 native/test_exposed_refresh.sh	rules/StmtTrace.cls
 native/test_exposed_refresh.sh	rx2cpp_native_library.rex
 #test native/test_expression_edges.sh
-#seconds native/test_expression_edges.sh 46
+#seconds native/test_expression_edges.sh 52
 native/test_expression_edges.sh	core/RxLexer.cls
 native/test_expression_edges.sh	core/RxNumericClause.cls
 native/test_expression_edges.sh	core/RxQuote.cls
@@ -5759,7 +5763,7 @@ native/test_expression_edges.sh	rules/StmtSelect.cls
 native/test_expression_edges.sh	rules/StmtTrace.cls
 native/test_expression_edges.sh	rx2cpp_native_library.rex
 #test native/test_external_numeric_routines.sh
-#seconds native/test_external_numeric_routines.sh 54
+#seconds native/test_external_numeric_routines.sh 59
 native/test_external_numeric_routines.sh	core/RxLexer.cls
 native/test_external_numeric_routines.sh	core/RxNumericClause.cls
 native/test_external_numeric_routines.sh	core/RxQuote.cls
@@ -5868,7 +5872,7 @@ native/test_external_numeric_routines.sh	rules/StmtSelect.cls
 native/test_external_numeric_routines.sh	rules/StmtTrace.cls
 native/test_external_numeric_routines.sh	rx2cpp_native_library.rex
 #test native/test_external_stems.sh
-#seconds native/test_external_stems.sh 44
+#seconds native/test_external_stems.sh 50
 native/test_external_stems.sh	core/RxLexer.cls
 native/test_external_stems.sh	core/RxNumericClause.cls
 native/test_external_stems.sh	core/RxQuote.cls
@@ -5974,7 +5978,7 @@ native/test_external_stems.sh	rules/StmtSelect.cls
 native/test_external_stems.sh	rules/StmtTrace.cls
 native/test_external_stems.sh	rx2cpp_native_library.rex
 #test tests/test_extlib.sh
-#seconds tests/test_extlib.sh 92
+#seconds tests/test_extlib.sh 105
 tests/test_extlib.sh	build.sh
 tests/test_extlib.sh	core/RxCompiler.cls
 tests/test_extlib.sh	core/RxCppEmitter.cls
@@ -6064,7 +6068,7 @@ tests/test_extlib.sh	run-compiler.sh
 tests/test_extlib.sh	rx2cpp.rex
 tests/test_extlib.sh	tests/test_extlib.sh
 #test tests/test_extlib_repair_v028.sh
-#seconds tests/test_extlib_repair_v028.sh 6
+#seconds tests/test_extlib_repair_v028.sh 7
 tests/test_extlib_repair_v028.sh	include/extlib_messages.inc
 tests/test_extlib_repair_v028.sh	include/extlib_traps.inc
 tests/test_extlib_repair_v028.sh	include/minirexx_runtime.hpp
@@ -6076,7 +6080,7 @@ tests/test_extlib_repair_v028.sh	include/rx_rexx_number.hpp
 tests/test_extlib_repair_v028.sh	tests/extlib_repair_poolstem.cpp
 tests/test_extlib_repair_v028.sh	tests/test_extlib_repair_v028.sh
 #test native/test_foreign_mixin.sh
-#seconds native/test_foreign_mixin.sh 44
+#seconds native/test_foreign_mixin.sh 49
 native/test_foreign_mixin.sh	core/RxLexer.cls
 native/test_foreign_mixin.sh	core/RxNumericClause.cls
 native/test_foreign_mixin.sh	core/RxQuote.cls
@@ -6182,7 +6186,7 @@ native/test_foreign_mixin.sh	rules/StmtSelect.cls
 native/test_foreign_mixin.sh	rules/StmtTrace.cls
 native/test_foreign_mixin.sh	rx2cpp_native_library.rex
 #test native/test_generated_warnings.sh
-#seconds native/test_generated_warnings.sh 103
+#seconds native/test_generated_warnings.sh 117
 native/test_generated_warnings.sh	core/RxLexer.cls
 native/test_generated_warnings.sh	core/RxNumericClause.cls
 native/test_generated_warnings.sh	core/RxQuote.cls
@@ -6289,7 +6293,7 @@ native/test_generated_warnings.sh	rules/StmtSelect.cls
 native/test_generated_warnings.sh	rules/StmtTrace.cls
 native/test_generated_warnings.sh	rx2cpp_native_library.rex
 #test native/test_guard.sh
-#seconds native/test_guard.sh 46
+#seconds native/test_guard.sh 53
 native/test_guard.sh	core/RxLexer.cls
 native/test_guard.sh	core/RxNumericClause.cls
 native/test_guard.sh	core/RxQuote.cls
@@ -6395,7 +6399,7 @@ native/test_guard.sh	rules/StmtSelect.cls
 native/test_guard.sh	rules/StmtTrace.cls
 native/test_guard.sh	rx2cpp_native_library.rex
 #test tests/test_hexbin_v029.sh
-#seconds tests/test_hexbin_v029.sh 30
+#seconds tests/test_hexbin_v029.sh 36
 tests/test_hexbin_v029.sh	core/RxCompiler.cls
 tests/test_hexbin_v029.sh	core/RxCppEmitter.cls
 tests/test_hexbin_v029.sh	core/RxLexer.cls
@@ -6487,7 +6491,7 @@ tests/test_hexbin_v029.sh	tests/hex_invalid/bad_hex_grouping.rex
 tests/test_hexbin_v029.sh	tests/hex_invalid/bad_hex_whitespace.rex
 tests/test_hexbin_v029.sh	tests/test_hexbin_v029.sh
 #test native/test_host_objects.sh
-#seconds native/test_host_objects.sh 45
+#seconds native/test_host_objects.sh 51
 native/test_host_objects.sh	core/RxLexer.cls
 native/test_host_objects.sh	core/RxNumericClause.cls
 native/test_host_objects.sh	core/RxQuote.cls
@@ -6591,7 +6595,7 @@ native/test_host_objects.sh	rules/StmtSelect.cls
 native/test_host_objects.sh	rules/StmtTrace.cls
 native/test_host_objects.sh	rx2cpp_native_library.rex
 #test native/test_index_setter.sh
-#seconds native/test_index_setter.sh 44
+#seconds native/test_index_setter.sh 52
 native/test_index_setter.sh	core/RxLexer.cls
 native/test_index_setter.sh	core/RxNumericClause.cls
 native/test_index_setter.sh	core/RxQuote.cls
@@ -6698,7 +6702,7 @@ native/test_index_setter.sh	rules/StmtSelect.cls
 native/test_index_setter.sh	rules/StmtTrace.cls
 native/test_index_setter.sh	rx2cpp_native_library.rex
 #test native/test_inheritance.sh
-#seconds native/test_inheritance.sh 44
+#seconds native/test_inheritance.sh 50
 native/test_inheritance.sh	core/RxLexer.cls
 native/test_inheritance.sh	core/RxNumericClause.cls
 native/test_inheritance.sh	core/RxQuote.cls
@@ -6809,7 +6813,7 @@ native/test_inheritance.sh	rules/StmtSelect.cls
 native/test_inheritance.sh	rules/StmtTrace.cls
 native/test_inheritance.sh	rx2cpp_native_library.rex
 #test native/test_int_fastpaths.sh
-#seconds native/test_int_fastpaths.sh 56
+#seconds native/test_int_fastpaths.sh 62
 native/test_int_fastpaths.sh	core/RxLexer.cls
 native/test_int_fastpaths.sh	core/RxNumericClause.cls
 native/test_int_fastpaths.sh	core/RxQuote.cls
@@ -6915,7 +6919,7 @@ native/test_int_fastpaths.sh	rules/StmtSelect.cls
 native/test_int_fastpaths.sh	rules/StmtTrace.cls
 native/test_int_fastpaths.sh	rx2cpp_native_library.rex
 #test tests/test_internal_routines.sh
-#seconds tests/test_internal_routines.sh 52
+#seconds tests/test_internal_routines.sh 57
 tests/test_internal_routines.sh	core/RxCompiler.cls
 tests/test_internal_routines.sh	core/RxCppEmitter.cls
 tests/test_internal_routines.sh	core/RxLexer.cls
@@ -6996,7 +7000,7 @@ tests/test_internal_routines.sh	run-compiler.sh
 tests/test_internal_routines.sh	rx2cpp.rex
 tests/test_internal_routines.sh	tests/test_internal_routines.sh
 #test native/test_internal_routines_methods.sh
-#seconds native/test_internal_routines_methods.sh 46
+#seconds native/test_internal_routines_methods.sh 53
 native/test_internal_routines_methods.sh	core/RxLexer.cls
 native/test_internal_routines_methods.sh	core/RxNumericClause.cls
 native/test_internal_routines_methods.sh	core/RxQuote.cls
@@ -7102,7 +7106,7 @@ native/test_internal_routines_methods.sh	rules/StmtSelect.cls
 native/test_internal_routines_methods.sh	rules/StmtTrace.cls
 native/test_internal_routines_methods.sh	rx2cpp_native_library.rex
 #test native/test_interpret.sh
-#seconds native/test_interpret.sh 46
+#seconds native/test_interpret.sh 51
 native/test_interpret.sh	core/RxLexer.cls
 native/test_interpret.sh	core/RxNumericClause.cls
 native/test_interpret.sh	core/RxQuote.cls
@@ -7208,7 +7212,7 @@ native/test_interpret.sh	rules/StmtSelect.cls
 native/test_interpret.sh	rules/StmtTrace.cls
 native/test_interpret.sh	rx2cpp_native_library.rex
 #test native/test_interpreted_table.sh
-#seconds native/test_interpreted_table.sh 112
+#seconds native/test_interpreted_table.sh 129
 native/test_interpreted_table.sh	core/RxLexer.cls
 native/test_interpreted_table.sh	core/RxNumericClause.cls
 native/test_interpreted_table.sh	core/RxQuote.cls
@@ -7318,7 +7322,7 @@ native/test_interpreted_table.sh	rx2cpp_native_library.rex
 #seconds tests/test_kernel_objects.sh 0
 tests/test_kernel_objects.sh	tests/test_kernel_objects.sh
 #test native/test_keyword_errors.sh
-#seconds native/test_keyword_errors.sh 44
+#seconds native/test_keyword_errors.sh 50
 native/test_keyword_errors.sh	core/RxLexer.cls
 native/test_keyword_errors.sh	core/RxNumericClause.cls
 native/test_keyword_errors.sh	core/RxQuote.cls
@@ -7424,7 +7428,7 @@ native/test_keyword_errors.sh	rules/StmtSelect.cls
 native/test_keyword_errors.sh	rules/StmtTrace.cls
 native/test_keyword_errors.sh	rx2cpp_native_library.rex
 #test tests/test_library_mode.sh
-#seconds tests/test_library_mode.sh 43
+#seconds tests/test_library_mode.sh 53
 tests/test_library_mode.sh	build.sh
 tests/test_library_mode.sh	core/RxCompiler.cls
 tests/test_library_mode.sh	core/RxCppEmitter.cls
@@ -7548,7 +7552,7 @@ tests/test_library_mode.sh	rx2cpp.rex
 tests/test_library_mode.sh	rx2cpp_native_library.rex
 tests/test_library_mode.sh	tests/test_library_mode.sh
 #test native/test_library_scope.sh
-#seconds native/test_library_scope.sh 85
+#seconds native/test_library_scope.sh 95
 native/test_library_scope.sh	core/RxLexer.cls
 native/test_library_scope.sh	core/RxNumericClause.cls
 native/test_library_scope.sh	core/RxQuote.cls
@@ -7655,7 +7659,7 @@ native/test_library_scope.sh	rules/StmtSelect.cls
 native/test_library_scope.sh	rules/StmtTrace.cls
 native/test_library_scope.sh	rx2cpp_native_library.rex
 #test native/test_localcalls.sh
-#seconds native/test_localcalls.sh 137
+#seconds native/test_localcalls.sh 146
 native/test_localcalls.sh	core/RxLexer.cls
 native/test_localcalls.sh	core/RxNumericClause.cls
 native/test_localcalls.sh	core/RxQuote.cls
@@ -7762,7 +7766,7 @@ native/test_localcalls.sh	rules/StmtSelect.cls
 native/test_localcalls.sh	rules/StmtTrace.cls
 native/test_localcalls.sh	rx2cpp_native_library.rex
 #test tests/test_logic.sh
-#seconds tests/test_logic.sh 56
+#seconds tests/test_logic.sh 64
 tests/test_logic.sh	build.sh
 tests/test_logic.sh	core/RxCompiler.cls
 tests/test_logic.sh	core/RxCppEmitter.cls
@@ -7847,7 +7851,7 @@ tests/test_logic.sh	run-compiler.sh
 tests/test_logic.sh	rx2cpp.rex
 tests/test_logic.sh	tests/test_logic.sh
 #test native/test_loops.sh
-#seconds native/test_loops.sh 44
+#seconds native/test_loops.sh 50
 native/test_loops.sh	core/RxLexer.cls
 native/test_loops.sh	core/RxNumericClause.cls
 native/test_loops.sh	core/RxQuote.cls
@@ -7951,7 +7955,7 @@ native/test_loops.sh	rules/StmtSelect.cls
 native/test_loops.sh	rules/StmtTrace.cls
 native/test_loops.sh	rx2cpp_native_library.rex
 #test native/test_message_terms.sh
-#seconds native/test_message_terms.sh 45
+#seconds native/test_message_terms.sh 50
 native/test_message_terms.sh	core/RxLexer.cls
 native/test_message_terms.sh	core/RxNumericClause.cls
 native/test_message_terms.sh	core/RxQuote.cls
@@ -8057,7 +8061,7 @@ native/test_message_terms.sh	rules/StmtSelect.cls
 native/test_message_terms.sh	rules/StmtTrace.cls
 native/test_message_terms.sh	rx2cpp_native_library.rex
 #test native/test_mixin.sh
-#seconds native/test_mixin.sh 48
+#seconds native/test_mixin.sh 54
 native/test_mixin.sh	core/RxLexer.cls
 native/test_mixin.sh	core/RxNumericClause.cls
 native/test_mixin.sh	core/RxQuote.cls
@@ -8169,7 +8173,7 @@ native/test_mixin.sh	rules/StmtSelect.cls
 native/test_mixin.sh	rules/StmtTrace.cls
 native/test_mixin.sh	rx2cpp_native_library.rex
 #test native/test_multiarg_routines.sh
-#seconds native/test_multiarg_routines.sh 92
+#seconds native/test_multiarg_routines.sh 103
 native/test_multiarg_routines.sh	core/RxLexer.cls
 native/test_multiarg_routines.sh	core/RxNumericClause.cls
 native/test_multiarg_routines.sh	core/RxQuote.cls
@@ -8276,7 +8280,7 @@ native/test_multiarg_routines.sh	rules/StmtSelect.cls
 native/test_multiarg_routines.sh	rules/StmtTrace.cls
 native/test_multiarg_routines.sh	rx2cpp_native_library.rex
 #test native/test_mutablebuffer.sh
-#seconds native/test_mutablebuffer.sh 45
+#seconds native/test_mutablebuffer.sh 52
 native/test_mutablebuffer.sh	core/RxLexer.cls
 native/test_mutablebuffer.sh	core/RxNumericClause.cls
 native/test_mutablebuffer.sh	core/RxQuote.cls
@@ -8382,7 +8386,7 @@ native/test_mutablebuffer.sh	rules/StmtSelect.cls
 native/test_mutablebuffer.sh	rules/StmtTrace.cls
 native/test_mutablebuffer.sh	rx2cpp_native_library.rex
 #test native/test_native_bag.sh
-#seconds native/test_native_bag.sh 44
+#seconds native/test_native_bag.sh 52
 native/test_native_bag.sh	core/RxLexer.cls
 native/test_native_bag.sh	core/RxNumericClause.cls
 native/test_native_bag.sh	core/RxQuote.cls
@@ -8490,7 +8494,7 @@ native/test_native_bag.sh	rules/StmtSelect.cls
 native/test_native_bag.sh	rules/StmtTrace.cls
 native/test_native_bag.sh	rx2cpp_native_library.rex
 #test native/test_native_datetime.sh
-#seconds native/test_native_datetime.sh 45
+#seconds native/test_native_datetime.sh 50
 native/test_native_datetime.sh	core/RxLexer.cls
 native/test_native_datetime.sh	core/RxNumericClause.cls
 native/test_native_datetime.sh	core/RxQuote.cls
@@ -8598,7 +8602,7 @@ native/test_native_datetime.sh	rules/StmtSelect.cls
 native/test_native_datetime.sh	rules/StmtTrace.cls
 native/test_native_datetime.sh	rx2cpp_native_library.rex
 #test native/test_native_list.sh
-#seconds native/test_native_list.sh 45
+#seconds native/test_native_list.sh 53
 native/test_native_list.sh	core/RxLexer.cls
 native/test_native_list.sh	core/RxNumericClause.cls
 native/test_native_list.sh	core/RxQuote.cls
@@ -8706,7 +8710,7 @@ native/test_native_list.sh	rules/StmtSelect.cls
 native/test_native_list.sh	rules/StmtTrace.cls
 native/test_native_list.sh	rx2cpp_native_library.rex
 #test native/test_native_message.sh
-#seconds native/test_native_message.sh 44
+#seconds native/test_native_message.sh 50
 native/test_native_message.sh	core/RxLexer.cls
 native/test_native_message.sh	core/RxNumericClause.cls
 native/test_native_message.sh	core/RxQuote.cls
@@ -8820,7 +8824,7 @@ native/test_native_nine_standalone.sh	native/test_native_nine_standalone.sh
 native/test_native_nine_standalone.sh	native/tests/native_nine_smoke.cpp
 native/test_native_nine_standalone.sh	native/tests/native_nine_stub.hpp
 #test native/test_native_queue.sh
-#seconds native/test_native_queue.sh 43
+#seconds native/test_native_queue.sh 49
 native/test_native_queue.sh	core/RxLexer.cls
 native/test_native_queue.sh	core/RxNumericClause.cls
 native/test_native_queue.sh	core/RxQuote.cls
@@ -8928,7 +8932,7 @@ native/test_native_queue.sh	rules/StmtSelect.cls
 native/test_native_queue.sh	rules/StmtTrace.cls
 native/test_native_queue.sh	rx2cpp_native_library.rex
 #test native/test_native_registers.sh
-#seconds native/test_native_registers.sh 59
+#seconds native/test_native_registers.sh 63
 native/test_native_registers.sh	core/RxLexer.cls
 native/test_native_registers.sh	core/RxNumericClause.cls
 native/test_native_registers.sh	core/RxQuote.cls
@@ -9034,7 +9038,7 @@ native/test_native_registers.sh	rules/StmtSelect.cls
 native/test_native_registers.sh	rules/StmtTrace.cls
 native/test_native_registers.sh	rx2cpp_native_library.rex
 #test native/test_native_relation.sh
-#seconds native/test_native_relation.sh 45
+#seconds native/test_native_relation.sh 50
 native/test_native_relation.sh	core/RxLexer.cls
 native/test_native_relation.sh	core/RxNumericClause.cls
 native/test_native_relation.sh	core/RxQuote.cls
@@ -9142,7 +9146,7 @@ native/test_native_relation.sh	rules/StmtSelect.cls
 native/test_native_relation.sh	rules/StmtTrace.cls
 native/test_native_relation.sh	rx2cpp_native_library.rex
 #test native/test_native_routines.sh
-#seconds native/test_native_routines.sh 126
+#seconds native/test_native_routines.sh 138
 native/test_native_routines.sh	core/RxLexer.cls
 native/test_native_routines.sh	core/RxNumericClause.cls
 native/test_native_routines.sh	core/RxQuote.cls
@@ -9249,7 +9253,7 @@ native/test_native_routines.sh	rules/StmtSelect.cls
 native/test_native_routines.sh	rules/StmtTrace.cls
 native/test_native_routines.sh	rx2cpp_native_library.rex
 #test native/test_native_set.sh
-#seconds native/test_native_set.sh 44
+#seconds native/test_native_set.sh 51
 native/test_native_set.sh	core/RxLexer.cls
 native/test_native_set.sh	core/RxNumericClause.cls
 native/test_native_set.sh	core/RxQuote.cls
@@ -9357,7 +9361,7 @@ native/test_native_set.sh	rules/StmtSelect.cls
 native/test_native_set.sh	rules/StmtTrace.cls
 native/test_native_set.sh	rx2cpp_native_library.rex
 #test native/test_native_supplier.sh
-#seconds native/test_native_supplier.sh 46
+#seconds native/test_native_supplier.sh 52
 native/test_native_supplier.sh	core/RxLexer.cls
 native/test_native_supplier.sh	core/RxNumericClause.cls
 native/test_native_supplier.sh	core/RxQuote.cls
@@ -9465,7 +9469,7 @@ native/test_native_supplier.sh	rules/StmtSelect.cls
 native/test_native_supplier.sh	rules/StmtTrace.cls
 native/test_native_supplier.sh	rx2cpp_native_library.rex
 #test native/test_native_table.sh
-#seconds native/test_native_table.sh 44
+#seconds native/test_native_table.sh 50
 native/test_native_table.sh	core/RxLexer.cls
 native/test_native_table.sh	core/RxNumericClause.cls
 native/test_native_table.sh	core/RxQuote.cls
@@ -9573,7 +9577,7 @@ native/test_native_table.sh	rules/StmtSelect.cls
 native/test_native_table.sh	rules/StmtTrace.cls
 native/test_native_table.sh	rx2cpp_native_library.rex
 #test native/test_no_result.sh
-#seconds native/test_no_result.sh 44
+#seconds native/test_no_result.sh 53
 native/test_no_result.sh	core/RxLexer.cls
 native/test_no_result.sh	core/RxNumericClause.cls
 native/test_no_result.sh	core/RxQuote.cls
@@ -9679,7 +9683,7 @@ native/test_no_result.sh	rules/StmtSelect.cls
 native/test_no_result.sh	rules/StmtTrace.cls
 native/test_no_result.sh	rx2cpp_native_library.rex
 #test native/test_nomethod_passthrough.sh
-#seconds native/test_nomethod_passthrough.sh 42
+#seconds native/test_nomethod_passthrough.sh 51
 native/test_nomethod_passthrough.sh	core/RxLexer.cls
 native/test_nomethod_passthrough.sh	core/RxNumericClause.cls
 native/test_nomethod_passthrough.sh	core/RxQuote.cls
@@ -9785,7 +9789,7 @@ native/test_nomethod_passthrough.sh	rules/StmtSelect.cls
 native/test_nomethod_passthrough.sh	rules/StmtTrace.cls
 native/test_nomethod_passthrough.sh	rx2cpp_native_library.rex
 #test native/test_novalue_tails.sh
-#seconds native/test_novalue_tails.sh 45
+#seconds native/test_novalue_tails.sh 50
 native/test_novalue_tails.sh	core/RxLexer.cls
 native/test_novalue_tails.sh	core/RxNumericClause.cls
 native/test_novalue_tails.sh	core/RxQuote.cls
@@ -9891,7 +9895,7 @@ native/test_novalue_tails.sh	rules/StmtSelect.cls
 native/test_novalue_tails.sh	rules/StmtTrace.cls
 native/test_novalue_tails.sh	rx2cpp_native_library.rex
 #test tests/test_numeric_v029.sh
-#seconds tests/test_numeric_v029.sh 33
+#seconds tests/test_numeric_v029.sh 36
 tests/test_numeric_v029.sh	core/RxCompiler.cls
 tests/test_numeric_v029.sh	core/RxCppEmitter.cls
 tests/test_numeric_v029.sh	core/RxLexer.cls
@@ -9969,7 +9973,7 @@ tests/test_numeric_v029.sh	run-compiler.sh
 tests/test_numeric_v029.sh	rx2cpp.rex
 tests/test_numeric_v029.sh	tests/test_numeric_v029.sh
 #test native/test_object_boundaries.sh
-#seconds native/test_object_boundaries.sh 44
+#seconds native/test_object_boundaries.sh 51
 native/test_object_boundaries.sh	core/RxLexer.cls
 native/test_object_boundaries.sh	core/RxNumericClause.cls
 native/test_object_boundaries.sh	core/RxQuote.cls
@@ -10076,7 +10080,7 @@ native/test_object_boundaries.sh	rules/StmtSelect.cls
 native/test_object_boundaries.sh	rules/StmtTrace.cls
 native/test_object_boundaries.sh	rx2cpp_native_library.rex
 #test tests/test_object_inspection.sh
-#seconds tests/test_object_inspection.sh 0
+#seconds tests/test_object_inspection.sh 1
 tests/test_object_inspection.sh	core/RxLexer.cls
 tests/test_object_inspection.sh	core/RxToken.cls
 tests/test_object_inspection.sh	inspector/RxRequiresTree.cls
@@ -10092,7 +10096,7 @@ tests/test_object_inspection.sh	tests/fixtures/object_inspection/tree_lib.rex
 tests/test_object_inspection.sh	tests/fixtures/object_inspection/tree_main.rex
 tests/test_object_inspection.sh	tests/test_object_inspection.sh
 #test native/test_object_lifetime.sh
-#seconds native/test_object_lifetime.sh 44
+#seconds native/test_object_lifetime.sh 52
 native/test_object_lifetime.sh	core/RxLexer.cls
 native/test_object_lifetime.sh	core/RxNumericClause.cls
 native/test_object_lifetime.sh	core/RxQuote.cls
@@ -10198,7 +10202,7 @@ native/test_object_lifetime.sh	rules/StmtSelect.cls
 native/test_object_lifetime.sh	rules/StmtTrace.cls
 native/test_object_lifetime.sh	rx2cpp_native_library.rex
 #test native/test_object_values.sh
-#seconds native/test_object_values.sh 46
+#seconds native/test_object_values.sh 53
 native/test_object_values.sh	core/RxLexer.cls
 native/test_object_values.sh	core/RxNumericClause.cls
 native/test_object_values.sh	core/RxQuote.cls
@@ -10302,7 +10306,7 @@ native/test_object_values.sh	rules/StmtSelect.cls
 native/test_object_values.sh	rules/StmtTrace.cls
 native/test_object_values.sh	rx2cpp_native_library.rex
 #test native/test_package.sh
-#seconds native/test_package.sh 137
+#seconds native/test_package.sh 147
 native/test_package.sh	core/RxLexer.cls
 native/test_package.sh	core/RxNumericClause.cls
 native/test_package.sh	core/RxQuote.cls
@@ -10416,7 +10420,7 @@ native/test_package.sh	rules/StmtSelect.cls
 native/test_package.sh	rules/StmtTrace.cls
 native/test_package.sh	rx2cpp_native_library.rex
 #test native/test_package_extras.sh
-#seconds native/test_package_extras.sh 93
+#seconds native/test_package_extras.sh 104
 native/test_package_extras.sh	core/RxLexer.cls
 native/test_package_extras.sh	core/RxNumericClause.cls
 native/test_package_extras.sh	core/RxQuote.cls
@@ -10525,7 +10529,7 @@ native/test_package_extras.sh	rules/StmtSelect.cls
 native/test_package_extras.sh	rules/StmtTrace.cls
 native/test_package_extras.sh	rx2cpp_native_library.rex
 #test native/test_package_options.sh
-#seconds native/test_package_options.sh 91
+#seconds native/test_package_options.sh 103
 native/test_package_options.sh	core/RxLexer.cls
 native/test_package_options.sh	core/RxNumericClause.cls
 native/test_package_options.sh	core/RxQuote.cls
@@ -10632,7 +10636,7 @@ native/test_package_options.sh	rules/StmtSelect.cls
 native/test_package_options.sh	rules/StmtTrace.cls
 native/test_package_options.sh	rx2cpp_native_library.rex
 #test native/test_package_options_placement.sh
-#seconds native/test_package_options_placement.sh 45
+#seconds native/test_package_options_placement.sh 51
 native/test_package_options_placement.sh	core/RxLexer.cls
 native/test_package_options_placement.sh	core/RxNumericClause.cls
 native/test_package_options_placement.sh	core/RxQuote.cls
@@ -10739,7 +10743,7 @@ native/test_package_options_placement.sh	rules/StmtSelect.cls
 native/test_package_options_placement.sh	rules/StmtTrace.cls
 native/test_package_options_placement.sh	rx2cpp_native_library.rex
 #test tests/test_parse.sh
-#seconds tests/test_parse.sh 99
+#seconds tests/test_parse.sh 115
 tests/test_parse.sh	core/RxCompiler.cls
 tests/test_parse.sh	core/RxCppEmitter.cls
 tests/test_parse.sh	core/RxLexer.cls
@@ -10837,7 +10841,7 @@ tests/test_parse.sh	run-compiler.sh
 tests/test_parse.sh	rx2cpp.rex
 tests/test_parse.sh	tests/test_parse.sh
 #test tests/test_parse_context.sh
-#seconds tests/test_parse_context.sh 32
+#seconds tests/test_parse_context.sh 38
 tests/test_parse_context.sh	core/RxCompiler.cls
 tests/test_parse_context.sh	core/RxCppEmitter.cls
 tests/test_parse_context.sh	core/RxLexer.cls
@@ -10915,7 +10919,7 @@ tests/test_parse_context.sh	run-compiler.sh
 tests/test_parse_context.sh	rx2cpp.rex
 tests/test_parse_context.sh	tests/test_parse_context.sh
 #test native/test_parse_triggers.sh
-#seconds native/test_parse_triggers.sh 46
+#seconds native/test_parse_triggers.sh 53
 native/test_parse_triggers.sh	core/RxLexer.cls
 native/test_parse_triggers.sh	core/RxNumericClause.cls
 native/test_parse_triggers.sh	core/RxQuote.cls
@@ -11021,7 +11025,7 @@ native/test_parse_triggers.sh	rules/StmtSelect.cls
 native/test_parse_triggers.sh	rules/StmtTrace.cls
 native/test_parse_triggers.sh	rx2cpp_native_library.rex
 #test native/test_private_routines.sh
-#seconds native/test_private_routines.sh 58
+#seconds native/test_private_routines.sh 63
 native/test_private_routines.sh	core/RxLexer.cls
 native/test_private_routines.sh	core/RxNumericClause.cls
 native/test_private_routines.sh	core/RxQuote.cls
@@ -11131,7 +11135,7 @@ native/test_private_routines.sh	rules/StmtSelect.cls
 native/test_private_routines.sh	rules/StmtTrace.cls
 native/test_private_routines.sh	rx2cpp_native_library.rex
 #test tests/test_procedures.sh
-#seconds tests/test_procedures.sh 45
+#seconds tests/test_procedures.sh 49
 tests/test_procedures.sh	core/RxCompiler.cls
 tests/test_procedures.sh	core/RxCppEmitter.cls
 tests/test_procedures.sh	core/RxLexer.cls
@@ -11211,7 +11215,7 @@ tests/test_procedures.sh	run-compiler.sh
 tests/test_procedures.sh	rx2cpp.rex
 tests/test_procedures.sh	tests/test_procedures.sh
 #test native/test_program_constructs.sh
-#seconds native/test_program_constructs.sh 512
+#seconds native/test_program_constructs.sh 567
 native/test_program_constructs.sh	core/RxLexer.cls
 native/test_program_constructs.sh	core/RxNumericClause.cls
 native/test_program_constructs.sh	core/RxQuote.cls
@@ -11289,9 +11293,12 @@ native/test_program_constructs.sh	native/fixtures/program_constructs/env_entries
 native/test_program_constructs.sh	native/fixtures/program_constructs/env_epoch.rex
 native/test_program_constructs.sh	native/fixtures/program_constructs/env_lookup.rex
 native/test_program_constructs.sh	native/fixtures/program_constructs/env_security.rex
+native/test_program_constructs.sh	native/fixtures/program_constructs/external_library_calls.rex
+native/test_program_constructs.sh	native/fixtures/program_constructs/external_program_merge.rex
 native/test_program_constructs.sh	native/fixtures/program_constructs/find_routine.rex
 native/test_program_constructs.sh	native/fixtures/program_constructs/identity_eq.rex
 native/test_program_constructs.sh	native/fixtures/program_constructs/init_internal.rex
+native/test_program_constructs.sh	native/fixtures/program_constructs/instance_isa_args.rex
 native/test_program_constructs.sh	native/fixtures/program_constructs/internal_exit.rex
 native/test_program_constructs.sh	native/fixtures/program_constructs/message_receivers.rex
 native/test_program_constructs.sh	native/fixtures/program_constructs/method_exit.rex
@@ -11320,6 +11327,7 @@ native/test_program_constructs.sh	native/fixtures/program_constructs/string_send
 native/test_program_constructs.sh	native/fixtures/program_constructs/string_send_quick.rex
 native/test_program_constructs.sh	native/fixtures/program_constructs/string_substr.rex
 native/test_program_constructs.sh	native/fixtures/program_constructs/string_words.rex
+native/test_program_constructs.sh	native/fixtures/program_constructs/trunc_native.rex
 native/test_program_constructs.sh	native/fixtures/program_constructs/truth.rex
 native/test_program_constructs.sh	native/fixtures/program_constructs/value_objects.rex
 native/test_program_constructs.sh	native/fixtures/program_constructs/variable_frame.rex
@@ -11364,7 +11372,7 @@ native/test_program_constructs.sh	rules/StmtSelect.cls
 native/test_program_constructs.sh	rules/StmtTrace.cls
 native/test_program_constructs.sh	rx2cpp_native_library.rex
 #test native/test_program_constructs2.sh
-#seconds native/test_program_constructs2.sh 1144
+#seconds native/test_program_constructs2.sh 703
 native/test_program_constructs2.sh	core/RxLexer.cls
 native/test_program_constructs2.sh	core/RxNumericClause.cls
 native/test_program_constructs2.sh	core/RxQuote.cls
@@ -11442,9 +11450,12 @@ native/test_program_constructs2.sh	native/fixtures/program_constructs/env_entrie
 native/test_program_constructs2.sh	native/fixtures/program_constructs/env_epoch.rex
 native/test_program_constructs2.sh	native/fixtures/program_constructs/env_lookup.rex
 native/test_program_constructs2.sh	native/fixtures/program_constructs/env_security.rex
+native/test_program_constructs2.sh	native/fixtures/program_constructs/external_library_calls.rex
+native/test_program_constructs2.sh	native/fixtures/program_constructs/external_program_merge.rex
 native/test_program_constructs2.sh	native/fixtures/program_constructs/find_routine.rex
 native/test_program_constructs2.sh	native/fixtures/program_constructs/identity_eq.rex
 native/test_program_constructs2.sh	native/fixtures/program_constructs/init_internal.rex
+native/test_program_constructs2.sh	native/fixtures/program_constructs/instance_isa_args.rex
 native/test_program_constructs2.sh	native/fixtures/program_constructs/internal_exit.rex
 native/test_program_constructs2.sh	native/fixtures/program_constructs/message_receivers.rex
 native/test_program_constructs2.sh	native/fixtures/program_constructs/method_exit.rex
@@ -11473,6 +11484,7 @@ native/test_program_constructs2.sh	native/fixtures/program_constructs/string_sen
 native/test_program_constructs2.sh	native/fixtures/program_constructs/string_send_quick.rex
 native/test_program_constructs2.sh	native/fixtures/program_constructs/string_substr.rex
 native/test_program_constructs2.sh	native/fixtures/program_constructs/string_words.rex
+native/test_program_constructs2.sh	native/fixtures/program_constructs/trunc_native.rex
 native/test_program_constructs2.sh	native/fixtures/program_constructs/truth.rex
 native/test_program_constructs2.sh	native/fixtures/program_constructs/value_objects.rex
 native/test_program_constructs2.sh	native/fixtures/program_constructs/variable_frame.rex
@@ -11517,7 +11529,7 @@ native/test_program_constructs2.sh	rules/StmtSelect.cls
 native/test_program_constructs2.sh	rules/StmtTrace.cls
 native/test_program_constructs2.sh	rx2cpp_native_library.rex
 #test native/test_program_constructs3.sh
-#seconds native/test_program_constructs3.sh 574
+#seconds native/test_program_constructs3.sh 642
 native/test_program_constructs3.sh	core/RxLexer.cls
 native/test_program_constructs3.sh	core/RxNumericClause.cls
 native/test_program_constructs3.sh	core/RxQuote.cls
@@ -11595,9 +11607,12 @@ native/test_program_constructs3.sh	native/fixtures/program_constructs/env_entrie
 native/test_program_constructs3.sh	native/fixtures/program_constructs/env_epoch.rex
 native/test_program_constructs3.sh	native/fixtures/program_constructs/env_lookup.rex
 native/test_program_constructs3.sh	native/fixtures/program_constructs/env_security.rex
+native/test_program_constructs3.sh	native/fixtures/program_constructs/external_library_calls.rex
+native/test_program_constructs3.sh	native/fixtures/program_constructs/external_program_merge.rex
 native/test_program_constructs3.sh	native/fixtures/program_constructs/find_routine.rex
 native/test_program_constructs3.sh	native/fixtures/program_constructs/identity_eq.rex
 native/test_program_constructs3.sh	native/fixtures/program_constructs/init_internal.rex
+native/test_program_constructs3.sh	native/fixtures/program_constructs/instance_isa_args.rex
 native/test_program_constructs3.sh	native/fixtures/program_constructs/internal_exit.rex
 native/test_program_constructs3.sh	native/fixtures/program_constructs/message_receivers.rex
 native/test_program_constructs3.sh	native/fixtures/program_constructs/method_exit.rex
@@ -11626,6 +11641,7 @@ native/test_program_constructs3.sh	native/fixtures/program_constructs/string_sen
 native/test_program_constructs3.sh	native/fixtures/program_constructs/string_send_quick.rex
 native/test_program_constructs3.sh	native/fixtures/program_constructs/string_substr.rex
 native/test_program_constructs3.sh	native/fixtures/program_constructs/string_words.rex
+native/test_program_constructs3.sh	native/fixtures/program_constructs/trunc_native.rex
 native/test_program_constructs3.sh	native/fixtures/program_constructs/truth.rex
 native/test_program_constructs3.sh	native/fixtures/program_constructs/value_objects.rex
 native/test_program_constructs3.sh	native/fixtures/program_constructs/variable_frame.rex
@@ -11670,7 +11686,7 @@ native/test_program_constructs3.sh	rules/StmtSelect.cls
 native/test_program_constructs3.sh	rules/StmtTrace.cls
 native/test_program_constructs3.sh	rx2cpp_native_library.rex
 #test native/test_program_constructs4.sh
-#seconds native/test_program_constructs4.sh 586
+#seconds native/test_program_constructs4.sh 876
 native/test_program_constructs4.sh	core/RxLexer.cls
 native/test_program_constructs4.sh	core/RxNumericClause.cls
 native/test_program_constructs4.sh	core/RxQuote.cls
@@ -11748,9 +11764,12 @@ native/test_program_constructs4.sh	native/fixtures/program_constructs/env_entrie
 native/test_program_constructs4.sh	native/fixtures/program_constructs/env_epoch.rex
 native/test_program_constructs4.sh	native/fixtures/program_constructs/env_lookup.rex
 native/test_program_constructs4.sh	native/fixtures/program_constructs/env_security.rex
+native/test_program_constructs4.sh	native/fixtures/program_constructs/external_library_calls.rex
+native/test_program_constructs4.sh	native/fixtures/program_constructs/external_program_merge.rex
 native/test_program_constructs4.sh	native/fixtures/program_constructs/find_routine.rex
 native/test_program_constructs4.sh	native/fixtures/program_constructs/identity_eq.rex
 native/test_program_constructs4.sh	native/fixtures/program_constructs/init_internal.rex
+native/test_program_constructs4.sh	native/fixtures/program_constructs/instance_isa_args.rex
 native/test_program_constructs4.sh	native/fixtures/program_constructs/internal_exit.rex
 native/test_program_constructs4.sh	native/fixtures/program_constructs/message_receivers.rex
 native/test_program_constructs4.sh	native/fixtures/program_constructs/method_exit.rex
@@ -11779,6 +11798,7 @@ native/test_program_constructs4.sh	native/fixtures/program_constructs/string_sen
 native/test_program_constructs4.sh	native/fixtures/program_constructs/string_send_quick.rex
 native/test_program_constructs4.sh	native/fixtures/program_constructs/string_substr.rex
 native/test_program_constructs4.sh	native/fixtures/program_constructs/string_words.rex
+native/test_program_constructs4.sh	native/fixtures/program_constructs/trunc_native.rex
 native/test_program_constructs4.sh	native/fixtures/program_constructs/truth.rex
 native/test_program_constructs4.sh	native/fixtures/program_constructs/value_objects.rex
 native/test_program_constructs4.sh	native/fixtures/program_constructs/variable_frame.rex
@@ -11823,7 +11843,7 @@ native/test_program_constructs4.sh	rules/StmtSelect.cls
 native/test_program_constructs4.sh	rules/StmtTrace.cls
 native/test_program_constructs4.sh	rx2cpp_native_library.rex
 #test native/test_program_packages.sh
-#seconds native/test_program_packages.sh 1432
+#seconds native/test_program_packages.sh 1035
 native/test_program_packages.sh	core/RxLexer.cls
 native/test_program_packages.sh	core/RxNumericClause.cls
 native/test_program_packages.sh	core/RxQuote.cls
@@ -11948,7 +11968,7 @@ native/test_program_packages.sh	rules/StmtSelect.cls
 native/test_program_packages.sh	rules/StmtTrace.cls
 native/test_program_packages.sh	rx2cpp_native_library.rex
 #test native/test_public_external.sh
-#seconds native/test_public_external.sh 43
+#seconds native/test_public_external.sh 50
 native/test_public_external.sh	core/RxLexer.cls
 native/test_public_external.sh	core/RxNumericClause.cls
 native/test_public_external.sh	core/RxQuote.cls
@@ -12057,7 +12077,7 @@ native/test_public_external.sh	rx2cpp_native_library.rex
 #seconds native/test_python.sh 0
 native/test_python.sh	native/test_python.sh
 #test native/test_queue_drop.sh
-#seconds native/test_queue_drop.sh 44
+#seconds native/test_queue_drop.sh 53
 native/test_queue_drop.sh	core/RxLexer.cls
 native/test_queue_drop.sh	core/RxNumericClause.cls
 native/test_queue_drop.sh	core/RxQuote.cls
@@ -12163,7 +12183,7 @@ native/test_queue_drop.sh	rules/StmtSelect.cls
 native/test_queue_drop.sh	rules/StmtTrace.cls
 native/test_queue_drop.sh	rx2cpp_native_library.rex
 #test native/test_radix_bifs.sh
-#seconds native/test_radix_bifs.sh 44
+#seconds native/test_radix_bifs.sh 51
 native/test_radix_bifs.sh	core/RxLexer.cls
 native/test_radix_bifs.sh	core/RxNumericClause.cls
 native/test_radix_bifs.sh	core/RxQuote.cls
@@ -12269,7 +12289,7 @@ native/test_radix_bifs.sh	rules/StmtSelect.cls
 native/test_radix_bifs.sh	rules/StmtTrace.cls
 native/test_radix_bifs.sh	rx2cpp_native_library.rex
 #test native/test_raise.sh
-#seconds native/test_raise.sh 46
+#seconds native/test_raise.sh 50
 native/test_raise.sh	core/RxLexer.cls
 native/test_raise.sh	core/RxNumericClause.cls
 native/test_raise.sh	core/RxQuote.cls
@@ -12375,7 +12395,7 @@ native/test_raise.sh	rules/StmtSelect.cls
 native/test_raise.sh	rules/StmtTrace.cls
 native/test_raise.sh	rx2cpp_native_library.rex
 #test native/test_reply.sh
-#seconds native/test_reply.sh 50
+#seconds native/test_reply.sh 55
 native/test_reply.sh	core/RxLexer.cls
 native/test_reply.sh	core/RxNumericClause.cls
 native/test_reply.sh	core/RxQuote.cls
@@ -12481,7 +12501,7 @@ native/test_reply.sh	rules/StmtSelect.cls
 native/test_reply.sh	rules/StmtTrace.cls
 native/test_reply.sh	rx2cpp_native_library.rex
 #test native/test_request_string.sh
-#seconds native/test_request_string.sh 43
+#seconds native/test_request_string.sh 49
 native/test_request_string.sh	core/RxLexer.cls
 native/test_request_string.sh	core/RxNumericClause.cls
 native/test_request_string.sh	core/RxQuote.cls
@@ -12587,7 +12607,7 @@ native/test_request_string.sh	rules/StmtSelect.cls
 native/test_request_string.sh	rules/StmtTrace.cls
 native/test_request_string.sh	rx2cpp_native_library.rex
 #test tests/test_rexxcps_structural.sh
-#seconds tests/test_rexxcps_structural.sh 66
+#seconds tests/test_rexxcps_structural.sh 78
 tests/test_rexxcps_structural.sh	core/RxCompiler.cls
 tests/test_rexxcps_structural.sh	core/RxCppEmitter.cls
 tests/test_rexxcps_structural.sh	core/RxLexer.cls
@@ -12665,7 +12685,7 @@ tests/test_rexxcps_structural.sh	run-compiler.sh
 tests/test_rexxcps_structural.sh	rx2cpp.rex
 tests/test_rexxcps_structural.sh	tests/test_rexxcps_structural.sh
 #test tests/test_say_abuttal.sh
-#seconds tests/test_say_abuttal.sh 48
+#seconds tests/test_say_abuttal.sh 56
 tests/test_say_abuttal.sh	build.sh
 tests/test_say_abuttal.sh	core/RxCompiler.cls
 tests/test_say_abuttal.sh	core/RxCppEmitter.cls
@@ -12751,7 +12771,7 @@ tests/test_say_abuttal.sh	run-compiler.sh
 tests/test_say_abuttal.sh	rx2cpp.rex
 tests/test_say_abuttal.sh	tests/test_say_abuttal.sh
 #test tests/test_select.sh
-#seconds tests/test_select.sh 39
+#seconds tests/test_select.sh 42
 tests/test_select.sh	core/RxCompiler.cls
 tests/test_select.sh	core/RxCppEmitter.cls
 tests/test_select.sh	core/RxLexer.cls
@@ -12830,7 +12850,7 @@ tests/test_select.sh	run-compiler.sh
 tests/test_select.sh	rx2cpp.rex
 tests/test_select.sh	tests/test_select.sh
 #test native/test_selfsend.sh
-#seconds native/test_selfsend.sh 44
+#seconds native/test_selfsend.sh 53
 native/test_selfsend.sh	core/RxLexer.cls
 native/test_selfsend.sh	core/RxNumericClause.cls
 native/test_selfsend.sh	core/RxQuote.cls
@@ -12938,7 +12958,7 @@ native/test_selfsend.sh	rules/StmtTrace.cls
 native/test_selfsend.sh	rx2cpp_native.rex
 native/test_selfsend.sh	rx2cpp_native_library.rex
 #test tests/test_shared_numeric.sh
-#seconds tests/test_shared_numeric.sh 49
+#seconds tests/test_shared_numeric.sh 55
 tests/test_shared_numeric.sh	build.sh
 tests/test_shared_numeric.sh	core/RxCompiler.cls
 tests/test_shared_numeric.sh	core/RxCppEmitter.cls
@@ -13067,7 +13087,7 @@ tests/test_shared_numeric.sh	tests/fixtures/numeric_shared/standalone.rex
 tests/test_shared_numeric.sh	tests/test_shared_numeric.rex
 tests/test_shared_numeric.sh	tests/test_shared_numeric.sh
 #test native/test_signal_on.sh
-#seconds native/test_signal_on.sh 49
+#seconds native/test_signal_on.sh 53
 native/test_signal_on.sh	core/RxLexer.cls
 native/test_signal_on.sh	core/RxNumericClause.cls
 native/test_signal_on.sh	core/RxQuote.cls
@@ -13173,7 +13193,7 @@ native/test_signal_on.sh	rules/StmtSelect.cls
 native/test_signal_on.sh	rules/StmtTrace.cls
 native/test_signal_on.sh	rx2cpp_native_library.rex
 #test tests/test_slam_compiled.sh
-#seconds tests/test_slam_compiled.sh 611
+#seconds tests/test_slam_compiled.sh 681
 tests/test_slam_compiled.sh	core/RxLexer.cls
 tests/test_slam_compiled.sh	core/RxNumericClause.cls
 tests/test_slam_compiled.sh	core/RxQuote.cls
@@ -13344,7 +13364,7 @@ tests/test_slam_compiled.sh	tests/slam/groups/SLAM_SQ.testGroup
 tests/test_slam_compiled.sh	tests/slam/groups/SLAM_SUM3.testGroup
 tests/test_slam_compiled.sh	tests/test_slam_compiled.sh
 #test native/test_slot_literals.sh
-#seconds native/test_slot_literals.sh 45
+#seconds native/test_slot_literals.sh 51
 native/test_slot_literals.sh	core/RxLexer.cls
 native/test_slot_literals.sh	core/RxNumericClause.cls
 native/test_slot_literals.sh	core/RxQuote.cls
@@ -13450,7 +13470,7 @@ native/test_slot_literals.sh	rules/StmtSelect.cls
 native/test_slot_literals.sh	rules/StmtTrace.cls
 native/test_slot_literals.sh	rx2cpp_native_library.rex
 #test tests/test_small_integer_fastpath.sh
-#seconds tests/test_small_integer_fastpath.sh 16
+#seconds tests/test_small_integer_fastpath.sh 19
 tests/test_small_integer_fastpath.sh	build.sh
 tests/test_small_integer_fastpath.sh	core/RxCompiler.cls
 tests/test_small_integer_fastpath.sh	core/RxCppEmitter.cls
@@ -13535,7 +13555,7 @@ tests/test_small_integer_fastpath.sh	rx2cpp.rex
 tests/test_small_integer_fastpath.sh	tests/fixtures/small_integer_digits.rex
 tests/test_small_integer_fastpath.sh	tests/test_small_integer_fastpath.sh
 #test tests/test_special_objects.sh
-#seconds tests/test_special_objects.sh 10
+#seconds tests/test_special_objects.sh 11
 tests/test_special_objects.sh	build.sh
 tests/test_special_objects.sh	core/RxCompiler.cls
 tests/test_special_objects.sh	core/RxCppEmitter.cls
@@ -13612,7 +13632,7 @@ tests/test_special_objects.sh	tests/fixtures/special_objects/nil_native.expected
 tests/test_special_objects.sh	tests/fixtures/special_objects/nil_native.rex
 tests/test_special_objects.sh	tests/test_special_objects.sh
 #test native/test_stem_array.sh
-#seconds native/test_stem_array.sh 47
+#seconds native/test_stem_array.sh 56
 native/test_stem_array.sh	core/RxLexer.cls
 native/test_stem_array.sh	core/RxNumericClause.cls
 native/test_stem_array.sh	core/RxQuote.cls
@@ -13718,7 +13738,7 @@ native/test_stem_array.sh	rules/StmtSelect.cls
 native/test_stem_array.sh	rules/StmtTrace.cls
 native/test_stem_array.sh	rx2cpp_native_library.rex
 #test native/test_stem_object.sh
-#seconds native/test_stem_object.sh 44
+#seconds native/test_stem_object.sh 51
 native/test_stem_object.sh	core/RxLexer.cls
 native/test_stem_object.sh	core/RxNumericClause.cls
 native/test_stem_object.sh	core/RxQuote.cls
@@ -13824,7 +13844,7 @@ native/test_stem_object.sh	rules/StmtSelect.cls
 native/test_stem_object.sh	rules/StmtTrace.cls
 native/test_stem_object.sh	rx2cpp_native_library.rex
 #test native/test_stem_string.sh
-#seconds native/test_stem_string.sh 45
+#seconds native/test_stem_string.sh 49
 native/test_stem_string.sh	core/RxLexer.cls
 native/test_stem_string.sh	core/RxNumericClause.cls
 native/test_stem_string.sh	core/RxQuote.cls
@@ -13930,7 +13950,7 @@ native/test_stem_string.sh	rules/StmtSelect.cls
 native/test_stem_string.sh	rules/StmtTrace.cls
 native/test_stem_string.sh	rx2cpp_native_library.rex
 #test native/test_string_fastpaths.sh
-#seconds native/test_string_fastpaths.sh 44
+#seconds native/test_string_fastpaths.sh 49
 native/test_string_fastpaths.sh	core/RxLexer.cls
 native/test_string_fastpaths.sh	core/RxNumericClause.cls
 native/test_string_fastpaths.sh	core/RxQuote.cls
@@ -14035,7 +14055,7 @@ native/test_string_fastpaths.sh	rules/StmtSelect.cls
 native/test_string_fastpaths.sh	rules/StmtTrace.cls
 native/test_string_fastpaths.sh	rx2cpp_native_library.rex
 #test native/test_string_methods.sh
-#seconds native/test_string_methods.sh 44
+#seconds native/test_string_methods.sh 50
 native/test_string_methods.sh	core/RxLexer.cls
 native/test_string_methods.sh	core/RxNumericClause.cls
 native/test_string_methods.sh	core/RxQuote.cls
@@ -14141,7 +14161,7 @@ native/test_string_methods.sh	rules/StmtSelect.cls
 native/test_string_methods.sh	rules/StmtTrace.cls
 native/test_string_methods.sh	rx2cpp_native_library.rex
 #test native/test_string_subclass.sh
-#seconds native/test_string_subclass.sh 43
+#seconds native/test_string_subclass.sh 49
 native/test_string_subclass.sh	core/RxLexer.cls
 native/test_string_subclass.sh	core/RxNumericClause.cls
 native/test_string_subclass.sh	core/RxQuote.cls
@@ -14246,7 +14266,7 @@ native/test_string_subclass.sh	rules/StmtSelect.cls
 native/test_string_subclass.sh	rules/StmtTrace.cls
 native/test_string_subclass.sh	rx2cpp_native_library.rex
 #test native/test_strip_set.sh
-#seconds native/test_strip_set.sh 42
+#seconds native/test_strip_set.sh 51
 native/test_strip_set.sh	core/RxLexer.cls
 native/test_strip_set.sh	core/RxNumericClause.cls
 native/test_strip_set.sh	core/RxQuote.cls
@@ -14352,7 +14372,7 @@ native/test_strip_set.sh	rules/StmtSelect.cls
 native/test_strip_set.sh	rules/StmtTrace.cls
 native/test_strip_set.sh	rx2cpp_native_library.rex
 #test native/test_super_chain.sh
-#seconds native/test_super_chain.sh 44
+#seconds native/test_super_chain.sh 52
 native/test_super_chain.sh	core/RxLexer.cls
 native/test_super_chain.sh	core/RxNumericClause.cls
 native/test_super_chain.sh	core/RxQuote.cls
@@ -14458,7 +14478,7 @@ native/test_super_chain.sh	rules/StmtSelect.cls
 native/test_super_chain.sh	rules/StmtTrace.cls
 native/test_super_chain.sh	rx2cpp_native_library.rex
 #test tests/test_thread_corpus.sh
-#seconds tests/test_thread_corpus.sh 5
+#seconds tests/test_thread_corpus.sh 4
 tests/test_thread_corpus.sh	core/RxCompiler.cls
 tests/test_thread_corpus.sh	core/RxCppEmitter.cls
 tests/test_thread_corpus.sh	core/RxLexer.cls
@@ -14581,7 +14601,7 @@ tests/test_thread_corpus.sh	run-compiler.sh
 tests/test_thread_corpus.sh	rx2cpp.rex
 tests/test_thread_corpus.sh	tests/test_thread_corpus.sh
 #test native/test_threads.sh
-#seconds native/test_threads.sh 55
+#seconds native/test_threads.sh 60
 native/test_threads.sh	core/RxLexer.cls
 native/test_threads.sh	core/RxNumericClause.cls
 native/test_threads.sh	core/RxQuote.cls
@@ -14689,7 +14709,7 @@ native/test_threads.sh	rules/StmtTrace.cls
 native/test_threads.sh	rx2cpp_native.rex
 native/test_threads.sh	rx2cpp_native_library.rex
 #test native/test_two_libraries.sh
-#seconds native/test_two_libraries.sh 87
+#seconds native/test_two_libraries.sh 99
 native/test_two_libraries.sh	core/RxLexer.cls
 native/test_two_libraries.sh	core/RxNumericClause.cls
 native/test_two_libraries.sh	core/RxQuote.cls
@@ -14796,7 +14816,7 @@ native/test_two_libraries.sh	rules/StmtSelect.cls
 native/test_two_libraries.sh	rules/StmtTrace.cls
 native/test_two_libraries.sh	rx2cpp_native_library.rex
 #test native/test_use_arg.sh
-#seconds native/test_use_arg.sh 49
+#seconds native/test_use_arg.sh 55
 native/test_use_arg.sh	core/RxLexer.cls
 native/test_use_arg.sh	core/RxNumericClause.cls
 native/test_use_arg.sh	core/RxQuote.cls
@@ -14902,7 +14922,7 @@ native/test_use_arg.sh	rules/StmtSelect.cls
 native/test_use_arg.sh	rules/StmtTrace.cls
 native/test_use_arg.sh	rx2cpp_native_library.rex
 #test native/test_value_selector.sh
-#seconds native/test_value_selector.sh 43
+#seconds native/test_value_selector.sh 50
 native/test_value_selector.sh	core/RxLexer.cls
 native/test_value_selector.sh	core/RxNumericClause.cls
 native/test_value_selector.sh	core/RxQuote.cls
@@ -15008,7 +15028,7 @@ native/test_value_selector.sh	rules/StmtSelect.cls
 native/test_value_selector.sh	rules/StmtTrace.cls
 native/test_value_selector.sh	rx2cpp_native_library.rex
 #test tests/test_value_semantics.sh
-#seconds tests/test_value_semantics.sh 291
+#seconds tests/test_value_semantics.sh 321
 tests/test_value_semantics.sh	build.sh
 tests/test_value_semantics.sh	core/RxCompiler.cls
 tests/test_value_semantics.sh	core/RxCppEmitter.cls
@@ -15110,7 +15130,7 @@ tests/test_value_semantics.sh	tests/fixtures/stem_object_sharing.rex
 tests/test_value_semantics.sh	tests/fixtures/strict_compare_ops.rex
 tests/test_value_semantics.sh	tests/test_value_semantics.sh
 #test native/test_var_exposed.sh
-#seconds native/test_var_exposed.sh 44
+#seconds native/test_var_exposed.sh 49
 native/test_var_exposed.sh	core/RxLexer.cls
 native/test_var_exposed.sh	core/RxNumericClause.cls
 native/test_var_exposed.sh	core/RxQuote.cls
@@ -15216,7 +15236,7 @@ native/test_var_exposed.sh	rules/StmtSelect.cls
 native/test_var_exposed.sh	rules/StmtTrace.cls
 native/test_var_exposed.sh	rx2cpp_native_library.rex
 #test native/test_visibility.sh
-#seconds native/test_visibility.sh 44
+#seconds native/test_visibility.sh 50
 native/test_visibility.sh	core/RxLexer.cls
 native/test_visibility.sh	core/RxNumericClause.cls
 native/test_visibility.sh	core/RxQuote.cls
@@ -15322,7 +15342,7 @@ native/test_visibility.sh	rules/StmtSelect.cls
 native/test_visibility.sh	rules/StmtTrace.cls
 native/test_visibility.sh	rx2cpp_native_library.rex
 #test tests/test_when_dealing_with.sh
-#seconds tests/test_when_dealing_with.sh 1
+#seconds tests/test_when_dealing_with.sh 0
 tests/test_when_dealing_with.sh	core/RxLexer.cls
 tests/test_when_dealing_with.sh	core/RxToken.cls
 tests/test_when_dealing_with.sh	core/RxWhenDealingWith.cls
@@ -15332,7 +15352,7 @@ tests/test_when_dealing_with.sh	tests/prolog/enabled.cls
 tests/test_when_dealing_with.sh	tests/test_when_dealing_with.rex
 tests/test_when_dealing_with.sh	tests/test_when_dealing_with.sh
 #test native/test_whitespace_compare.sh
-#seconds native/test_whitespace_compare.sh 43
+#seconds native/test_whitespace_compare.sh 49
 native/test_whitespace_compare.sh	core/RxLexer.cls
 native/test_whitespace_compare.sh	core/RxNumericClause.cls
 native/test_whitespace_compare.sh	core/RxQuote.cls

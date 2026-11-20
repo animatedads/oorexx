@@ -1407,6 +1407,7 @@ struct SyntaxCondition : std::runtime_error {
     bool skipInternalTraps;
     std::vector<Value> substitutions;   // RAISE SYNTAX ... ARRAY/ADDITIONAL values, kept for the interpreter's message
     std::shared_ptr<ObjectDispatch> conditionObject;   // the interpreter's condition object, when it raised the error
+    bool ported = false;   // raised by a ported built-in with the interpreter's code and substitutions: not re-run there
     SyntaxCondition(std::string c, const std::string &text, bool skip)
         : std::runtime_error("Error " + c + ": " + text), code(std::move(c)), skipInternalTraps(skip) {}
 };

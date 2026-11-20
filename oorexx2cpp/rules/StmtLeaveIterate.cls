@@ -21,10 +21,13 @@
       when code == '28.2' then text = 'ITERATE is valid only within a repetitive loop'
       when code == '28.3' then text = 'Symbol following LEAVE ("' || name || '") must either match the label of a current loop or block instruction'
       when code == '28.4' then text = 'Symbol following ITERATE ("' || name || '") must either match the label of a current loop or be omitted'
+      when code == '28.6' then text = 'LEAVE in a CATCH clause must not refer to the block instruction on line' word(target, 3) || ', which owns the clause'
+      when code == '28.7' then text = 'ITERATE in a CATCH clause must not refer to the block instruction on line' word(target, 3) || ', which owns the clause'
       otherwise text = 'Symbol following ITERATE ("' || name || '") does not match a repetitive block instruction'
     end
     subs = ''
     if name \== '' then subs = ' _rxLeave.substitutions.push_back(rx::Value::string(' || .RxQuote~cpp(name) || '));'
+    if code == '28.6' | code == '28.7' then subs = ' _rxLeave.substitutions.push_back(rx::Value::string(' || .RxQuote~cpp(word(target, 3)) || '));'
     ctx~line(depth, '{ rx::SyntaxCondition _rxLeave(' || .RxQuote~cpp(code) || ', ' || .RxQuote~cpp(text) || ', false);' || subs || ' throw _rxLeave; }')
   end
   s~separator

@@ -32,5 +32,14 @@ check instance_isa_args "$OUT/src/instance_isa_args.rex"   # ISA of compiled ins
 check string_send_direct "$OUT/src/string_send_direct.rex"   # x~SUBSTR / x~LENGTH as rx::sendSubstr / rx::sendLength: argument order, in-place reads, object receivers
 check external_library_calls "$OUT/src/external_library_calls.rex"   # ::ROUTINE ... EXTERNAL "LIBRARY rxmath ...": function and CALL forms from program, method, routine, internal routine, NUMERIC DIGITS (no import merge afterwards)
 check external_program_merge "$OUT/src/external_program_merge.rex"   # external .rex programs: public routines / classes merged into the caller, merge check settled per routine name, error 43 then found, dynamic CALL
-check trunc_native "$OUT/src/trunc_native.rex"   # TRUNC natively (NumberString::trunc): numbers x places x DIGITS 5 / 9 / 16, signs, zeros, exponents, string method, errors from the interpreter
+check trunc_native "$OUT/src/trunc_native.rex"   # TRUNC natively (NumberString::trunc): numbers x places x DIGITS 5 / 9 / 16, signs, zeros, exponents, string method, errors
+check trunc_errors "$OUT/src/trunc_errors.rex"   # TRUNC errors raised natively (40.3 / 40.4 / 40.5 / 40.12 / 93.902 / 93.906 / 93.943 with the interpreter's substitutions, its order), places ' 2' / '2.0' / '1E1' / beyond 5 digits, function and method
+check rxmath_native "$OUT/src/rxmath_native.rex"   # rxmath natively (rxmath_port): 16 RxCalc functions, degrees / radians / grades over quadrant boundaries, DIGITS 5-20, FORM ENGINEERING (results stay scientific), precision 1-18, nan / infinity, CALL, method, routine; errors and an external public routine of the same name the interpreter's
+check address_with "$OUT/src/address_with.rex"   # ADDRESS env command WITH INPUT / OUTPUT / ERROR: NORMAL, STEM, STREAM, USING (string, stem, array, list), REPLACE / APPEND, failing command, procedure, method, routine
+check command_variables "$OUT/src/command_variables.rex"   # HOSTEMU EXECIO DISKW / DISKR ... STEM through the variable pool: compiled stems in and out, new and existing, procedure, method; shells carry nothing
+check catch_clauses "$OUT/src/catch_clauses.rex"   # CATCH (RFE #31; needs a trunk r13514+ interpreter): block end, CONDITION(), RC / SIGL, codes, the variable copy, ahead of SIGNAL ON, LEAVE
+check catch_precedence "$OUT/src/catch_precedence.rex"   # CATCH: an internal routine's own trap wins, inherited ones do not; ERROR codes by ==; code variables; INTERPRET in a block
+check bif_errors "$OUT/src/bif_errors.rex"   # one argument error per built-in function, as the interpreter reports it (40.x in trunk, some 93.x before)
+check condition_options "$OUT/src/condition_options.rex"   # CONDITION('E') and ('R'), 'O' a copy, 40.904 for a null or unknown option
+check symbol_scan "$OUT/src/symbol_scan.rex"   # DATATYPE 'S' / SYMBOL of X1E+2, A23E+2, .E+2 ...: LanguageParser::scanSymbol as of trunk (bug #2080)
 echo "PASS program constructs (4): $(ls "$OUT"/*.expected | wc -l) programs, $(cat "$OUT"/*.expected | wc -l) lines identical to the interpreter"

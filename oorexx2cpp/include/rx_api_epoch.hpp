@@ -65,10 +65,17 @@ inline void interpreterChanged() {
     X(GetAllStemElements) X(GetStemValue) X(RaiseException0) X(RaiseException1) X(RaiseException2) X(RaiseException) \
     X(RaiseCondition) X(GetConditionInfo) X(DecodeConditionInfo) X(ClearCondition) X(ObjectToCSelfScoped) \
     X(DisplayCondition) X(SetMutableBufferLength) X(SetMutableBufferCapacity) X(VariableReferenceValue) \
-    X(SetVariableReferenceValue) X(StringTablePut) X(StringTableRemove) X(SendMessageScoped)
-
+    X(SetVariableReferenceValue) X(StringTablePut) X(StringTableRemove) X(SendMessageScoped) RX_API_BUMPS_5_3_0(X)
+// Added in THREAD_INTERFACE_VERSION_5_3_0 (104, trunk r13546 and later): RaiseConditionObject (the Throw() API of RFE #31,
+// experimental), which raises a condition: it bumps. Absent from 5.3.0 builds before it (103, r13196).
+#if THREAD_INTERFACE_VERSION >= 104
+#define RX_API_BUMPS_5_3_0(X) X(RaiseConditionObject)
+#else
+#define RX_API_BUMPS_5_3_0(X)
+#endif
 #define RX_API_COUNT_ONE(name) + 1
-static_assert(THREAD_INTERFACE_VERSION == 103, "rx_api_epoch.hpp lists the ooRexx 5 thread interface (version 103)");
+static_assert(THREAD_INTERFACE_VERSION == 103 || THREAD_INTERFACE_VERSION == 104,
+              "rx_api_epoch.hpp lists the ooRexx 5 thread interface (versions 103 and 104)");
 // (the interface version, the functions, then four objects: RexxNil, RexxTrue, RexxFalse, RexxNullString, copied as
 // they are)
 static_assert(sizeof(RexxThreadInterface) ==

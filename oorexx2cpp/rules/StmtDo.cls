@@ -20,6 +20,7 @@
 ::method emit
   use arg ctx, depth
   s = ctx~stream
+  catchState = .RxCatchClauses~open(ctx, depth)   /* CATCH clauses (RFE #31): .nil when the block has none */
   s~expect('DO')
   isLoop = s~accept('<LOOP>')
   label = ''; counter = ''
@@ -56,11 +57,12 @@
     ctx~line(depth + 1, 'if (false) { goto ' || exitLabel || '; }')
     ctx~line(depth + 1, '{')
     ctx~pushLoop(label, '', exitLabel, .false)
-    ctx~block(depth + 2, .true, label)
+    ctx~block(depth + 2, .true, label, catchState \== .nil)
     ctx~popLoop
     ctx~line(depth + 1, '}')
     ctx~line(depth + 1, exitLabel || ':;')
     ctx~line(depth, '}')
+    if catchState \== .nil then .RxCatchClauses~close(ctx, depth, catchState, label, .false)
     return
   end
   setup = .array~new          /* C++ lines run once before the first pass */
@@ -192,14 +194,16 @@
     ctx~line(depth + 2, .RxCompoundSymbols~store(counter, 'rx::Value::number(std::to_string(_rxPass' || suffix || '))') .RxNative~invalidate(counter))
   ctx~line(depth + 2, '{')
   ctx~pushLoop(label, iterLabel, exitLabel, .true)
-  ctx~block(depth + 3, .true, label)
+  ctx~block(depth + 3, .true, label, catchState \== .nil)
   ctx~popLoop
   ctx~line(depth + 2, '}')
   ctx~line(depth + 2, iterLabel || ':;')
   ctx~line(depth + 1, '}')
   ctx~line(depth + 1, exitLabel || ':;')
   ctx~line(depth, '}')
+  if catchState \== .nil then .RxCatchClauses~close(ctx, depth, catchState, label, .true)
 ::requires 'core/RxQuote.cls'
+::requires 'rules/CatchClauses.cls'
 ::requires 'rules/CompoundSymbols.cls'
 ::requires 'rules/ConditionList.cls'
 ::requires 'rules/ExprList.cls'

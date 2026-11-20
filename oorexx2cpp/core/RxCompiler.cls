@@ -201,12 +201,13 @@
   rule~emit(self, depth)
 ::method block
   expose lastMainInstruction
-  use arg depth, hasEnd, expectedName
+  use arg depth, hasEnd, expectedName, stopAtCatch = .false
   if arg(3, 'O') then expectedName = '' 
   s = self~stream
   s~skipSeparators
   do while s~peek~kind \= 'EOF' & \s~atEnd & (hasEnd | (\s~atLabel & \s~atDirective))
     if s~is('ELSE') & s~lookAheadText(1) \== '=' then s~fail('ELSE without matching IF')
+    if s~atCatch then s~fail('CATCH clauses are not supported by this compiler lane yet')
     if \hasEnd & depth == 2 then lastMainInstruction = s~peek~text
     self~statement(depth)
     s~skipSeparators
