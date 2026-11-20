@@ -295,6 +295,20 @@
       end
     end
     fixed~append(tok)
+    /* FINALLY (RFE #31, trunk): the keyword of a clause implies a semicolon after it, as OTHERWISE does, so an
+       instruction may follow on the same line; here it is split off by a separator (LanguageParser::translateBlock).
+       A clause that assigns to the variable FINALLY (or is the label FINALLY:) is not the keyword. */
+    if tok~kind == 'IDENT' & tok~text == 'FINALLY' then do
+      atStart = (i == 1)
+      if \atStart then do
+        prev = out[i - 1]
+        atStart = prev~kind == 'SEP' | (prev~kind == 'IDENT' & wordpos(prev~text, 'THEN ELSE OTHERWISE') > 0)
+      end
+      following = out[i + 1]
+      assigns = following~kind == 'OP' & wordpos(following~text, '= : += -= *= /= %= //= ||= &= |= &&= **=') > 0
+      if atStart & \assigns & following~kind \== 'SEP' & following~kind \== 'EOF' then
+        fixed~append(.RxToken~new('SEP', '<sep>', tok~endLine, tok~endCol, tok~endLine, tok~endCol))
+    end
   end
   return fixed
 /* The characters of an operator may be separated by blanks and comments on the same line (`1 < /**/ > 2` is <>,

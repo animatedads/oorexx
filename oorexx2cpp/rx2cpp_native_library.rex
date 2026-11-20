@@ -140,6 +140,9 @@ writeOutput:
   return
 compilerError:
   say 'rx2cpp: native package compile failed:' condition('O')~at('MESSAGE')
+  if value('RX2CPP_COMPILE_TRACE', , 'ENVIRONMENT') == '1' then do
+    o = condition('O'); say 'rx2cpp: at' o~position o~program; do l over o~traceback; say l; end
+  end
   exit 65
 ::requires 'hybrid/compiler/RxHybridCppEmitter.cls'
 ::requires 'native/NativeLibraryEmitter.cls'

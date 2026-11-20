@@ -13,6 +13,21 @@
 ::method atCatch
   if \self~is('CATCH') then return .false
   return \(self~lookAheadKind(1) == 'OP' & wordpos(self~lookAheadText(1), '= :') > 0)
+/* The keyword FINALLY (RFE #31): RxLexer has put a separator after it when an instruction follows on its line. */
+::method atFinally
+  if \self~is('FINALLY') then return .false
+  return self~lookAheadKind(1) == 'SEP' | self~lookAheadKind(1) == 'EOF'
+/* Either clause of a block's chain. */
+::method atBlockClause
+  return self~atCatch | self~atFinally
+/* Has the block starting here CATCH or FINALLY clauses? */
+::method blockClausesAhead
+  return self~catchClausesAhead~items > 0 | self~finallyAhead > 0
+/* After catchClausesAhead: the line of the block's FINALLY clause, 0 when it has none. */
+::method finallyAhead
+  expose aheadFinally
+  if var('AHEADFINALLY') = 0 then return 0
+  return aheadFinally
 ::method atLabel
   return self~labelNameAt(0) & self~lookAheadText(1) == ':' & self~lookAheadKind(1) \= 'STRING'
 /* A label is any symbol, constant symbols too (15:, 15.3:, .:), or a literal string ("Classic Do/Loop":, named exactly
@@ -124,13 +139,14 @@
    END (clause starts, THEN / ELSE / OTHERWISE included, as the interpreter's clauses go). Read ahead only: the clause
    parser checks them again when it reaches them. */
 ::method catchClausesAhead
-  expose tokens anyCatch
+  expose tokens anyCatch aheadFinally
   clauses = .array~new
-  /* (a source without the symbol CATCH, almost every one: nothing to read ahead) */
+  aheadFinally = 0
+  /* (a source without the symbols CATCH and FINALLY, almost every one: nothing to read ahead) */
   if var('ANYCATCH') = 0 then do
     anyCatch = .false
     do t over tokens
-      if t~kind == 'IDENT' then if t~text == 'CATCH' then do; anyCatch = .true; leave; end
+      if t~kind == 'IDENT' then if t~text == 'CATCH' | t~text == 'FINALLY' then do; anyCatch = .true; leave; end
     end
   end
   if \anyCatch then return clauses
@@ -138,9 +154,9 @@
   n = 0
   do forever
     kind = self~lookAheadKind(n)
-    if kind == 'EOF' then return .array~new
+    if kind == 'EOF' then do; aheadFinally = 0; return .array~new; end
     text = self~lookAheadText(n)
-    if kind == 'OP' & text == '::' & self~clauseStartAt(n) then return .array~new
+    if kind == 'OP' & text == '::' & self~clauseStartAt(n) then do; aheadFinally = 0; return .array~new; end
     start = self~clauseStartAt(n)
     if \start & n > 0 & self~lookAheadKind(n - 1) == 'IDENT' then
       start = wordpos(self~lookAheadText(n - 1), 'THEN ELSE OTHERWISE') > 0
@@ -153,6 +169,10 @@
         when plain & text == 'END' then do
           depth = depth - 1
           if depth = 0 then return clauses
+        end
+        when plain & text == 'FINALLY' & depth = 1 & aheadFinally = 0 then do
+          kNext = self~lookAheadKind(n + 1)
+          if kNext == 'SEP' | kNext == 'EOF' then aheadFinally = self~lookAheadToken(n)~line
         end
         when plain & text == 'CATCH' & depth = 1 then do
           /* [variable =] condition [code] {, condition [code]} up to the end of the clause */
@@ -250,11 +270,12 @@
   do while self~lookAheadKind(n) \= 'EOF'
     if n > 0 then if self~lookAheadKind(n - 1) == 'SEP' then
       if self~lookAheadKind(n) == 'OP' & self~lookAheadText(n) == '::' then leave
-    /* (a CATCH clause too: its block takes conditions through the activation's traps, RFE #31) */
+    /* (a CATCH or FINALLY clause too: its block takes conditions through the activation's traps, RFE #31) */
     word = ''
     if self~lookAheadKind(n) == 'IDENT' then word = self~lookAheadText(n)
     if word == 'CATCH' then if self~lookAheadKind(n + 1) == 'OP' then if wordpos(self~lookAheadText(n + 1), '= :') > 0 then word = ''
-    if word == 'SIGNAL' | word == 'CATCH' then do
+    if word == 'FINALLY' then if wordpos(self~lookAheadKind(n + 1), 'SEP EOF') = 0 then word = ''
+    if word == 'SIGNAL' | word == 'CATCH' | word == 'FINALLY' then do
       atClause = n == 0
       if n > 0 then atClause = self~lookAheadKind(n - 1) == 'SEP' | wordpos(self~lookAheadText(n - 1), 'THEN ELSE OTHERWISE') > 0
       if atClause then return .true
@@ -265,6 +286,9 @@
 ::method position
   expose cursor
   use arg cursor
+::method cursorIndex
+  expose cursor
+  return cursor
 ::method atDirective
   return self~peek~kind == 'OP' & self~peek~text == '::'
 ::method previous

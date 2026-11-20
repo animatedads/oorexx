@@ -13,6 +13,7 @@
   use arg ctx
   s = ctx~stream
   s~expect('REPLY')
+  if ctx~hasMethod('CHECKFINALLYEXIT') then ctx~checkFinallyExit('REPLY')
   bare = s~peek~kind == 'SEP' | s~peek~kind == 'EOF'
   if \bare then value = ctx~logicalExpr~parse(ctx)
   s~separator

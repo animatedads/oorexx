@@ -48,6 +48,7 @@
     s~expect('THEN')
     s~skipSeparators
     if s~atCatch then s~fail('Error 10.9: CATCH must not immediately follow THEN')
+    if s~atFinally then s~fail('Error 10.13: FINALLY must not immediately follow THEN')
     if count == 0 then keyword = 'if'
     else keyword = 'else if'
     ctx~line(depth, keyword || ' (' || condition || ') {')
@@ -61,9 +62,9 @@
     s~skipSeparators
     /* OTHERWISE permits a sequence of instructions and standalone DO
        blocks mixed together. A DO's END closes only its block. */
-    do while s~peek~kind \= 'EOF' & \s~atEnd & \(catchState \== .nil & s~atCatch)
+    do while s~peek~kind \= 'EOF' & \s~atEnd & \(catchState \== .nil & s~atBlockClause)
       if s~is('WHEN') | s~is('OTHERWISE') then s~fail('WHEN or OTHERWISE after OTHERWISE')
-      if s~is('DO') & s~lookAheadText(1) == '<sep>' & s~catchClausesAhead~items = 0 then do
+      if s~is('DO') & s~lookAheadText(1) == '<sep>' & \s~blockClausesAhead then do
         s~expect('DO')
         s~separator
         ctx~block(depth + 1, .true)
@@ -99,7 +100,7 @@
 ::method whenBody private
   use arg ctx, depth
   s = ctx~stream
-  if s~is('DO') & s~lookAheadText(1) == '<sep>' & s~catchClausesAhead~items = 0 then do
+  if s~is('DO') & s~lookAheadText(1) == '<sep>' & \s~blockClausesAhead then do
     s~expect('DO')
     s~separator
     ctx~block(depth, .true)

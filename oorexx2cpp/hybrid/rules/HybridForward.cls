@@ -8,13 +8,17 @@
 ::method emit
   use arg ctx
   s = ctx~stream
+  forwardLine = s~peek~line
   s~expect('FORWARD')
   selector = ''; toSuper = .false; arrayExpr = ''; targetExpr = ''; selectorExpr = ''
   /* Supported: TO (SELF), CLASS (SUPER), MESSAGE "x" | MESSAGE("x"), ARRAY|ARGUMENTS (expr). Original arguments are forwarded when
      there is no ARRAY (self only). Other forms fail closed. */
-  do while s~peek~kind == 'IDENT' & wordpos(s~peek~text, 'TO CLASS MESSAGE ARRAY ARGUMENTS') > 0
+  /* the options in any order (InstructionParser forwardNew), CONTINUE among them */
+  continue = .false
+  do while s~peek~kind == 'IDENT' & wordpos(s~peek~text, 'TO CLASS MESSAGE ARRAY ARGUMENTS CONTINUE') > 0
     keyword = s~next~text
     select
+      when keyword == 'CONTINUE' then continue = .true
       when keyword == 'TO' then do
         s~expect('(')
         if s~peek~kind == 'IDENT' & s~peek~text == 'SELF' & s~lookAheadText(1) == ')' then s~next
@@ -65,8 +69,15 @@
     end
   end
   /* CONTINUE: the forwarded message's result goes to RESULT (dropped when there is none) and the method goes on. */
-  continue = s~accept('CONTINUE')
+  /* without CONTINUE it ends the method: not in a FINALLY clause, nor in a block that has one (99.952, checked there) */
+  if \continue & ctx~hasMethod('CHECKFINALLYEXIT') then do
+    ctx~checkFinallyExit('FORWARD')
+    ctx~noteForward(forwardLine)
+  end
   s~separator
+  /* from an internal routine: 98.947 when it runs (RexxInstructionForward::execute, inMethod) */
+  if ctx~current~hasInternalCalls then
+    ctx~current~addInstruction('if (_rxInternal) throw rx::SyntaxCondition("98.947", "FORWARD can only be issued in an object method invocation", false);')
   if continue then do
     self~emitContinue(ctx, selector, selectorExpr, targetExpr, arrayExpr, toSuper)
     return

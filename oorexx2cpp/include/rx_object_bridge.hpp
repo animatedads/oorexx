@@ -1563,6 +1563,25 @@ struct MethodTraps {
     MethodTraps *saved = nullptr;
     bool internal = false;                     // an internal routine's activation (inherited from its caller)
     CatchBlock *catches = nullptr;             // the innermost running block with CATCH clauses (RFE #31), if any
+    // A SIGNAL ON trap taken before the FINALLY clauses on the way to it run (RexxActivation::finallyBeforeTrap): it is
+    // off while they run; fire takes it for that same condition (a condition raised in a clause replaces it).
+    int predecided = -1;
+    std::exception_ptr predecidedFor;
+    void beforeFinally(std::exception_ptr e) {
+        if (predecided >= 0 && predecidedFor == e) return;
+        if (internal) {
+            try { std::rethrow_exception(e); } catch (const SyntaxCondition &c) { if (c.skipInternalTraps) return; } catch (...) {}
+        }
+        RaisedCondition raised;
+        if (!describeRaised(e, raised)) return;
+        const int use = trapping(raised.name, find(raised.name));
+        if ((catches || catchAncestor) && catchWins(raised.name, CatchKey::of(raised), use)) return;
+        if (use < 0 || callMode[use]) return;
+        on[use] = false;
+        syncNovalue();
+        predecided = use;
+        predecidedFor = e;
+    }
     MethodTraps *caller = nullptr;             // an internal routine's: its caller's (whose blocks catch here too)
     // the next caller out with running CATCH blocks (theirs do not change while this runs: RexxActivation catchAncestor)
     const MethodTraps *catchAncestor = nullptr;
@@ -1714,15 +1733,25 @@ struct MethodTraps {
         }
         RaisedCondition raised;
         if (!describeRaised(e, raised)) return -1;
-        const int use = trapping(raised.name, find(raised.name));
-        // a block of the code that called this internal routine catches it: unwound to it (an own trap of the routine wins)
-        if (catchAncestor && catchWins(raised.name, CatchKey::of(raised), use)) return -1;
-        if (use < 0 || callMode[use]) return -1;    // a CALL ON trap never unwinds (conditions reach it by deliver)
-        on[use] = false;
-        syncNovalue();
+        int use;
+        if (predecided >= 0 && predecidedFor == e) {   // taken before the FINALLY clauses ran (beforeFinally)
+            use = predecided;
+            predecided = -1; predecidedFor = nullptr;
+        }
+        else {
+            predecided = -1; predecidedFor = nullptr;
+            use = trapping(raised.name, find(raised.name));
+            // a block of the code that called this internal routine catches it: unwound to it (an own trap of the routine wins)
+            if (catchAncestor && catchWins(raised.name, CatchKey::of(raised), use)) return -1;
+            if (use < 0 || callMode[use]) return -1;    // a CALL ON trap never unwinds (conditions reach it by deliver)
+            on[use] = false;
+            syncNovalue();
+        }
         if (!raised.object) {
             std::vector<rxobj::Arg> subs; EnvObject::convert(raised.substitutions, subs);
             raised.object = std::make_shared<EnvObject>(rxobj::conditionObject(raised.code, subs));
+            // raised by compiled code: POSITION is the line of its clause, not the interpreter's (the launcher's)
+            raised.object->sendMessage("PUT", {Value::number(std::to_string(line)), Value::string("POSITION")});
         }
         has = true;
         name = raised.name;
@@ -1922,6 +1951,8 @@ struct CatchBlock {
         if (!raised.object) {
             std::vector<rxobj::Arg> subs; EnvObject::convert(raised.substitutions, subs);
             raised.object = std::make_shared<EnvObject>(rxobj::conditionObject(raised.code, subs));
+            // raised by compiled code: POSITION is the line of its clause, not the interpreter's (the launcher's)
+            raised.object->sendMessage("PUT", {Value::number(std::to_string(line)), Value::string("POSITION")});
         }
         raised.object->sendMessage("PUT", {Value::string("CATCH"), Value::string("INSTRUCTION")});
         traps.has = true;
@@ -1943,6 +1974,53 @@ struct CatchBlock {
 // interpreted code runs inside a block with one CATCH clause for all their conditions (each code as its value now), so
 // a condition one of them takes ends the interpreted code as it ends the block (RexxActivation::findCatch looks through
 // an INTERPRET); the condition comes back and is raised here. "" when there are none.
+// The FINALLY clause of a DO, LOOP or SELECT (RFE #31, trunk r13519+). Its code is the lambda code, defined before the
+// block; this object, declared before the block too, runs it once whichever way the block is left: at the end (end),
+// by a condition or another C++ exception (caught, then end: the exception goes on afterwards), or by a C++ return or
+// goto out of the block (RETURN, EXIT, LEAVE / ITERATE of an outer loop, SIGNAL: the destructor, as the result or the
+// jump is already decided). The clause's own code cannot leave it (99.951 at translation); an EXIT of an internal
+// routine called there is 98.953 when it runs (RexxActivation::checkFinallyExit). A condition raised by the clause
+// replaces what was pending.
+inline SyntaxCondition finallyExitError(const char *keyword, std::size_t line) {
+    SyntaxCondition e("98.953", std::string(keyword) + " must not leave the FINALLY clause on line " + std::to_string(line), false);
+    e.substitutions = {Value::string(keyword), Value::string(std::to_string(line))};
+    return e;
+}
+template <class Code> struct FinallyClause {
+    Code &code;
+    std::size_t line;
+    MethodTraps *traps;
+    std::size_t &clauseLine;     // the activation's current line (SIGL, error lines)
+    std::size_t pendingLine = 0;
+    bool done = false;
+    int unwinding;
+    std::exception_ptr pending;
+    FinallyClause(Code &c, std::size_t l, MethodTraps *t, std::size_t &current)
+        : code(c), line(l), traps(t), clauseLine(current), unwinding(std::uncaught_exceptions()) {}
+    FinallyClause(const FinallyClause &) = delete;
+    FinallyClause &operator=(const FinallyClause &) = delete;
+    void run() {
+        done = true;
+        std::optional<Value> left;
+        try { left = code(); }
+        catch (const MethodExit &) { throw finallyExitError("EXIT", line); }
+        if (left) throw finallyExitError("EXIT", line);   // (an internal routine's EXIT that returns through its caller)
+    }
+    // A C++ exception left the block: kept, and the SIGNAL ON trap that will take it, if any, turned off now.
+    void caught(std::exception_ptr e) {
+        pending = e;
+        pendingLine = clauseLine;
+        if (traps) traps->beforeFinally(e);
+    }
+    void end() {
+        if (!done) run();
+        // what goes on is the instruction's that left the block: its line is SIGL for a SIGNAL ON trap
+        if (pending) { std::exception_ptr e = pending; pending = nullptr; clauseLine = pendingLine; std::rethrow_exception(e); }
+    }
+    ~FinallyClause() noexcept(false) {
+        if (!done && std::uncaught_exceptions() == unwinding) run();
+    }
+};
 inline std::string interpretCatchConditions() {
     ActivationScope *a = ActivationScope::current();
     if (!a || !a->traps) return std::string();
@@ -4035,6 +4113,19 @@ inline void interpretLabelCheck(std::string_view src) {
                     e.substitutions.push_back(Value::string(label));
                     throw e;
                 }
+                std::string word(src.substr(first, i - first));
+                for (char &ch : word) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+                // FORWARD is not allowed in INTERPRET data (99.923); the code runs here as a method, where it would be
+                const bool assigns = k < n && (src[k] == '=' || src[k] == ':');
+                if (word == "FORWARD" && !assigns)
+                    throw SyntaxCondition("99.923", "INTERPRET data must not contain FORWARD", false);
+                // after THEN, ELSE and OTHERWISE a clause starts
+                if (!assigns && (word == "THEN" || word == "ELSE" || word == "OTHERWISE")) continue;
+            }
+            else {
+                std::string word(src.substr(first, i - first));
+                for (char &ch : word) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+                if (word == "THEN" || word == "ELSE" || word == "OTHERWISE") { clauseStart = true; continue; }
             }
             clauseStart = false;
             continue;
@@ -4047,6 +4138,17 @@ inline void interpretLabelCheck(std::string_view src) {
         clauseStart = false;
         ++i;
     }
+}
+// Does the interpreter know FINALLY (trunk r13519+)? Asked once: a routine with a FINALLY clause translates or not.
+inline bool interpreterHasFinally(RexxThreadContext *t) {
+    static int known = -1;
+    if (known >= 0) return known == 1;
+    RexxObjectPtr routineClass = t->FindClass("ROUTINE");
+    RexxArrayObject args = t->ArrayOfTwo((RexxObjectPtr)t->String("RX2CPP.FINALLY"), (RexxObjectPtr)t->String("do; nop; finally; nop; end"));
+    RexxObjectPtr made = t->SendMessage(routineClass, "NEW", args);
+    known = t->CheckCondition() ? 0 : (made != NULLOBJECT ? 1 : 0);
+    if (t->CheckCondition()) t->ClearCondition();
+    return known == 1;
 }
 inline std::optional<Value> interpretInActivation(Variables &vars, const Value &code,
                                                  const std::vector<std::optional<Value>> &arguments) {
@@ -4100,10 +4202,21 @@ inline std::optional<Value> interpretInActivation(Variables &vars, const Value &
     const std::string queueKey = key + ".Q";
     if (callArmed) t->DirectoryPut(local, temps((RexxObjectPtr)t->NewArray(0)), queueKey.c_str());
     const std::string caught = interpretCatchConditions();
+    // An interpreter with FINALLY (trunk r13519+): the code runs in a block whose FINALLY clause leaves the variables
+    // and NUMERIC settings in .local[key.S] whichever way it ends (RETURN, EXIT, a condition), as INTERPRET shares them
+    const bool stash = interpreterHasFinally(t);
+    const std::string stashKey = key + ".S";
+    if (stash) {
+        t->DirectoryPut(local, temps((RexxObjectPtr)t->NewArray(0)), stashKey.c_str());
+        source += "do\n";
+    }
     if (!caught.empty()) source += "do\n";
     source += code.bytes.str();
     if (!caught.empty())
         source += "\ncatch " + caught + "\nreturn .array~of('" + key + "', RX2CPP_CALLER_CONTEXT()~variables, digits(), fuzz(), form(), condition('O'))\nend";
+    if (stash)
+        source += "\nfinally\nif RX2CPP_TAKE('" + stashKey + "', 'K')~append(.array~of('" + key +
+                  "', RX2CPP_CALLER_CONTEXT()~variables, digits(), fuzz(), form())) > 0 then nop\nend";
     source += "\nreturn .array~of('" + key + "', RX2CPP_CALLER_CONTEXT()~variables, digits(), fuzz(), form())\n";
     if (signalArmed)
         source += "rx2cppTrapped: return .array~of('" + key + "', RX2CPP_CALLER_CONTEXT()~variables, digits(), fuzz(), form(), condition('O'))\n";
@@ -4172,12 +4285,43 @@ inline std::optional<Value> interpretInActivation(Variables &vars, const Value &
         codeObject = EnvObject::adopt((void *)rxobj::pinRef(t, code));
         t->ReleaseLocalReference(code);
     }
+    // the code's variables and NUMERIC settings (an array: key, variables, digits, fuzz, form) given back to the activation
+    auto applyState = [&](RexxArrayObject result) {
+        RexxObjectPtr after = t->ArrayAt(result, 2);
+        std::unordered_set<std::string> seen;
+        RexxObjectPtr indexes = temps(t->SendMessage0(after, "ALLINDEXES"));
+        const std::size_t count = t->ArrayItems((RexxArrayObject)indexes);
+        for (std::size_t i = 1; i <= count; ++i) {
+            RexxObjectPtr nameObj = t->ArrayAt((RexxArrayObject)indexes, i);
+            const std::string name = t->ObjectToStringValue(nameObj);
+            RexxObjectPtr item = temps(t->SendMessage1(after, "AT", nameObj));
+            // (the bytes, not a C string: a value may hold '00'x)
+            Value v = rxobj::isPlainString(t, item) ? [&] { RexxStringObject so = (RexxStringObject)temps((RexxObjectPtr)t->ObjectToString(item));
+                                                            return Value::string(std::string(t->StringData(so), t->StringLength(so))); }()
+                                                     : EnvObject::adopt((void *)rxobj::pinRef(t, item));
+            seen.insert(name);
+            if (!name.empty() && name.back() == '.') assignStem(vars, name, std::move(v));
+            else set(vars, name, std::move(v));
+        }
+        for (const std::string &n : names) if (!seen.count(n)) drop(vars, n);
+        vars.numeric.digits = std::stoul(t->ObjectToStringValue(t->ArrayAt(result, 3)));
+        vars.numeric.fuzz = std::stoul(t->ObjectToStringValue(t->ArrayAt(result, 4)));
+        vars.numeric.engineering = std::string(t->ObjectToStringValue(t->ArrayAt(result, 5))) == "ENGINEERING";
+    };
+    // the stash of the FINALLY clause: given back when the code did not end by its epilogue (RETURN, EXIT, a condition)
+    auto applyStash = [&]() {
+        if (!stash) return;
+        RexxObjectPtr q = temps(t->SendMessage1((RexxObjectPtr)local, "REMOVE", temps((RexxObjectPtr)t->String(stashKey.c_str()))));
+        if (t->CheckCondition()) { t->ClearCondition(); return; }
+        if (q == NULLOBJECT || !t->IsArray(q) || t->ArrayItems((RexxArrayObject)q) == 0) return;
+        applyState((RexxArrayObject)t->ArrayAt((RexxArrayObject)q, t->ArrayItems((RexxArrayObject)q)));
+    };
     std::optional<Value> outcome;
     try {
         RexxObjectPtr r = interpreterHelper(t, temps, helper, "rx2cpp_interpret", body,
             {self, codeObject, EnvObject::adopt((void *)rxobj::pinRef(t, (RexxObjectPtr)argArray))});
         RexxArrayObject out = (RexxArrayObject)r;
-        if (t->ArraySize(out) < 2) { deliverQueued(); return Value(noResult()); }           // RETURN / EXIT without a value
+        if (t->ArraySize(out) < 2) { applyStash(); deliverQueued(); return Value(noResult()); }   // RETURN / EXIT without a value
         outcome = EnvObject::wrap([&] {
             rxobj::Result res; RexxObjectPtr item = t->ArrayAt(out, 2);
             if (rxobj::isPlainString(t, item)) { res.kind = 1; RexxStringObject str = (RexxStringObject)temps((RexxObjectPtr)t->ObjectToString(item)); res.bytes.assign(t->StringData(str), t->StringLength(str)); }
@@ -4188,34 +4332,17 @@ inline std::optional<Value> interpretInActivation(Variables &vars, const Value &
         t->SendMessage1((RexxObjectPtr)local, "REMOVE", (RexxObjectPtr)t->String(key.c_str()));
         if (callArmed) t->SendMessage1((RexxObjectPtr)local, "REMOVE", (RexxObjectPtr)t->String(queueKey.c_str()));
         if (t->CheckCondition()) t->ClearCondition();
+        applyStash();
         throw;
     }
     // normal completion: the epilogue's array, marked with this call's key
     auto *arr = outcome->isObject() ? rx::envOf(outcome->object.get()) : nullptr;
-    if (!arr || !t->IsArray((RexxObjectPtr)arr->handle)) { deliverQueued(); return outcome; }
+    if (!arr || !t->IsArray((RexxObjectPtr)arr->handle)) { applyStash(); deliverQueued(); return outcome; }
     RexxArrayObject result = (RexxArrayObject)arr->handle;
     RexxObjectPtr mark = t->ArrayAt(result, 1);
-    if (mark == NULLOBJECT || !t->IsString(mark) || key != t->ObjectToStringValue(mark)) { deliverQueued(); return outcome; }
-    RexxObjectPtr after = t->ArrayAt(result, 2);
-    std::unordered_set<std::string> seen;
-    RexxObjectPtr indexes = temps(t->SendMessage0(after, "ALLINDEXES"));
-    const std::size_t count = t->ArrayItems((RexxArrayObject)indexes);
-    for (std::size_t i = 1; i <= count; ++i) {
-        RexxObjectPtr nameObj = t->ArrayAt((RexxArrayObject)indexes, i);
-        const std::string name = t->ObjectToStringValue(nameObj);
-        RexxObjectPtr item = temps(t->SendMessage1(after, "AT", nameObj));
-        // (the bytes, not a C string: a value may hold '00'x)
-        Value v = rxobj::isPlainString(t, item) ? [&] { RexxStringObject so = (RexxStringObject)temps((RexxObjectPtr)t->ObjectToString(item));
-                                                        return Value::string(std::string(t->StringData(so), t->StringLength(so))); }()
-                                                 : EnvObject::adopt((void *)rxobj::pinRef(t, item));
-        seen.insert(name);
-        if (!name.empty() && name.back() == '.') assignStem(vars, name, std::move(v));
-        else set(vars, name, std::move(v));
-    }
-    for (const std::string &n : names) if (!seen.count(n)) drop(vars, n);
-    vars.numeric.digits = std::stoul(t->ObjectToStringValue(t->ArrayAt(result, 3)));
-    vars.numeric.fuzz = std::stoul(t->ObjectToStringValue(t->ArrayAt(result, 4)));
-    vars.numeric.engineering = std::string(t->ObjectToStringValue(t->ArrayAt(result, 5))) == "ENGINEERING";
+    if (mark == NULLOBJECT || !t->IsString(mark) || key != t->ObjectToStringValue(mark)) { applyStash(); deliverQueued(); return outcome; }
+    if (stash) { t->SendMessage1((RexxObjectPtr)local, "REMOVE", temps((RexxObjectPtr)t->String(stashKey.c_str()))); if (t->CheckCondition()) t->ClearCondition(); }
+    applyState(result);
     deliverQueued();
     if (t->ArraySize(result) >= 6) {   // a condition the activation traps: raised here
         RexxObjectPtr cond = t->ArrayAt(result, 6);

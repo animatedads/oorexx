@@ -8,6 +8,7 @@
   use arg ctx, depth
   s = ctx~stream
   s~expect('EXIT')
+  if ctx~hasMethod('CHECKFINALLYEXIT') then ctx~checkFinallyExit('EXIT')
   hasValue = \(s~peek~kind == 'SEP' | s~peek~kind == 'EOF')
   if hasValue then code = ctx~logicalExpr~parse(ctx)
   /* A method of a native library: EXIT leaves the method like RETURN (bare EXIT: no result), as interpreted. */

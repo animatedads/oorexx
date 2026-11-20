@@ -13,6 +13,7 @@
   name = ''
   if s~peek~kind == 'IDENT' | s~peek~kind == 'NUMBER' then name = s~next~text
   target = ctx~loopTarget(kind, name)
+  if word(target, 1) == 'FINALLY' then s~fail('Error 99.951:' kind 'must not leave the FINALLY clause on line' word(target, 2) || '.')
   if word(target, 1) \== 'ERROR' then ctx~line(depth, 'goto ' || target || ';')
   else do
     code = word(target, 2)

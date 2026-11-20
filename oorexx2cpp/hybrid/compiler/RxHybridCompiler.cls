@@ -312,15 +312,16 @@
   self~enterControl
   do while s~peek~kind \= 'EOF' & \s~atEnd & \s~is('::')
     if s~is('ELSE') & s~lookAheadText(1) \== '=' then s~fail('ELSE without matching IF')
-    if s~atCatch then do
+    if s~atBlockClause then do
       if stopAtCatch then leave
-      s~fail('CATCH has no corresponding DO, LOOP, or SELECT')
+      if s~atCatch then s~fail('CATCH has no corresponding DO, LOOP, or SELECT')
+      s~fail('Error 10.12: FINALLY has no corresponding DO, LOOP, or SELECT')
     end
     self~emitStatement(depth)
     s~skipSeparators
   end
   self~leaveControl
-  if stopAtCatch & s~atCatch then return 'CATCH'   /* the clauses and END are the block rule's (RxCatchClauses) */
+  if stopAtCatch & s~atBlockClause then return 'CATCH'   /* the clauses and END are the block rule's (RxCatchClauses) */
   s~expect('END')
   if s~peek~kind == 'IDENT' then do
     suffix = s~next~text
@@ -344,6 +345,8 @@
      Answers the C++ label to go to, or 'ERROR code'. */
   do i = loopScopes~items to 1 by -1
     frame = loopScopes[i]
+    /* the code of a FINALLY clause (RFE #31): a target outside it would leave the clause (99.951) */
+    if frame~size >= 4 then if frame[4] == 'FINALLY' then return 'FINALLY' frame[2]
     isLoop = frame~size < 4 | frame[4] == .true
     if name == '' then do
       if \isLoop then iterate
@@ -362,6 +365,39 @@
   if name == '' then return 'ERROR 28.2'
   if kind == 'LEAVE' then return 'ERROR 28.3'
   return 'ERROR 28.4'
+/* The code of FINALLY clauses being compiled (RFE #31): the line of the innermost, 0 outside any. RETURN, EXIT, SIGNAL,
+   RAISE ... RETURN / EXIT, REPLY and FORWARD there leave the clause: 99.951 (LanguageParser::checkFinallyExit). */
+::method enterFinally
+  expose finallyLines
+  use arg line
+  if var('FINALLYLINES') = 0 then finallyLines = .array~new
+  finallyLines~append(line)
+  self~pushLoop('', line, line, 'FINALLY')
+::method leaveFinally
+  expose finallyLines
+  finallyLines~remove(finallyLines~items)
+  self~popLoop
+::method finallyLine
+  expose finallyLines
+  if var('FINALLYLINES') = 0 then return 0
+  if finallyLines~items = 0 then return 0
+  return finallyLines[finallyLines~items]
+/* An instruction that leaves the code it is in, in a FINALLY clause: 99.951 at translation. */
+::method checkFinallyExit
+  use arg keyword
+  line = self~finallyLine
+  if line \= 0 then self~stream~fail('Error 99.951:' keyword 'must not leave the FINALLY clause on line' line || '.')
+/* FORWARD without CONTINUE (its line and token position): a block with a FINALLY clause that has one is 99.952. */
+::method noteForward
+  expose lastForward
+  use arg line
+  lastForward = .array~of(line, self~stream~cursorIndex)
+::method forwardSince
+  expose lastForward
+  use arg start
+  if var('LASTFORWARD') = 0 then return 0
+  if lastForward[2] > start then return lastForward[1]
+  return 0
 ::method scope
   return .RxHybridScopeView~new
 ::method routineName
