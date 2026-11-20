@@ -9,6 +9,7 @@ controls/ListView/subitem.editing/dropDownListComboBox.rex	3	event-not-produced
 controls/ListView/subitem.editing/editControl.rex	3	event-not-produced
 controls/ListView/subitem.editing/importList.rex	4	event-not-produced
 controls/PaidHolidays.rex	1	
+controls/ToolTip/comboBoxToolTip.rex	4	
 controls/ToolTip/customPositionToolTip.rex	3	
 controls/ToolTip/manageControlTool.rex	3	
 controls/ToolTip/toolTip.rex	2	
@@ -26,6 +27,7 @@ examples/publicRoutines_demo.rex	7
 examples/saveFileWithFilter.rex	6	
 examples/simpleFolderBrowse.rex	5	
 examples/useTools.rex	10	
+menus/BinaryMenuBar.rex	1	error 98.900 ooDialog/WASM: a BinaryMenuBar needs a reader of binary Windows resour
 menus/ContextMenu.rex	3	
 menus/ScriptMenuBar.rex	7	
 menus/UserMenuBar.rex	7	

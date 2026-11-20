@@ -24,9 +24,9 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.23.0"
+  return "0.24.0"
 ::method module_lastChanged class
-  return "2026-11-19"
+  return "2026-11-20"
 ::attribute key unguarded
 ::attribute rexxSelf unguarded
 ::attribute library unguarded
@@ -102,9 +102,9 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.23.0"
+  return "0.24.0"
 ::method module_lastChanged class
-  return "2026-11-19"
+  return "2026-11-20"
 ::attribute rexxSelf unguarded
 ::attribute isBar unguarded
 ::attribute wID unguarded
@@ -131,9 +131,9 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.23.0"
+  return "0.24.0"
 ::method module_lastChanged class
-  return "2026-11-19"
+  return "2026-11-20"
 ::attribute dlg unguarded             -- its dialog's OodDlg
 ::attribute id unguarded
 ::attribute kind unguarded
@@ -149,9 +149,9 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.23.0"
+  return "0.24.0"
 ::method module_lastChanged class
-  return "2026-11-19"
+  return "2026-11-20"
 ::method module_version unguarded
   return self~class~module_version
 ::method module_lastChanged unguarded
@@ -313,6 +313,7 @@
     when kind == "GC" then self~grandChildEvent(key, id, code)
     when kind == "TT" then self~ttEvent(key, id, code, extra)
     when kind == "CD" then self~cdEvent(key, id, extra)
+    when kind == "SB" then self~sbEvent(key, id, code, extra)
     otherwise nop
   end
 
@@ -3180,6 +3181,7 @@ noPackage:
   spec["x"] = 0; spec["y"] = 0; spec["cx"] = width + 14; spec["cy"] = height + 48
   spec["title"] = self_~caption
   spec["opts"] = "CENTER"
+  if info["MODELESS"] == .true then spec["modeless"] = 1     -- shown by popup or popupAsChild
   d~spec = spec
   d~sizeX = width + 14
   d~sizeY = height + 48
@@ -4425,11 +4427,100 @@ noPackage:
   return 0
 ::method tt_setWindowTheme unguarded
   return 0
-::method tt_setMargin unguarded
+/* The tip's margins and colours: kept, and drawn by the page. */
+::method ttLook unguarded
+  use arg self_
+  p = self_~oodPeer
+  look = p~dlg~store["TTLOOK" p~id]
+  if look == .nil then do
+    look = .directory~new
+    look~margin = self~classOf("Rect")~new(0, 0, 0, 0)
+    look~back = ""                   -- "": the usual colours
+    look~fore = ""
+    p~dlg~store["TTLOOK" p~id] = look
+  end
+  return look
+::method ttLookSend unguarded
+  use arg self_
+  p = self_~oodPeer
+  look = self~ttLook(self_)
+  m = look~margin
+  self~ctlOpWhenLive(p~dlg, p~id, "tip.margin", m~left m~top m~right m~bottom)
+  self~ctlOpWhenLive(p~dlg, p~id, "tip.colors", self~colorOf(look~back), self~colorOf(look~fore))
   return 0
-::method tt_setTipBkColor unguarded
-  return 0
+::method tt_setMargin unguarded    -- setMargin(rect): the space around the text, in pixels
+  use arg self_, msg, a
+  m = a[1]
+  look = self~ttLook(self_)
+  look~margin = self~classOf("Rect")~new(m~left, m~top, m~right, m~bottom)
+  return self~ttLookSend(self_)
+::method tt_getMargin unguarded
+  use arg self_
+  m = self~ttLook(self_)~margin
+  return self~classOf("Rect")~new(m~left, m~top, m~right, m~bottom)
+::method tt_setTipBkColor unguarded    -- a COLORREF
+  use arg self_, msg, a
+  look = self~ttLook(self_)
+  look~back = self~number(a[1])
+  return self~ttLookSend(self_)
 ::method tt_setTipTextColor unguarded
+  use arg self_, msg, a
+  look = self~ttLook(self_)
+  look~fore = self~number(a[1])
+  return self~ttLookSend(self_)
+::method tt_getTipBkColor unguarded    -- the colour set, else the page's usual white
+  use arg self_
+  v = self~ttLook(self_)~back
+  if v == "" then return 16777215
+  return v
+::method tt_getTipTextColor unguarded  -- the colour set, else the page's usual #333333
+  use arg self_
+  v = self~ttLook(self_)~fore
+  if v == "" then return 3355443
+  return v
+/* adjustRect(rect, larger): larger is from a text rectangle to the tip window's, else the
+   reverse.  The tip is the text plus the page's padding (7 px at the sides, 3 px above and
+   below), the margins and a 1 px border. */
+::method tt_adjustRect unguarded
+  use arg self_, msg, a
+  r = a[1]
+  m = self~ttLook(self_)~margin
+  sign = -1
+  if a~hasIndex(2) then if a[2] then sign = 1
+  r~left -= sign * (8 + m~left)
+  r~top -= sign * (4 + m~top)
+  r~right += sign * (8 + m~right)
+  r~bottom += sign * (4 + m~bottom)
+  return .true
+::method ttKeyOf unguarded         -- the key of a tool given as (window, id): the rectangle tool, else the window tool
+  use arg self_, a, at
+  host = self~ttHostId(a[at])
+  if a~hasIndex(at + 1) then return "r"host"."a[at + 1]
+  return "w"host
+::method tt_getBubbleSize unguarded    -- getBubbleSize(tool, id): the .Size of the tip of that tool's text
+  use arg self_, msg, a
+  p = self_~oodPeer
+  tools = self~ttTools(self_)
+  entry = tools[self~ttKeyOf(self_, a, 1)]
+  if entry == .nil then if a[1]~isA(.String) then do entry over tools~allItems     -- a tool named by its own ID
+    if entry~id == a[1] then leave
+    entry = .nil
+  end
+  if entry == .nil then return self~classOf("Size")~new(0, 0)
+  text = entry~text
+  if text == .nil then text = ""
+  parse value self~ctlOp(p~dlg, p~id, "tip.measure", text) with width height .
+  if width == "" then return self~classOf("Size")~new(0, 0)
+  return self~classOf("Size")~new(width, height)
+::method tt_newToolRect unguarded  -- newToolRect(rect, tool, id): the tool's rectangle in its window; 0
+  use arg self_, msg, a
+  p = self_~oodPeer
+  key = self~ttKeyOf(self_, a, 2)
+  entry = self~ttTools(self_)[key]
+  if entry == .nil then return 0
+  r = a[1]
+  entry~rect = self~classOf("Rect")~new(r~left, r~top, r~right, r~bottom)
+  self~ctlOpWhenLive(p~dlg, p~id, "tip.toolRect", key, r~left r~top r~right r~bottom)
   return 0
 /* manageAtypicalTool(window, events, methods): the events of this tool go to methods of the
    dialog instead of the usual ones.  Events: RELAY NORELAY NEEDTEXT SHOW POP LINKCLICK. */
@@ -5821,8 +5912,6 @@ noPackage:
   return 0
 ::method cb_addDirectory unguarded
   forward message "lb_addDirectory"
-::method dtp_setRange unguarded
-  return 0
 ::method bc_setStyle unguarded
   return ""
 ::method dlgext_setBitmapPosition unguarded -- setBitmapPosition(id, x, y | point): where the button's bitmap is drawn
@@ -5964,9 +6053,333 @@ noPackage:
 ::method en_connectStatusBarEvent unguarded
   use arg self_, msg, a
   return self~notProduced("status bar", a)
-::method en_connectScrollBarEvent unguarded
+/* ScrollBar (oodControl.cpp, oodMessaging.cpp).  The position is the program's: it changes
+   only by setPos.  An event's method gets (wParam, lParam): wParam is the code in its low
+   word and the thumb's position in its high word, lParam is the scroll bar's handle.  The
+   ScrollBar class's determinePosition works on that. */
+::method sbCodes unguarded         -- an event keyword as its SB_ code; "" if unknown
+  use arg event
+  names = "UP 0 LINEUP 0 LINELEFT 0 DOWN 1 LINEDOWN 1 LINERIGHT 1 PAGEUP 2 PAGELEFT 2 PAGEDOWN 3 PAGERIGHT 3 POSITION 4 DRAG 5 TOP 6 LEFT 6 BOTTOM 7 RIGHT 7 ENDSCROLL 8"
+  at = names~wordPos(event~upper)
+  if at == 0 then return ""
+  return names~word(at + 1)
+::method sbTable unguarded
+  use arg d, id
+  table = d~store["SB" id]
+  if table == .nil then do
+    table = .table~new
+    d~store["SB" id] = table
+  end
+  return table
+::method en_connectScrollBarEvent unguarded    -- connectScrollBarEvent(id, event, method, willReply)
   use arg self_, msg, a
-  return self~notProduced("scroll bar", a)
+  id = self~resolveId(self_, a[1])
+  if id < 1 then return -1
+  code = self~sbCodes(self~opt(a, 2))
+  if code == "" then return 1
+  method = "on"self~opt(a, 2)
+  if a~hasIndex(3) then if a[3] \== "" then method = a[3]
+  self~sbTable(self_~oodPeer, id)[code] = method
+  return 0
+::method sbStart unguarded         -- the range and position given with a connection
+  use arg self_, id, a, at
+  d = self_~oodPeer
+  if a~hasIndex(at) & a~hasIndex(at + 1) then self~ctlOpWhenLive(d, id, "sb.range", a[at], a[at + 1])
+  if a~hasIndex(at + 2) then self~ctlOpWhenLive(d, id, "sb.pos", a[at + 2])
+::method en_connectAllSBEvents unguarded       -- connectAllSBEvents(id, method, min, max, pos, willReply)
+  use arg self_, msg, a
+  id = self~resolveId(self_, a[1])
+  if id < 1 then return -1
+  table = self~sbTable(self_~oodPeer, id)
+  do code = 0 to 8
+    table[code] = a[2]
+  end
+  self~sbStart(self_, id, a, 3)
+  return 0
+/* connectEachSBEvent(id, methUp, methDown, methPos, min, max, pos, methPgUp, methPgDown,
+   methTop, methBottom, methTrack, methEndScroll, willReply) */
+::method en_connectEachSBEvent unguarded
+  use arg self_, msg, a
+  id = self~resolveId(self_, a[1])
+  if id < 1 then return -1
+  table = self~sbTable(self_~oodPeer, id)
+  table[0] = a[2]
+  table[1] = a[3]
+  places = .array~of(.array~of(4, 4), .array~of(8, 2), .array~of(9, 3), .array~of(10, 6), .array~of(11, 7), .array~of(12, 5), .array~of(13, 8))
+  do place over places
+    if a~hasIndex(place[1]) then if a[place[1]] \== "" then table[place[2]] = a[place[1]]
+  end
+  self~sbStart(self_, id, a, 5)
+  return 0
+::method sbEvent unguarded
+  use arg key, id, code, pos
+  d = self~dialogOf(key)
+  if d == .nil then return
+  table = d~store["SB" id]
+  if table == .nil then return
+  method = table[code]
+  if method == .nil then return
+  if \pos~datatype("W") then pos = 0
+  self~invoke(d~rexxSelf, method, .array~of(pos * 65536 + code, "0x"d2x(key * 65536 + id)~right(16, "0")))
+::method sb_getPosition unguarded
+  use arg self_
+  if \self_~oodPeer~dlg~live then return 0
+  return self~op(self_, "sb.getPos")
+::method sb_setPosition unguarded
+  use arg self_, msg, a
+  self~ctlOpWhenLive(self_~oodPeer~dlg, self_~oodPeer~id, "sb.pos", a[1])
+  return .true
+::method sb_getRange unguarded     -- a directory with min and max
+  use arg self_
+  parse value self~op(self_, "sb.getRange") with low high .
+  range = .directory~new
+  range~min = low
+  range~max = high
+  return range
+::method sb_setRange unguarded
+  use arg self_, msg, a
+  self~ctlOpWhenLive(self_~oodPeer~dlg, self_~oodPeer~id, "sb.range", a[1], a[2])
+  return .true
+::method dyndlg_createScrollBar unguarded  -- createScrollBar(id, x, y, cx, cy, options): VERTICAL or HORIZONTAL
+  use arg self_, msg, a
+  id = self~resolveId(self_, a[1])
+  if id < 1 then return -1
+  self~addItem(self_, "SCROLLBAR", id, a[2], a[3], a[4], a[5], self~opt(a, 6), "")
+  return 0
+::method winex_getScrollPos unguarded  -- hScrollPos, vScrollPos: how far the window's own content is scrolled, in pixels
+  use arg self_, msg
+  return self~winOpOf(self_, "scrollPos", msg~left(1), "")
+::method winex_setScrollPos unguarded  -- answers the position before
+  use arg self_, msg, a
+  return self~winOpOf(self_, "scrollPos", msg~substr(4, 1), a[1])
+::method winOpOf unguarded         -- an operation on a dialog or a control object
+  use arg self_, name, a = "", b = ""
+  peer = self_~oodPeer
+  if peer~isA(.OodCtl) then return self~ctlOp(peer~dlg, peer~id, name, a, b)
+  return self~ctlOp(peer, 0, name, a, b)
+
+/* PropertySheetDialog: pages added and removed, buttons, IDs (oodPropertySheetDialog.cpp).
+   A page's ID is its dialog's handle; before the page is first shown it has none. */
+::method psRenumber unguarded
+  use arg sheet
+  info = sheet~oodPeer~sheet
+  do i = 1 to info~pages~items
+    pageInfo = self~pageInfoOf(info~pages[i])
+    pageInfo~sheet = sheet
+    pageInfo~number = i - 1
+  end
+::method psPut unguarded           -- a page into the sheet before 1-based index at (0: at the end)
+  use arg self_, page, at
+  d = self_~oodPeer
+  info = d~sheet
+  if \page~isA(self~classOf("PropertySheetPage")) then raise syntax 93.948 array(1, "PropertySheetPage")
+  if info~pages~hasItem(page) then return .false
+  if at < 1 | at > info~pages~items then do
+    info~pages~append(page)
+    at = 0
+  end
+  else if at == 1 then info~pages~insert(page, .nil)
+  else info~pages~insert(page, at - 1)
+  self~psRenumber(self_)
+  if d~live then do
+    page~initTemplate
+    if \info~wizard then self~ctlOp(d, 12320, "tab.ins", at - 1, self~pageInfoOf(page)~title)
+    if at > 0 & info~current >= at then do
+      info~current = info~current + 1
+      self~winMsg(d, 12320, 4876, info~current - 1)
+    end
+  end
+  return .true
+::method psdlg_addPage unguarded
+  use arg self_, msg, a
+  return self~psPut(self_, a[1], 0)
+::method psdlg_insertPage unguarded    -- insertPage(page, index): before the page at index
+  use arg self_, msg, a
+  if a[2] < 1 then raise syntax 93.907 array(2, 1, 4294967295, a[2])
+  return self~psPut(self_, a[1], a[2])
+::method psdlg_removePage unguarded    -- removePage(index): omitted: the page that is shown.  The last page stays.
+  use arg self_, msg, a
+  d = self_~oodPeer
+  info = d~sheet
+  index = info~current
+  if a~hasIndex(1) then index = a[1]
+  if index < 1 | index > info~pages~items | info~pages~items < 2 then return .false
+  page = info~pages[index]
+  wasCurrent = (info~current == index)
+  pd = page~oodPeer
+  if self~pageInfoOf(page)~activated then if pd~live then do
+    self~web~destroy(pd~key)
+    pd~live = .false
+    self~deregister(pd)
+    self~pageInfoOf(page)~activated = .false
+  end
+  info~pages~delete(index)
+  self~psRenumber(self_)
+  if d~live then do
+    if \info~wizard then self~winMsg(d, 12320, 4872, index - 1)      -- TCM_DELETEITEM
+    if wasCurrent then do
+      info~current = 0
+      self~sheetActivate(self_, min(index, info~pages~items), .false)
+    end
+    else if info~current > index then do
+      info~current = info~current - 1
+      self~winMsg(d, 12320, 4876, info~current - 1)
+    end
+  end
+  return .true
+::method psdlg_idToIndex unguarded     -- 0 if no page has that ID
+  use arg self_, msg, a
+  pages = self_~oodPeer~sheet~pages
+  do i = 1 to pages~items
+    if self~pageInfoOf(pages[i])~activated then if pages[i]~oodPeer~hwnd == a[1] then return i
+  end
+  return 0
+::method psdlg_hwndToIndex unguarded
+  forward message "psdlg_idToIndex"
+::method psdlg_indexToID unguarded     -- 0 if there is no such page or it has not been shown yet
+  use arg self_, msg, a
+  pages = self_~oodPeer~sheet~pages
+  if a[1] < 1 | a[1] > pages~items then return 0
+  if \self~pageInfoOf(pages[a[1]])~activated then return 0
+  return pages[a[1]]~oodPeer~hwnd
+::method psdlg_indexToHandle unguarded -- indexToHwnd, indexToPage
+  forward message "psdlg_indexToID"
+::method psdlg_setCurSelByID unguarded
+  use arg self_, msg, a
+  index = self~psdlg_idToIndex(self_, msg, a)
+  if index == 0 then return .false
+  return self~sheetActivate(self_, index, .true)
+::method psButtonId unguarded      -- a button keyword as the button's ID; 0 if unknown
+  use arg word
+  names = "APPLYNOW 12321 BACK 12323 CANCEL 2 FINISH 12325 HELP 9 NEXT 12324 OK 1"
+  at = names~wordPos(word~upper)
+  if at == 0 then return 0
+  return names~word(at + 1)
+::method psdlg_pressButton unguarded   -- pressButton(APPLYNOW | BACK | CANCEL | FINISH | HELP | NEXT | OK)
+  use arg self_, msg, a
+  id = self~psButtonId(a[1])
+  if id == 0 then raise syntax 93.900 array('pressButton: "'a[1]'" is not APPLYNOW, BACK, CANCEL, FINISH, HELP, NEXT or OK')
+  if \self_~oodPeer~live then return 0
+  self~sheetButton(self_~oodPeer, id)
+  return 0
+::method psdlg_apply unguarded         -- as the Apply button: .true if every page accepted
+  use arg self_
+  d = self_~oodPeer
+  if \d~live then return .false
+  before = d~sheet~current
+  self~sheetButton(d, 12321)
+  return .true
+::method psdlg_setButtonText unguarded -- setButtonText(button, text)
+  use arg self_, msg, a
+  id = self~psButtonId(a[1])
+  if id == 0 then raise syntax 93.900 array('setButtonText: "'a[1]'" is not APPLYNOW, BACK, CANCEL, FINISH, HELP, NEXT or OK')
+  self~ctlOpWhenLive(self_~oodPeer, id, "setText", a[2])
+  return 0
+::method psWizButtons unguarded    -- enableWizButtons / showWizButtons(opts, optsButtons): of the buttons named in optsButtons, those in opts
+  use arg self_, a, op
+  d = self_~oodPeer
+  if \d~live then return 0
+  opts = self~opt(a, 1)~upper
+  buttons = self~opt(a, 2)~upper
+  if buttons == "" then buttons = "BACK NEXT FINISH CANCEL"
+  do word over buttons~makeArray(" ")
+    id = self~psButtonId(word)
+    if id == 0 then iterate
+    on = (opts~wordPos(word) > 0)
+    if op == "enable" then self~ctlOp(d, id, "enable", on)
+    else if on then self~ctlOp(d, id, "show")
+    else self~ctlOp(d, id, "hide")
+  end
+  return 0
+::method psdlg_enableWizButtons unguarded
+  use arg self_, msg, a
+  return self~psWizButtons(self_, a, "enable")
+::method psdlg_showWizButtons unguarded
+  use arg self_, msg, a
+  return self~psWizButtons(self_, a, "show")
+::method psdlg_resetPageText unguarded -- setHeaderTitle, setHeaderSubTitle: a wizard's header is not drawn; the text is kept
+  use arg self_, msg, a
+  self_~oodPeer~store[msg a[1]] = a[2]
+  return 0
+::method psdlg_popup unguarded         -- the sheet runs without the caller waiting for it
+  use arg self_
+  self_~oodPeer~sheet["MODELESS"] = .true
+  self_~start("EXECUTE")
+  return .true
+::method psdlg_popupAsChild unguarded  -- as popup; the sheet ends when the parent dialog ends
+  use arg self_, msg, a
+  if \a[1]~isA(self~classOf("PlainBaseDialog")) then raise syntax 93.948 array(1, "PlainBaseDialog")
+  self_~oodPeer~ownerDialog = a[1]
+  self_~oodPeer~sheet["MODELESS"] = .true
+  self_~start("EXECUTE")
+  return .true
+::method psp_init_cls unguarded
+  return 0
+
+/* DateTimePicker: range, sizes, parts (oodViewControls.cpp). */
+::method dtp_setRange unguarded    -- setRange(array): index 1 the earliest, index 2 the latest DateTime; one may be missing
+  use arg self_, msg, a
+  if \a[1]~isA(.Array) then raise syntax 93.948 array(1, "Array")
+  if \a[1]~hasIndex(1) & \a[1]~hasIndex(2) then raise syntax 93.900 array("The date times array must have an item at index 1 or index 2")
+  parse value self~op(self_, "dtp.getRange") with low (self~sep) high
+  if a[1]~hasIndex(1) then low = a[1][1]~isoDate~left(10)
+  if a[1]~hasIndex(2) then high = a[1][2]~isoDate~left(10)
+  return self~op(self_, "dtp.range", low, high) == 1
+::method dtp_getRange unguarded    -- getRange(array): none, min, max or both; the array takes the DateTime objects, 0 for no limit
+  use arg self_, msg, a
+  parse value self~op(self_, "dtp.getRange") with low (self~sep) high
+  a[1][1] = 0
+  a[1][2] = 0
+  if low \== "" then a[1][1] = .DateTime~fromIsoDate(low"T00:00:00.000000")
+  if high \== "" then a[1][2] = .DateTime~fromIsoDate(high"T23:59:59.000000")
+  if low \== "" & high \== "" then return "both"
+  if low \== "" then return "min"
+  if high \== "" then return "max"
+  return "none"
+::method dtp_getIdealSize unguarded    -- the Size object takes the size the control needs
+  use arg self_, msg, a
+  parse value self~op(self_, "idealSize") with w h .
+  if w == "" then return .false
+  a[1]~width = w
+  a[1]~height = h
+  return .true
+::method dtp_getInfo unguarded     -- (the control's parts are the browser's: only the whole is known)
+  use arg self_
+  info = .directory~new
+  size = self_~getRealSize
+  info~checkRect = self~classOf("Rect")~new
+  info~checkState = ""
+  info~buttonRect = self~classOf("Rect")~new(size~width - 20, 0, size~width, size~height)
+  info~buttonState = ""
+  info~dropDown = .nil
+  info~edit = .nil
+  info~upDown = .nil
+  return info
+::method dtp_getMonthCal unguarded -- (the drop-down calendar is the browser's, not a control: .nil)
+  return .nil
+::method dtp_closeMonthCal unguarded
+  return 0
+::method dtp_getMonthCalStyle unguarded
+  use arg self_
+  style = self_~oodPeer~dlg~store[self_~oodPeer~id "mcstyle"]
+  if style == .nil then return ""
+  return style
+::method dtp_setMonthCalStyle unguarded    -- answers the style before
+  use arg self_, msg, a
+  old = self~dtp_getMonthCalStyle(self_)
+  self_~oodPeer~dlg~store[self_~oodPeer~id "mcstyle"] = a[1]~upper
+  return old
+::method dtp_getMonthCalColor unguarded    -- (kept and answered; the browser's calendar is not coloured) -1 if none was set
+  use arg self_, msg, a
+  color = self_~oodPeer~dlg~store[self_~oodPeer~id "mccolor" a[1]~upper]
+  if color == .nil then return -1
+  return color
+::method dtp_setMonthCalColor unguarded
+  use arg self_, msg, a
+  old = self~dtp_getMonthCalColor(self_, msg, a)
+  self_~oodPeer~dlg~store[self_~oodPeer~id "mccolor" a[1]~upper] = a[2]
+  return old
+
 
 /*---- small ones ----------------------------------------------------------------------------*/
 ::method lb_addDirectory unguarded -- the names matching a file pattern, added to the list
@@ -8160,6 +8573,189 @@ noPackage:
 /*============================================================================*/
 /* The page-side runtime (src/oodialog-web.js), embedded by the build.         */
 /*============================================================================*/
+/*==== v0.24.0: natives scattered over the classes ======================================*/
+::method trckbar_getSelRange unguarded     -- a directory: start, end
+  use arg self_
+  d = .directory~new
+  d["START"] = self~wb_sendWinIntMsg(self_, "", .array~of(1041, 0, 0))
+  d["END"] = self~wb_sendWinIntMsg(self_, "", .array~of(1042, 0, 0))
+  return d
+::method tab_getItemRect unguarded     -- getItemRect(index, rect): the tab's rectangle in the control's client area
+  use arg self_, msg, a
+  parse value self~op(self_, "tab.itemRect", a[1]) with left top right bottom .
+  if left == "" then return .false
+  r = a[2]
+  r~left = left; r~top = top; r~right = right; r~bottom = bottom
+  return .true
+::method pointArgs unguarded       -- (point | x, y) from an argument array: x, y, and the place of the next argument
+  use arg a
+  if \a~hasIndex(1) then return .array~of(0, 0, 1)
+  if a[1]~isA(.String) then do
+    y = 0
+    if a~hasIndex(2) then y = a[2]
+    return .array~of(a[1], y, 3)
+  end
+  return .array~of(a[1]~x, a[1]~y, 2)
+/* hitTestInfo(point | x, y [, info]): the 1-based index of the item nearest the point, as
+   Windows answers; info~inClientArea, info~itemIndex.  0 for an empty list. */
+::method lb_hitTestInfo unguarded
+  use arg self_, msg, a
+  at = self~pointArgs(a)
+  parse value self~op(self_, "optAt", at[1], at[2]) with index inside .
+  if index == "" then index = -1
+  if inside == "" then inside = 0
+  if a~hasIndex(at[3]) then do
+    info = a[at[3]]
+    info~inClientArea = (inside == 1)
+    info~itemIndex = index + 1
+  end
+  return index + 1
+::method lv_getItemPos unguarded       -- getItemPos(index): the .Point of the item's upper left corner; 0 if no such item
+  use arg self_, msg, a
+  parse value self~op(self_, "lv.rect", a[1], "") with left top .
+  if left == "" then return 0
+  return self~classOf("Point")~new(left, top)
+/* setItemPos, findNearestXY: Windows does these in the icon views only, where the user places
+   the items.  The page lays every view out in rows, so they answer as Windows does for a
+   report view: not moved, no item. */
+::method lv_setItemPos unguarded
+  return .false
+::method lv_findNearestXY unguarded
+  return -1
+::method lv_modifyColumnPx unguarded   -- modifyColumnPx(index, label, width, align): 0, 1 if no such column
+  use arg self_, msg, a
+  sep = self~sep
+  label = ""
+  given = 0
+  if a~hasIndex(2) then do
+    label = a[2]
+    given = 1
+  end
+  width = ""
+  if a~hasIndex(3) then width = a[3]
+  fmt = self~opt(a, 4)~strip~upper
+  align = ""
+  if fmt~pos("LEFT") > 0 then align = "left"
+  if fmt~pos("CENTER") > 0 then align = "center"
+  if fmt~pos("RIGHT") > 0 then align = "right"
+  if self~op(self_, "lv.setCol", a[1], label || sep || width || sep || align || sep || given) == 1 then return 0
+  return 1
+::method keyNames unguarded        -- the names of the 256 virtual keys, from upstream's oodKeyNames.hpp
+  expose keyNames
+  if var("KEYNAMES") then return keyNames
+  keyNames = ",LBUTTON,RBUTTON,CANCEL,MBUTTON,XBUTTON1,XBUTTON2,,BACK,TAB,,,CLEAR,RETURN,,,SHIFT,CONTROL,MENU,PAUSE,CAPITAL,KANA,,JUNJA,FINAL,HANJA,,ESCAPE,CONVERT,NONCONVERT,ACCEPT,MODECHANGE,SPACE,PRIOR,NEXT,END,HOME,LEFT,UP,RIGHT,DOWN,SELECT,PRINT,EXECUTE,SNAPSHOT,INSERT,DELETE,HELP,0,1,2,3,4,5,6,7,8,9,,,,,,,,A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z,LWIN,RWIN,APPS,,SLEEP,NUMPAD0,NUMPAD1,NUMPAD2,NUMPAD3,NUMPAD4,NUMPAD5,NUMPAD6,NUMPAD7,NUMPAD8,NUMPAD9,MULTIPLY,ADD,SEPARATOR,SUBTRACT,DECIMAL,DIVIDE,F1,F2,F3,F4,F5,F6,F7,F8,F9,F10,F11,F12,F13,F14,F15,F16,F17,F18,F19,F20,F21,F22,F23,F24,,,,,,,,,NUMLOCK,SCROLL,OEM_NEC_EQUAL,OEM_FJ_MASSHOU,OEM_FJ_TOUROKU,OEM_FJ_LOYA,OEM_FJ_ROYA,,,,,,,,,,LSHIFT,RSHIFT,LCONTROL,RCONTROL,LMENU,RMENU,BROWSER_BACK,BROWSER_FORWARD,BROWSER_REFRESH,BROWSER_STOP,BROWSER_SEARCH,BROWSER_FAVORITES,BROWSER_HOME,VOLUME_MUTE,VOLUME_DOWN,VOLUME_UP,MEDIA_NEXT_TRACK,MEDIA_PREV_TRACK,MEDIA_STOP,MEDIA_PLAY_PAUSE,LAUNCH_MAIL,LAUNCH_MEDIA_SELECT,LAUNCH_APP1,LAUNCH_APP2,,,OEM_1,OEM_PLUS,OEM_COMMA,OEM_MINUS,OEM_PERIOD,OEM_2,OEM_3,,,,,,,,,,,,,,,,,,,,,,,,,,,OEM_4,OEM_5,OEM_6,OEM_7,OEM_8,,OEM_AX,OEM_102,ICO_HELP,ICO_00,PROCESSKEY,ICO_CLEAR,PACKET,,OEM_RESET,OEM_JUMP,OEM_PA1,OEM_PA2,OEM_PA3,OEM_WSCTRL,OEM_CUSEL,OEM_ATTN,OEM_FINISH,OEM_COPY,OEM_AUTO,OEM_ENLW,OEM_BACKTAB,ATTN,CRSEL,EXSEL,EREOF,PLAY,ZOOM,NONAME,PA1,OEM_CLEAR,"~makeArray(",")
+  return keyNames
+::method vk_key2name unguarded     -- key2name(code): "RETURN" for 13; "" for a code with no name
+  use arg self_, msg, a
+  code = self~number(a[1])
+  names = self~keyNames
+  if code < 0 | code > 255 then raise syntax 93.907 array(1, 0, 255, a[1])
+  if code + 1 > names~items then return ""
+  return names[code + 1]
+::method kb_getAsyncKeyState_cls unguarded     -- .Keyboard~getAsyncKeyState(key): is the key down in the page now
+  use arg self_, msg, a
+  return self~web~keyDown(self~number(a[1])) == 1
+/* childWindowFromPoint(point, flags): the handle of the child at a point of this window's
+   client area; the dialog's own handle where there is no child; 0 outside the dialog. */
+::method wb_childWindowFromPoint unguarded
+  use arg self_, msg, a
+  t = self~target(self_)
+  if \t[1]~live then return 0
+  answer = self~web~op(t[1]~key, 0, "childAt", a[1]~x, a[1]~y)
+  if answer == "" then return 0
+  return "0x"d2x(t[1]~key * 65536 + answer)~right(16, "0")
+::method wb_sendWinHandle2Msg unguarded        -- as sendWinIntMsg, the answer a handle
+  forward message "wb_sendWinHandleMsg"
+::method gb_setStyle unguarded     -- GroupBox~style=: the title LEFT, CENTER or RIGHT; 0
+  use arg self_, msg, a
+  opts = self~opt(a, 1)~upper
+  align = "LEFT"
+  if opts~wordPos("RIGHT") > 0 then align = "RIGHT"
+  if opts~wordPos("CENTER") > 0 then align = "CENTER"
+  p = self_~oodPeer
+  self~ctlOpWhenLive(p~dlg, p~id, "gbAlign", align)
+  return 0
+/* The state image of a tree-view item: its place in the state image list.  The number is
+   kept and answered; the page does not draw state images. */
+::method tv_setStateImage unguarded
+  use arg self_, msg, a
+  p = self_~oodPeer
+  h = self~tvItem(a, 1)
+  if self~op(self_, "tv.info", h) == "" then return .false
+  p~dlg~store[p~id "tvstate" h] = a[2]
+  return .true
+::method tv_getStateImage unguarded    -- -1 if there is no such item
+  use arg self_, msg, a
+  p = self_~oodPeer
+  h = self~tvItem(a, 1)
+  if self~op(self_, "tv.info", h) == "" then return -1
+  kept = p~dlg~store[p~id "tvstate" h]
+  if kept == .nil then return 0
+  return kept
+/* A button's or static control's own image: the one set is the one answered. */
+::method bc_setImage unguarded     -- setImage(image): the image before, .nil if none
+  use arg self_, msg, a
+  p = self_~oodPeer
+  old = p~dlg~store[p~id "image"]
+  p~dlg~store[p~id "image"] = a[1]
+  self~setImageOf(self_, a[1])
+  return old
+::method bc_getImage unguarded
+  use arg self_
+  p = self_~oodPeer
+  return p~dlg~store[p~id "image"]
+::method stc_getImage unguarded
+  use arg self_
+  p = self_~oodPeer
+  return p~dlg~store[p~id "image"]
+::method stc_getIcon unguarded
+  use arg self_
+  p = self_~oodPeer
+  return p~dlg~store[p~id "image"]
+::method il_getIcon unguarded      -- getIcon(index): the image at that 0-based place; .nil if none
+  use arg self_, msg, a
+  images = self_~oodPeer~images
+  if a[1] < 0 | a[1] >= images~items then return .nil
+  return images[a[1] + 1]
+::method sysMenu_revert unguarded  -- the system menu back to its first state: there is one state here
+  return .true
+::method dlgext_setForgroundWindow unguarded   -- setForegroundWindow(handle): the handle of the dialog in front before, 0 if none
+  use arg self_, msg, a
+  before = self~web~topDialog
+  w = self~windowOfHandle(a[1])
+  if w \== .nil then self~ctlOp(w[1], 0, "top")
+  if before == "" then return 0
+  return "0x"d2x(before * 65536)~right(16, "0")
+::method dlgext_setWindowRect unguarded        -- setWindowRect(handle, x, y, width, height [, opts]) in pixels: 0, 1 on error
+  use arg self_, msg, a
+  w = self~windowOfHandle(a[1])
+  if w == .nil then return 1
+  opts = self~opt(a, 6)~upper
+  do i = 2 to 5
+    if \a~hasIndex(i) then return 1
+  end
+  if opts~pos("NOMOVE") == 0 then self~ctlOp(w[1], w[2], "move", a[2], a[3])
+  if opts~pos("NOSIZE") == 0 then self~ctlOp(w[1], w[2], "size", a[4], a[5])
+  return 0
+/* getComboBoxInfo: the parts of a combo box.  The page's combo box is one element, so the
+   parts that are windows on Windows (the edit, the list) are answered as the combo box. */
+::method cb_getComboBoxInfo unguarded
+  use arg self_
+  p = self_~oodPeer
+  d = .directory~new
+  parse value self~op(self_, "rect") with left top right bottom .
+  if left == "" then return .nil
+  width = right - left
+  height = bottom - top
+  d~textObj = self_
+  d~listBoxObj = self_
+  d~buttonRect = self~classOf("Rect")~new(width - 18, 0, width, height)
+  d~textRect = self~classOf("Rect")~new(0, 0, width - 18, height)
+  d~buttonState = "notpressed"
+  return d
+::method pd_setInterruptible unguarded -- ProgressDialog: the dialog always takes the user's Cancel here
+  return 0
+
 ::resource oodjs
 @@OODJS@@
 ::END

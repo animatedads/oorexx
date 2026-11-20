@@ -1,0 +1,18 @@
+wait .ood-dlg >> text=Leave
+click .ood-dlg >> text=Open sheet
+wait .ood-tabbtn >> text=Beta
+click .ood-dlg >> text=Count
+sleep 300
+click .ood-dlg >> text=Count
+sleep 300
+expect [...document.querySelectorAll('.ood-static')].map(e => e.textContent).filter(t => t.startsWith('count')).join() ==> count 2
+click .ood-tabbtn >> text=Beta
+sleep 300
+expect document.querySelectorAll('.ood-dlg').length >= 2 ==> True
+click .ood-dlg >> text=OK
+sleep 500
+expect document.querySelectorAll('.ood-tabbtn').length ==> 0
+click .ood-dlg >> text=Count
+sleep 300
+expect [...document.querySelectorAll('.ood-static')].map(e => e.textContent).filter(t => t.startsWith('count')).join() ==> count 3
+click .ood-dlg >> text=Leave

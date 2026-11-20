@@ -1,4 +1,4 @@
-# ooDialog for ooRexx/WASM — v0.23.0
+# ooDialog for ooRexx/WASM — v0.24.0
 
 Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: Josep Maria Blasco's
 ooRexx/WASM (`oorexxwasm` 0.2.4, ooRexx 5.3.0) and its `js.cls`.
@@ -55,9 +55,12 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
     python3 tools/oodtest.py --poke upstream/examples 0 24
     python3 tools/oodtest.py --tree upstream/examples tests/t*.rex tests/up/calculator.rex tests/up/oodpbar.rex tests/up/oodStandardRoutines.rex
 
-## State on 2026-11-19 (v0.23.0)
+## State on 2026-11-20 (v0.24.0)
 
-- Natives ported: 1,033 of 1,182 (87.4%). v0.23.0 added 78: the re-bar (see
+- Natives ported: 1,098 of 1,182 (92.9%; 1,033 at v0.23.0). v0.24.0 added 65: the scroll bar
+  control, the property sheet's page management, the date-time picker's range and
+  month calendar settings, and 30 scattered over the classes (see "Natives added in
+  v0.24.0", which also lists the 84 still missing). v0.23.0 added 78: the re-bar (see
   "Re-bar"). v0.22.0 added 74: tool bar and custom draw (see "Tool bar" and
   "Custom draw"). v0.21.0 added 192 (see "Natives added
   in v0.21.0" for what each family does, and which of them do nothing).
@@ -65,7 +68,7 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
   tips"). (The total was given as 1,181
   in v0.16.0 and v0.17.0; `dist/natives.txt` has 1,182 lines. It fell from 1,196 because 12
   natives are now plain Rexx in `src/patches.txt`.)
-- Tests: 57 of 57 pass in headless Chromium (`tests/t01`..`t25` with expected
+- Tests: 61 of 61 pass in headless Chromium (`tests/t01`..`t29` with expected
   output, the binary resource hand-off test `tests/res/t07_resdialog_binary`,
   four unmodified upstream samples: `calculator.rex`,
   `oodpbar.rex`, `oodStandardRoutines.rex`, and the tutorial
@@ -86,9 +89,10 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
   tutorial's `drawing3.rex` and `drawing5.rex`; and the three
   programs written by ooDialog Designer v0.3.0, in `tests/designer`).
 - Sweep of all 140 upstream example programs (`oodtest.py --sweep`, results in
-  `sweep.tsv`), each run from its own directory: 81 show their dialog, 7 run to
-  the end, 8 show only a message box, 3 stop at a native not ported yet, 10
-  stop on an error (9 need a reader of binary resources, which is another
+  `sweep.tsv`), each run from its own directory (last run at v0.24.0, on the build before the
+  last change, which made a popped-up property sheet modeless; no example uses that): 83 show their dialog, 7 run to
+  the end, 8 show only a message box, 2 stop at a native not ported yet (`RI_INIT`, `CDI_INIT`), 9
+  stop on an error (8 need a reader of binary resources, which is another
   task's work; `oovideo.rex` is broken upstream), 24 are components: parts of
   the user guide's Order Manager, which name their files from the program's
   directory and fail the same way on Windows when started alone, and 7 are
@@ -103,12 +107,12 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
 - Depth probe (`oodtest.py --poke`, results in `poke.tsv`): the 70 examples
   that show a dialog or a message box are used automatically (tabs, rows,
   check boxes, lists, edits, menus, every button, then closed; last full run
-  at v0.23.0, on its final build). Of 89, 73 come through with no error, no unhandled Windows
+  at v0.24.0, on the same build as the sweep). Of 91, 74 come through with no error, no unhandled Windows
   message and a clean end (`oograph.rex` did not end in one run of four at
   v0.22.0 and ended in the run at v0.23.0; its own test passes). 12 more have no fault except connecting an event
-  this layer does not produce. 4 have a problem, each named in `poke.tsv`, and
+  this layer does not produce. 5 have a problem, each named in `poke.tsv`, and
   none of them is a fault of this layer's own code: 2 are components started
-  alone, `sample.rex` (ResourceImage) needs a reader of binary resources, and
+  alone, `sample.rex` (ResourceImage) and `BinaryMenuBar.rex` need a reader of binary resources, and
   `sysinfo.rex` needs OLE and so does not end. The run at v0.19.0 found four
   faults of this layer, all fixed in it: a ControlDialog did not take its
   owner from its init argument; calcDisplayRect did not adjust the rectangle
@@ -270,6 +274,62 @@ bitmap and chevron; the bar's image list, colour scheme and extended style.
 The user cannot drag a band. The RBN_ events are accepted and not produced.
 minimizeBand, pushChevron, setPalette, setWindowTheme and sizeToRect do
 nothing.
+
+## Natives added in v0.24.0
+
+65 natives; 1,098 of 1,182 are ported. Tests: `tests/t26_scrollbar`,
+`tests/t27_sheetpages`, `tests/t28_scattered`, `tests/t29_sheetpopup`.
+
+- **ScrollBar control** (`createScrollBar`, `newScrollBar`): drawn as a range
+  input. `setRange`, `getRange`, `setPos`, `getPos`; `connectScrollBarEvent`,
+  `connectAllSBEvents`, `connectEachSBEvent` produce LINEUP, LINEDOWN, PAGEUP,
+  PAGEDOWN, THUMBTRACK, THUMBPOSITION, TOP, BOTTOM and ENDSCROLL from the
+  keys and the pointer. As on Windows the thumb moves only when the program
+  sets the position. Presses faster than the program answers them can be
+  lost: the page and the program run in turn.
+- **Property sheet pages**: `addPage`, `insertPage`, `removePage`,
+  `idToIndex`, `indexToID`, `hwndToIndex`, `indexToHwnd`, `indexToPage`,
+  `setCurSelByID`, `pressButton`, `apply`, `setButtonText`,
+  `enableWizButtons`, `showWizButtons`, `popup`, `popupAsChild` (the sheet is
+  modeless: the dialog that opened it goes on working).
+- **DateTimePicker**: `setRange` and `getRange` are real (the browser's date
+  input refuses dates outside them), `getIdealSize`, `getInfo`,
+  `getMonthCalStyle`/`setMonthCalStyle` and the month calendar colours are
+  kept and answered. `getMonthCal` answers .nil: the drop-down calendar is the
+  browser's own and is not a control of the dialog.
+- **ToolTip**: `setMargin`, `setTipBkColor` and `setTipTextColor` now change
+  the tip the page draws (until v0.23.0 they did nothing); `getMargin`,
+  `getTipBkColor`, `getTipTextColor`, `adjustRect`, `getBubbleSize` (measured
+  by the page), `newToolRect`.
+- **ListView**: `getItemPos`, `modifyColumnPx` (label, width, alignment).
+  `setItemPos` answers false and `findNearestXY` -1: Windows does both in the
+  icon views only, where the user places items; the page lays every view out
+  in rows.
+- **Others**: `Tab~getItemRect`, `ListBox~hitTestInfo` (the nearest item, as
+  Windows answers), `TrackBar~getSelRange` (and the selection messages behind
+  `initSelRange`, `clearSelRange`; the selection is kept, not drawn),
+  `.VK~key2name`, `.Keyboard~getAsyncKeyState` (the keys held down in the
+  page), `childWindowFromPoint`, `GroupBox~style=` (title left, centre,
+  right), `ComboBox~getComboBoxInfo` (the page's combo box is one element, so
+  the edit and list parts are answered as the combo box itself),
+  `Button~getImage`/`setImage`, `Static~getImage`/`getIcon`,
+  `ImageList~getIcon`, `TreeView~getStateImage`/`setStateImage` (the number is
+  kept; state images are not drawn), `SystemMenu~revert`,
+  `setForegroundWindow`, `setWindowRect`, `ProgressDialog~setInterruptible`.
+- A directory answered by a native is read by index where the name is also a
+  method of every object: `range["START"]`, not `range~start` (the same on
+  Windows).
+
+Still missing (84): the common item dialog (`cid_*`, 28) and the category
+and task dialogs (`catdlg_*`, `cdi_*`, `tod_*`, `todi_*`, 14 of them left),
+ResourceImage (`ri_*`, 7: needs the reader of binary resources), and 35
+others: the `*_test` debugging hooks (10), the four public routines
+(`findWindow`, `locate`, `simpleFolderBrowse`, `routineTest`), user-defined
+messages and notifications (`addUserMessage`, `connectNotifyEvent`,
+`connectMenuEvent`, `addUserSubclass`), `createPushButtonStem`,
+`UpDown~deltaPosReply`, the create-window helpers of tool bar, status bar and
+re-bar (4), `.Image~fromIDs`/`toID`/`userIcon`, `dimBitmap`, `lv_zTest`,
+`MonthCalendar~getGridInfo`, and five set-up natives.
 
 ## Natives added in v0.21.0
 
@@ -495,12 +555,12 @@ WASM file system as bytes.
 
 ## Not yet (the sweep's order of need)
 
-The parts of a combo box
-as windows (getComboBoxInfo); connectActivate,
+connectActivate,
 connectHelp, connectPosChanged and connectResizing (accepted, not produced);
-drawing the icons of image lists; a modeless property sheet; wizard header and
-watermark images; list-view LvItem/LvFullRow objects and the remaining
-list-view and tree-view events; the CommonDialogCustomizations controls.
+drawing the icons of image lists; wizard header and
+watermark images; the remaining list-view and tree-view events; the
+CommonDialogCustomizations controls; the 84 natives listed under "Natives
+added in v0.24.0".
 
 ## Known
 

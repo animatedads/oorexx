@@ -1,0 +1,9 @@
+before 1 3
+insert 1 4 0
+ids 4 1 4 4 0 0 1
+byID 0 1
+remove 1 3 0
+remove 1 2 0
+apply 1
+execute 1
+log:  active:Third active:First active:Second apply:Second:0 apply:Third:0 apply:Second:1 apply:Third:1

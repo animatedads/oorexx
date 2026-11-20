@@ -1,0 +1,16 @@
+lb hit 1 1 1
+lb far 3 0 3
+lv pos 1 1 0
+lv modify 0 90 1
+lv column 1 Deux 90 RIGHT
+lv setItemPos 0 -1
+tab rect 1 1 1 1 0
+trackbar sel 20 60
+trackbar cleared 0 0
+keys RETURN F1 A [] 0
+child 1 1
+tv state 0 1 2 -1
+tt look 4 2 4 2 13172735 8388608
+tt size 1 1 1 -12 -6 112 26
+combo notpressed 1 1
+imagelist 1

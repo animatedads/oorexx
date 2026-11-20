@@ -64,6 +64,7 @@ select.ood-c{border:1px solid #7a7a7a;background:#fff;color:#000;border-radius:0
 .ood-stb{position:absolute;display:flex;box-sizing:border-box;background:#f0f0f0;border-top:1px solid #d0d0d0;font:12px 'Segoe UI',Tahoma,sans-serif;color:#222}
 .ood-stbpart{box-sizing:border-box;padding:3px 6px;border-right:1px solid #c8c8c8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ood-stbpart:last-child{border-right:0}
+.ood-sbar{margin:0;accent-color:#888}
 .ood-pushed{border-style:inset;background:#cce4f7}
 .ood-tip{position:fixed;z-index:100000;background:#fff;color:#333;border:1px solid #767676;border-radius:3px;padding:3px 7px;font:12px 'Segoe UI',Tahoma,sans-serif;box-shadow:2px 2px 4px rgba(0,0,0,.25);pointer-events:none}
 .ood-tip b{display:block;margin-bottom:2px}
@@ -504,6 +505,27 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
         c.strip = D.createElement('div'); c.strip.className = 'ood-tabstrip'; c.page = D.createElement('div'); c.page.className = 'ood-tabpage';
         el.append(c.strip, c.page); tabWire(dlg, c);
         break;
+      case 'SCROLLBAR': {                                    // a scroll bar of its own
+        /* The thumb's place is the program's: it changes only by the op sb.pos.  What the user
+           does is sent as ('SB', id, code, position): codes as Windows' SB_ values, 0 line up,
+           1 line down, 2 page up, 3 page down, 4 thumb released at position, 5 thumb dragged
+           to position, 6 top, 7 bottom, 8 end.  After the event the thumb is put back to the
+           program's position; the program moves it with sb.pos if it wants it moved. */
+        el = main = D.createElement('input'); main.type = 'range'; main.className = 'ood-sbar'; main.min = 0; main.max = 100; main.value = 0;
+        c.pos = 0; let dragging = false, key = '';
+        if (has(o, 'VERTICAL')) { main.style.writingMode = 'vertical-lr'; }
+        const send = (code, pos) => fire(dlg.key, 'SB', c.id, code, pos);
+        main.addEventListener('pointerdown', () => { dragging = true; c.dragging = true; });   // (while the thumb is dragged it follows the pointer, whatever the program sets)
+        main.addEventListener('keydown', (e) => { key = e.key; });
+        main.addEventListener('input', () => {
+          const v = Number(main.value), lo = Number(main.min), hi = Number(main.max);
+          if (dragging) { send(5, v); return; }
+          const code = key === 'Home' ? 6 : key === 'End' ? 7 : key === 'PageUp' ? 2 : key === 'PageDown' ? 3 : v < c.pos ? (c.pos - v > 1 && v !== lo ? 2 : 0) : (v - c.pos > 1 && v !== hi ? 3 : 1);
+          key = ''; main.value = c.pos; send(code, 0); send(8, 0);
+        });
+        main.addEventListener('change', () => { if (!dragging) return; dragging = false; c.dragging = false; const v = Number(main.value); main.value = c.pos; send(4, v); send(8, 0); });
+        main.addEventListener('pointerup', () => { if (dragging && Number(main.value) === c.pos) { dragging = false; c.dragging = false; } });   // (a click that moved nothing)
+        break; }
       case 'TRACKBAR':
         el = main = D.createElement('input'); main.type = 'range'; main.min = 0; main.max = 100; main.value = 0; main.className = 'ood-track';
         c.page = 20; c.line = 1;
@@ -1098,7 +1120,13 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       case 0x416: return String(c.page);
       case 0x417: { const old = c.line; c.line = l; m.step = l; return String(old); }  // TBM_SETLINESIZE
       case 0x418: return String(c.line);
-      case 0x414: case 0x404: case 0x409: case 0x40A: case 0x40B: case 0x40C: case 0x413: return '0';
+      case 0x40A: c.selStart = l & 0xFFFF; c.selEnd = l >>> 16; return '0';            // TBM_SETSEL
+      case 0x40B: c.selStart = l; return '0';                                          // TBM_SETSELSTART
+      case 0x40C: c.selEnd = l; return '0';                                            // TBM_SETSELEND
+      case 0x411: return String(c.selStart || 0);                                      // TBM_GETSELSTART
+      case 0x412: return String(c.selEnd || 0);                                        // TBM_GETSELEND
+      case 0x413: c.selStart = 0; c.selEnd = 0; return '0';                            // TBM_CLEARSEL
+      case 0x414: case 0x404: case 0x409: return '0';
       case 0x410: return '2';
     }
     if (c.kind === 'UPDOWN') switch (msg) {
@@ -1318,6 +1346,8 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
     const el = tipEl(); el.textContent = '';
     if (tt.title) { const b = D.createElement('b'); b.textContent = tt.title; el.appendChild(b); }
     const body = D.createElement('div'); body.textContent = text; el.appendChild(body);
+    el.style.background = tt.bk || ''; el.style.color = tt.fg || '';
+    el.style.padding = tt.margin ? tt.margin.map((v, k) => (v + (k % 2 ? 3 : 7)) + 'px').join(' ') : '';   // margin "t r b l" on top of the usual padding
     el.style.maxWidth = tt.maxWidth > 0 ? tt.maxWidth + 'px' : '';
     el.style.whiteSpace = tt.maxWidth > 0 || text.includes('\n') ? 'pre-wrap' : 'nowrap';
     el.hidden = false;
@@ -1391,6 +1421,16 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       case 'pop': if (tipBox.tt === tt) tipHide(); if (tt.rearm) tt.rearm(); return '1';
       case 'shown': return tipBox.shown && tipBox.tt === tt ? (tipBox.tool ? tipBox.tool.key : '') + SEP + tipEl().textContent : '';
       case 'tree': { const c = dlg.ctrls.get(Number(a)); if (!c) return '0'; tipTree(dlg, c); return '1'; }
+      case 'colors': tt.bk = String(a); tt.fg = String(b); return '1';                // CSS colours, '' for the usual ones
+      case 'margin': { const v = String(a).split(' ').map(Number); tt.margin = v.some((x) => x) ? [v[1], v[2], v[3], v[0]] : null; return '1'; }   // "left top right bottom" in pixels
+      case 'toolRect': { const t = tt.tools.find((x) => x.key === String(a)); if (!t) return '0'; t.rect = String(b).split(' ').map(Number); return '1'; }
+      case 'measure': {                                        // the size the tip of this text takes: "w h"
+        const el = D.createElement('div'); el.className = 'ood-tip'; el.style.visibility = 'hidden'; el.style.left = '0'; el.style.top = '0';
+        el.style.padding = tt.margin ? tt.margin.map((v, k) => (v + (k % 2 ? 3 : 7)) + 'px').join(' ') : '';
+        if (tt.title) { const t2 = D.createElement('b'); t2.textContent = tt.title; el.appendChild(t2); }
+        const body = D.createElement('div'); body.textContent = String(a); el.appendChild(body);
+        el.style.maxWidth = tt.maxWidth > 0 ? tt.maxWidth + 'px' : ''; el.style.whiteSpace = tt.maxWidth > 0 || String(a).includes('\n') ? 'pre-wrap' : 'nowrap';
+        D.body.appendChild(el); const w = el.offsetWidth, h = el.offsetHeight; el.remove(); return w + ' ' + h; }
     }
     return '';
   }
@@ -1536,6 +1576,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
         return '1';
       case 'closeBox': { const x = dlg.titleEl.querySelector('.ood-x'); if (x) { x.disabled = (a === '0'); x.style.opacity = a === '0' ? '.35' : ''; } dlg.noClose = (a === '0'); return '1'; }
       case 'top': el.style.zIndex = ++ood.z; return '1';
+      case 'gbAlign': if (!c || !c.textEl) return '0'; c.textEl.style.marginLeft = a === 'LEFT' ? '' : 'auto'; c.textEl.style.marginRight = a === 'RIGHT' ? '' : (a === 'CENTER' ? 'auto' : ''); return '1';   // a group box's title: LEFT CENTER RIGHT
       case 'default': {                                     // DM_SETDEFID
         const old = dlg.ctrls.get(dlg.defId); if (old && old.kind === 'BUTTON') old.main.classList.remove('ood-def');
         dlg.defId = Number(a); const nw = dlg.ctrls.get(dlg.defId); if (nw && nw.kind === 'BUTTON') nw.main.classList.add('ood-def');
@@ -1552,6 +1593,17 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       case 'line': { const ls = m.value.split('\n'); return ls[Number(a) - 1] == null ? '' : ls[Number(a) - 1]; }
       case 'cue': m.placeholder = String(a); return '1';
       case 'getCue': return m.placeholder || '';
+      case 'sb.range': m.min = Number(a); m.max = Number(b); c.pos = Math.min(Number(b), Math.max(Number(a), c.pos)); m.value = c.pos; return '1';
+      case 'sb.getRange': return m.min + ' ' + m.max;
+      case 'sb.pos': c.pos = Math.min(Number(m.max), Math.max(Number(m.min), Number(a))); if (!c.dragging) m.value = c.pos; return '1';
+      case 'sb.getPos': return String(c.pos);
+      case 'scrollPos': { const t = c ? (c.kind === 'EDIT' ? m : c.el) : dlg.client; if (b !== '') { const old = a === 'H' ? t.scrollLeft : t.scrollTop; if (a === 'H') t.scrollLeft = Number(b); else t.scrollTop = Number(b); return String(Math.round(old)); } return String(Math.round(a === 'H' ? t.scrollLeft : t.scrollTop)); }
+      case 'dtp.range': m.min = String(a); m.max = String(b); return '1';
+      case 'dtp.getRange': return m.min + SEP + m.max;
+      case 'idealSize': { const t = c ? c.el : dlg.el; const w = t.style.width, h = t.style.height; t.style.width = 'max-content'; t.style.height = 'auto'; const r = t.getBoundingClientRect(); t.style.width = w; t.style.height = h; return Math.ceil(r.width) + ' ' + Math.ceil(r.height); }
+      case 'optAt': { const o = optsOf(c), box = (c.kind === 'LIST' ? m : c.el).getBoundingClientRect(), y = box.top + Number(b); const x = box.left + Number(a), inside = (x >= box.left && x < box.right && y >= box.top && y < box.bottom) ? 1 : 0; let best = -1, far = Infinity;   // the nearest item, and is the point in the control: "index inside"
+        for (let k = 0; k < o.length; k++) { const r = o[k].getBoundingClientRect(); if (!r.height) continue; const dist = y < r.top ? r.top - y : (y >= r.bottom ? y - r.bottom + 1 : 0); if (dist < far) { far = dist; best = k; } } return best + ' ' + inside; }
+      case 'childAt': { const o = dlg.client.getBoundingClientRect(), x = o.left + Number(a), y = o.top + Number(b); if (x < o.left || x >= o.right || y < o.top || y >= o.bottom) return ''; const k = [...dlg.all].reverse().find((q) => { if (q.id <= 0 || q.el.hidden || q.el.style.visibility === 'hidden') return false; const r = q.el.getBoundingClientRect(); return x >= r.left && x < r.right && y >= r.top && y < r.bottom; }); return k ? String(k.id) : '0'; }
       case 'tabStop': { const t = c ? c.main : null; if (!t) return '0'; t.tabIndex = a === '1' ? 0 : -1; return '1'; }
       case 'optUid': { const o = optsOf(c)[Number(a)]; if (!o) return '0'; if (!o.dataset.uid) o.dataset.uid = String(c.optUid = (c.optUid || 0) + 1); return o.dataset.uid; }   // an item of a combo or list box, however it moves
       case 'lineOf': { const at = a === '' || Number(a) < 0 ? m.selectionStart : Number(a); return String(m.value.slice(0, at).split('\n').length - 1); }           // EM_LINEFROMCHAR
@@ -1780,6 +1832,8 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       case 'colCount': return String(c.cols.length);
       case 'colInfo': return c.cols[i] ? c.cols[i].text + SEP + c.cols[i].w + SEP + c.cols[i].fmt : '';
       case 'setColWidth': if (!c.cols[i]) return '0'; c.cols[i].w = Number(b); later(c, lvRender); return '1';
+      case 'setCol': { if (!c.cols[i]) return '0'; const q = String(b).split(SEP);    // text SEP width SEP align, each '' to leave it
+        if (q[0] !== '' || q[3] === '1') c.cols[i].text = q[0]; if (q[1] !== '') c.cols[i].w = Number(q[1]); if (q[2]) c.cols[i].fmt = q[2]; later(c, lvRender); return '1'; }
       case 'insRow': {
         const at = i < 0 || i > c.rows.length ? c.rows.length : i;
         c.rows.splice(at, 0, { cells: String(b).split(SEP), sel: false, chk: false, uid: ++c.uid });
@@ -1892,6 +1946,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       case 'setText': if (!c.tabs[i]) return '0'; c.tabs[i].text = String(b); tabRender(c); return '1';
       case 'selectText': { const t = String(a).toLowerCase(), k = c.tabs.findIndex((x) => plain(x.text).toLowerCase() === t || x.text.toLowerCase() === t); if (k >= 0) { c.cur = k; tabRender(c); } return String(k); }
       case 'outer': { const o = dlg.client.getBoundingClientRect(), r = c.el.getBoundingClientRect(); return [r.left - o.left, r.top - o.top, r.right - o.left, r.bottom - o.top].map(Math.round).join(' '); }   // the whole control, in the dialog's client area
+      case 'itemRect': { const e = c.strip.children[i]; if (!e) return ''; const o = c.el.getBoundingClientRect(), r = e.getBoundingClientRect(); return [r.left - o.left, r.top - o.top, r.right - o.left, r.bottom - o.top].map(Math.round).join(' '); }   // one tab, in the control's client area
       case 'rect': { const o = dlg.client.getBoundingClientRect(), r = c.page.getBoundingClientRect(); return [r.left - o.left + 2, r.top - o.top + 2, r.right - o.left - 2, r.bottom - o.top - 2].map(Math.round).join(' '); }
     }
     return '';
@@ -1909,6 +1964,14 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
     for (const d2 of [...ood.dialogs.values()].reverse()) { if (!d2.el.contains(t)) continue; const k = d2.all.find((q) => q.id > 0 && q.el.contains(t)); return d2.key + ' ' + (k ? k.id : 0); }
     return '';
   };
+  ood.keysDown = new Set();                                    // the virtual keys held down now, for Keyboard~getAsyncKeyState
+  W.addEventListener('keydown', (e) => { ood.keysDown.add(e.keyCode); if (e.shiftKey) ood.keysDown.add(16); if (e.ctrlKey) ood.keysDown.add(17); if (e.altKey) ood.keysDown.add(18); }, true);
+  W.addEventListener('keyup', (e) => { ood.keysDown.delete(e.keyCode); if (!e.shiftKey) ood.keysDown.delete(16); if (!e.ctrlKey) ood.keysDown.delete(17); if (!e.altKey) ood.keysDown.delete(18); }, true);
+  W.addEventListener('blur', () => ood.keysDown.clear());
+  ood.keyDown = function (vk) { return ood.keysDown.has(Number(vk)) ? '1' : '0'; };
+  ood.topDialog = function () {                               // the key of the top-level dialog in front, '' for none
+    let best = null, z = -1; for (const d2 of ood.dialogs.values()) { const v = Number(d2.el.style.zIndex) || 0; if (d2.el.parentNode === D.body && v >= z) { z = v; best = d2; } }
+    return best ? String(best.key) : ''; };
   ood.delivered = [];
   ood.deliver = function (name, mime, hex, title) {
     boot();

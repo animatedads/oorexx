@@ -1,8 +1,8 @@
 # Articles of the oodialog-wasm sphere. Architecture: Tom Dyer. Written by Claude (Fable 5.2).
 # Each article: id, title, summary, section, topics, and lists of plain sentences.
 S = "oodialog-wasm"
-VERSION = "0.9"            # the sphere's version; raise it for a material change
-PORT = "0.23.0"             # the version of the port the articles were checked against
+VERSION = "0.10"           # the sphere's version; raise it for a material change
+PORT = "0.24.0"             # the version of the port the articles were checked against
 REPO = "animatedads/oorexx, branch oodialog-wasm, directory oodialog-wasm/"
 
 def art(id, title, summary, section, topics, **lists):
@@ -95,6 +95,8 @@ art("ref.oodialog-wasm.renderer-contract",
         "Also v0.22.0: lv.insRow with a fourth argument U answers index and uid; tv.kids(item) and tv.order(item, items); a list of more than 100 rows may be drawn late (when changes pause), but an op that reads the drawing must draw first.",
         "New in v0.23.0. Control kind REBAR: bands docked at the top of the dialog. A band is {id, text, style, child, cx, fg, bg}: child is the id of another control of the same dialog, whose element the renderer shows inside the band; cx is the width in pixels, 0 means share what is left of the row; a band whose style has BREAK starts a new row; HIDDEN hides it; HIDETITLE hides its text; NOGRIPPER leaves out the grip. Ops, indexes from 0: rb.insert(index or -1, JSON band), rb.set(index, JSON with the fields to change), rb.get(index) (JSON with the fields in the order id, text, style, child, cx, fg, bg), rb.del(index) (the child goes back to the dialog, hidden), rb.count, rb.indexOf(id), rb.move(from, to), rb.show(index, 1|0), rb.rect(index), rb.height, rb.rows, rb.hit(x, y) answers index and GRABBER, CAPTION or CLIENT, or -1 NOWHERE, rb.colors(background, text).",
         "Also v0.23.0: a renderer keeps every dialog within reach. Larger than the window: scale it down and centre it. Partly outside the window: move it in. Do both at the first show and when the window changes size.",
+        "New in v0.24.0. Control kind SCROLLBAR: a range input, horizontal, or vertical when its style has VERTICAL. Ops: sb.range(min, max), sb.getRange, sb.pos(value), sb.getPos. Send the event kind SB with a code (LINEUP LINEDOWN PAGEUP PAGEDOWN THUMBTRACK THUMBPOSITION TOP BOTTOM ENDSCROLL) and the position asked for. Do not keep the user's new position: the program sets it with sb.pos, as on Windows; only while the thumb is dragged does it follow the pointer. A status bar also has ops named sb.*: those go to the status bar only when the control is a status bar.",
+        "Also v0.24.0, ops on any control: scrollPos, idealSize, optAt(x, y) answers the nearest item of a list and whether the point is inside the control (index inside), gbAlign(LEFT CENTER RIGHT) for a group box's title. On a dialog: childAt(x, y) answers the id of the child at a point of the client area, 0 for none, empty outside the client area. dtp.range and dtp.getRange on a date-time picker. tab.itemRect(index). lv.setCol(index, text SEP width SEP align SEP given). tip.colors(back, fore), tip.margin(left top right bottom), tip.toolRect(key, rect), tip.measure(text) answers width and height. Track bar messages 0x40A to 0x413 keep a selection range. Functions of the page object: keyDown(virtual key) answers 1 or 0, topDialog() answers the key of the dialog in front.",
         "mouseSub and mouse: the Mouse class. mouse verbs: capture release getCapture state cursor.",
         "tip.*: tool tips, since v0.18.0. The id is the tool tip's ID, not a control's: route tip.* before looking the id up as a control. tip.add takes one JSON text {key, host, rect, text}: host is a control's id or 0 for the dialog; rect is null (the whole window) or [l, t, r, b] in that window's client area; text null means the text is asked from the program. Others: tip.del(key), tip.text(key, text; one separator character means asked), tip.relay(hostId, 1|0), tip.count, tip.delay(ms), tip.maxWidth(px), tip.title(text), tip.active(1|0), tip.events(words), tip.show(text), tip.pos(x, y in screen pixels), tip.pop, tip.shown (toolKey, separator, text; empty if no tip), tip.tree(treeViewId).",
         "The renderer decides when a tip is due: the pointer rests on a tool for the delay. Fixed text: show the box, then send TT SHOW if tip.events names SHOW. Asked text: send TT NEEDTEXT; the program answers with tip.show. An empty text shows nothing. tip.pop ends the tip; if the pointer is still on the tool, the tip is due again after the delay. A tree-view named by tip.tree asks the text of the item under the pointer with NOTIFY GETINFOTIP (extra: the item); the answer is tip.show on tool tip ID 60000 + the tree-view's id.",
@@ -216,10 +218,10 @@ art("ref.oodialog-wasm.state",
     "This article is a snapshot. The current figures are always in README.md of the project, with the version they were measured on; sweep.tsv and poke.tsv hold the per-example results.",
     "reference", ["state", "coverage", "not-done"],
     snapshot=[
-        "Version 0.23.0, 19 November 2026.",
-        "Natives ported: 1,033 of 1,182 (78 added in v0.23.0: the re-bar; 74 added in v0.22.0: tool bar and custom draw; 192 added in v0.21.0; 26 of those accept their call and do nothing, 18 system metrics are fixed values). 12 of the 43 added in v0.18.0 accept their call and do nothing.",
-        "Tests: 57 of 57 pass in headless Chromium. 35 of them are upstream examples or the designer's programs, run unchanged.",
-        "Sweep of the 140 upstream examples: 81 show their dialog, 7 run to the end, 8 show only a message box, 3 stop at a native not ported, 10 stop on an error (8 of them wait for a reader of binary resources), 24 are components, 7 are outside ooDialog.",
+        "Version 0.24.0, 20 November 2026.",
+        "Natives ported: 1,098 of 1,182 (1,033 at v0.23.0; 65 added in v0.24.0: scroll bar, property sheet pages, date-time picker, 30 scattered; 78 added in v0.23.0: the re-bar; 74 added in v0.22.0: tool bar and custom draw; 192 added in v0.21.0; 26 of those accept their call and do nothing, 18 system metrics are fixed values). 12 of the 43 added in v0.18.0 accept their call and do nothing.",
+        "Tests: 61 of 61 pass in headless Chromium. 35 of them are upstream examples or the designer's programs, run unchanged.",
+        "Sweep of the 140 upstream examples: 83 show their dialog, 7 run to the end, 8 show only a message box, 2 stop at a native not ported, 9 stop on an error (8 of them wait for a reader of binary resources), 24 are components, 7 are outside ooDialog.",
         "Probe at v0.19.0, 88 examples: 73 clean, 11 connect an event that is not produced, 4 with a problem, none of them in the port's own code. This run found four faults of the port in examples the sweep called shows; all four are fixed in v0.19.0.",
         "\"shows\" in the sweep means a dialog appeared. It does not mean every feature of the example works. Only an example that is a test (with steps and assertions) is known to work.",
     ],
@@ -234,17 +236,18 @@ art("ref.oodialog-wasm.state",
         "Since v0.21.0: LvItem, LvSubItem, LvFullRow and the list-view methods on them, with sortItems; the StatusBar control; windows by handle (getWindowText, setWindowText, showWindow, sendMessageToControl, sendMessageToWindow); a control's connectKeyPress; the dialog's backgroundColor; item data of a combo box; the old addXxx names of the create methods; SM, SPI, OS, DlgUtil's arithmetic.",
         "Since v0.22.0: the ToolBar control and TbButton (text buttons; images are kept, not drawn); custom draw of a list-view and a tree-view (customDrawControl, LvCustomDrawSimple, TvCustomDrawSimple); the tree-view's sortChildrenCB; the tree-view's itemInfo answers a stem as upstream.",
         "Since v0.23.0: the ReBar control and ReBarBandInfo (bands that hold other controls; the user cannot drag a band); a dialog whose place puts part of it outside the window is moved in, also when the window changes size.",
+        "Since v0.24.0: the ScrollBar control and its events; property sheet pages added, inserted and removed while it is open, pressButton, apply, the wizard buttons; the date-time picker's range; tool tip margins and colours are drawn; getItemRect of a tab, hitTestInfo of a list box, modifyColumnPx of a list-view, key2name, getAsyncKeyState, childWindowFromPoint, getComboBoxInfo. Probe at v0.24.0, 91 examples: 74 clean, 12 connect an event that is not produced, 5 with a problem outside the port's own code.",
         "File dialogs and shell dialogs over the WASM machine's file system.",
     ],
     not_done=[
-        "Tool bar, status bar, re-bar; custom draw; scroll bars as controls.",
-        "getComboBoxInfo (the parts of a combo box as windows); tracking tool tips.",
+        "84 natives: the common item dialog (28), the category and task dialogs (14), ResourceImage (7), and 35 others listed in README.md under Natives added in v0.24.0.",
+        "Tracking tool tips. Images in list-views, tool bars and status bars. Dragging a re-bar band.",
         "ControlDlgInfo and the tab owner dialogs.",
         "connectActivate, connectHelp, connectPosChanged, connectResizing (accepted, not produced).",
         "Image-list icons are not drawn; ResourceImage needs images from a binary resource.",
-        "A modeless property sheet; wizard header and watermark images.",
+        "Wizard header and watermark images.",
         "The CommonDialogCustomizations controls of the shell dialogs.",
-        "Printing. The estate's oorexx_pdf package is native ooRexx and is the planned stand-by printer: write a PDF into the WASM file system and offer it for download or the browser's print. Not started.",
+        "Printing of dialog fields and drawings; the print panel is not checked in a real browser.",
         "Not run on a real phone or on the public Playground; the demo page is not hosted.",
     ],
     invariants=[

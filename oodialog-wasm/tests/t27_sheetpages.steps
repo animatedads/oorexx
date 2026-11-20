@@ -1,0 +1,20 @@
+wait .ood-dlg >> text=Done
+expect [...document.querySelectorAll('.ood-tabbtn')].map(b => b.textContent + (b.classList.contains('ood-cur') ? '*' : '')).join(' ') ==> First* Second Third
+click .ood-child >> text=Insert
+sleep 500
+expect [...document.querySelectorAll('.ood-tabbtn')].map(b => b.textContent + (b.classList.contains('ood-cur') ? '*' : '')).join(' ') ==> Inserted First* Second Third
+click .ood-tabbtn >> text=Third
+sleep 500
+click .ood-child:visible >> text=Report
+sleep 400
+click .ood-child:visible >> text=Remove
+sleep 500
+expect [...document.querySelectorAll('.ood-tabbtn')].map(b => b.textContent + (b.classList.contains('ood-cur') ? '*' : '')).join(' ') ==> First Second Third*
+click .ood-tabbtn >> text=First
+sleep 400
+click .ood-child:visible >> text=Remove
+sleep 500
+expect [...document.querySelectorAll('.ood-tabbtn')].map(b => b.textContent + (b.classList.contains('ood-cur') ? '*' : '')).join(' ') ==> Second* Third
+expect [...document.querySelectorAll('.ood-child')].filter(e => e.offsetParent !== null && getComputedStyle(e).visibility !== 'hidden').map(e => e.querySelector('.ood-static').textContent).join('|') ==> Page Second
+shot sheetpages
+click .ood-child:visible >> text=Apply it

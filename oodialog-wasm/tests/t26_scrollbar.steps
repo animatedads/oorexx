@@ -1,0 +1,36 @@
+wait .ood-dlg >> text=Close
+expect [...document.querySelectorAll('.ood-sbar')].map(e => e.min + '-' + e.max + ':' + e.value).join(' ') ==> 0-60:10 1-9:5
+expect document.querySelector('.ood-dlg input[type=date]').min + ' ' + document.querySelector('.ood-dlg input[type=date]').max ==> 2026-11-01 2026-12-31
+eval (document.querySelectorAll('.ood-sbar')[0].focus(), 'focus')
+press ArrowRight
+sleep 300
+expect document.querySelector('.ood-dlg .ood-static').textContent + ' ' + document.querySelectorAll('.ood-sbar')[0].value ==> position 11 1 11
+press ArrowRight
+sleep 200
+press ArrowLeft
+sleep 200
+press PageDown
+sleep 300
+expect document.querySelector('.ood-dlg .ood-static').textContent ==> position 21 1
+press End
+sleep 300
+expect document.querySelector('.ood-dlg .ood-static').textContent + ' ' + document.querySelectorAll('.ood-sbar')[0].value ==> position 60 1 60
+press Home
+sleep 300
+expect document.querySelector('.ood-dlg .ood-static').textContent ==> position 0 1
+mouse down .ood-sbar >> nth=0 @ 8 6
+mouse move .ood-sbar >> nth=0 @ 100 6
+mouse up .ood-sbar >> nth=0 @ 100 6
+sleep 400
+expect Math.abs(Number(document.querySelectorAll('.ood-sbar')[0].value) - 14) <= 2 ==> True
+expect document.querySelector('.ood-dlg .ood-static').textContent === 'position ' + document.querySelectorAll('.ood-sbar')[0].value + ' 1' ==> True
+eval (document.querySelectorAll('.ood-sbar')[1].focus(), 'focus')
+press End
+sleep 200
+press Home
+sleep 200
+press ArrowDown
+sleep 300
+expect document.querySelectorAll('.ood-sbar')[1].value ==> 6
+shot scrollbar
+click .ood-dlg >> text=Close

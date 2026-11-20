@@ -1,0 +1,6 @@
+wait .ood-dlg >> text=Close
+click .ood-dlg >> text=Run
+wait .ood-dlg >> text=done
+expect (() => { const l = document.querySelector('.ood-dlg fieldset legend'), a = l.getBoundingClientRect(), b = l.parentNode.getBoundingClientRect(); return a.left - b.left > b.right - a.right + 50; })() ==> True
+expect document.querySelectorAll('.ood-dlg th')[1].textContent + ' ' + document.querySelectorAll('.ood-dlg th')[1].style.textAlign ==> Deux right
+click .ood-dlg >> text=Close
