@@ -32,4 +32,4 @@ grep -q 'ops.oodialog-wasm.differences' "$TMP/sleep.json"
 "$GOPHER" --profile oodialog-wasm search 'separator character' --sphere oodialog-wasm > "$TMP/sep.json"
 grep -q 'ref.oodialog-wasm.renderer-contract' "$TMP/sep.json"
 
-echo 'PASS OODIALOG-WASM GOPHER SPHERE v0.9'
+echo 'PASS OODIALOG-WASM GOPHER SPHERE v0.10'

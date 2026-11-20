@@ -1,7 +1,7 @@
 {
   "kind": "article",
   "id": "ref.oodialog-wasm.renderer-contract",
-  "version": "0.9",
+  "version": "0.10",
   "sphere": "oodialog-wasm",
   "title": "The renderer contract: what the native layer asks of the page, and what the page sends back",
   "summary": "oodWeb.cls talks to a renderer through one object, window.__ood in the browser. Any renderer (the browser page, the Qt6 renderer) that answers the same calls and sends the same events can run the same ooDialog programs. The reference implementation is src/oodialog-web.js. This article names the calls and the rules; the source is the authority for each argument.",
@@ -38,6 +38,8 @@
     "Also v0.22.0: lv.insRow with a fourth argument U answers index and uid; tv.kids(item) and tv.order(item, items); a list of more than 100 rows may be drawn late (when changes pause), but an op that reads the drawing must draw first.",
     "New in v0.23.0. Control kind REBAR: bands docked at the top of the dialog. A band is {id, text, style, child, cx, fg, bg}: child is the id of another control of the same dialog, whose element the renderer shows inside the band; cx is the width in pixels, 0 means share what is left of the row; a band whose style has BREAK starts a new row; HIDDEN hides it; HIDETITLE hides its text; NOGRIPPER leaves out the grip. Ops, indexes from 0: rb.insert(index or -1, JSON band), rb.set(index, JSON with the fields to change), rb.get(index) (JSON with the fields in the order id, text, style, child, cx, fg, bg), rb.del(index) (the child goes back to the dialog, hidden), rb.count, rb.indexOf(id), rb.move(from, to), rb.show(index, 1|0), rb.rect(index), rb.height, rb.rows, rb.hit(x, y) answers index and GRABBER, CAPTION or CLIENT, or -1 NOWHERE, rb.colors(background, text).",
     "Also v0.23.0: a renderer keeps every dialog within reach. Larger than the window: scale it down and centre it. Partly outside the window: move it in. Do both at the first show and when the window changes size.",
+    "New in v0.24.0. Control kind SCROLLBAR: a range input, horizontal, or vertical when its style has VERTICAL. Ops: sb.range(min, max), sb.getRange, sb.pos(value), sb.getPos. Send the event kind SB with a code (LINEUP LINEDOWN PAGEUP PAGEDOWN THUMBTRACK THUMBPOSITION TOP BOTTOM ENDSCROLL) and the position asked for. Do not keep the user's new position: the program sets it with sb.pos, as on Windows; only while the thumb is dragged does it follow the pointer. A status bar also has ops named sb.*: those go to the status bar only when the control is a status bar.",
+    "Also v0.24.0, ops on any control: scrollPos, idealSize, optAt(x, y) answers the nearest item of a list and whether the point is inside the control (index inside), gbAlign(LEFT CENTER RIGHT) for a group box's title. On a dialog: childAt(x, y) answers the id of the child at a point of the client area, 0 for none, empty outside the client area. dtp.range and dtp.getRange on a date-time picker. tab.itemRect(index). lv.setCol(index, text SEP width SEP align SEP given). tip.colors(back, fore), tip.margin(left top right bottom), tip.toolRect(key, rect), tip.measure(text) answers width and height. Track bar messages 0x40A to 0x413 keep a selection range. Functions of the page object: keyDown(virtual key) answers 1 or 0, topDialog() answers the key of the dialog in front.",
     "mouseSub and mouse: the Mouse class. mouse verbs: capture release getCapture state cursor.",
     "tip.*: tool tips, since v0.18.0. The id is the tool tip's ID, not a control's: route tip.* before looking the id up as a control. tip.add takes one JSON text {key, host, rect, text}: host is a control's id or 0 for the dialog; rect is null (the whole window) or [l, t, r, b] in that window's client area; text null means the text is asked from the program. Others: tip.del(key), tip.text(key, text; one separator character means asked), tip.relay(hostId, 1|0), tip.count, tip.delay(ms), tip.maxWidth(px), tip.title(text), tip.active(1|0), tip.events(words), tip.show(text), tip.pos(x, y in screen pixels), tip.pop, tip.shown (toolKey, separator, text; empty if no tip), tip.tree(treeViewId).",
     "The renderer decides when a tip is due: the pointer rests on a tool for the delay. Fixed text: show the box, then send TT SHOW if tip.events names SHOW. Asked text: send TT NEEDTEXT; the program answers with tip.show. An empty text shows nothing. tip.pop ends the tip; if the pointer is still on the tool, the tip is due again after the delay. A tree-view named by tip.tree asks the text of the item under the pointer with NOTIFY GETINFOTIP (extra: the item); the answer is tip.show on tool tip ID 60000 + the tree-view's id.",
@@ -61,76 +63,76 @@
   ],
   "provenance": [
     {
-      "artifact": "oodialog-wasm-2619180.zip",
-      "sha256": "f20691afe5a99e4d86183e4936ba063adc71dc522ed7ea06e6d600e21b4fccfe",
+      "artifact": "oodialog-wasm-f2b3e89.zip",
+      "sha256": "f16c3f78b1912c174c93caa265219db480709bf7666c83a6298d6b19777494d1",
       "member": "oodialog-wasm/src/oodialog-web.js",
-      "line_start": 1468,
-      "line_end": 1473,
+      "line_start": 1508,
+      "line_end": 1513,
       "claim": "op(key, id, name, a, b, c) is the entry for everything that is not a Win32 message.",
-      "note": "git archive of animatedads/oorexx commit 2619180 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit f2b3e89 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-2619180.zip",
-      "sha256": "f20691afe5a99e4d86183e4936ba063adc71dc522ed7ea06e6d600e21b4fccfe",
+      "artifact": "oodialog-wasm-f2b3e89.zip",
+      "sha256": "f16c3f78b1912c174c93caa265219db480709bf7666c83a6298d6b19777494d1",
       "member": "oodialog-wasm/src/oodialog-web.js",
-      "line_start": 991,
-      "line_end": 996,
+      "line_start": 1013,
+      "line_end": 1018,
       "claim": "msg(key, id, msg, w, l) is the entry for Win32 control messages.",
-      "note": "git archive of animatedads/oorexx commit 2619180 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit f2b3e89 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-2619180.zip",
-      "sha256": "f20691afe5a99e4d86183e4936ba063adc71dc522ed7ea06e6d600e21b4fccfe",
+      "artifact": "oodialog-wasm-f2b3e89.zip",
+      "sha256": "f16c3f78b1912c174c93caa265219db480709bf7666c83a6298d6b19777494d1",
       "member": "oodialog-wasm/src/oodialog-web.js",
-      "line_start": 587,
-      "line_end": 587,
+      "line_start": 609,
+      "line_end": 609,
       "claim": "The separator character is hex 1F.",
-      "note": "git archive of animatedads/oorexx commit 2619180 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit f2b3e89 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-2619180.zip",
-      "sha256": "f20691afe5a99e4d86183e4936ba063adc71dc522ed7ea06e6d600e21b4fccfe",
+      "artifact": "oodialog-wasm-f2b3e89.zip",
+      "sha256": "f16c3f78b1912c174c93caa265219db480709bf7666c83a6298d6b19777494d1",
       "member": "oodialog-wasm/src/oodialog-web.js",
-      "line_start": 1168,
-      "line_end": 1172,
+      "line_start": 1196,
+      "line_end": 1200,
       "claim": "The gdi verbs and the style fields.",
-      "note": "git archive of animatedads/oorexx commit 2619180 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit f2b3e89 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-2619180.zip",
-      "sha256": "f20691afe5a99e4d86183e4936ba063adc71dc522ed7ea06e6d600e21b4fccfe",
+      "artifact": "oodialog-wasm-f2b3e89.zip",
+      "sha256": "f16c3f78b1912c174c93caa265219db480709bf7666c83a6298d6b19777494d1",
       "member": "oodialog-wasm/src/oodialog-web.js",
-      "line_start": 244,
-      "line_end": 268,
+      "line_start": 245,
+      "line_end": 269,
       "claim": "The ResizingAdmin arithmetic.",
-      "note": "git archive of animatedads/oorexx commit 2619180 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit f2b3e89 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-2619180.zip",
-      "sha256": "f20691afe5a99e4d86183e4936ba063adc71dc522ed7ea06e6d600e21b4fccfe",
+      "artifact": "oodialog-wasm-f2b3e89.zip",
+      "sha256": "f16c3f78b1912c174c93caa265219db480709bf7666c83a6298d6b19777494d1",
       "member": "oodialog-wasm/src/oodialog-web.js",
-      "line_start": 1286,
-      "line_end": 1299,
+      "line_start": 1314,
+      "line_end": 1327,
       "claim": "The tool tip operations and events.",
-      "note": "git archive of animatedads/oorexx commit 2619180 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit f2b3e89 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-2619180.zip",
-      "sha256": "f20691afe5a99e4d86183e4936ba063adc71dc522ed7ea06e6d600e21b4fccfe",
+      "artifact": "oodialog-wasm-f2b3e89.zip",
+      "sha256": "f16c3f78b1912c174c93caa265219db480709bf7666c83a6298d6b19777494d1",
       "member": "oodialog-wasm/src/oodialog-web.js",
-      "line_start": 1901,
-      "line_end": 1908,
+      "line_start": 1956,
+      "line_end": 1963,
       "claim": "deliver: what the page does with a file.",
-      "note": "git archive of animatedads/oorexx commit 2619180 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit f2b3e89 (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-2619180.zip",
-      "sha256": "f20691afe5a99e4d86183e4936ba063adc71dc522ed7ea06e6d600e21b4fccfe",
+      "artifact": "oodialog-wasm-f2b3e89.zip",
+      "sha256": "f16c3f78b1912c174c93caa265219db480709bf7666c83a6298d6b19777494d1",
       "member": "oodialog-wasm/src/oodialog-web.js",
-      "line_start": 271,
-      "line_end": 282,
+      "line_start": 272,
+      "line_end": 283,
       "claim": "The pages of a paged tab take its display area after each layout.",
-      "note": "git archive of animatedads/oorexx commit 2619180 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit f2b3e89 (branch oodialog-wasm)"
     }
   ]
 }

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10
+- State article brought to port v0.24.0: 1,098 of 1,182 natives (1,033 at v0.23.0).
+- Renderer contract: the SCROLLBAR kind, the SB event, and the ops added in v0.24.0.
+- Correction: the not-done list still named tool bar, status bar, re-bar, custom draw, scroll bars, getComboBoxInfo, the modeless property sheet and printing, all of which are done and tested. The list is now what is missing at v0.24.0.
+- Written by Claude (Fable 5.2).
+
 ## 0.9
 - State article brought to port v0.23.0: 1,033 of 1,182 natives.
 - Renderer contract: the REBAR kind and its rb.* ops; a dialog is kept within reach.
