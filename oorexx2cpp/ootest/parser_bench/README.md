@@ -60,5 +60,7 @@ The two dumps must be identical (class, category, from, to and value of every el
 | 2026-11-06, 0573b73, **Release interpreter** de1db87 | Claude | dump pass 19.1 s; 3 passes 57.2 s | dump pass 6.8 s; 3 passes 21.6 s (2.65x) | Release interpreter for both columns; dumps identical |
 | 2026-11-06, 7e9d696 (main, merge of 0573b73) | Claude | dump pass 35.3 s; 3 passes 107.5 s | dump pass 7.8 s; 3 passes 20.9 s (5.15x) | merge gate; dumps identical; 71,087 trips a pass |
 | 2026-11-06, 7e9d696, **Release interpreter** de1db87 | Claude | dump pass 18.7 s; 3 passes 57.1 s | dump pass 6.7 s; 3 passes 20.3 s (2.82x) | merge gate; Release interpreter for both columns; dumps identical |
+| 2026-11-20, b446fae (wip; **reference now trunk r13550**, Debug build) | Claude (after a container restart: compare ratios within a run) | dump pass 38.0 s; 3 passes 126.5 s | dump pass 9.2 s; 3 passes 24.8 s (5.10x) | dumps identical over 162,260 elements; Rexx Parser from GitHub JosepMariaBlasco/rexx-parser 3c7208c (the zip was lost in a restart), parser/Elements.cls CRLF stripped (its last line ends in a bare CR: error 13 in both lanes) |
+| 2026-11-20, b446fae, **Release interpreter** trunk r13550 | Claude | 3 passes 51.3 s | 3 passes 25.4 s (2.02x) | Release interpreter for both columns; trunk has #2106 fixed (r13267), so the interpreter's API calls are cheaper than de1db87's: the ratio is not comparable with 2.65x |
 
 Crossings are calls between compiled code and the interpreter (RX2CPP_BIF_STATS=1 reports them).
