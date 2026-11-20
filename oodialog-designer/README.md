@@ -1,8 +1,8 @@
-# ooDialog Designer — v0.16.0
+# ooDialog Designer — v0.17.0
 
 Architecture: Tom Dyer. Code: Claude (Opus 5.5). README written by Claude (Opus 5.5).
-It runs on ooDialog/WASM v0.21.0 (code: Claude (Fable 5.2); v0.7.0 up to
-designer v0.15) and on Josep Maria
+It runs on ooDialog/WASM v0.23.0 (code: Claude (Fable 5.2); v0.21.0 for
+designer v0.16, v0.7.0 up to v0.15) and on Josep Maria
 Blasco's ooRexx/WASM 0.2.4 runtime. The graph view parses event code with Josep
 Maria Blasco's Rexx Parser (beta 0.7, refresh 20261115, with CATCH and
 FINALLY; Apache License 2.0), shipped unchanged in
@@ -76,9 +76,9 @@ two such keys becomes a junction. A drag from a column that is not a key
 does nothing. A table is selected by clicking its title, since its column
 rows are link targets.
 
-Designer v0.16 is qualified against ooDialog/WASM v0.21.0 (branch
-`oodialog-wasm`, be78d99); every browser scenario, the Database Lab's
-included, ran on it.
+Designer v0.17 is qualified against ooDialog/WASM v0.23.0 (branch
+`oodialog-wasm`, 191da5a); every browser scenario, the Database Lab's
+included, ran on it. (v0.16: v0.21.0 and v0.22.0.)
 
 ## What it writes
 
@@ -157,6 +157,20 @@ one `kind` line; a new code-insertion action is one `action` line.
   the control takes), role OK/Cancel, list items (`a|b|c`), the page a
   control is on, and so on. Clicking a tab of a tab strip on the form shows
   that page while you design.
+- **New in v0.17: resizable forms (ResizingAdmin, upstream's own).** The
+  form's *resizable* box makes its class inherit ResizingAdmin and adds
+  THICKFRAME; a grip shows in the form's corner. Every control then has
+  *anchored to*: LEFT, TOP, RIGHT, BOTTOM (new controls: LEFT TOP; an older
+  design with none is LEFT TOP too). An anchored edge keeps its distance
+  from that edge of the form; both edges of an axis: the control
+  stretches; neither: it keeps its place relative to the centre (CENTER).
+  The selected control's anchored edges are marked in orange. The program
+  gets `defineSizing`: `defaultSizing` STATIONARY LEFT/TOP with MYLEFT/MYTOP
+  (size kept), and a `controlSizing` line only for a control that differs.
+  A control on a tab page is pinned to its tab control, and tab controls
+  come first. It runs unchanged on Windows ooDialog: the pins are
+  upstream's. Not offered: PROPORTIONAL pins, pins to another control
+  (other than a page's tab), minSize/maxSize other than the initial size.
 - **New in v0.16 (ooDialog/WASM v0.21):**
   - **Up-down:** dropped right after an entry field, it takes that field as
     its *buddy*. The program calls `setBuddy` in initDialog, with no ALIGN
@@ -441,15 +455,15 @@ a built `site/plugins`, or skips them and says so. t07–t09 start their own
 stand-in servers with node; under native ooRexx (no ADDRESS FETCH) their
 network checks say SKIP, and t08's git-command checks still run.
 
-## State (2026-11-19, v0.16.0)
+## State (2026-11-20, v0.17.0)
 
-On ooDialog/WASM v0.21.0 (be78d99). `tools/pkgcheck.rex PACKAGE_DIR` is run
+On ooDialog/WASM v0.23.0 (191da5a). `tools/pkgcheck.rex PACKAGE_DIR` is run
 before a submission: the folder, integration.json's version and publish
 path, `module_version` and this title must agree (v0.15 passed its tests at
 Autobuild but was not published: its publish path still named v0.14).
 
 
-- `tests/t01_model.rex`: 97 of 97 checks pass under ooRexx/WASM in Node. They
+- `tests/t01_model.rex`: 115 of 115 checks pass under ooRexx/WASM in Node. They
   cover generation, a byte-identical round trip through the `::RESOURCE`,
   background and timer threads, renames that rewrite `self~old` (and move a
   tab's pages), fifteen refusals, the tab page handler, list-view columns and
@@ -461,7 +475,12 @@ Autobuild but was not published: its publish path still named v0.14).
   and its tools (quotes doubled); a round trip; a missing buddy, the
   up-down as its own buddy and a two-line tip refused; a renamed buddy
   followed, a removed one a problem; a tip as a language key, and none for
-  a control with no tip.
+  a control with no tip; (v0.17) a resizable form: ResizingAdmin and
+  THICKFRAME only when resizable, the default pins, all four anchors
+  stretching, RIGHT BOTTOM moving with its size kept, CENTER, no line for a
+  control left at LEFT TOP, a round trip, a bad anchor and a resizable
+  other than 0/1 refused, a page's control pinned to its tab and the tab
+  first, an older design read as LEFT TOP.
 - `tests/t02_graph.rex`: 50 of 50 checks pass. They cover block kinds,
   nesting and labels; insert, delete, move (within and between slots),
   replace and wrap; the refusals (into a THEN's single instruction, a block
@@ -542,8 +561,13 @@ Autobuild but was not published: its publish path still named v0.14).
     button naming no bound list, no SINGLESEL, Add without row fields);
   - an unbound design written as before;
   - German.
-- `tools/dztest.py`: 21 of 21 scenarios pass in headless Chromium, on
-  ooDialog/WASM v0.21.0 (21. **newkinds**, v0.16: an up-down dropped after
+- `tools/dztest.py`: 22 of 22 scenarios pass in headless Chromium, on
+  ooDialog/WASM v0.23.0 (22. **resize**, v0.17: no anchor while the form
+  is fixed; resizable ticked, the grip shown; a list anchored to all four
+  edges and an OK button to RIGHT BOTTOM, their edges marked; in the run,
+  the dialog made 120 px wider and 80 px taller: the list grows by exactly
+  that and its corner stays, the button moves by exactly that and keeps its
+  size. 21. **newkinds**, v0.16: an up-down dropped after
   an entry field takes it as buddy; a month calendar drawn; a tip set; the
   code mark of the narrow up-down beside it; in the run, the buddy starts
   at 3, the up arrow makes it 4 and DELTAPOS reports it, a day picked runs
@@ -688,9 +712,9 @@ Autobuild but was not published: its publish path still named v0.14).
   The designer's own methods have no Document… yet (its program is written
   by the designer; a comment there would need a place in the program
   format).
-- Controls: images, and the rest of what ooDialog/WASM v0.21 ports (status
-  bar, scroll bar, ResizingAdmin's pinned edges for a resizable form,
-  drawing with connectDraw, the file dialogs as actions).
+- Controls: images, and the rest of what ooDialog/WASM v0.23 ports (status
+  bar, scroll bar, tool bar, re-bar, drawing with connectDraw and custom
+  draw, the file dialogs as actions).
 - Up-down: no ALIGN placement (by design: see above); HORIZONTAL is not
   offered (the page draws it vertical).
 - Month calendar: one month, one day; no day states (bold days) yet.

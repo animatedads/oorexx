@@ -82,7 +82,7 @@ call check "actions name the control", acts~pos("self~lcd~setText(") > 0
 call check "list actions for a list only", acts~pos("~add(") == 0
 
 -- 8. versions
-call check "module_version", .OodDesign~module_version == "0.16.0" & d~module_version == "0.16.0"
+call check "module_version", .OodDesign~module_version == "0.17.0" & d~module_version == "0.17.0"
 
 -- CATCH and FINALLY: found in the code, guarded in the program, refused on an older ooRexx
 k = .calcDesign~build
@@ -190,6 +190,48 @@ g~setLanguages("en de")
 nsrc = g~generate
 call check "with languages, a tip is a text of the table", nsrc~pos('tips~addTool(self~trkLevel, self~nls("trkLevel.tip"))') > 0 & g~nlsKeys~hasItem("trkLevel.tip")
 call check "  a control with no tip has no key", \g~nlsKeys~hasItem(cal".tip")
+
+-- 13. v0.17: a resizable form (ResizingAdmin) and anchors
+r = .OodDesign~new("Sizer")
+r~setProp("form", "w", 200); r~setProp("form", "h", 120)
+lb = r~addControl("LISTBOX", 6, 6)
+ok = r~addControl("PUSHBUTTON", 140, 100)
+mid = r~addControl("STATIC", 80, 50)
+call check "a new control is anchored LEFT TOP", r~getProp(lb, "anchor") == "LEFT TOP"
+plain = r~generate
+call check "not resizable: no ResizingAdmin, no defineSizing", plain~pos("ResizingAdmin") = 0 & plain~pos("defineSizing") = 0
+r~setProp("form", "resizable", 1)
+r~setProp(lb, "anchor", "bottom right top left")
+r~setProp(ok, "anchor", "RIGHT BOTTOM")
+r~setProp(mid, "anchor", "")
+call check "anchor is put in order, upper case", r~getProp(lb, "anchor") == "LEFT TOP RIGHT BOTTOM"
+call check "no edge is CENTER", r~getProp(mid, "anchor") == "CENTER"
+rs = r~generate
+call check "resizable: inherits ResizingAdmin", rs~pos("::class Sizer subclass UserDialog inherit ResizingAdmin") > 0
+call check "  THICKFRAME added to the style", rs~pos('"CENTER THICKFRAME")') > 0
+call check "  default: stationary left and top, own width and height", rs~pos('self~defaultSizing(.array~of("STATIONARY", "LEFT"), .array~of("STATIONARY", "TOP"), .array~of("MYLEFT", "LEFT"), .array~of("MYTOP", "TOP"))') > 0
+lbId = r~getProp(lb, "id")
+call check "  all four: it stretches", rs~pos('self~controlSizing('lbId', .array~of("STATIONARY", "LEFT"), .array~of("STATIONARY", "TOP"), .array~of("STATIONARY", "RIGHT"), .array~of("STATIONARY", "BOTTOM"))') > 0
+okId = r~getProp(ok, "id")
+call check "  right and bottom: it moves, its size kept", rs~pos('self~controlSizing('okId', .array~of("STATIONARY", "RIGHT"), .array~of("STATIONARY", "BOTTOM"), .array~of("MYLEFT", "LEFT"), .array~of("MYTOP", "TOP"))') > 0
+call check "  none: it keeps to the centre", rs~pos('.array~of("STATIONARY", "XCENTER"), .array~of("STATIONARY", "YCENTER"), .array~of("MYLEFT", "LEFT"), .array~of("MYTOP", "TOP"))   --' mid": CENTER") > 0
+call check "  a control left at LEFT TOP gets no line of its own", rs~countStr("self~controlSizing(") = 3
+call check "  defineSizing returns 0", rs~pos("::method defineSizing") > 0 & rs~substr(rs~pos("::method defineSizing"))~pos("  return 0") > 0
+call check "resizable round trips", .OodDesign~fromSource(rs)~generate == rs
+g = r                                 -- refuses exposes g
+call refuses "an anchor that is not an edge", "g~setProp('"lb"', 'anchor', 'LEFT MIDDLE')"
+call refuses "resizable is 0 or 1", "g~setProp('form', 'resizable', 2)"
+-- a control on a tab page is pinned to the tab control, and the tab comes first
+tb = r~addControl("TAB", 6, 60)
+r~setProp(tb, "tabs", "One|Two")
+onp = r~addControl("EDIT", 12, 80)
+r~setProp(onp, "page", tb":1")
+r~setProp(tb, "anchor", "LEFT TOP RIGHT BOTTOM")
+ts = r~generate
+tbId = r~getProp(tb, "id"); onId = r~getProp(onp, "id")
+call check "on a tab page: pinned to the tab", ts~pos('self~controlSizing('onId', .array~of("STATIONARY", "LEFT",' tbId'), .array~of("STATIONARY", "TOP",' tbId'), .array~of("MYLEFT", "LEFT"), .array~of("MYTOP", "TOP"))') > 0
+call check "  the tab control is given before the controls pinned to it", ts~pos("self~controlSizing("tbId",") < ts~pos("self~controlSizing("onId",")
+call check "an older design (no anchor) is LEFT TOP", .OodDesign~fromSource(changestr("anchor=", ts, "anchorX="))~generate~pos("controlSizing("lbId",") = 0
 
 say "t01_model:" checks - fails "of" checks "checks passed"
 if fails > 0 then return 1

@@ -816,7 +816,44 @@ def sc_newkinds(pg):
     pg.screenshot(path=str(SHOTS / 'newkinds_run.png'))
     press(pg, 'OK'); expect('ended with OK', wait_end(pg)['rc'], 1)
 
-SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views, 'gadgets': sc_gadgets, 'libraries': sc_libraries, 'graph': sc_graph, 'trace': sc_trace, 'languages': sc_languages, 'ui_de': sc_ui_de, 'plugins': sc_plugins, 'assist': sc_assist, 'source': sc_source, 'bound': sc_bound, 'overview': sc_overview, 'labgraph': sc_labgraph, 'catch': sc_catch, 'labdrag': sc_labdrag, 'newkinds': sc_newkinds}
+def sc_resize(pg):
+    """v0.17: a resizable form (ResizingAdmin). Anchors are offered only once
+    the form is resizable; a list anchored to all four edges stretches, a
+    button anchored right and bottom moves and keeps its size, when the
+    running dialog is made 120 px wider and 80 px taller."""
+    ready(pg)
+    drop_kind(pg, 'List box', 20, 20); set_prop(pg, 'name', 'lstItems')
+    expect('no anchor while the form is fixed', pg.locator('#props [data-prop="anchor"]').count(), 0)
+    pg.click('#formTitle'); settle(pg)
+    expect('the form is selected: its resizable box is there', pg.locator('#props [data-prop="resizable"]').count(), 1)
+    pg.check('#props [data-prop="resizable"]'); settle(pg)
+    expect('the form shows a grip', pg.evaluate("document.getElementById('form').classList.contains('dz-resizable')"), True)
+    pg.click('#client .dz[data-name="lstItems"]'); settle(pg)
+    for e in ('RIGHT', 'BOTTOM'): pg.check(f'#props [data-prop="anchor"] input[data-opt="{e}"]'); settle(pg, 300)
+    expect('its anchored edges marked', pg.evaluate("[...document.querySelector('#client .dz[data-name=\"lstItems\"]').classList].filter(c => c.startsWith('anc-')).sort().join(' ')"), 'anc-b anc-l anc-r anc-t')
+    drop_kind(pg, 'Push button', 300, 200); set_prop(pg, 'text', 'OK'); pg.select_option('#props [data-prop="role"]', 'OK'); settle(pg)
+    for e in ('LEFT', 'TOP'): pg.uncheck(f'#props [data-prop="anchor"] input[data-opt="{e}"]'); settle(pg, 300)
+    for e in ('RIGHT', 'BOTTOM'): pg.check(f'#props [data-prop="anchor"] input[data-opt="{e}"]'); settle(pg, 300)
+    src = program_text(pg)
+    expect_in('inherits ResizingAdmin', 'subclass UserDialog inherit ResizingAdmin', src)
+    expect_in('the button moves with the corner', '.array~of("STATIONARY", "RIGHT"), .array~of("STATIONARY", "BOTTOM"), .array~of("MYLEFT", "LEFT"), .array~of("MYTOP", "TOP"))', src)
+    pg.screenshot(path=str(SHOTS / 'resize_design.png'))
+    run(pg)
+    def box(sel): return pg.locator('.ood-dlg ' + sel).first.bounding_box()
+    okb = lambda: pg.locator('.ood-dlg button', has_text=re.compile('^OK$')).first.bounding_box()
+    lst0, ok0 = box('select'), okb()
+    pg.evaluate("(() => { const c = document.querySelector('.ood-client'); c.style.width = (c.clientWidth + 120) + 'px'; c.style.height = (c.clientHeight + 80) + 'px'; })()")
+    settle(pg, 800)
+    lst1, ok1 = box('select'), okb()
+    expect('the list stretched 120 px wide', round(lst1['width'] - lst0['width']), 120)
+    expect('  and 80 px tall', round(lst1['height'] - lst0['height']), 80)
+    expect('  its corner stayed', (round(lst1['x'] - lst0['x']), round(lst1['y'] - lst0['y'])), (0, 0))
+    expect('the button moved 120 px right and 80 px down', (round(ok1['x'] - ok0['x']), round(ok1['y'] - ok0['y'])), (120, 80))
+    expect('  its size kept', (round(ok1['width']), round(ok1['height'])), (round(ok0['width']), round(ok0['height'])))
+    pg.screenshot(path=str(SHOTS / 'resize_run.png'))
+    press(pg, 'OK'); expect('ended with OK', wait_end(pg)['rc'], 1)
+
+SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views, 'gadgets': sc_gadgets, 'libraries': sc_libraries, 'graph': sc_graph, 'trace': sc_trace, 'languages': sc_languages, 'ui_de': sc_ui_de, 'plugins': sc_plugins, 'assist': sc_assist, 'source': sc_source, 'bound': sc_bound, 'overview': sc_overview, 'labgraph': sc_labgraph, 'catch': sc_catch, 'labdrag': sc_labdrag, 'newkinds': sc_newkinds, 'resize': sc_resize}
 def main():
     names = sys.argv[1:] or list(SCENARIOS)
     srv = subprocess.Popen(['node', str(SITE / 'serve.mjs'), str(SITE), '--port', str(PORT)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

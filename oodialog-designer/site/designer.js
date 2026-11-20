@@ -234,6 +234,7 @@
     client.style.height = Math.round(f.h * st.fy) + 'px';
     client.style.backgroundSize = (4 * st.fx) + 'px ' + (4 * st.fy) + 'px';
     $('form').classList.toggle('sel', st.sel === 'form');
+    $('form').classList.toggle('dz-resizable', String(st.snap.form.resizable || '0') === '1');   // a grip in the corner
     client.textContent = ''; $('tray').textContent = '';
     drawMenuBar();
     for (const c of st.view.controls) {
@@ -267,6 +268,10 @@
     const el = D.createElement('div');
     const opts = String(c.opts || '').toUpperCase().split(/\s+/);
     el.className = 'dz' + (st.sel === c.name ? ' sel' : '') + (opts.includes('HIDDEN') ? ' hidden-style' : '');
+    if (String(st.snap.form.resizable || '0') === '1' && st.sel === c.name) {   // its anchored edges, marked while selected
+      const a = String(c.anchor || 'LEFT TOP').split(/\s+/);
+      for (const [w, k] of [['LEFT', 'l'], ['TOP', 't'], ['RIGHT', 'r'], ['BOTTOM', 'b']]) if (a.includes(w)) el.classList.add('anc-' + k);
+    }
     el.dataset.name = c.name; el.title = c.name + ' (' + c.type + ')';
     place(el, c.x, c.y, c.w, c.h);
     const body = D.createElement('div'); body.style.cssText = 'position:absolute;inset:0';
@@ -471,6 +476,7 @@
       $('propTitle').textContent = T('prop.form');
       const f = st.snap.form;
       for (const k of ['name', 'title', 'w', 'h']) box.appendChild(propInput('form', k, f[k]));
+      box.appendChild(checkInput('form', 'resizable', String(f.resizable || '0')));
       // the binding: the object this dialog edits (oorexx_mapped_objects)
       const b = st.snap.binding || {};
       const head = D.createElement('div'); head.className = 'hint bindHead'; head.textContent = T('prop.binding.hint'); box.appendChild(head);
@@ -483,8 +489,12 @@
     const keys = ['name'].concat(kind.nonvisual === '1' ? [] : ['x', 'y', 'w', 'h']).concat(String(kind.props || '').split(/\s+/).filter(Boolean));
     const tabs = st.snap.controls.filter((o) => o.type === 'TAB');
     if (kind.nonvisual !== '1' && c.type !== 'TAB' && tabs.length) keys.push('page');
+    const resizable = String(st.snap.form.resizable || '0') === '1';
     for (const k of keys) {
-      if (k === 'opts') box.appendChild(optsInput(c, kind, 'opts', kind.opts, T('prop.opts')));
+      if (k === 'anchor') {                          // only a resizable form has anchors; "" (an older design) is LEFT TOP
+        if (resizable) box.appendChild(optsInput(Object.assign({}, c, { anchor: c.anchor || 'LEFT TOP' }), kind, 'anchor', 'LEFT TOP RIGHT BOTTOM', T('prop.anchor')));
+      }
+      else if (k === 'opts') box.appendChild(optsInput(c, kind, 'opts', kind.opts, T('prop.opts')));
       else if (k === 'exstyles') box.appendChild(optsInput(c, kind, 'exstyles', kind.exopts, T('prop.exstyles')));
       else if (k === 'page') {
         const vals = [''], labels = [T('prop.page.always')];

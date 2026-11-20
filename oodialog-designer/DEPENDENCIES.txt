@@ -1,4 +1,4 @@
-ooDialog Designer v0.16 -- dependencies
+ooDialog Designer v0.17 -- dependencies
 Architecture: Tom Dyer.  Code: Claude (Opus 5.5).
 
 Model, generator, graph and language support (src/, the Autobuild tests):
@@ -10,7 +10,7 @@ Model, generator, graph and language support (src/, the Autobuild tests):
   vendor/ goes on REXX_PATH.  Only the graph (OodGraph.cls, t02) needs it.
 
 The programs it writes:
-- ooDialog (upstream, Windows) or ooDialog/WASM v0.21.0 (Claude (Fable 5.2);
+- ooDialog (upstream, Windows) or ooDialog/WASM v0.23.0 (Claude (Fable 5.2); resizable forms need v0.17+ of it;
   the up-down, month calendar, tool tips and track bar events need v0.16+,
   v0.18+ and v0.8+ of it)
 - nothing else: the language support (OodNls) is copied into each program

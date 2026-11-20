@@ -214,3 +214,12 @@ footer{font-size:11px;color:#56606b;padding:4px 10px;background:#f7f9fb;border-t
 .dz-cal-foot{text-align:center;color:#666;border-top:1px solid #e1e5ea}
 .dz-code.dz-code-out{right:auto;left:calc(100% + 2px)}
 .dz.dz-narrow{overflow:visible}
+#form.dz-resizable::after{content:"";position:absolute;right:1px;bottom:1px;width:11px;height:11px;pointer-events:none;
+  background:linear-gradient(135deg,transparent 45%,#8a8a8a 45%,#8a8a8a 52%,transparent 52%,transparent 66%,#8a8a8a 66%,#8a8a8a 73%,transparent 73%)}
+/* the edges a selected control is anchored to (a resizable form): an overlay
+   above the control, so a button's own face does not hide them */
+.dz.sel[class*="anc-"]::before{content:"";position:absolute;inset:0;z-index:3;pointer-events:none;border:0 solid #d9822b}
+.dz.sel.anc-l::before{border-left-width:3px}
+.dz.sel.anc-t::before{border-top-width:3px}
+.dz.sel.anc-r::before{border-right-width:3px}
+.dz.sel.anc-b::before{border-bottom-width:3px}

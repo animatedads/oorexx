@@ -21,13 +21,13 @@
 
 ::class OodModule public mixinclass Object
 ::method module_version class
-  return "0.16.0"
+  return "0.17.0"
 ::method module_lastChanged class
-  return "2026-11-19"
+  return "2026-11-20"
 ::method module_version
-  return "0.16.0"
+  return "0.17.0"
 ::method module_lastChanged
-  return "2026-11-19"
+  return "2026-11-20"
 
 
 /* One kind of control in the catalogue (a "kind" line of ::RESOURCE oodCatalog). */
@@ -206,6 +206,7 @@
   form["W"] = 200
   form["H"] = 120
   form["STYLE"] = "CENTER"
+  form["RESIZABLE"] = 0
   form["OBJECT"] = ""; form["OBJECTFILE"] = ""; form["OBJECTKEY"] = ""; form["DATABASES"] = ""
   controls = .array~new
   vars = .array~new
@@ -333,6 +334,7 @@
     c~setProp("max", 100)
     c~setProp("pos", 0)
   end
+  if k~props~wordpos("anchor") > 0 then c~setProp("anchor", "LEFT TOP")
   if k~type == "UPDOWN" then do
     c~setProp("min", 0)
     c~setProp("max", 100)
@@ -411,7 +413,7 @@
 -- The property names of a control, its kind's props plus the geometry.
 ::method propNames
   use strict arg name
-  if name~caselessEquals("form") then return "name title w h object objectfile objectkey databases"
+  if name~caselessEquals("form") then return "name title w h resizable object objectfile objectkey databases"
   c = self~control(name)
   if c~kind~nonvisual then return ("name" c~kind~props)~space
   names = "name x y w h" c~kind~props
@@ -474,6 +476,12 @@
         form["NAME"] = value
       end
       when key == "title" then form["TITLE"] = value
+      -- resizable: the class inherits ResizingAdmin and the controls follow
+      -- the form's edges by their anchors (defineSizing)
+      when key == "resizable" then do
+        if value \== 0 & value \== 1 then raise syntax 93.900 array(oodT("err.bool", key))
+        form["RESIZABLE"] = value + 0
+      end
       -- the binding: the dialog edits one object of a mapped class
       -- (oorexx_mapped_objects): its class, the file it is in, the key it
       -- opens unless the program is given one, the databases ("ent=data/ent ...")
@@ -574,6 +582,22 @@
     when wordpos(key, "min max pos") > 0 then do
       if \datatype(value, "W") then raise syntax 93.900 array(oodT("err.whole", key))
       c~setProp(key, value)
+    end
+    -- anchor: the edges of the form a control keeps its distance from when
+    -- the form is resized; both edges of an axis: it stretches; neither: it
+    -- keeps its place relative to the centre (stored as CENTER)
+    when key == "anchor" then do
+      v = value~upper~space
+      norm = ""
+      do e over "LEFT TOP RIGHT BOTTOM"~makeArray(" ")
+        if v~wordpos(e) > 0 then norm = norm e
+      end
+      do w over v~makeArray(" ")
+        if wordpos(w, "LEFT TOP RIGHT BOTTOM CENTER") = 0 then raise syntax 93.900 array(oodT("err.anchor", w))
+      end
+      norm = norm~strip
+      if norm == "" then norm = "CENTER"
+      c~setProp(key, norm)
     end
     when key == "buddy" then do
       if value \== "" then do
@@ -1386,7 +1410,9 @@
   expose form controls vars events methods requires shared languages userStrings
   out = .array~new
   out~append("designer version="self~module_version)
-  out~append("form name="oodQ(form["NAME"]) "title="oodQ(form["TITLE"]) "w="form["W"] "h="form["H"] "style="oodQ(form["STYLE"]))
+  line = "form name="oodQ(form["NAME"]) "title="oodQ(form["TITLE"]) "w="form["W"] "h="form["H"] "style="oodQ(form["STYLE"])
+  if form["RESIZABLE"] = 1 then line = line "resizable=1"
+  out~append(line)
   if self~isBound then out~append("binding object="oodQ(form["OBJECT"]) "file="oodQ(form["OBJECTFILE"]) "key="oodQ(form["OBJECTKEY"]) "databases="oodQ(form["DATABASES"]))
   if languages~items > 0 then out~append("languages list="oodQ(languages~makeString("L", " ")))
   do r over requires
@@ -1480,6 +1506,7 @@
         d~setProp("form", "w", f["W"])
         d~setProp("form", "h", f["H"])
         d~form["STYLE"] = oodAt(f, "STYLE")
+        if oodAt(f, "RESIZABLE") == 1 then d~setProp("form", "resizable", 1)
       end
       when f["*"] == "var" then d~setVar(f["NAME"], oodAt(f, "VALUE"))
       when f["*"] == "binding" then do
@@ -1594,7 +1621,8 @@
     out~append("::requires" oodRx(r))
   end
   out~append("")
-  out~append("::class" nm "subclass UserDialog")
+  if form["RESIZABLE"] = 1 then out~append("::class" nm "subclass UserDialog inherit ResizingAdmin")
+  else out~append("::class" nm "subclass UserDialog")
   out~append("")
   if shared~items > 0 then out~append("::attribute sharedScope        -- reach it in any method with: expose sharedScope")
   if bound then do
@@ -1634,7 +1662,9 @@
   do c over controls
     if c~type == "TIMER" then out~append("  self~"c~name"_enabled =" oodBool(c~prop("enabled")))
   end
-  out~append("  self~create(0, 0," form["W"]"," form["H"]"," self~textExpr("form", "title", form["TITLE"])"," oodRx(form["STYLE"])")")
+  style = form["STYLE"]
+  if form["RESIZABLE"] = 1, style~upper~wordpos("THICKFRAME") = 0 then style = (style "THICKFRAME")~strip
+  out~append("  self~create(0, 0," form["W"]"," form["H"]"," self~textExpr("form", "title", form["TITLE"])"," oodRx(style)")")
   if bound then self~generateOpen(out, nls)
   do c over controls
     if c~kind~args~wordpos("attr") = 0 then iterate
@@ -1703,6 +1733,7 @@
     out~append("  self~connectTabEvent("c~dlgId", ""SELCHANGE"", "oodRx(c~name"_pageChanged")")")
   end
   out~append("")
+  if form["RESIZABLE"] = 1 then self~generateSizing(out)
   -- initDialog: list items, ranges, timers, then the form's INIT code
   out~append("::method initDialog unguarded")
   do c over controls
@@ -2225,6 +2256,63 @@
 -- The menu bar: menu items, in creation order, grouped by the menu (popup)
 -- each is in; an item whose text is - is a separator.  Attached in
 -- initDialog; upstream keeps it as self~menuBar.
+-- defineSizing for a resizable form (ResizingAdmin, upstream's own): every
+-- control keeps its distance to the edges it is anchored to.  STATIONARY
+-- holds an edge at its distance from the named edge; MYLEFT and MYTOP keep
+-- the control's width and height.  A control on a tab page is pinned to the
+-- tab control, not the form; the tab controls are given first, because a
+-- control pinned to another is laid out after it.
+::method generateSizing
+  expose controls
+  use strict arg out
+  out~append("::method defineSizing")
+  out~append("  -- the form is resizable; each control follows the edges it is anchored to")
+  out~append("  self~defaultSizing(.array~of(""STATIONARY"", ""LEFT""), .array~of(""STATIONARY"", ""TOP""), .array~of(""MYLEFT"", ""LEFT""), .array~of(""MYTOP"", ""TOP""))")
+  order = .array~new
+  do c over controls
+    if c~type == "TAB" then order~append(c)
+  end
+  do c over controls
+    if c~type \== "TAB" then order~append(c)
+  end
+  do c over order
+    if c~kind~nonvisual then iterate
+    a = c~prop("anchor")
+    if a == "" then a = "LEFT TOP"
+    tab = self~pageTab(c)
+    if a == "LEFT TOP", tab == .nil then iterate
+    to = ""
+    if tab \== .nil then to = "," tab~dlgId
+    -- each edge as the arguments of .array~of(pinType, edge[, pinTo]); not
+    -- named b: "..."b right after a quote is a binary string
+    lft = '"STATIONARY", "LEFT"' || to; rgt = '"MYLEFT", "LEFT"'
+    if a~wordpos("RIGHT") > 0 then do
+      if a~wordpos("LEFT") > 0 then rgt = '"STATIONARY", "RIGHT"' || to
+      else lft = '"STATIONARY", "RIGHT"' || to
+    end
+    else if a~wordpos("LEFT") = 0 then lft = '"STATIONARY", "XCENTER"' || to
+    tp = '"STATIONARY", "TOP"' || to; btm = '"MYTOP", "TOP"'
+    if a~wordpos("BOTTOM") > 0 then do
+      if a~wordpos("TOP") > 0 then btm = '"STATIONARY", "BOTTOM"' || to
+      else tp = '"STATIONARY", "BOTTOM"' || to
+    end
+    else if a~wordpos("TOP") = 0 then tp = '"STATIONARY", "YCENTER"' || to
+    out~append("  self~controlSizing("c~dlgId", .array~of("lft"), .array~of("tp"), .array~of("rgt"), .array~of("btm"))   --" c~name":" a)
+  end
+  out~append("  return 0")
+  out~append("")
+
+-- the tab control whose page a control is on, or .nil
+::method pageTab
+  expose controls
+  use strict arg c
+  parse value c~prop("page") with tn ":" .
+  if tn == "" then return .nil
+  do o over controls
+    if o~type == "TAB", o~name~caselessEquals(tn) then return o
+  end
+  return .nil
+
 -- the up-down whose buddy c is and shows its number (SETBUDDYINT), or .nil
 ::method upDownOf
   expose controls
@@ -2602,22 +2690,22 @@
    action: a line the code pane inserts when a control is dropped on it
    (types: kinds it applies to, * for every visual kind; %n: the name). */
 ::resource oodKinds
-kind type=PUSHBUTTON label="Push button" prefix=btn create=createPushButton access=newPushButton args=text w=50 h=14 text=Button events=CLICKED connect=connectButtonEvent opts="DEFAULT GROUP NOTAB DISABLED HIDDEN" props="text role bind opts tip"
-kind type=STATIC label=Text prefix=lbl create=createStaticText access=newStatic args=text w=60 h=10 text=Text opts="LEFT RIGHT CENTER GROUP DISABLED HIDDEN" props="text bind opts tip"
-kind type=EDIT label="Entry field" prefix=txt create=createEdit access=newEdit args=attr w=80 h=12 events="CHANGE UPDATE" connect=connectEditEvent opts="READONLY RIGHT CENTER PASSWORD MULTILINE NUMBER UPPER GROUP NOTAB DISABLED HIDDEN" props="text bind opts tip"
-kind type=CHECKBOX label="Check box" prefix=chk create=createCheckBox access=newCheckBox args="text attr" w=60 h=10 text=Check events=CLICKED connect=connectButtonEvent opts="GROUP NOTAB DISABLED HIDDEN" props="text checked bind opts tip"
-kind type=RADIOBUTTON label="Radio button" prefix=opt create=createRadioButton access=newRadioButton args="text attr" w=60 h=10 text=Option events=CLICKED connect=connectButtonEvent opts="GROUP NOTAB DISABLED HIDDEN" props="text checked groupstart opts tip"
-kind type=GROUPBOX label="Group box" prefix=grp create=createGroupBox access=newGroupBox args=text w=100 h=50 text=Group opts="HIDDEN" props="text opts tip"
-kind type=LISTBOX label="List box" prefix=lst create=createListBox access=newListBox args=attr w=80 h=50 events="SELCHANGE DBLCLK" connect=connectListBoxEvent opts="SORT MULTI GROUP NOTAB DISABLED HIDDEN" props="items opts tip"
-kind type=COMBOBOX label="Combo box" prefix=cbo create=createComboBox access=newComboBox args=attr w=80 h=60 events=SELCHANGE connect=connectComboBoxEvent opts="LIST SIMPLE SORT GROUP NOTAB DISABLED HIDDEN" defopts=LIST props="items bind opts tip"
-kind type=PROGRESSBAR label="Progress bar" prefix=prg create=createProgressBar access=newProgressBar args="" w=100 h=10 opts="SMOOTH VERTICAL HIDDEN" props="min max pos opts tip"
-kind type=LISTVIEW label="List view" prefix=lv create=createListView access=newListView args="" w=120 h=60 events="SELECTCHANGED COLUMNCLICK CHECKBOXCHANGED" connect=connectListViewEvent opts="REPORT LIST ICON SMALLICON SINGLESEL SHOWSELALWAYS GROUP NOTAB DISABLED HIDDEN" defopts="REPORT SHOWSELALWAYS" exopts="FULLROWSELECT GRIDLINES CHECKBOXES" props="columns rows bind exstyles opts tip"
-kind type=TAB label="Tab strip" prefix=tab create=createTab access=newTab args="" w=120 h=14 events=SELCHANGE connect=connectTabEvent opts="BUTTONS MULTILINE GROUP NOTAB DISABLED HIDDEN" props="tabs opts tip"
-kind type=TREEVIEW label="Tree view" prefix=tv create=createTreeView access=newTreeView args="" w=100 h=60 events=SELCHANGED connect=connectTreeViewEvent opts="LINES BUTTONS ATROOT SHOWSELALWAYS GROUP NOTAB DISABLED HIDDEN" defopts="LINES BUTTONS ATROOT SHOWSELALWAYS" props="nodes opts tip"
-kind type=TRACKBAR label="Track bar" prefix=trk create=createTrackBar access=newTrackBar args="" w=100 h=16 events="DRAG ENDTRACK" connect=connectTrackBarEvent opts="HORIZONTAL VERTICAL AUTOTICKS NOTICKS BOTH TOP BOTTOM GROUP NOTAB DISABLED HIDDEN" defopts="HORIZONTAL AUTOTICKS" props="min max pos opts tip"
-kind type=DATETIME label="Date picker" prefix=dtp create=createDateTimePicker access=newDateTimePicker args="" w=80 h=12 events=DATETIMECHANGE connect=connectDateTimePickerEvent opts="SHORT LONG TIME SHOWNONE UPDOWN GROUP NOTAB DISABLED HIDDEN" defopts=SHORT props="opts tip"
-kind type=UPDOWN label="Up-down" prefix=ud create=createUpDown access=newUpDown args="" w=10 h=12 events=DELTAPOS connect=connectUpDownEvent opts="SETBUDDYINT ARROWKEYS WRAP NOTHOUSANDS AUTOBUDDY RIGHT LEFT DISABLED HIDDEN" defopts="SETBUDDYINT ARROWKEYS" props="min max pos buddy opts tip"
-kind type=MONTHCALENDAR label="Month calendar" prefix=cal create=createMonthCalendar access=newMonthCalendar args="" w=120 h=96 events="SELECT SELCHANGE" connect=connectMonthCalendarEvent opts="NOTODAY GROUP NOTAB DISABLED HIDDEN" props="opts tip"
+kind type=PUSHBUTTON label="Push button" prefix=btn create=createPushButton access=newPushButton args=text w=50 h=14 text=Button events=CLICKED connect=connectButtonEvent opts="DEFAULT GROUP NOTAB DISABLED HIDDEN" props="text role bind opts tip anchor"
+kind type=STATIC label=Text prefix=lbl create=createStaticText access=newStatic args=text w=60 h=10 text=Text opts="LEFT RIGHT CENTER GROUP DISABLED HIDDEN" props="text bind opts tip anchor"
+kind type=EDIT label="Entry field" prefix=txt create=createEdit access=newEdit args=attr w=80 h=12 events="CHANGE UPDATE" connect=connectEditEvent opts="READONLY RIGHT CENTER PASSWORD MULTILINE NUMBER UPPER GROUP NOTAB DISABLED HIDDEN" props="text bind opts tip anchor"
+kind type=CHECKBOX label="Check box" prefix=chk create=createCheckBox access=newCheckBox args="text attr" w=60 h=10 text=Check events=CLICKED connect=connectButtonEvent opts="GROUP NOTAB DISABLED HIDDEN" props="text checked bind opts tip anchor"
+kind type=RADIOBUTTON label="Radio button" prefix=opt create=createRadioButton access=newRadioButton args="text attr" w=60 h=10 text=Option events=CLICKED connect=connectButtonEvent opts="GROUP NOTAB DISABLED HIDDEN" props="text checked groupstart opts tip anchor"
+kind type=GROUPBOX label="Group box" prefix=grp create=createGroupBox access=newGroupBox args=text w=100 h=50 text=Group opts="HIDDEN" props="text opts tip anchor"
+kind type=LISTBOX label="List box" prefix=lst create=createListBox access=newListBox args=attr w=80 h=50 events="SELCHANGE DBLCLK" connect=connectListBoxEvent opts="SORT MULTI GROUP NOTAB DISABLED HIDDEN" props="items opts tip anchor"
+kind type=COMBOBOX label="Combo box" prefix=cbo create=createComboBox access=newComboBox args=attr w=80 h=60 events=SELCHANGE connect=connectComboBoxEvent opts="LIST SIMPLE SORT GROUP NOTAB DISABLED HIDDEN" defopts=LIST props="items bind opts tip anchor"
+kind type=PROGRESSBAR label="Progress bar" prefix=prg create=createProgressBar access=newProgressBar args="" w=100 h=10 opts="SMOOTH VERTICAL HIDDEN" props="min max pos opts tip anchor"
+kind type=LISTVIEW label="List view" prefix=lv create=createListView access=newListView args="" w=120 h=60 events="SELECTCHANGED COLUMNCLICK CHECKBOXCHANGED" connect=connectListViewEvent opts="REPORT LIST ICON SMALLICON SINGLESEL SHOWSELALWAYS GROUP NOTAB DISABLED HIDDEN" defopts="REPORT SHOWSELALWAYS" exopts="FULLROWSELECT GRIDLINES CHECKBOXES" props="columns rows bind exstyles opts tip anchor"
+kind type=TAB label="Tab strip" prefix=tab create=createTab access=newTab args="" w=120 h=14 events=SELCHANGE connect=connectTabEvent opts="BUTTONS MULTILINE GROUP NOTAB DISABLED HIDDEN" props="tabs opts tip anchor"
+kind type=TREEVIEW label="Tree view" prefix=tv create=createTreeView access=newTreeView args="" w=100 h=60 events=SELCHANGED connect=connectTreeViewEvent opts="LINES BUTTONS ATROOT SHOWSELALWAYS GROUP NOTAB DISABLED HIDDEN" defopts="LINES BUTTONS ATROOT SHOWSELALWAYS" props="nodes opts tip anchor"
+kind type=TRACKBAR label="Track bar" prefix=trk create=createTrackBar access=newTrackBar args="" w=100 h=16 events="DRAG ENDTRACK" connect=connectTrackBarEvent opts="HORIZONTAL VERTICAL AUTOTICKS NOTICKS BOTH TOP BOTTOM GROUP NOTAB DISABLED HIDDEN" defopts="HORIZONTAL AUTOTICKS" props="min max pos opts tip anchor"
+kind type=DATETIME label="Date picker" prefix=dtp create=createDateTimePicker access=newDateTimePicker args="" w=80 h=12 events=DATETIMECHANGE connect=connectDateTimePickerEvent opts="SHORT LONG TIME SHOWNONE UPDOWN GROUP NOTAB DISABLED HIDDEN" defopts=SHORT props="opts tip anchor"
+kind type=UPDOWN label="Up-down" prefix=ud create=createUpDown access=newUpDown args="" w=10 h=12 events=DELTAPOS connect=connectUpDownEvent opts="SETBUDDYINT ARROWKEYS WRAP NOTHOUSANDS AUTOBUDDY RIGHT LEFT DISABLED HIDDEN" defopts="SETBUDDYINT ARROWKEYS" props="min max pos buddy opts tip anchor"
+kind type=MONTHCALENDAR label="Month calendar" prefix=cal create=createMonthCalendar access=newMonthCalendar args="" w=120 h=96 events="SELECT SELCHANGE" connect=connectMonthCalendarEvent opts="NOTODAY GROUP NOTAB DISABLED HIDDEN" props="opts tip anchor"
 kind type=MENUITEM label="Menu item" prefix=mnu nonvisual=1 events=CLICKED props="popup text checked grayed"
 kind type=TIMER label="Timer thread" prefix=tmr nonvisual=1 events=TICK props="interval enabled"
 form events="INIT OK CANCEL SAVED"
