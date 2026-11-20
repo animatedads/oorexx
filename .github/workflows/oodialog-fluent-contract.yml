@@ -191,7 +191,7 @@ jobs:
                 $output -notmatch 'REXX_SMOKE_EVENT=check 203 U800000003 true 2' -or
                 $output -notmatch 'REXX_SMOKE_EVENT=toggleButton 204 U800000004 true 2' -or
                 $output -notmatch 'REXX_SMOKE_EVENT=slider 205 U800000005 42.500000 1' -or
-                $output -notmatch 'REXX_SMOKE_EVENT=radio 208 U800000006 true 2' -or
+                $output -notmatch 'REXX_SMOKE_EVENT=radio 208 U800000006 true 3' -or
                 $output -notmatch 'REXX_SMOKE_EVENT=appBarToggle 212 U800000010 true 2' -or
                 $output -notmatch 'REXX_SMOKE_EVENTS_DISPATCHED=6' -or
                 $output -notmatch 'REXX_SMOKE_PASS=1') {
