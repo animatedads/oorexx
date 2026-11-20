@@ -1,0 +1,10 @@
+# Qt dialect of oodialog-wasm tests/t20_lvrows.steps (v0.21.0).
+wait .ood-dlg >> text=Sort by age
+expect lvRows ==> Ann/Oban/30 Bob/Ayr/25 Michael/Perth WA/41 Susan/Elgin/9 Zed/Wick/5
+click .ood-dlg >> text=Sort by age
+sleep 500
+expect lvFirsts ==> Michael Ann Bob Susan Zed
+click .ood-dlg >> text=Sort by data
+sleep 500
+expect lvFirsts ==> Ann Bob Zed Susan Michael
+click .ood-dlg >> text=Close

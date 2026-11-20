@@ -1,0 +1,14 @@
+# Qt dialect of oodialog-wasm tests/t24_fit.steps (v0.23.0).  A desktop window is not scaled: one larger
+# than the screen's free area is put at its top left instead (see RENDERER_CONTRACT.md).
+wait .ood-dlg >> text=Close
+expect dlgReach ==> in
+screenarea 300 180
+sleep 300
+expect dlgReach ==> top-left
+screenarea 1000 700
+sleep 300
+expect dlgReach ==> in
+screenarea 0 0
+sleep 200
+expect dlgReach ==> in
+click .ood-dlg >> text=Close

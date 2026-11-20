@@ -1,0 +1,24 @@
+# Qt dialect of oodialog-wasm tests/t23_toolbar.steps (v0.22.0).
+wait .ood-tb >> text=Where Am I?
+expect tbDocked ==> True
+expect tbButtons ==> Press Me Please Pushed Where Am I? | Bold | Left(on) Right Off
+click .ood-tb >> text=Press Me Please
+sleep 300
+expect text .ood-dlg .ood-static ==> pressed
+click .ood-tb >> text=Where Am I?
+sleep 300
+expect text .ood-dlg .ood-static ==> There are 9 buttons.
+click .ood-tb >> text=Pushed
+click .ood-tb >> text=Bold
+click .ood-tb >> text=Bold
+click .ood-tb >> text=Bold
+click .ood-tb >> text=Right
+sleep 300
+expect tbPushed ==> Bold Right
+click .ood-dlg >> text=Report
+sleep 300
+expect tbDisabled 0 ==> True
+shot toolbar
+click .ood-tb >> text=Off
+sleep 200
+click .ood-dlg >> text=Close

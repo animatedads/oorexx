@@ -1,0 +1,16 @@
+# Qt dialect of oodialog-wasm tests/up6/SimpleMonthCalendar.steps (v0.16.0).
+wait .ood-mc
+sleep 500
+expect mcFits .ood-mc ==> True
+mcpick .ood-mc => 20
+sleep 500
+expect mcSel .ood-mc ==> @picked
+expect mcSelShown .ood-mc ==> True
+click .ood-mc-next
+sleep 300
+expect mcTitle .ood-mc ==> @next
+mcpick .ood-mc => 25
+sleep 500
+expect mcSelShown .ood-mc ==> True
+shot SimpleMonthCalendar
+click .ood-dlg button.ood-def

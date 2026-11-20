@@ -1,0 +1,240 @@
+wait .ood-dlg >> text=Display Selected Routine
+click .ood-dlg >> text=AskDialog Routine
+click .ood-dlg >> text=Display Selected Routine
+sleep 900
+shot rt_AskDialog
+press Enter
+sleep 400
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+click .ood-dlg >> text=CheckList Routine
+click .ood-dlg >> text=Display Selected Routine
+sleep 900
+shot rt_CheckList
+press Enter
+sleep 400
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+click .ood-dlg >> text=ErrorDialog Routine
+click .ood-dlg >> text=Display Selected Routine
+sleep 900
+shot rt_ErrorDialog
+press Enter
+sleep 400
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+click .ood-dlg >> text=FileNameDialog Routine
+click .ood-dlg >> text=Display Selected Routine
+sleep 900
+shot rt_FileNameDialog
+press Enter
+sleep 400
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+click .ood-dlg >> text=InfoDialog Routine
+click .ood-dlg >> text=Display Selected Routine
+sleep 900
+shot rt_InfoDialog
+press Enter
+sleep 400
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+click .ood-dlg >> text=InputBox Routine
+click .ood-dlg >> text=Display Selected Routine
+sleep 900
+shot rt_InputBox
+press Enter
+sleep 400
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+click .ood-dlg >> text=IntegerBox Routine
+click .ood-dlg >> text=Display Selected Routine
+sleep 900
+shot rt_IntegerBox
+press Enter
+sleep 400
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+click .ood-dlg >> text=ListChoice Routine
+click .ood-dlg >> text=Display Selected Routine
+sleep 900
+shot rt_ListChoice
+press Enter
+sleep 400
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+click .ood-dlg >> text=MessageDialog Routine
+click .ood-dlg >> text=Display Selected Routine
+sleep 900
+shot rt_MessageDialog
+press Enter
+sleep 400
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+click .ood-dlg >> text=MultiInputBox Routine
+click .ood-dlg >> text=Display Selected Routine
+sleep 900
+shot rt_MultiInputBox
+press Enter
+sleep 400
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+click .ood-dlg >> text=MultiListChoice Routine
+click .ood-dlg >> text=Display Selected Routine
+sleep 900
+shot rt_MultiListChoice
+press Enter
+sleep 400
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+click .ood-dlg >> text=PasswordBox Routine
+click .ood-dlg >> text=Display Selected Routine
+sleep 900
+shot rt_PasswordBox
+press Enter
+sleep 400
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+click .ood-dlg >> text=SingleSelection Routine
+click .ood-dlg >> text=Display Selected Routine
+sleep 900
+shot rt_SingleSelection
+press Enter
+sleep 400
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+click .ood-dlg >> text=TimedMessage Routine
+click .ood-dlg >> text=Display Selected Routine
+sleep 900
+shot rt_TimedMessage
+press Enter
+sleep 400
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+dismiss
+sleep 300
+click .ood-dlg >> text=Close
