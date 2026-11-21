@@ -1,0 +1,27 @@
+# Qt dialect of oodialog-wasm tests/print/t19_print.steps (v0.20.0): the deliver panel is a window of its own;
+# what was handed over is read from the renderer, each PDF by pdfinfo and pdftotext as the browser harness reads it.
+wait .ood-dlg >> text=Print list
+click .ood-dlg >> text=Print list
+wait .ood-deliver
+expect delivered ==> 1
+expect deliveredItem 0 ==> parts.pdf|application/pdf|Parts in stock|%PDF-
+expect deliverActions ==> Print Open Save Close
+shot print_panel
+click .ood-deliver >> text=Close
+sleep 200
+expect deliverPanels ==> 0
+click .ood-dlg >> text=Print text
+wait .ood-deliver
+expect deliveredItem 1 ==> note.pdf|application/pdf|A note|%PDF-
+click .ood-deliver >> text=Close
+click .ood-dlg >> text=Print report
+wait .ood-deliver
+sleep 500
+expect delivered ==> 3
+expect deliveredItem 2 ==> report.pdf|application/pdf|Built by the program|%PDF-
+expect deliverPanels ==> 1
+pdf 0 ==> 1 ; Parts in stock ; Part ; Description ; Stock ; P-100 ; Left-handed widget (blue) ; 12 ; P-205 ; Bracket, 40 mm ; 340 ; P-333 ; Cable (5 m) \ spare ; 7 ; 3 rows
+pdf 1 ==> 1 ; A note ; First paragraph, line one. ; Line two. ; Second paragraph.
+pdf 2 ==> 1 ; Built by the program ; Owner ; Tom Dyer ; One paragraph.
+click .ood-deliver >> text=Close
+click .ood-dlg >> text=Close

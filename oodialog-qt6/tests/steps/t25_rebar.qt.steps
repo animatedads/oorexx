@@ -1,0 +1,16 @@
+# Qt dialect of oodialog-wasm tests/t25_rebar.steps (v0.23.0).
+wait .ood-rb >> text=Tools
+expect rbDocked ==> True
+expect rbBands ==> Tools:toolbar:grip Pick:combo:nogrip Address:edit:grip
+expect rbLayout ==> True
+expect rbColors ==> rgb(220, 230, 250) rgb(0, 0, 128)
+click .ood-rb >> text=New
+sleep 300
+expect text .ood-dlg .ood-static ==> New pressed in the re-bar
+select .ood-rb select => two
+shot rebar
+click .ood-dlg >> text=Change
+sleep 500
+expect rbFirst ==> Choose:180
+expect rbCount ==> 2 true
+click .ood-dlg >> text=Close

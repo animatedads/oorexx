@@ -1,0 +1,9 @@
+# Qt dialect of oodialog-wasm tests/up7/basicResize.steps (v0.17.0).
+wait .ood-dlg
+sleep 500
+marklayout .ood-dlg
+resize .ood-dlg => x2 x2
+sleep 600
+expect scaled 2 ==> True
+shot basicResize_doubled
+click .ood-dlg button.ood-def

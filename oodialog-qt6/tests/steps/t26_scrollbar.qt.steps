@@ -1,0 +1,39 @@
+# Qt dialect of oodialog-wasm tests/t26_scrollbar.steps (v0.24.0).  The drag starts on the thumb itself
+# (">> thumb"), as a Qt scroll bar has arrow buttons at its ends where the page's range has none.
+wait .ood-dlg >> text=Close
+expect sbars ==> 0-60:10 1-9:5
+expect dtpRange ==> 2026-11-01 2026-12-31
+focus .ood-sbar >> nth=0
+press ArrowRight
+sleep 300
+expect text .ood-dlg .ood-static ==> position 11 1
+expect sbars 0 ==> 11
+press ArrowRight
+sleep 200
+press ArrowLeft
+sleep 200
+press PageDown
+sleep 300
+expect text .ood-dlg .ood-static ==> position 21 1
+press End
+sleep 300
+expect text .ood-dlg .ood-static ==> position 60 1
+expect sbars 0 ==> 60
+press Home
+sleep 300
+expect text .ood-dlg .ood-static ==> position 0 1
+mouse down .ood-sbar >> nth=0 >> thumb @ 0 0
+mouse move .ood-sbar >> nth=0 >> thumb @ 40 0
+mouse up .ood-sbar >> nth=0 >> thumb @ 40 0
+sleep 400
+expect sbars text ==> True
+focus .ood-sbar >> nth=1
+press End
+sleep 200
+press Home
+sleep 200
+press ArrowDown
+sleep 300
+expect sbars 1 ==> 6
+shot scrollbar
+click .ood-dlg >> text=Close

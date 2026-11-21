@@ -1,0 +1,18 @@
+# Qt dialect of oodialog-wasm tests/t22_statusbar.steps (v0.21.0).
+wait .ood-dlg >> text=Parts
+expect stbDocked ==> True
+expect stbText ==> Ready
+expect clientBg ==> rgb(200, 220, 240)
+expect buttonTexts ==> Parts|Simple|A check box|A radio|Old names|Close
+expect counts ==> 1 1 1 2
+expect lvColors ==> rgb(255, 255, 200) rgb(128, 0, 0)
+click .ood-dlg >> text=Parts
+sleep 400
+expect stbPartWidths 2 ==> left:80 middle:80
+expect stbPartText 2 ==> right
+expect stbPartTip 1 ==> a tip
+shot statusbar_parts
+click .ood-dlg >> text=Simple
+sleep 400
+expect stbText ==> one text
+click .ood-dlg >> text=Close

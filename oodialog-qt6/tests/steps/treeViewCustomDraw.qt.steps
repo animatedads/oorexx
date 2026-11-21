@@ -1,0 +1,26 @@
+# Qt dialect of oodialog-wasm tests/up10/treeViewCustomDraw.steps (v0.22.0).
+wait .ood-tv >> text=Computers
+sleep 800
+expect tvCd Products ==> rgb(0, 20, 82) on rgb(250, 250, 250)
+expect tvCd Computers ==> rgb(82, 0, 20) on rgb(250, 250, 250)
+expect tvCd Books ==> rgb(82, 61, 0) on rgb(250, 250, 250)
+click .ood-tv >> text=Books
+sleep 600
+expect tvCd Books ==> rgb(82, 0, 20) on rgb(250, 250, 250)
+expect tvCd Computers ==> rgb(82, 61, 0) on rgb(250, 250, 250)
+click .ood-tv >> text=Computers
+sleep 400
+click .ood-dlg >> text=Expand All
+sleep 1200
+expect tvCd Motherboards ==> rgb(0, 20, 82) on rgb(250, 250, 250)
+expect tvCd SCSI Motherboards ==> rgb(82, 61, 0) on rgb(250, 250, 250)
+expect tvCd Motherboard A ==> rgb(0, 82, 20) on rgb(250, 250, 250)
+shot treeViewCustomDraw
+click .ood-tv >> text=Products
+sleep 300
+click .ood-dlg >> text=Reverse Sort
+sleep 600
+expect tvKids Products ==> Special Offers|Home Electronics|Computers|Communications|Car Audio and Car Products|Books|Audio Video and Home Entertainment
+output count native function ==> 0
+output count error in event method ==> 0
+click .ood-dlg >> text=Close

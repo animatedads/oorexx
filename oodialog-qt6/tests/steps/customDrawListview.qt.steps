@@ -1,0 +1,19 @@
+# Qt dialect of oodialog-wasm tests/up10/customDrawListview.steps (v0.22.0).
+wait .ood-lv
+sleep 800
+expect lvCount ==> 1000
+expect lvCd 0 ==> rgb(247, 7, 59) on rgb(245, 245, 127)
+expect lvCd 1 ==> rgb(0, 0, 0) on rgb(188, 237, 102)
+expect lvCd 2 ==> rgb(247, 7, 59) on rgb(245, 245, 127)
+click .ood-lv tr:nth-child(2) .ood-lvchk
+sleep 600
+expect lvCd 1 font ==> rgb(17, 5, 250) on rgb(115, 245, 186) Courier New
+expect lvCd 0 ==> rgb(247, 7, 59) on rgb(245, 245, 127)
+shot customDrawListview
+scrollend .ood-lv
+sleep 800
+expect lvCd 999 ==> rgb(0, 0, 0) on rgb(188, 237, 102)
+expect lvCd 998 ==> rgb(247, 7, 59) on rgb(245, 245, 127)
+output count native function ==> 0
+output count error in event method ==> 0
+click .ood-dlg button.ood-def

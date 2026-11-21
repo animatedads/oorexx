@@ -1,0 +1,21 @@
+# Qt dialect of oodialog-wasm tests/t27_sheetpages.steps (v0.24.0).
+wait .ood-dlg >> text=Done
+expect tabsCur ==> First* Second Third
+click .ood-child >> text=Insert
+sleep 500
+expect tabsCur ==> Inserted First* Second Third
+click .ood-tabbtn >> text=Third
+sleep 500
+click .ood-child >> text=Report
+sleep 400
+click .ood-child >> text=Remove
+sleep 500
+expect tabsCur ==> First Second Third*
+click .ood-tabbtn >> text=First
+sleep 400
+click .ood-child >> text=Remove
+sleep 500
+expect tabsCur ==> Second* Third
+expect childShown ==> Page Second
+shot sheetpages
+click .ood-child >> text=Apply it

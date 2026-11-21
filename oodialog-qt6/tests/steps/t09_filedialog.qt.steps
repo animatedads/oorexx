@@ -1,0 +1,17 @@
+wait .ood-dlg >> text=Pick a text file
+expect [...document.querySelectorAll('.ood-dlg select[size] option')].map(o => o.textContent).includes('[docs]') ==> True
+dblclick .ood-dlg select[size] => [docs]
+sleep 500
+expect [...document.querySelectorAll('.ood-dlg select[size] option')].map(o => o.textContent).join(',') ==> [..],notes.txt,report.txt
+shot t09_filedialog
+fill .ood-dlg input:not([readonly]) => missing.txt
+click .ood-dlg >> text=Open
+wait .ood-msgbox >> text=File not found
+click .ood-msgbox >> text=OK
+fill .ood-dlg input:not([readonly]) => report.txt
+click .ood-dlg >> text=Open
+wait .ood-dlg >> text=Save As
+fill .ood-dlg input:not([readonly]) => summary
+click .ood-dlg button.ood-def
+wait .ood-dlg >> text=Open
+press Escape

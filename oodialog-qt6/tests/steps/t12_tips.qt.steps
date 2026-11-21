@@ -1,0 +1,9 @@
+# Qt dialect of oodialog-wasm tests/t12_tips.steps (v0.18.0): the tip is the page's own box, not Qt's tool tip.
+wait .ood-lv >> text=Chocolate
+mouse move .ood-dlg button.ood-def @ 10 8
+sleep 900
+expect tipShown ==> True
+expect tipText ==> Closes the dialog
+click .ood-dlg >> text=Close
+sleep 300
+expect tipShown ==> False

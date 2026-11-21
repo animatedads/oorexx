@@ -1,0 +1,18 @@
+# Qt dialect of oodialog-wasm tests/t29_sheetpopup.steps (v0.24.0).
+wait .ood-dlg >> text=Leave
+click .ood-dlg >> text=Open sheet
+wait .ood-tabbtn >> text=Beta
+click .ood-dlg >> text=Count
+sleep 300
+click .ood-dlg >> text=Count
+sleep 300
+expect statics count ==> count 2
+click .ood-tabbtn >> text=Beta
+sleep 300
+click .ood-dlg >> text=OK
+sleep 500
+expect tabsCur ==> 
+click .ood-dlg >> text=Count
+sleep 300
+expect statics count ==> count 3
+click .ood-dlg >> text=Leave

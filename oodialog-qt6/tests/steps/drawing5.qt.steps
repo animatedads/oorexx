@@ -1,0 +1,4 @@
+wait .ood-dlg
+sleep 800
+shot drawing5
+press Escape

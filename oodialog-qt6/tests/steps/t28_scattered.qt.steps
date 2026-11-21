@@ -1,0 +1,7 @@
+# Qt dialect of oodialog-wasm tests/t28_scattered.steps (v0.24.0).
+wait .ood-dlg >> text=Close
+click .ood-dlg >> text=Run
+wait .ood-dlg >> text=done
+expect gbTitle ==> Group right
+expect lvHead 1 ==> Deux right
+click .ood-dlg >> text=Close
