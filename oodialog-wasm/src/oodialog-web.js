@@ -373,7 +373,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
     return '1';
   };
   function cmd(dlg, c, code, always) {
-    if (always || dlg.subs.has(c.id + '.' + code) || dlg.subs.has(c.id + '.*') || dlg.subs.has('*.' + code))
+    if (always || dlg.subs.has(c.id + '.' + code) || dlg.subs.has(c.id + '.*') || dlg.subs.has('*.' + code) || dlg.subs.has('*.*'))
       fire(dlg.key, 'CMD', c.id, code);
   }
 
@@ -579,6 +579,13 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
         el = main = D.createElement('div'); el.className = 'ood-todo'; el.textContent = spec.kind + ' ' + c.id; c.focusable = false;
     }
     c.el = el; c.main = main;
+    /* The notifications every control has (connectNotifyEvent): sent only when connected. */
+    el.addEventListener('click', () => note(dlg, c, 'NM_CLICK', ''));
+    el.addEventListener('dblclick', () => note(dlg, c, 'NM_DBLCLK', ''));
+    el.addEventListener('contextmenu', () => note(dlg, c, 'NM_RCLICK', ''));
+    el.addEventListener('focusin', (e) => { if (!el.contains(e.relatedTarget)) note(dlg, c, 'NM_SETFOCUS', ''); });
+    el.addEventListener('focusout', (e) => { if (!el.contains(e.relatedTarget)) note(dlg, c, 'NM_KILLFOCUS', ''); });
+    el.addEventListener('keydown', (e) => { if (e.key === 'Enter') note(dlg, c, 'NM_RETURN', ''); });
     place(dlg, el, c);
     if (c.docked === 'top') { el.style.left = '0'; el.style.right = '0'; el.style.top = '0'; el.style.width = ''; el.style.height = ''; el.style.minHeight = '24px'; }   // Windows puts a tool bar at the top
     else if (c.docked) { el.style.left = '0'; el.style.right = '0'; el.style.bottom = '0'; el.style.top = ''; el.style.width = ''; if (!c.h) el.style.height = '22px'; }   // Windows puts a status bar at the bottom, whatever rectangle is given

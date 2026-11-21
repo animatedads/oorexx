@@ -1,4 +1,4 @@
-# ooDialog for ooRexx/WASM — v0.24.0
+# ooDialog for ooRexx/WASM — v0.25.0
 
 Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: Josep Maria Blasco's
 ooRexx/WASM (`oorexxwasm` 0.2.4, ooRexx 5.3.0) and its `js.cls`.
@@ -55,12 +55,15 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
     python3 tools/oodtest.py --poke upstream/examples 0 24
     python3 tools/oodtest.py --tree upstream/examples tests/t*.rex tests/up/calculator.rex tests/up/oodpbar.rex tests/up/oodStandardRoutines.rex
 
-## State on 2026-11-20 (v0.24.0)
+## State on 2026-11-21 (v0.25.0)
 
-- Natives ported: 1,098 of 1,182 (92.9%; 1,033 at v0.23.0). v0.24.0 added 65: the scroll bar
+- Natives ported: 1,118 of 1,182 (94.6%; 1,098 at v0.24.0). v0.25.0 added 20: user
+  messages, the notifications every control has, the up-down reply, buttons from a
+  stem, bars made after the dialog is shown, `.Window`, the public routines (see
+  "Natives added in v0.25.0", which also lists the 64 still missing). v0.24.0 added 65: the scroll bar
   control, the property sheet's page management, the date-time picker's range and
   month calendar settings, and 30 scattered over the classes (see "Natives added in
-  v0.24.0", which also lists the 84 still missing). v0.23.0 added 78: the re-bar (see
+  v0.24.0"). v0.23.0 added 78: the re-bar (see
   "Re-bar"). v0.22.0 added 74: tool bar and custom draw (see "Tool bar" and
   "Custom draw"). v0.21.0 added 192 (see "Natives added
   in v0.21.0" for what each family does, and which of them do nothing).
@@ -68,7 +71,7 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
   tips"). (The total was given as 1,181
   in v0.16.0 and v0.17.0; `dist/natives.txt` has 1,182 lines. It fell from 1,196 because 12
   natives are now plain Rexx in `src/patches.txt`.)
-- Tests: 61 of 61 pass in headless Chromium (`tests/t01`..`t29` with expected
+- Tests: 62 of 62 pass in headless Chromium (`tests/t01`..`t30` with expected
   output, the binary resource hand-off test `tests/res/t07_resdialog_binary`,
   four unmodified upstream samples: `calculator.rex`,
   `oodpbar.rex`, `oodStandardRoutines.rex`, and the tutorial
@@ -89,10 +92,10 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
   tutorial's `drawing3.rex` and `drawing5.rex`; and the three
   programs written by ooDialog Designer v0.3.0, in `tests/designer`).
 - Sweep of all 140 upstream example programs (`oodtest.py --sweep`, results in
-  `sweep.tsv`), each run from its own directory (last run at v0.24.0, on the build before the
-  last change, which made a popped-up property sheet modeless; no example uses that): 83 show their dialog, 7 run to
-  the end, 8 show only a message box, 2 stop at a native not ported yet (`RI_INIT`, `CDI_INIT`), 9
-  stop on an error (8 need a reader of binary resources, which is another
+  `sweep.tsv`), each run from its own directory (last run at v0.25.0, on its final build): 82 show their dialog, 7 run to
+  the end, 8 show only a message box, 2 stop at a native not ported yet (`RI_INIT`, `CDI_INIT`), 10
+  stop on an error (`BinaryMenuBar.rex` is counted as showing in some runs and as an error in others: it shows
+  its dialog and then reports the missing reader; 8 need a reader of binary resources, which is another
   task's work; `oovideo.rex` is broken upstream), 24 are components: parts of
   the user guide's Order Manager, which name their files from the program's
   directory and fail the same way on Windows when started alone, and 7 are
@@ -107,12 +110,12 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
 - Depth probe (`oodtest.py --poke`, results in `poke.tsv`): the 70 examples
   that show a dialog or a message box are used automatically (tabs, rows,
   check boxes, lists, edits, menus, every button, then closed; last full run
-  at v0.24.0, on the same build as the sweep). Of 91, 74 come through with no error, no unhandled Windows
+  at v0.25.0, on its final build). Of 90, 74 come through with no error, no unhandled Windows
   message and a clean end (`oograph.rex` did not end in one run of four at
   v0.22.0 and ended in the run at v0.23.0; its own test passes). 12 more have no fault except connecting an event
-  this layer does not produce. 5 have a problem, each named in `poke.tsv`, and
+  this layer does not produce. 4 have a problem, each named in `poke.tsv`, and
   none of them is a fault of this layer's own code: 2 are components started
-  alone, `sample.rex` (ResourceImage) and `BinaryMenuBar.rex` need a reader of binary resources, and
+  alone, `sample.rex` (ResourceImage) needs a reader of binary resources, and
   `sysinfo.rex` needs OLE and so does not end. The run at v0.19.0 found four
   faults of this layer, all fixed in it: a ControlDialog did not take its
   owner from its init argument; calcDisplayRect did not adjust the rectangle
@@ -275,6 +278,51 @@ The user cannot drag a band. The RBN_ events are accepted and not produced.
 minimizeBand, pushChevron, setPalette, setWindowTheme and sizeToRect do
 nothing.
 
+## Natives added in v0.25.0
+
+20 natives; 1,118 of 1,182 are ported. Test: `tests/t30_usermsg`.
+
+- **addUserMsg** (`en_addUserMessage`). The page does not speak Windows
+  messages, so a connection is served in three cases: `WM_COMMAND` (every
+  command event of the page is matched against the message and its filters);
+  `WM_SIZE` and `WM_MOVE` (as connectResize and connectMove); and any message
+  the program itself sends to the dialog with `sendMessage` and its family,
+  whose answer is the method's answer. Any other message of Windows itself is
+  accepted and never arrives.
+- **addUserSubclass**: the same for a control, for the messages the program
+  sends to it. The method is a method of the dialog.
+- **connectNotifyEvent**: CLICK, DBLCLK, ENTER, RCLICK, GOTFOCUS and
+  LOSTFOCUS of any control; the method gets the ID and the control's handle.
+  RDBLCLK and OUTOFMEMORY are accepted and not produced.
+- **Menu~connectMenuEvent**: CONTEXTMENU is produced; INITMENU and
+  INITMENUPOPUP are accepted and not produced.
+- **.UpDown~deltaPosReply**: the answer of a DELTAPOS method now cancels the
+  change or replaces the delta.
+- **createPushButtonStem**. A width and height given are used; upstream's DLL
+  replaces them by 50 and 14.
+- **createToolBarWindow, createStatusBarWindow, createReBarWindow**: the bar
+  is made in a dialog that is already shown.
+- **.Window~new(handle)**: an object for any live dialog or control.
+- **Routines**: `findWindow(caption)` finds a live dialog of this program by
+  its title; `simpleFolderBrowse`; `locate` (it was ported before under a
+  name the count did not see).
+- **.Image**: `toID` (upstream's table of 83 symbols); `userIcon` answers the
+  file given to `addIconResource`; `fromIDs` answers null images, as the page
+  has none of the images of Windows.
+- A method connected to an event may now answer nothing where an answer is
+  optional. Before, that was reported as an error of the method.
+
+Still missing (64):
+- `cid_*` (28): CommonDialogCustomizations, the program's own controls inside
+  an Open or Save dialog.
+- The tab owner dialog (11): `tod_*`, `todi_*`, `cdi_*`, `mt_init`. Needed by
+  `TabOwnerDemo.rex`. Earlier releases of this file called these "task
+  dialogs"; that was wrong.
+- `catdlg_*` (4): CategoryDialog, deprecated upstream.
+- `ri_*` (7): ResourceImage, needs the reader of binary resources.
+- 14 others: the `*_test` debugging hooks and `routineTest` (11), `lv_zTest`,
+  `dimBitmap`, `MonthCalendar~getGridInfo`.
+
 ## Natives added in v0.24.0
 
 65 natives; 1,098 of 1,182 are ported. Tests: `tests/t26_scrollbar`,
@@ -319,17 +367,6 @@ nothing.
 - A directory answered by a native is read by index where the name is also a
   method of every object: `range["START"]`, not `range~start` (the same on
   Windows).
-
-Still missing (84): the common item dialog (`cid_*`, 28) and the category
-and task dialogs (`catdlg_*`, `cdi_*`, `tod_*`, `todi_*`, 14 of them left),
-ResourceImage (`ri_*`, 7: needs the reader of binary resources), and 35
-others: the `*_test` debugging hooks (10), the four public routines
-(`findWindow`, `locate`, `simpleFolderBrowse`, `routineTest`), user-defined
-messages and notifications (`addUserMessage`, `connectNotifyEvent`,
-`connectMenuEvent`, `addUserSubclass`), `createPushButtonStem`,
-`UpDown~deltaPosReply`, the create-window helpers of tool bar, status bar and
-re-bar (4), `.Image~fromIDs`/`toID`/`userIcon`, `dimBitmap`, `lv_zTest`,
-`MonthCalendar~getGridInfo`, and five set-up natives.
 
 ## Natives added in v0.21.0
 
@@ -559,8 +596,8 @@ connectActivate,
 connectHelp, connectPosChanged and connectResizing (accepted, not produced);
 drawing the icons of image lists; wizard header and
 watermark images; the remaining list-view and tree-view events; the
-CommonDialogCustomizations controls; the 84 natives listed under "Natives
-added in v0.24.0".
+CommonDialogCustomizations controls; the 64 natives listed under "Natives
+added in v0.25.0".
 
 ## Known
 

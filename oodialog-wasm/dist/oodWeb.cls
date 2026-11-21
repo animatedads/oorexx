@@ -24,9 +24,9 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.24.0"
+  return "0.25.0"
 ::method module_lastChanged class
-  return "2026-11-20"
+  return "2026-11-21"
 ::attribute key unguarded
 ::attribute rexxSelf unguarded
 ::attribute library unguarded
@@ -102,9 +102,9 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.24.0"
+  return "0.25.0"
 ::method module_lastChanged class
-  return "2026-11-20"
+  return "2026-11-21"
 ::attribute rexxSelf unguarded
 ::attribute isBar unguarded
 ::attribute wID unguarded
@@ -131,9 +131,9 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.24.0"
+  return "0.25.0"
 ::method module_lastChanged class
-  return "2026-11-20"
+  return "2026-11-21"
 ::attribute dlg unguarded             -- its dialog's OodDlg
 ::attribute id unguarded
 ::attribute kind unguarded
@@ -149,9 +149,9 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.24.0"
+  return "0.25.0"
 ::method module_lastChanged class
-  return "2026-11-20"
+  return "2026-11-21"
 ::method module_version unguarded
   return self~class~module_version
 ::method module_lastChanged unguarded
@@ -286,6 +286,10 @@
 ::method winMsg unguarded          -- a Win32 message to a control
   use arg d, id, msg, wParam = 0, lParam = 0
   if \d~live then return 0
+  if id > 0 then do
+    answer = self~userMessage(d, id, self~number(msg), self~number(wParam), self~number(lParam))
+    if answer \== .nil then return answer
+  end
   return self~web~msg(d~key, id, self~number(msg), self~number(wParam), self~number(lParam))
 
 ::method number unguarded          -- 0x00F5, a handle, or a number, as a number
@@ -494,6 +498,7 @@
   if d == .nil then return
   dlg = d~rexxSelf
   if d~sheet \== .nil then if code == 0 then if self~sheetButton(d, id) then return
+  if self~userMessage(d, 0, 273, code * 65536 + id, key * 65536 + id) \== .nil then return
   method = ""
   do entry over d~cmdTable
     if entry[1] \== id then iterate
@@ -519,8 +524,9 @@
 ::method invokeResult unguarded
   use arg dlg, method, args
   signal on syntax
-  answer = dlg~sendWith(method, args)
-  if var("ANSWER") then return answer
+  call = .message~new(dlg, method, "A", args)
+  call~send
+  if call~hasResult then return call~result
   return .nil
 syntax:
   say "ooDialog/WASM: error in event method" method":" condition("O")~message
@@ -2670,7 +2676,11 @@ noPackage:
   if id < 1 then return id
   return 0
 
-::method dyndlg_addIconResource unguarded     -- icons are not shown yet
+::method dyndlg_addIconResource unguarded     -- addIconResource(id, fileName): kept for .Image~userIcon; 0, -1 for a bad ID
+  use arg self_, msg, a
+  id = self~resolveId(self_, a[1])
+  if id < 1 then return -1
+  self_~oodPeer~store["ICON" id] = a[2]
   return 0
 
 ::method dyndlg_createNamedControl unguarded  -- createListView, createTreeView, createTab, createUpDown, createTrackBar ...
@@ -3564,6 +3574,19 @@ noPackage:
     if entry[2] \== event then iterate
     if entry[3] == "@SHEETTAB" then do
       self~sheetTab(dlg)
+      iterate
+    end
+    if event~left(3) == "NM_" then do    -- connectNotifyEvent: (id, the control's handle)
+      self~invoke(dlg, entry[3], .array~of(id, hwnd))
+      iterate
+    end
+    if kind == "UPDOWN" then do          -- the answer may be an .UpDown~deltaPosReply
+      reply = self~invokeResult(dlg, entry[3], .array~of(parts[1], parts[2], id, hwnd, dlg~newUpDown(id)))
+      if reply \== .nil then if reply~isA(.Directory) then if reply["DELTAPOSREPLY"] == .true then if reply["CHANGE"] then do
+        new = parts[1]
+        if \reply["CANCEL"] then new = parts[1] + reply["NEWDELTA"]
+        self~winMsg(d, id, 1137, 0, new)       -- UDM_SETPOS32
+      end
       iterate
     end
     select
@@ -7541,6 +7564,8 @@ noPackage:
   if a~hasIndex(2) then wParam = self~number(a[2])
   if a~hasIndex(3) then lParam = self~number(a[3])
   if t[2] == 0 then do
+    answer = self~userMessage(t[1], 0, code, wParam, lParam)
+    if answer \== .nil then return answer
     select
       when code == 40 then self~ctlOp(t[1], 0, "tab", (wParam == 0))        -- WM_NEXTDLGCTL
       when code == 1025 then self~ctlOp(t[1], 0, "default", wParam)         -- DM_SETDEFID
@@ -8756,6 +8781,318 @@ noPackage:
 ::method pd_setInterruptible unguarded -- ProgressDialog: the dialog always takes the user's Cancel here
   return 0
 
+/*==== v0.25.0: user messages, generic notifications, and others ========================*/
+/* addUserMsg(methodName, wm, wmFilter, wp, wpFilter, lp, lpFilter, willReply)
+   The page does not speak Windows messages, so a connection is served in three cases:
+   - WM_COMMAND (0x0111): every command event of the page is matched against it;
+   - WM_SIZE (5) and WM_MOVE (3): as connectResize and connectMove;
+   - any message the program itself sends to the dialog (sendMessage and its family).
+   Any other message from Windows itself is never produced here. */
+::method userFilter unguarded      -- an optional filter argument: a number, all bits by default
+  use arg a, i
+  numeric digits 40
+  if a~hasIndex(i) then return self~number(a[i])
+  return 4294967295
+::method bitAnd32 unguarded        -- the low 32 bits of two whole numbers, anded
+  use arg x, y
+  numeric digits 40
+  x = x // 4294967296
+  y = y // 4294967296
+  if x < 0 then x = x + 4294967296
+  if y < 0 then y = y + 4294967296
+  return x2d(c2x(bitand(x2c(d2x(x, 8)), x2c(d2x(y, 8)))))
+::method addUserEntry unguarded
+  use arg dlg, id, a
+  numeric digits 40
+  if a[1] == "" then raise syntax 93.900 array("the method name can not be the empty string")
+  d = dlg~oodPeer
+  wm = self~number(a[2])
+  wp = 0
+  lp = 0
+  if a~hasIndex(4) then wp = self~number(a[4])
+  if a~hasIndex(6) then lp = self~number(a[6])
+  if wm == 0 & wp == 0 & lp == 0 then raise syntax 93.900 array("the message, wParam and lParam can not all be 0")
+  entry = .directory~new
+  entry~id = id
+  entry~method = a[1]~upper
+  entry~wm = wm
+  entry~wmFilter = self~userFilter(a, 3)
+  entry~wp = wp
+  entry~wpFilter = self~userFilter(a, 5)
+  entry~lp = lp
+  entry~lpFilter = self~userFilter(a, 7)
+  if \a~hasIndex(6) then entry~lpFilter = 0
+  if \a~hasIndex(4) then entry~wpFilter = 0
+  table = d~store["USERMSGS"]
+  if table == .nil then do
+    table = .array~new
+    d~store["USERMSGS"] = table
+  end
+  table~append(entry)
+  return entry
+::method en_addUserMessage unguarded   -- 0 on success
+  use arg self_, msg, a
+  entry = self~addUserEntry(self_, 0, a)
+  d = self_~oodPeer
+  select
+    when self~bitAnd32(entry~wm, entry~wmFilter) == self~bitAnd32(273, entry~wmFilter) then do    -- WM_COMMAND
+      id = "*"
+      code = "*"
+      if self~bitAnd32(entry~wpFilter, 65535) == 65535 then id = entry~wp // 65536
+      if entry~wpFilter % 65536 == 65535 then code = entry~wp % 65536
+      d~cmdTable~append(.array~of(id, code, ""))
+      if d~live then self~web~sub(d~key, id, code)
+    end
+    when entry~wm == 5 then do
+      entry~wm = -1                    -- served by the page's own event
+      self~en_connectWmEvent(self_, "CONNECTRESIZE", .array~of(a[1]))
+    end
+    when entry~wm == 3 then do
+      entry~wm = -1
+      self~en_connectWmEvent(self_, "CONNECTMOVE", .array~of(a[1]))
+    end
+    otherwise nop                      -- reached when the program sends the message itself
+  end
+  return 0
+::method dlgctrl_addUserSubclass unguarded     -- a control's own messages: those the program sends to it, given to a method of the dialog; true
+  use arg self_, msg, a
+  p = self_~oodPeer
+  entry = self~addUserEntry(p~dlg~rexxSelf, p~id, a)
+  entry~target = self_
+  return .true
+/* A message for the dialog (id 0) or a control: the answer of the connected method, 0 if it
+   gives none; .nil if no connection matches. */
+::method userMessage unguarded
+  use arg d, id, wm, wp, lp
+  numeric digits 40
+  table = d~store["USERMSGS"]
+  if table == .nil then return .nil
+  do entry over table
+    if entry~id \== id then iterate
+    if entry~wm < 0 then iterate
+    if self~bitAnd32(wm, entry~wmFilter) \== self~bitAnd32(entry~wm, entry~wmFilter) then iterate
+    if self~bitAnd32(wp, entry~wpFilter) \== self~bitAnd32(entry~wp, entry~wpFilter) then iterate
+    if self~bitAnd32(lp, entry~lpFilter) \== self~bitAnd32(entry~lp, entry~lpFilter) then iterate
+    receiver = d~rexxSelf              -- (a control's subclass method is a method of its dialog, as upstream)
+    args = .array~of(wp, lp)
+    if wm == 273 then args = .array~of(wp, "0x"d2x(lp)~right(16, "0"))
+    answer = self~invokeResult(receiver, entry~method, args)
+    if answer == .nil then return 0
+    return answer
+  end
+  return .nil
+/* connectNotifyEvent(id, event, methodName, willReply): the notifications every control has.
+   The method gets (id, the control's handle).  0; -1 for a bad ID. */
+::method en_connectNotifyEvent unguarded
+  use arg self_, msg, a
+  id = self~resolveId(self_, a[1])
+  if id == -1 then return -1
+  keyword = a[2]~strip~upper
+  map = "CLICK NM_CLICK onClick DBLCLK NM_DBLCLK onDblClk ENTER NM_RETURN onEnter RCLICK NM_RCLICK onRClick" -
+        "GOTFOCUS NM_SETFOCUS onGotFocus LOSTFOCUS NM_KILLFOCUS onLostFocus" -
+        "RDBLCLK - onRDblClk OUTOFMEMORY - onOutOfMEMORY"
+  p = map~wordPos(keyword)
+  if p == 0 | p // 3 \== 1 then raise syntax 93.914 array(2, "CLICK, DBLCLK, ENTER, GOTFOCUS, LOSTFOCUS, OUTOFMEMORY, RCLICK, or RDBLCLK", a[2])
+  method = self~opt(a, 3)
+  if method == "" then method = map~word(p + 2)
+  if map~word(p + 1) == "-" then do    -- a browser has no right double click, and no such memory report
+    say "ooDialog/WASM: the event" keyword "of control" id "is connected but is not produced"
+    return 0
+  end
+  return self~addNotify(self_, id, map~word(p + 1), method, keyword)
+/* Menu~connectMenuEvent(methodName, keyword, filter, dlg): CONTEXTMENU is produced;
+   INITMENU and INITMENUPOPUP are accepted and not produced. */
+::method menu_connectMenuEvent unguarded
+  use arg self_, msg, a
+  dlg = self~menuDlgArg(a, 4)
+  if dlg == .nil then dlg = self_~oodPeer~dlg
+  if dlg == .nil then return .false
+  keyword = a[2]~strip~upper
+  if keyword == "CONTEXTMENU" then return self~connectContext(dlg, a[1])
+  if keyword \== "INITMENU" & keyword \== "INITMENUPOPUP" then raise syntax 93.914 array(2, "INITMENU, INITMENUPOPUP, or CONTEXTMENU", a[2])
+  say "ooDialog/WASM: the menu event" keyword "is connected but is not produced"
+  return .true
+/* .UpDown~deltaPosReply(change, cancel, newDelta): the answer of a DELTAPOS event method. */
+::method ud_deltaPosReply_cls unguarded
+  use arg self_, msg, a
+  reply = .directory~new
+  reply["DELTAPOSREPLY"] = .true
+  reply["CHANGE"] = .false
+  reply["CANCEL"] = .false
+  reply["NEWDELTA"] = 1
+  if a~hasIndex(1) then if a[1] then do
+    reply["CHANGE"] = .true
+    if a~hasIndex(2) then if a[2] then reply["CANCEL"] = .true
+    if a~hasIndex(3) then reply["NEWDELTA"] = a[3]
+  end
+  return reply
+/* createPushButtonStem(x, y, cx, cy, stem., row, leftTop): a row or column of buttons from
+   stem.0 and stem.i.ID, stem.i.TEXT, stem.i.METHOD, stem.i.OPTS.  0; -2 if there is no
+   template.  A given width and height are used; upstream's DLL replaces them by 50 and 14. */
+::method stemValue unguarded       -- stem.i.NAME, "" if not set
+  use arg stem., i, name
+  tail = i"."name
+  if \stem.~hasIndex(tail) then return ""
+  return stem.[tail]
+::method dyndlg_createPushButtonStem unguarded
+  use arg self_, msg, a
+  d = self_~oodPeer
+  if \d~templateActive then return -2
+  stem. = a[5]
+  if \stem.~isA(.Stem) then raise syntax 93.948 array(5, "Stem")
+  if \stem.~hasIndex(0) then raise syntax 93.900 array("the stem argument must have a whole number at index 0")
+  count = stem.[0]
+  if \count~datatype("W") then raise syntax 93.900 array("the stem argument must have a whole number at index 0")
+  buttons = .array~new
+  widest = 0
+  tallest = 0
+  do i = 1 to count
+    if \stem.~hasIndex(i".ID") then raise syntax 93.900 array("the stem argument has no index" i".ID")
+    b = .directory~new
+    b~id = self~stemValue(stem., i, "ID")
+    b~text = self~stemValue(stem., i, "TEXT")
+    b~method = self~stemValue(stem., i, "METHOD")
+    b~opts = self~stemValue(stem., i, "OPTS")
+    extent = self~textExtent(d, b~text)
+    widest = max(widest, extent[1])
+    tallest = max(tallest, extent[2])
+    buttons~append(b)
+  end
+  cx = 50
+  cy = 14
+  given = .false
+  if a~hasIndex(3) & a~hasIndex(4) then if a[3] > 0 & a[4] > 0 then given = .true
+  if given then do
+    cx = a[3]
+    cy = a[4]
+  end
+  else do
+    cx = max(cx, widest + 6)
+    cy = max(cy, tallest + 6)
+  end
+  row = .false
+  if a~hasIndex(6) then row = a[6]
+  corner = self~opt(a, 7)~upper
+  right = (corner~pos("LEFT") == 0)
+  bottom = (corner~pos("TOP") == 0)
+  x = -1
+  y = -1
+  if a~hasIndex(1) then x = a[1]
+  if a~hasIndex(2) then y = a[2]
+  if x < 0 | y < 0 then do
+    if row then do
+      if y < 0 then do
+        if bottom then y = d~sizeY - 7 - cy
+        else y = 7
+      end
+      if right then x = d~sizeX - 7 - count * cx - (count - 1) * 4
+      else x = 7
+    end
+    else do
+      if bottom then y = d~sizeY - 7 - count * cy - (count - 1) * 4
+      else y = 7
+      if x < 0 then do
+        if right then x = d~sizeX - 7 - cx
+        else x = 7
+      end
+    end
+  end
+  do b over buttons
+    id = self~addItem(self_, "BUTTON", b~id, x, y, cx, cy, b~opts, b~text)
+    if row then x = x + cx + 4
+    else y = y + cy + 4
+    if id < 1 then iterate
+    if id == 2 | id == 9 | b~method == "" then iterate
+    self~addCommand(self_, id, 0, b~method)
+  end
+  return 0
+/* CreateWindows: a tool bar, status bar or re-bar made in a dialog that is already shown.
+   createToolBarWindow(id, style): the control object; .nil if it can not be made. */
+::method cw_initCreateWindows unguarded
+  return .true
+::method cwCreate unguarded
+  use arg self_, kind, a
+  d = self_~oodPeer
+  if \d~live then return .nil
+  id = self~addItem(self_, kind, a[1], 0, 0, 0, 0, self~opt(a, 2), "")
+  if id < 1 then return .nil
+  return self_~send("NEW" || kind, id)
+::method cw_createToolBarWindow unguarded
+  use arg self_, msg, a
+  return self~cwCreate(self_, "TOOLBAR", a)
+::method cw_createStatusBarWindow unguarded
+  use arg self_, msg, a
+  return self~cwCreate(self_, "STATUSBAR", a)
+::method cw_createReBarWindow unguarded
+  use arg self_, msg, a
+  return self~cwCreate(self_, "REBAR", a)
+/* .Window~new(handle): an object for any live dialog or control, by its handle. */
+::method window_init unguarded
+  use arg self_, msg, a
+  w = self~windowOfHandle(a[1])
+  known = .false
+  if w \== .nil then do
+    if w[2] == 0 then known = .true
+    else known = (self~ctlOp(w[1], w[2], "rect") \== "")
+  end
+  if \known then raise syntax 93.900 array("argument 1 must be the handle of a live dialog or control; found" a[1])
+  if w[2] == 0 then self_~oodPeer = w[1]
+  else self_~oodPeer = .OodCtl~new(w[1], w[2], w[1]~kinds[w[2]])
+  return 0
+::method window_unInit unguarded
+  return 0
+::method winex_initWindowExtensions unguarded
+  return .true
+::method rcCtrlDlg_startTemplate unguarded     -- (cx, cy, title, fontName, fontSize, expected) for a managed control dialog: 0
+  use arg self_, msg, a
+  d = self_~oodPeer
+  d~sizeX = a[1]
+  d~sizeY = a[2]
+  if a[4] \== "" then d~fontName = a[4]
+  if a[5]~datatype("W") then if a[5] > 0 then d~fontSize = a[5]
+  return 0
+/* The public routines. */
+::method locate_rtn unguarded      -- locate(): tools/oodgen.rex makes the routine, which passes the calling program to locate
+  use arg self_, msg, a
+  return self~locate(self~opt(a, 1))
+::method simpleFolderBrowse_rtn unguarded      -- as .SimpleFolderBrowse~getFolder
+  use arg self_, msg, a
+  return self~classOf("SimpleFolderBrowse")~sendWith("GETFOLDER", a)
+::method findWindow_rtn unguarded  -- findWindow(caption): the handle of the live dialog with that title; 0 if none
+  expose dialogs
+  use arg self_, msg, a
+  do key over dialogs~allIndexes~sort
+    d = dialogs[key]
+    if \d~live then iterate
+    if self~ctlOp(d, 0, "getText")~caselessEquals(a[1]) then return "0x"d2x(key * 65536)~right(16, "0")
+  end
+  return 0
+/* .Image~toID(symbol): the number of an IDI_, IDC_, OBM_, OCR_, OIC_, IMAGE_ or LR_ symbol
+   (the table of upstream's oodResources.cpp). */
+::method image_toID_cls unguarded
+  use arg self_, msg, a
+  table = "IDI_APPLICATION 32512 IDI_HAND 32513 IDI_QUESTION 32514 IDI_EXCLAMATION 32515 IDI_ASTERISK 32516 IDI_WINLOGO 32517 IMAGE_BITMAP 0 IMAGE_ICON 1 IMAGE_CURSOR 2 IMAGE_ENHMETAFILE 3 OCR_NORMAL 32512 OCR_IBEAM 32513 OCR_WAIT 32514 OCR_CROSS 32515 OCR_UP 32516 OCR_SIZENWSE 32642 OCR_SIZENESW 32643 OCR_SIZEWE 32644 OCR_SIZENS 32645 OCR_SIZEALL 32646 OCR_NO 32648 OCR_HAND 32649 OCR_APPSTARTING 32650 OBM_CLOSE 32754 OBM_UPARROW 32753 OBM_DNARROW 32752 OBM_RGARROW 32751 OBM_LFARROW 32750 OBM_REDUCE 32749 OBM_ZOOM 32748 OBM_RESTORE 32747 OBM_REDUCED 32746 OBM_ZOOMD 32745 OBM_RESTORED 32744 OBM_UPARROWD 32743 OBM_DNARROWD 32742 OBM_RGARROWD 32741 OBM_LFARROWD 32740 OBM_MNARROW 32739 OBM_COMBO 32738 OBM_UPARROWI 32737 OBM_DNARROWI 32736 OBM_RGARROWI 32735 OBM_LFARROWI 32734 OBM_SIZE 32766 OBM_BTSIZE 32761 OBM_CHECK 32760 OBM_CHECKBOXES 32759 OBM_BTNCORNERS 32758 LR_DEFAULTCOLOR 0 LR_MONOCHROME 1 LR_COLOR 2 LR_COPYRETURNORG 4 LR_COPYDELETEORG 8 LR_LOADFROMFILE 16 LR_LOADTRANSPARENT 32 LR_DEFAULTSIZE 64 LR_VGACOLOR 128 LR_LOADMAP3DCOLORS 4096 LR_CREATEDIBSECTION 8192 LR_COPYFROMRESOURCE 16384 LR_SHARED 32768 ILC_MASK 1 ILC_COLOR 0 ILC_COLORDDB 254 ILC_COLOR4 4 ILC_COLOR8 8 ILC_COLOR16 16 ILC_COLOR24 24 ILC_COLOR32 32 ILC_PALETTE 2048 ILC_MIRROR 8192 ILC_PERITEMMIRROR 32768 BUTTON_IMAGELIST_ALIGN_LEFT 0 BUTTON_IMAGELIST_ALIGN_RIGHT 1 BUTTON_IMAGELIST_ALIGN_TOP 2 BUTTON_IMAGELIST_ALIGN_BOTTOM 3 BUTTON_IMAGELIST_ALIGN_CENTER 4 LVSIL_NORMAL 0 LVSIL_SMALL 1 LVSIL_STATE 2 TVSIL_NORMAL 0 TVSIL_STATE 2"
+  p = table~caselessWordPos(a[1])
+  if p == 0 | p // 2 == 0 then raise syntax 93.914 array(1, "the Image class symbol IDs", a[1])
+  return table~word(p + 1)
+/* .Image~userIcon(dlg, id, size, flags): the icon the dialog added with addIconResource. */
+::method image_userIcon_cls unguarded
+  use arg self_, msg, a
+  id = self~resolveId(a[1], a[2])
+  file = a[1]~oodPeer~store["ICON" id]
+  if file == .nil then return self_~new("")
+  return self_~new(self~imageKey(file))
+/* .Image~fromIDs(ids, type, size, flags): the images of Windows itself.  The page has none
+   of them, so each is a null image, as getImage answers for one. */
+::method image_fromIDs_cls unguarded
+  use arg self_, msg, a
+  if \a[1]~isA(.Array) then raise syntax 93.948 array(1, "Array")
+  images = .array~new
+  do id over a[1]
+    images~append(self_~new(self~imageKey(id)))
+  end
+  return images
+
 ::resource oodjs
 /* oodialog-web.js -- the page side of ooDialog for ooRexx/WASM.
  * Architecture: Tom Dyer.  Code: Claude (Fable 5.2).
@@ -9132,7 +9469,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
     return '1';
   };
   function cmd(dlg, c, code, always) {
-    if (always || dlg.subs.has(c.id + '.' + code) || dlg.subs.has(c.id + '.*') || dlg.subs.has('*.' + code))
+    if (always || dlg.subs.has(c.id + '.' + code) || dlg.subs.has(c.id + '.*') || dlg.subs.has('*.' + code) || dlg.subs.has('*.*'))
       fire(dlg.key, 'CMD', c.id, code);
   }
 
@@ -9338,6 +9675,13 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
         el = main = D.createElement('div'); el.className = 'ood-todo'; el.textContent = spec.kind + ' ' + c.id; c.focusable = false;
     }
     c.el = el; c.main = main;
+    /* The notifications every control has (connectNotifyEvent): sent only when connected. */
+    el.addEventListener('click', () => note(dlg, c, 'NM_CLICK', ''));
+    el.addEventListener('dblclick', () => note(dlg, c, 'NM_DBLCLK', ''));
+    el.addEventListener('contextmenu', () => note(dlg, c, 'NM_RCLICK', ''));
+    el.addEventListener('focusin', (e) => { if (!el.contains(e.relatedTarget)) note(dlg, c, 'NM_SETFOCUS', ''); });
+    el.addEventListener('focusout', (e) => { if (!el.contains(e.relatedTarget)) note(dlg, c, 'NM_KILLFOCUS', ''); });
+    el.addEventListener('keydown', (e) => { if (e.key === 'Enter') note(dlg, c, 'NM_RETURN', ''); });
     place(dlg, el, c);
     if (c.docked === 'top') { el.style.left = '0'; el.style.right = '0'; el.style.top = '0'; el.style.width = ''; el.style.height = ''; el.style.minHeight = '24px'; }   // Windows puts a tool bar at the top
     else if (c.docked) { el.style.left = '0'; el.style.right = '0'; el.style.bottom = '0'; el.style.top = ''; el.style.width = ''; if (!c.h) el.style.height = '22px'; }   // Windows puts a status bar at the bottom, whatever rectangle is given

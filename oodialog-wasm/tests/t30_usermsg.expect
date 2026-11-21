@@ -1,0 +1,24 @@
+stem 0
+addUserMsg 0
+addUserMsg 0
+ooDialog/WASM: the event RDBLCLK of control 47 is connected but is not produced
+notify 0 0 0 0
+status bar StatusBar 1 made later
+more bars ReBar 2 1 1
+subclass 1
+command 40 0 1
+custom 7 12
+sent 99 0
+list message 3 4
+sent to list 5
+window by window by window User messages
+findWindow 1 0
+toID 32513 1 32768 1
+send done
+static click 42 1
+stem button 51
+delta 1 1
+delta 10 -1
+delta 10 1
+got focus 43
+lost focus 43
