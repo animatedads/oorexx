@@ -35,10 +35,21 @@ r = run('s = ""' || nl || 'do' || nl || '  x = 1 + "a"' || nl || '  s = s "after
         'catch co = syntax' || nl || '  s = s "caught" co~code' || nl || 'end' || nl || 'return s~strip')
 call check "CATCH co = SYNTAX: caught, the rest of the block skipped", r == "caught 41.1"
 
--- the first CATCH whose condition matches is the one that runs
-r = run('do' || nl || '  raise user mine' || nl || 'catch syntax' || nl || '  return "syntax"' || nl || -
-        'catch user mine' || nl || '  return "mine"' || nl || 'end' || nl || 'return "none"')
-call check "CATCH USER name: the matching clause runs", r == "mine"
+-- the first CATCH whose condition matches is the one that runs.  The USER
+-- condition comes from a called routine with RAISE ... RETURN, which ends
+-- that routine and raises it in its caller, here.  (A RAISE without RETURN
+-- is an EXIT: it ends the whole program, and no CATCH or trap in it sees it.
+-- v0.13-v0.17 raised it in the block itself, and the check failed for that
+-- reason, not CATCH's.)
+r = run('do' || nl || '  call raiser' || nl || 'catch syntax' || nl || '  return "syntax"' || nl || -
+        'catch user mine' || nl || '  return "mine"' || nl || 'end' || nl || 'return "none"' || nl || -
+        'raiser: raise user mine return')
+call check "CATCH USER name: the matching clause runs (a callee's RAISE ... RETURN)", r == "mine"
+
+-- THROW (RFE #31) stays in its activation: a CATCH in the same block sees it
+r = run('do' || nl || '  throw user mine' || nl || '  return "not thrown"' || nl || 'catch user mine' || nl || -
+        '  return "mine"' || nl || 'end' || nl || 'return "none"')
+call check "THROW USER name: caught by a CATCH in the same block", r == "mine"
 
 -- a condition no CATCH names goes on out of the block
 r = run('signal on syntax name outer' || nl || 'do' || nl || '  x = 1 + "a"' || nl || 'catch error' || nl || -

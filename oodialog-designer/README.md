@@ -1,8 +1,9 @@
-# ooDialog Designer — v0.18.0
+# ooDialog Designer — v0.19.0
 
 Architecture: Tom Dyer. Code: Claude (Opus 5.5). README written by Claude (Opus 5.5).
 It runs on ooDialog/WASM v0.23.0 (code: Claude (Fable 5.2); v0.21.0 for
-designer v0.16, v0.7.0 up to v0.15) and on Josep Maria
+designer v0.16, v0.7.0 up to v0.15; designer v0.19 also qualified on
+v0.27.0) and on Josep Maria
 Blasco's ooRexx/WASM 0.2.4 runtime. The graph view parses event code with Josep
 Maria Blasco's Rexx Parser (beta 0.7, refresh 20261115, with CATCH and
 FINALLY; Apache License 2.0), shipped unchanged in
@@ -461,7 +462,11 @@ a built `site/plugins`, or skips them and says so. t07–t09 start their own
 stand-in servers with node; under native ooRexx (no ADDRESS FETCH) their
 network checks say SKIP, and t08's git-command checks still run.
 
-## State (2026-11-21, v0.18.0)
+## State (2026-11-21, v0.19.0)
+
+v0.19: `tests/catchcheck.rex` corrected (above); qualified on ooDialog/WASM
+v0.27.0 (fafd2c2) and on the Qt6 renderer v0.15.0 (5cc1c57, its pinned
+oodialog-wasm e2e7899): 6 of 6 offscreen and on Xvfb.
 
 v0.18: CATCH and FINALLY asked of the ooRexx, not read from its revision;
 the month calendar's default 150x110 DU; `tests/qt` run on the Qt6 renderer
@@ -705,14 +710,20 @@ Autobuild but was not published: its publish path still named v0.14).
   matching CATCH chosen, an unnamed condition going out; it reports what a
   CATCH on a LOOP does, and FINALLY after a normal end, after a CATCH, with
   LEAVE, and before an uncaught condition goes out. Which checks run is
-  asked of the ooRexx (v0.18), as the guard does. First run on an ooRexx
-  with both, 2026-11-21 (git trunk 5f066c9, Linux): 7 of 8. The one that
-  fails is "CATCH USER name": a `raise user mine` is not caught by
-  `catch user mine`. It is not CATCH alone: on that build and on
-  ooRexx/WASM r13268, `signal on error` then `raise error 5` (and the same
-  with USER) traps nothing and ends the program, while RAISE SYNTAX is
-  trapped. Not yet checked against a released ooRexx (5.0, 5.1), so it is
-  reported as an observation, not a fault; the check stays as written.
+  asked of the ooRexx (v0.18), as the guard does. On git trunk 5f066c9
+  (Linux), 2026-11-21: 9 of 9 (v0.19). v0.18's run was 7 of 8, and its
+  README called the failure an ooRexx observation. That was wrong; the
+  fault was the check's. A RAISE without RETURN is an EXIT: it ends the
+  whole program and raises the condition in the program's caller, so no
+  trap or CATCH in the program sees it (`RaiseInstruction.cpp`: "the
+  default is handled like an EXIT"). RAISE ... RETURN ends the routine and
+  raises it in its caller; THROW (RFE #31) stays in its routine. The check
+  now raises USER from a called routine with RETURN, and a new one THROWs
+  in the block; both are caught. The same behaviour of RAISE was seen on
+  trunk at the commit that created `releases/5.1.0` (41385194, which
+  answers 5.2.0) and on ooRexx/WASM r13268. That 5.1.0-point build does
+  not know CATCH, and run in a CATCH block it ran CATCH as a shell command
+  (`/bin/sh: CATCH: not found`): the guard's reason, seen.
 - `tests/wincheck.rex` is the Windows ooDialog check: it loads the
   Calculator, Threads, Contacts and ContactsDE (English and German) examples, shows each with
   `executeAsync`, presses their buttons with `Button~click` (BM_CLICK) and
