@@ -1426,7 +1426,7 @@ inline void raiseLostDigits(const Value &operand) {
     RexxObjectPtr r = interpreterHelper(t, temps, helper, "rx2cpp_lostdigits", source, {operand});
     throw NotReadyCondition(std::make_shared<EnvObject>((void *)rxobj::pinRef(t, r)), "LOSTDIGITS");
 }
-inline const bool lostDigitsInstalled = (lostDigitsHook() = &raiseLostDigits, true);
+// (installed as rx::lostDigitsHook by lostDigitsOption, after MethodTraps: ::OPTIONS LOSTDIGITS SYNTAX first)
 // RAISE of a non-SYNTAX condition, reaching the native entry of a compiled method or routine: the interpreter raises
 // it from a small routine whose caller is this native activation, which keeps it and raises it in its own caller when
 // it returns (NativeActivation::checkConditions: trapped there, or ignored; the RESULT is the method's result).
@@ -1654,6 +1654,9 @@ struct MethodTraps {
     const bool *savedNovalue = nullptr;
     bool lostDigitsOn = false;                 // SIGNAL ON LOSTDIGITS or ANY: native arithmetic raises LOSTDIGITS
     const bool *savedLostDigits = nullptr;
+    // ::OPTIONS condition SYNTAX settings (ActivationScope::SyntaxOption bits) that a trap set or turned off in this
+    // activation has disabled (RexxActivation::trapOn / trapOff); an internal routine starts with its caller's.
+    unsigned char syntaxOff = 0;
     int label[SLOTS] = {};
     // The names of USER conditions and of missing SIGNAL ON labels, kept apart and made only when one is set (an
     // activation is entered on every internal routine call: its traps cost nothing until used).
@@ -1734,6 +1737,7 @@ struct MethodTraps {
             if (from->names_) names_ = std::make_unique<Names>(*from->names_);
             users = from->users; has = from->has; name = from->name; instruction = from->instruction; object = from->object;
             std::memcpy(sequence, from->sequence, sizeof sequence);
+            syntaxOff = from->syntaxOff;
             caller = from;
             catchAncestor = from->catches ? from : from->catchAncestor;
         }
@@ -1761,8 +1765,28 @@ struct MethodTraps {
     }
     void syncNovalue() {
         const bool catching = catches || catchAncestor;
-        novalueOn = (on[NOVALUE] && !callMode[NOVALUE]) || (on[ANY] && !callMode[ANY]) || (catching && catchesKind("NOVALUE"));
-        lostDigitsOn = (on[LOSTDIGITS] && !callMode[LOSTDIGITS]) || (on[ANY] && !callMode[ANY]) || (catching && catchesKind("LOSTDIGITS"));
+        const unsigned char option = syntaxOptions();
+        novalueOn = (on[NOVALUE] && !callMode[NOVALUE]) || (on[ANY] && !callMode[ANY]) || (catching && catchesKind("NOVALUE")) ||
+                    (option & ActivationScope::NOVALUE_SYNTAX);
+        lostDigitsOn = (on[LOSTDIGITS] && !callMode[LOSTDIGITS]) || (on[ANY] && !callMode[ANY]) ||
+                       (catching && catchesKind("LOSTDIGITS")) || (option & ActivationScope::LOSTDIGITS_SYNTAX);
+    }
+    // The ::OPTIONS condition SYNTAX settings in force in this activation.
+    unsigned char syntaxOptions() const {
+        const ActivationScope *a = threadState().scope;
+        return a ? static_cast<unsigned char>(a->conditionSyntax & ~syntaxOff) : 0;
+    }
+    // A trap set or turned off for condition c (SIGNAL: signal; CALL ON: not) disables its ::OPTIONS SYNTAX here, as
+    // RexxActivation::trapOn / trapOff do: NOVALUE, LOSTDIGITS and NOSTRING by SIGNAL only; ANY for all of them.
+    void optionTrap(const char *c, bool signal) {
+        const std::string n(c);
+        const bool any = n == "ANY";
+        if (signal && (any || n == "NOVALUE")) syntaxOff |= ActivationScope::NOVALUE_SYNTAX;
+        if (any || n == "ERROR") syntaxOff |= ActivationScope::ERROR_SYNTAX;
+        if (any || n == "FAILURE") syntaxOff |= ActivationScope::FAILURE_SYNTAX;
+        if (signal && (any || n == "LOSTDIGITS")) syntaxOff |= ActivationScope::LOSTDIGITS_SYNTAX;
+        if (signal && (any || n == "NOSTRING")) syntaxOff |= ActivationScope::NOSTRING_SYNTAX;
+        if (any || n == "NOTREADY") syntaxOff |= ActivationScope::NOTREADY_SYNTAX;
     }
     MethodTraps(const MethodTraps &) = delete;
     MethodTraps &operator=(const MethodTraps &) = delete;
@@ -1775,7 +1799,8 @@ struct MethodTraps {
     // 8 NOTREADY (CALL ON), 2 NOSTRING, 4 LOSTDIGITS; 0 none.
     static int interpreterConditionMode() {
         ActivationScope *a = ActivationScope::current();
-        if (!a || !a->traps) return 0;
+        if (!a) return 0;
+        if (!a->traps) return a->conditionSyntax ? optionConditionMode(a->conditionSyntax) : 0;
         const MethodTraps &m = *a->traps;
         int mode = 0;
         const int notReady = m.trapping("NOTREADY", NOTREADY);
@@ -1783,15 +1808,26 @@ struct MethodTraps {
         else if (notReady >= 0) mode |= m.callMode[notReady] ? 8 : 1;
         if (m.trapping("NOSTRING", NOSTRING) >= 0 || m.catchesKind("NOSTRING")) mode |= 2;
         if (m.trapping("LOSTDIGITS", LOSTDIGITS) >= 0 || m.catchesKind("LOSTDIGITS")) mode |= 4;
-        return mode;
+        return mode | optionConditionMode(m.syntaxOptions());
+    }
+    // ::OPTIONS NOTREADY / NOSTRING / LOSTDIGITS SYNTAX: the interpreter hands such a condition back (as SIGNAL ON),
+    // to become the SYNTAX error here (checkOptionSyntax). (A CALL ON NOTREADY trap has turned NOTREADY SYNTAX off.)
+    static int optionConditionMode(unsigned char option) {
+        return (option & ActivationScope::NOTREADY_SYNTAX ? 1 : 0) | (option & ActivationScope::NOSTRING_SYNTAX ? 2 : 0) |
+               (option & ActivationScope::LOSTDIGITS_SYNTAX ? 4 : 0);
     }
     // Which command conditions the running activation traps, as bits: 1 ERROR, 2 FAILURE, 4 ANY.
+    // ::OPTIONS ERROR / FAILURE SYNTAX: the helper traps that condition too, so that it comes back to become the SYNTAX
+    // error (an untrapped FAILURE still becomes ERROR in the helper, as RexxActivation::command does).
     static int commandConditionMode() {
         ActivationScope *a = ActivationScope::current();
-        if (!a || !a->traps) return 0;
+        if (!a) return 0;
+        const unsigned char option = a->traps ? a->traps->syntaxOptions() : a->conditionSyntax;
+        const int optionMode = (option & ActivationScope::ERROR_SYNTAX ? 1 : 0) | (option & ActivationScope::FAILURE_SYNTAX ? 2 : 0);
+        if (!a->traps) return optionMode;
         const MethodTraps &m = *a->traps;
         return (m.on[ERROR] || m.catchesKind("ERROR") ? 1 : 0) | (m.on[FAILURE] || m.catchesKind("FAILURE") ? 2 : 0) |
-               (m.on[ANY] || m.catchesKind("ANY") ? 4 : 0);
+               (m.on[ANY] || m.catchesKind("ANY") ? 4 : 0) | optionMode;
     }
     // The running activation's traps, for INTERPRET: the conditions (not SYNTAX) the interpreted string must hand back,
     // each with its form (true: CALL ON).
@@ -1831,10 +1867,11 @@ struct MethodTraps {
     }
     int find(const std::string &c) const { return const_cast<MethodTraps *>(this)->slotOf(c, false); }
     // (names_->missing[k]: SIGNAL ON c NAME label with no such label: 16.1 when c is raised)
-    void set(const char *c, int target) { const int k = slotOf(c, true); on[k] = true; sequence[k] = ++trapSequence(); callMode[k] = false; label[k] = target; if (names_) names_->missing[k].clear(); syncNovalue(); }
-    void setMissing(const char *c, const std::string &name) { const int k = slotOf(c, true); on[k] = true; sequence[k] = ++trapSequence(); callMode[k] = false; label[k] = -1; names().missing[k] = name; syncNovalue(); }
-    void setCall(const char *c, int target) { const int k = slotOf(c, true); on[k] = true; sequence[k] = ++trapSequence(); callMode[k] = true; delayed[k] = false; label[k] = target; if (names_) names_->missing[k].clear(); syncNovalue(); }
-    void clear(const char *c) { const int k = slotOf(c, true); on[k] = false; callMode[k] = false; syncNovalue(); }
+    void set(const char *c, int target) { optionTrap(c, true); const int k = slotOf(c, true); on[k] = true; sequence[k] = ++trapSequence(); callMode[k] = false; label[k] = target; if (names_) names_->missing[k].clear(); syncNovalue(); }
+    void setMissing(const char *c, const std::string &name) { optionTrap(c, true); const int k = slotOf(c, true); on[k] = true; sequence[k] = ++trapSequence(); callMode[k] = false; label[k] = -1; names().missing[k] = name; syncNovalue(); }
+    void setCall(const char *c, int target) { optionTrap(c, false); const int k = slotOf(c, true); on[k] = true; sequence[k] = ++trapSequence(); callMode[k] = true; delayed[k] = false; label[k] = target; if (names_) names_->missing[k].clear(); syncNovalue(); }
+    // SIGNAL OFF c (signal) or CALL OFF c
+    void clear(const char *c, bool signal = true) { optionTrap(c, signal); const int k = slotOf(c, true); on[k] = false; callMode[k] = false; syncNovalue(); }
     // An exception reached the activation: the label to continue at (the trap is turned off), or -1 to let it go on.
     int fire(Variables &vars, std::size_t line, std::exception_ptr e) {
         if (internal) {   // a RAISE SYNTAX without RETURN in an internal routine is for the top level only
@@ -2205,6 +2242,71 @@ inline const CatchBlock *MethodTraps::findCatch(const std::string &c, const Catc
             if (b->clauseFor(c, key) >= 0) { owner = t; return b; }
     return nullptr;
 }
+// ::OPTIONS condition SYNTAX (Activity::checkConditionSyntaxOptions, RexxActivation::handleNovalueEvent and the
+// command path): is condition c (object o: its RC for a coded ERROR / FAILURE clause), about to be raised in the running
+// activation, a SYNTAX error instead? Yes when its package has the option, no trap of the activation has turned it off,
+// and no running CATCH clause (here or in the code that called this internal routine) takes c.
+inline bool optionSyntax(unsigned char bit, const char *c, const std::shared_ptr<ObjectDispatch> &o = nullptr) {
+    const ActivationScope *a = ActivationScope::current();
+    if (!a || !(a->conditionSyntax & bit)) return false;
+    if (const MethodTraps *m = a->traps) {
+        if (m->syntaxOff & bit) return false;
+        if ((m->catches || m->catchAncestor) && m->catching(c, o)) return false;
+    }
+    return true;
+}
+// The SYNTAX error of an ::OPTIONS condition SYNTAX: 98.970 ERROR, 98.971 FAILURE (the command and its return code),
+// 98.972 LOSTDIGITS (the number), 98.973 NOSTRING (the string value), 98.974 NOTREADY (the stream), from the condition's
+// DESCRIPTION (and RC); 98.986 NOVALUE (the variable).
+[[noreturn]] inline void raiseOptionSyntax(const std::string &c, const std::shared_ptr<ObjectDispatch> &o) {
+    const Value description = o ? conditionEntry(o, "DESCRIPTION") : Value::string(std::string());
+    std::string code = "98.974", text = "Stream \"" + description.bytes.str() + "\" is not ready";
+    std::vector<Value> subs{description};
+    if (c == "ERROR" || c == "FAILURE") {
+        const Value rc = conditionEntry(o, "RC");
+        code = c == "ERROR" ? "98.970" : "98.971";
+        text = "External command \"" + description.bytes.str() + (c == "ERROR" ? "\" ended with return code " : "\" failed with return code ") + rc.bytes.str();
+        subs.push_back(rc);
+    }
+    else if (c == "LOSTDIGITS") { code = "98.972"; text = "Number " + description.bytes.str() + " has more digits than the current precision"; }
+    else if (c == "NOSTRING") { code = "98.973"; text = "Object \"" + description.bytes.str() + "\" does not have a string representation"; }
+    SyntaxCondition e(code, text, false);
+    e.substitutions = std::move(subs);
+    throw e;
+}
+inline unsigned char optionBit(const std::string &c) {
+    if (c == "ERROR") return ActivationScope::ERROR_SYNTAX;
+    if (c == "FAILURE") return ActivationScope::FAILURE_SYNTAX;
+    if (c == "LOSTDIGITS") return ActivationScope::LOSTDIGITS_SYNTAX;
+    if (c == "NOSTRING") return ActivationScope::NOSTRING_SYNTAX;
+    if (c == "NOTREADY") return ActivationScope::NOTREADY_SYNTAX;
+    if (c == "NOVALUE") return ActivationScope::NOVALUE_SYNTAX;
+    return 0;
+}
+// A condition raised inside the interpreter for the running activation (a stream method's NOTREADY, a LOSTDIGITS or
+// NOSTRING of the interpreter's arithmetic or string requests): SYNTAX instead when the option says so.
+inline void checkOptionSyntax(const std::string &c, const std::shared_ptr<ObjectDispatch> &o) {
+    if (const unsigned char bit = optionBit(c)) if (optionSyntax(bit, c.c_str(), o)) raiseOptionSyntax(c, o);
+}
+// NOVALUE (rx::raiseNoValue): 98.986 under ::OPTIONS NOVALUE SYNTAX.
+inline void noValueOption(const std::string &name) {
+    if (!optionSyntax(ActivationScope::NOVALUE_SYNTAX, "NOVALUE")) return;
+    SyntaxCondition e("98.986", "Reference to unassigned variable \"" + name + "\"", false);
+    e.substitutions = {Value::string(name)};
+    throw e;
+}
+inline const bool noValueOptionInstalled = (noValueHook() = &noValueOption, true);
+// LOSTDIGITS of native arithmetic (rx::checkLostDigits): 98.972 under ::OPTIONS LOSTDIGITS SYNTAX, else the condition.
+inline void lostDigitsOption(const Value &operand) {
+    if (optionSyntax(ActivationScope::LOSTDIGITS_SYNTAX, "LOSTDIGITS")) {
+        SyntaxCondition e("98.972", "Number " + operand.bytes.str() + " has more digits than the current precision", false);
+        e.substitutions = {operand};
+        throw e;
+    }
+    const ActivationScope *a = ActivationScope::current();
+    if (a && a->traps && a->traps->lostDigitsOn) raiseLostDigits(operand);
+}
+inline const bool lostDigitsOptionInstalled = (lostDigitsHook() = &lostDigitsOption, true);
 // A RAISE that ended a compiled callee reaches its compiled caller (RexxActivation::raise: the sender's trap). A caller
 // that traps the condition with SIGNAL ON (it or ANY) gets it now: it is rethrown, delivered, to the caller's
 // MethodTraps; with CALL ON it is queued for the caller's clause boundary. Otherwise HALT is error 4.1 and NOMETHOD
@@ -2243,6 +2345,11 @@ inline std::optional<Value> raisedInCaller(const RaiseToCaller &r) {
 }
 // NOSTRING (RexxObject::requestString used STRING): raised in the running activation when it traps it.
 inline void raiseNoString(const Value &text, const Value &object) {
+    if (optionSyntax(ActivationScope::NOSTRING_SYNTAX, "NOSTRING")) {
+        SyntaxCondition e("98.973", "Object \"" + text.bytes.str() + "\" does not have a string representation", false);
+        e.substitutions = {text};
+        throw e;
+    }
     ActivationScope *a = ActivationScope::current();
     if (!a || !a->traps || a->traps->trapping("NOSTRING", MethodTraps::NOSTRING) < 0) return;
     RaiseToCaller r;
@@ -4031,6 +4138,7 @@ inline void interpreterCommand(Variables &vars, const Value &environment, const 
             RexxObjectPtr nameObj = t->DirectoryAt((RexxDirectoryObject)cond, "CONDITION");
             const std::string conditionName = nameObj != NULLOBJECT && t->IsString(nameObj) ? t->ObjectToStringValue(nameObj) : std::string("ERROR");
             auto object = std::make_shared<EnvObject>((void *)rxobj::pinRef(t, cond));
+            checkOptionSyntax(conditionName, object);   // (FAILURE first: an untrapped one came back as ERROR)
             const int use = [&] { ActivationScope *a = ActivationScope::current(); return a && a->traps ? a->traps->trapping(conditionName, a->traps->find(conditionName)) : -1; }();
             if (use >= 0 && !ActivationScope::current()->traps->callMode[use])
                 object->sendMessage("PUT", {Value::string("SIGNAL"), Value::string("INSTRUCTION")});
@@ -4164,7 +4272,9 @@ inline std::optional<Value> trappedSend(const Value &target, const std::string &
         if (cond != NULLOBJECT && cond != t->Nil()) {
             RexxObjectPtr name = t->DirectoryAt((RexxDirectoryObject)cond, "CONDITION");
             std::string conditionName = name != NULLOBJECT && t->IsString(name) ? t->ObjectToStringValue(name) : std::string("NOTREADY");
-            throw NotReadyCondition(std::make_shared<EnvObject>((void *)rxobj::pinRef(t, cond)), conditionName);
+            auto object = std::make_shared<EnvObject>((void *)rxobj::pinRef(t, cond));
+            checkOptionSyntax(conditionName, object);
+            throw NotReadyCondition(object, conditionName);
         }
     }
     if (t->ArraySize(out) >= 3) if (RexxObjectPtr queued = t->ArrayAt(out, 3)) if (t->IsArray(queued)) {
@@ -4364,6 +4474,18 @@ inline std::optional<Value> interpretInActivation(Variables &vars, const Value &
     if (signalArmed)
         source += "rx2cppTrapped: return .array~of('" + key + "', RX2CPP_CALLER_CONTEXT()~variables, digits(), fuzz(), form(), condition('O'))\n";
     if (callArmed) source += "rx2cppQueued: if RX2CPP_TAKE('" + queueKey + "', 'K')~append(condition('O')) > 0 then nop\nreturn\n";
+    // ::OPTIONS condition SYNTAX in force here applies to the string too (an INTERPRET shares the activation's package
+    // settings); the running CATCH clauses wrap it (interpretCatchConditions), so they still win there
+    {
+        const ActivationScope *a = ActivationScope::current();
+        const unsigned char option = !a ? 0 : a->traps ? a->traps->syntaxOptions() : a->conditionSyntax;
+        if (option) {
+            static const char *const names[6] = {"error", "failure", "lostdigits", "nostring", "notready", "novalue"};
+            source += "::options";
+            for (int b = 0; b < 6; ++b) if (option & (1 << b)) { source += ' '; source += names[b]; source += " syntax"; }
+            source += '\n';
+        }
+    }
     // hand the queued conditions to this activation (MethodTraps::deliver)
     auto deliverQueued = [&] {
         if (!callArmed) return;

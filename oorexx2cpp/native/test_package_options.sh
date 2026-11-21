@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Qualify real ::OPTIONS package numeric defaults in loaded class .so files.
-# Non-OFF tracing and unsupported condition options remain fail-closed.
+# Non-OFF tracing and invalid condition options (a bad or missing SYNTAX / CONDITION) remain fail-closed.
 set -euo pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 OO_ROOT=${OO_ROOT:-${OO_REXX_ROOT:-/usr/local}}
@@ -21,7 +21,8 @@ grep -Fqx '333.3333333333333333333333' "$OUT/options.native.out"
 accepted=$(sha256sum "$OUT/librx2cpp_pkgoptions.so")
 for declaration in \
   '::options trace all' \
-  '::options all condition' \
+  '::options all bogus' \
+  '::options novalue' \
   '::options digits outside' \
   '::options digits 0' \
   '::options digits 100001' \
@@ -52,4 +53,4 @@ export REXX_PATH="$OUT:$REXX_PATH"
 "$REXX_BIN" "$OUT/digits2000_oracle.rex" > "$OUT/digits2000.reference.out"
 "$REXX_BIN" "$OUT/digits2000_client.rex" > "$OUT/digits2000.native.out"
 cmp "$OUT/digits2000.reference.out" "$OUT/digits2000.native.out"
-echo "PASS $CXX ::OPTIONS native DIGITS/FORM/FUZZ parity, high-precision arithmetic, 10 rollback-protected rejections"
+echo "PASS $CXX ::OPTIONS native DIGITS/FORM/FUZZ parity, high-precision arithmetic, 11 rollback-protected rejections"

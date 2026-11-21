@@ -146,6 +146,9 @@
       lines~append('      vars.numeric.fuzz = ' || options~fuzz || ';')
       if options~form == 'ENGINEERING' then
         lines~append('      vars.numeric.engineering = true;')
+      /* ::OPTIONS condition SYNTAX of the package (rx::ActivationScope::SyntaxOption bits) */
+      if options~hasMethod('SYNTAX') then if options~syntax > 0 then
+        lines~append('      _rxActivation.packageSyntax(' || options~syntax || ');')
     end
     lines~append('      rx::NumericScope _rxNumericScope(vars.numeric);')
     /* The arguments are set after the body's frame (rx::Frame, its first instruction when it has one): then each lands in
