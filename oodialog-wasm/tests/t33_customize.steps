@@ -1,0 +1,22 @@
+wait .ood-dlg >> text=Custom open
+expect (() => { const d = document.querySelector('.ood-dlg'); return [d.innerText.includes('Open read only'), d.innerText.includes('Encoding:'), d.innerText.includes('A text'), d.innerText.includes('Whole file'), d.innerText.includes('First page')].join(); })() ==> true,true,true,true,true
+expect [...document.querySelectorAll('.ood-dlg select:not([size]) option')].map(o => o.textContent).filter(t => /UTF|Latin|Hidden/.test(t)).join(',') ==> UTF-8,Latin-1
+click .ood-dlg >> text=Open read only
+sleep 300
+click .ood-dlg >> button:text-is("Fill")
+sleep 600
+expect (() => { const d = document.querySelector('.ood-dlg'); return [d.innerText.includes('Changed text'), [...d.querySelectorAll('input')].some(i => i.value === 'filled'), [...d.querySelectorAll('option')].some(o => o.textContent === 'ISO 8859-1')].join(); })() ==> true,true,true
+expect document.querySelectorAll('.ood-dlg [hidden], .ood-dlg [style*="visibility: hidden"]').length ==> 1
+select .ood-dlg select:has(option:text-is("ISO 8859-1")) => ISO 8859-1
+sleep 300
+click .ood-dlg >> text=First page
+sleep 300
+click .ood-dlg >> button:text-is("More")
+click text=Beta
+sleep 400
+click .ood-dlg >> button:text-is("Report")
+sleep 400
+shot customize
+fill .ood-dlg input:not([readonly]) >> nth=0 => b.cls
+click .ood-dlg >> button:text-is("v")
+click text=Open as copy

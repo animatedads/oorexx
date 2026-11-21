@@ -1,4 +1,4 @@
-# ooDialog for ooRexx/WASM — v0.27.0
+# ooDialog for ooRexx/WASM — v0.28.0
 
 Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: Josep Maria Blasco's
 ooRexx/WASM (`oorexxwasm` 0.2.4, ooRexx 5.3.0) and its `js.cls`.
@@ -55,9 +55,11 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
     python3 tools/oodtest.py --poke upstream/examples 0 24
     python3 tools/oodtest.py --tree upstream/examples tests/t*.rex tests/up/calculator.rex tests/up/oodpbar.rex tests/up/oodStandardRoutines.rex
 
-## State on 2026-11-21 (v0.27.0)
+## State on 2026-11-21 (v0.28.0)
 
-- Natives ported: 1,129 of 1,182 (95.5%; 1,118 at v0.26.0). v0.27.0 added 11: the
+- Natives ported: 1,157 of 1,182 (97.9%; 1,129 at v0.27.0). v0.28.0 added 28: the
+  program's own controls in a file dialog (see "File dialog customizations", which
+  also lists the 25 still missing). v0.27.0 added 11: the
   tab owner dialog (see "Tab owner dialog"). v0.26.0 added none: it is
   the release that makes KDE Breeze icons stand for the system images of Windows
   (see "System images"). v0.25.0 added 20: user
@@ -74,7 +76,7 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
   tips"). (The total was given as 1,181
   in v0.16.0 and v0.17.0; `dist/natives.txt` has 1,182 lines. It fell from 1,196 because 12
   natives are now plain Rexx in `src/patches.txt`.)
-- Tests: 64 of 64 pass in headless Chromium (`tests/t01`..`t32` with expected
+- Tests: 65 of 65 pass in headless Chromium (`tests/t01`..`t33` with expected
   output, the binary resource hand-off test `tests/res/t07_resdialog_binary`,
   four unmodified upstream samples: `calculator.rex`,
   `oodpbar.rex`, `oodStandardRoutines.rex`, and the tutorial
@@ -95,9 +97,11 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
   tutorial's `drawing3.rex` and `drawing5.rex`; and the three
   programs written by ooDialog Designer v0.3.0, in `tests/designer`).
 - Sweep of all 140 upstream example programs (`oodtest.py --sweep`, results in
-  `sweep.tsv`), each run from its own directory (last run at v0.27.0, on its final build): 82 show their dialog, 7 run to
-  the end, 8 show only a message box, 1 stops at a native not ported yet (`RI_INIT`), 11
-  stop on an error (`TabOwnerDemo.rex` now shows its owner dialog and stops at its pages, which come from a
+  `sweep.tsv`), each run from its own directory (last run at v0.28.0, on its final build): 84 show their dialog
+  (two of them, `BinaryMenuBar.rex` and `TabOwnerDemo.rex`, then report the missing reader of binary
+  resources; a run counts them as showing or as an error by timing), 7 run to
+  the end, 8 show only a message box, 1 stops at a native not ported yet (`RI_INIT`), 9
+  stop on an error (`TabOwnerDemo.rex` shows its owner dialog and stops at its pages, which come from a
   `TabOwnerDemo.dll` that is not in the source tree) (`BinaryMenuBar.rex` is counted as showing in some runs and as an error in others: it shows
   its dialog and then reports the missing reader; 8 need a reader of binary resources, which is another
   task's work; `oovideo.rex` is broken upstream), 24 are components: parts of
@@ -114,12 +118,12 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
 - Depth probe (`oodtest.py --poke`, results in `poke.tsv`): the 70 examples
   that show a dialog or a message box are used automatically (tabs, rows,
   check boxes, lists, edits, menus, every button, then closed; last full run
-  at v0.25.0; not run again at v0.26.0 or v0.27.0). Of 90, 74 come through with no error, no unhandled Windows
+  at v0.28.0, on its final build). Of 92, 74 come through with no error, no unhandled Windows
   message and a clean end (`oograph.rex` did not end in one run of four at
   v0.22.0 and ended in the run at v0.23.0; its own test passes). 12 more have no fault except connecting an event
-  this layer does not produce. 4 have a problem, each named in `poke.tsv`, and
+  this layer does not produce. 6 have a problem, each named in `poke.tsv`, and
   none of them is a fault of this layer's own code: 2 are components started
-  alone, `sample.rex` (ResourceImage) needs a reader of binary resources, and
+  alone, `sample.rex` (ResourceImage), `BinaryMenuBar.rex` and `TabOwnerDemo.rex` need a reader of binary resources, and
   `sysinfo.rex` needs OLE and so does not end. The run at v0.19.0 found four
   faults of this layer, all fixed in it: a ControlDialog did not take its
   owner from its init argument; calcDisplayRect did not adjust the rectangle
@@ -282,6 +286,47 @@ The user cannot drag a band. The RBN_ events are accepted and not produced.
 minimizeBand, pushChevron, setPalette, setWindowTheme and sizeToRect do
 nothing.
 
+## File dialog customizations (v0.28.0)
+
+28 natives; 1,157 of 1,182 are ported. Test: `tests/t33_customize`.
+
+A class that inherits `CommonDialogCustomizations` beside `OpenFileDialog` or
+`SaveFileDialog` puts its own controls into the dialog. The port's file dialog
+is itself an ooDialog dialog (`OodFileDialog` in `src/oodExtras.cls`), so the
+controls are ordinary ooDialog controls drawn below the file type.
+
+- Controls: `addCheckButton`, `addComboBox`, `addEditBox`, `addMenu`,
+  `addPushButton`, `addRadioButtonList`, `addSeparator`, `addText`,
+  `enableOpenDropDown`; items of a container with `addControlItem`; a label
+  for several controls with `startVisualGroup` and `endVisualGroup`.
+- Values, before the dialog, while it is shown (from an event method) and
+  after it: `isChecked`, `check`, `uncheck`, `setCheckButtonState`,
+  `getEditBoxText`, `setEditBoxText`, `getSelectedControlItem`,
+  `setSelectedControlItem`, `getControlState`, `setControlState`,
+  `getControlItemState`, `setControlItemState`, `setControlItemText`,
+  `setControlLabel`, `removeControlItem`.
+- Notices to the object given to `advise`: `onCheckButtonToggled`,
+  `onButtonClicked`, `onItemSelected`, `onControlActivating` (before a menu
+  opens).
+- A menu is a button that opens a pop-up menu. The Open button's own list
+  (`enableOpenDropDown`) is a small button beside it; choosing an item is
+  Open with that item, as on Windows.
+- Answers are the HRESULT numbers of Windows: 0, 2147942487 (E_INVALIDARG:
+  no such control, or an ID in use), 2147549183 (E_UNEXPECTED: a control
+  added while the dialog is shown), 2147500037 (E_FAIL: nothing selected).
+  As on Windows, `removeAllControlItems` and `removeControlItem` for a radio
+  button list answer 2147500033 (E_NOTIMPL).
+- `makeProminent`: Windows puts the control beside the Open button; here it
+  is drawn first.
+- The dialog grows by one row for each control. A dialog with very many
+  controls is taller than a phone screen; the page then scales it down.
+
+Still missing (25):
+- `ri_*` (7): ResourceImage, needs the reader of binary resources.
+- `catdlg_*` (4): CategoryDialog, deprecated upstream.
+- The `*_test` debugging hooks and `routineTest` (11).
+- `lv_zTest`, `dimBitmap`, `MonthCalendar~getGridInfo`.
+
 ## Tab owner dialog (v0.27.0)
 
 11 natives; 1,129 of 1,182 are ported. Test: `tests/t32_tabowner`.
@@ -316,14 +361,6 @@ prints debugging lines for them; this port follows the DLL's source.
 - Not done: the owner started from a resource (ResDialog, RcDialog) does not
   start its tabs; only a UserDialog owner does. `wantNotifications` is
   ignored.
-
-Still missing (53):
-- `cid_*` (28): CommonDialogCustomizations, the program's own controls inside
-  an Open or Save dialog.
-- `catdlg_*` (4): CategoryDialog, deprecated upstream.
-- `ri_*` (7): ResourceImage, needs the reader of binary resources.
-- 14 others: the `*_test` debugging hooks and `routineTest` (11), `lv_zTest`,
-  `dimBitmap`, `MonthCalendar~getGridInfo`.
 
 ## System images: KDE Breeze icons (v0.26.0)
 
@@ -663,8 +700,7 @@ connectActivate,
 connectHelp, connectPosChanged and connectResizing (accepted, not produced);
 drawing the icons of image lists; wizard header and
 watermark images; the remaining list-view and tree-view events; the
-CommonDialogCustomizations controls; the 53 natives listed under "Tab owner
-dialog".
+25 natives listed under "File dialog customizations".
 
 ## Known
 

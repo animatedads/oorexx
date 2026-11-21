@@ -24,7 +24,7 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.27.0"
+  return "0.28.0"
 ::method module_lastChanged class
   return "2026-11-21"
 ::attribute key unguarded
@@ -102,7 +102,7 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.27.0"
+  return "0.28.0"
 ::method module_lastChanged class
   return "2026-11-21"
 ::attribute rexxSelf unguarded
@@ -131,7 +131,7 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.27.0"
+  return "0.28.0"
 ::method module_lastChanged class
   return "2026-11-21"
 ::attribute dlg unguarded             -- its dialog's OodDlg
@@ -149,7 +149,7 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.27.0"
+  return "0.28.0"
 ::method module_lastChanged class
   return "2026-11-21"
 ::method module_version unguarded
@@ -9362,6 +9362,236 @@ noPackage:
 ::method tod_tabOwnerCancel unguarded
   use arg self_
   return self~todEnd(self_, .false)
+
+/*==== v0.28.0: CommonDialogCustomizations: the program's own controls in a file dialog ===*/
+/* The controls are kept as entries of the dialog's state and drawn by OodFileDialog
+   (oodExtras.cls) below the file list.  An entry: kind (CHECK COMBO EDIT MENU BUTTON RADIO
+   SEP TEXT GROUP OPENDROP), id, text, checked, state, items, selected, group, prominent.
+   Answers are HRESULT numbers as on Windows: 0 is S_OK. */
+::method cdcList unguarded
+  use arg self_
+  p = self_~oodPeer
+  if p["CUSTOM"] == .nil then p["CUSTOM"] = .array~new
+  return p["CUSTOM"]
+::method cdcFind unguarded         -- the entry with an ID given as a number or a global symbol; .nil
+  use arg self_, rxID
+  id = self~resolveId(.nil, rxID)
+  do entry over self~cdcList(self_)
+    if entry~id == id then return entry
+  end
+  return .nil
+::method cdcItem unguarded         -- an item of a container entry; .nil
+  use arg entry, rxID
+  id = self~resolveId(.nil, rxID)
+  do item over entry~list
+    if item~id == id then return item
+  end
+  return .nil
+::method cdcLive unguarded         -- the file dialog while it is shown; .nil
+  use arg self_
+  return self_~oodPeer["LIVE"]
+::method cdcSync unguarded         -- take what the user did in the shown dialog into the entries
+  use arg self_
+  live = self~cdcLive(self_)
+  if live \== .nil then live~customSync
+  return
+::method cdcPush unguarded         -- show an entry's new state in the shown dialog
+  use arg self_, entry
+  live = self~cdcLive(self_)
+  if live \== .nil then live~customApply(entry)
+  return 0
+::method cdcAdd unguarded
+  use arg self_, kind, rxID, text
+  if self~cdcLive(self_) \== .nil then return 2147549183     -- E_UNEXPECTED: the dialog is shown
+  id = self~resolveId(.nil, rxID)
+  if id < 1 then return 1                                    -- ERROR_INVALID_FUNCTION, as upstream
+  if self~cdcFind(self_, id) \== .nil then return 2147942487 -- E_INVALIDARG: the ID is in use
+  entry = .directory~new
+  entry~kind = kind
+  entry~id = id
+  entry~text = text
+  entry~checked = .false
+  entry~state = "ENABLEDVISIBLE"
+  entry~list = .array~new
+  entry~selected = 0
+  entry~group = self_~oodPeer["GROUP"]
+  entry~prominent = .false
+  self~cdcList(self_)~append(entry)
+  return 0
+::method cid_initCustomizations unguarded
+  return 0
+::method cid_addCheckButton unguarded      -- addCheckButton(id, label, checked)
+  use arg self_, msg, a
+  rc = self~cdcAdd(self_, "CHECK", a[1], a[2])
+  if rc == 0 then if a~hasIndex(3) then self~cdcFind(self_, a[1])~checked = (a[3] == .true)
+  return rc
+::method cid_addComboBox unguarded
+  use arg self_, msg, a
+  return self~cdcAdd(self_, "COMBO", a[1], "")
+::method cid_addEditBox unguarded          -- addEditBox(id, text)
+  use arg self_, msg, a
+  return self~cdcAdd(self_, "EDIT", a[1], self~opt(a, 2))
+::method cid_addMenu unguarded
+  use arg self_, msg, a
+  return self~cdcAdd(self_, "MENU", a[1], a[2])
+::method cid_addPushButton unguarded
+  use arg self_, msg, a
+  return self~cdcAdd(self_, "BUTTON", a[1], a[2])
+::method cid_addRadioButtonList unguarded
+  use arg self_, msg, a
+  return self~cdcAdd(self_, "RADIO", a[1], "")
+::method cid_addSeparator unguarded
+  use arg self_, msg, a
+  return self~cdcAdd(self_, "SEP", a[1], "")
+::method cid_addText unguarded
+  use arg self_, msg, a
+  return self~cdcAdd(self_, "TEXT", a[1], a[2])
+::method cid_enableOpenDropDown unguarded  -- the Open or Save button gets a list of its own; items by addControlItem
+  use arg self_, msg, a
+  do entry over self~cdcList(self_)
+    if entry~kind == "OPENDROP" then return 2147549183
+  end
+  return self~cdcAdd(self_, "OPENDROP", a[1], "")
+::method cid_startVisualGroup unguarded    -- startVisualGroup(id, label): the controls added until endVisualGroup stand under the label
+  use arg self_, msg, a
+  if self_~oodPeer["GROUP"] \== .nil then return 2147549183
+  rc = self~cdcAdd(self_, "GROUP", a[1], a[2])
+  if rc == 0 then self_~oodPeer["GROUP"] = self~resolveId(.nil, a[1])
+  return rc
+::method cid_endVisualGroup unguarded
+  use arg self_
+  self_~oodPeer["GROUP"] = .nil
+  return 0
+::method cid_addControlItem unguarded      -- addControlItem(containerID, label, itemID)
+  use arg self_, msg, a
+  entry = self~cdcFind(self_, a[1])
+  if entry == .nil then return 2147942487
+  if "COMBO RADIO MENU OPENDROP"~wordPos(entry~kind) == 0 then return 2147942487
+  id = self~resolveId(.nil, a[3])
+  if id < 1 then return 1
+  if self~cdcItem(entry, id) \== .nil then return 2147942487
+  if entry~kind == "RADIO" then if self~cdcLive(self_) \== .nil then return 2147549183   -- the buttons are made with the dialog
+  item = .directory~new
+  item~id = id
+  item~text = a[2]
+  item~state = "ENABLEDVISIBLE"
+  entry~list~append(item)
+  return self~cdcPush(self_, entry)
+::method cid_removeControlItem unguarded   -- not for a radio button list, as on Windows (E_NOTIMPL)
+  use arg self_, msg, a
+  entry = self~cdcFind(self_, a[1])
+  if entry == .nil then return 2147942487
+  if entry~kind == "RADIO" then return 2147500033
+  item = self~cdcItem(entry, a[2])
+  if item == .nil then return 2147942487
+  self~cdcSync(self_)
+  entry~list~removeItem(item)
+  if entry~selected == item~id then entry~selected = 0
+  return self~cdcPush(self_, entry)
+::method cid_removeAllControlItems unguarded   -- Windows does not implement it: E_NOTIMPL
+  return 2147500033
+::method cdcState unguarded        -- a state keyword, checked: INACTIVE ENABLED VISIBLE ENABLEDVISIBLE
+  use arg word, position
+  word = word~strip~upper
+  if "INACTIVE ENABLED VISIBLE ENABLEDVISIBLE"~wordPos(word) == 0 then raise syntax 93.914 array(position, "INACTIVE, ENABLED, VISIBLE, or ENABLEDVISIBLE", word)
+  return word
+::method cid_getControlState unguarded
+  use arg self_, msg, a
+  entry = self~cdcFind(self_, a[1])
+  if entry == .nil then return 2147942487
+  return entry~state
+::method cid_setControlState unguarded     -- setControlState(id, state)
+  use arg self_, msg, a
+  entry = self~cdcFind(self_, a[1])
+  if entry == .nil then return 2147942487
+  entry~state = self~cdcState(a[2], 2)
+  return self~cdcPush(self_, entry)
+::method cid_getControlItemState unguarded
+  use arg self_, msg, a
+  entry = self~cdcFind(self_, a[1])
+  if entry == .nil then return 2147942487
+  item = self~cdcItem(entry, a[2])
+  if item == .nil then return 2147942487
+  return item~state
+::method cid_setControlItemState unguarded -- setControlItemState(containerID, itemID, state)
+  use arg self_, msg, a
+  entry = self~cdcFind(self_, a[1])
+  if entry == .nil then return 2147942487
+  item = self~cdcItem(entry, a[2])
+  if item == .nil then return 2147942487
+  item~state = self~cdcState(a[3], 3)
+  return self~cdcPush(self_, entry)
+::method cid_setControlItemText unguarded
+  use arg self_, msg, a
+  entry = self~cdcFind(self_, a[1])
+  if entry == .nil then return 2147942487
+  item = self~cdcItem(entry, a[2])
+  if item == .nil then return 2147942487
+  self~cdcSync(self_)
+  item~text = a[3]
+  return self~cdcPush(self_, entry)
+::method cid_setControlLabel unguarded     -- the text of a check button, push button, text, menu or group
+  use arg self_, msg, a
+  entry = self~cdcFind(self_, a[1])
+  if entry == .nil then return 2147942487
+  entry~text = a[2]
+  return self~cdcPush(self_, entry)
+::method cid_getCheckButtonState unguarded -- isChecked(id)
+  use arg self_, msg, a
+  entry = self~cdcFind(self_, a[1])
+  if entry == .nil then return 2147942487
+  if entry~kind \== "CHECK" then return 2147942487
+  self~cdcSync(self_)
+  return entry~checked
+::method cid_setCheckButtonState unguarded -- setCheckButtonState(id, checked), check(id), uncheck(id)
+  use arg self_, msg, a
+  entry = self~cdcFind(self_, a[1])
+  if entry == .nil then return 2147942487
+  if entry~kind \== "CHECK" then return 2147942487
+  checked = .true
+  if a~hasIndex(2) then checked = (a[2] == .true)
+  if msg == "CHECK" then checked = .true
+  if msg == "UNCHECK" then checked = .false
+  entry~checked = checked
+  return self~cdcPush(self_, entry)
+::method cid_getEditBoxText unguarded
+  use arg self_, msg, a
+  entry = self~cdcFind(self_, a[1])
+  if entry == .nil then return 2147942487
+  if entry~kind \== "EDIT" then return 2147942487
+  self~cdcSync(self_)
+  return entry~text
+::method cid_setEditBoxText unguarded
+  use arg self_, msg, a
+  entry = self~cdcFind(self_, a[1])
+  if entry == .nil then return 2147942487
+  if entry~kind \== "EDIT" then return 2147942487
+  entry~text = a[2]
+  return self~cdcPush(self_, entry)
+::method cid_getSelectedControlItem unguarded  -- the ID of the item chosen in a container; E_FAIL (2147500037) if none is
+  use arg self_, msg, a
+  entry = self~cdcFind(self_, a[1])
+  if entry == .nil then return 2147942487
+  self~cdcSync(self_)
+  if entry~selected == 0 then return 2147500037
+  return entry~selected
+::method cid_setSelectedControlItem unguarded  -- for a combo box or a radio button list
+  use arg self_, msg, a
+  entry = self~cdcFind(self_, a[1])
+  if entry == .nil then return 2147942487
+  if entry~kind \== "COMBO" & entry~kind \== "RADIO" then return 2147942487
+  item = self~cdcItem(entry, a[2])
+  if item == .nil then return 2147942487
+  entry~selected = item~id
+  return self~cdcPush(self_, entry)
+::method cid_makeProminent unguarded       -- Windows puts the control beside the Open button; here it is drawn first
+  use arg self_, msg, a
+  if self~cdcLive(self_) \== .nil then return 2147549183
+  entry = self~cdcFind(self_, a[1])
+  if entry == .nil then return 2147942487
+  if "CHECK BUTTON COMBO MENU TEXT"~wordPos(entry~kind) == 0 then return 2147942487
+  entry~prominent = .true
+  return 0
 
 /*==== The images of the system: KDE Breeze icons stand for those of Windows ============*/
 /* The table of the resource kdeicons: a directory "type id" and SYMBOL -> the page's image

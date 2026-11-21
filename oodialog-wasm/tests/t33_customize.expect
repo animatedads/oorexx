@@ -1,0 +1,12 @@
+add 0 2147942487 1
+group 0 0 0
+items 0 0 0 2147942487
+item state 0 INACTIVE 0
+edit 0 0 0 0 0
+radio 0 0 0 0
+menu 0 0 0
+drop 0 0 0
+before 1 note 1 ENABLEDVISIBLE 2147500037 2147500033 2147500033 2147942487
+show 0 b.cls
+after 0 [filled] 2 2 12 21
+log:  toggle:501:0 fill:0:0:0:2147549183:0 item:502:2 item:524:2 activating:525 item:525:12 report:0:filled:2:2 activating:526 item:526:21

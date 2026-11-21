@@ -27,6 +27,7 @@ examples/publicRoutines_demo.rex	7
 examples/saveFileWithFilter.rex	6	
 examples/simpleFolderBrowse.rex	5	
 examples/useTools.rex	10	
+menus/BinaryMenuBar.rex	1	error 98.900 ooDialog/WASM: a BinaryMenuBar needs a reader of binary Windows resour
 menus/ContextMenu.rex	3	
 menus/ScriptMenuBar.rex	7	
 menus/UserMenuBar.rex	7	
@@ -42,6 +43,7 @@ oograph.rex	6
 oophil.rex	9	
 oowalker.rex	7	
 propertySheet.tabControls/PropertySheetDemo.rex	10	event-not-produced
+propertySheet.tabControls/TabOwnerDemo.rex	1	error 98.900 ooDialog/WASM: a dialog from a resource file needs a reader of binary
 propertySheet.tabControls/UserTabDemo.rex	14	
 propertySheet.tabControls/oodListViews.rex	11	event-not-produced
 propertySheet.tabControls/ticketWizard.rex	3	
