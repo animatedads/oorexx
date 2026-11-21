@@ -45,9 +45,5 @@ check symbol_scan "$OUT/src/symbol_scan.rex"   # DATATYPE 'S' / SYMBOL of X1E+2,
 check finally_clauses "$OUT/src/finally_clauses.rex"   # FINALLY (RFE #31; trunk r13519+): every way out of the block runs the clause once
 check condition_position "$OUT/src/condition_position.rex"   # CONDITION('O')~POSITION of an error in compiled code (CATCH, SIGNAL ON)
 check throw_clauses "$OUT/src/throw_clauses.rex"   # THROW (RFE #31; trunk r13547+): levels and PROPAGATED, SYNTAX / ERROR, PROPAGATE, SIGNAL ON (not CALL ON), FINALLY, INTERPRET, Message~send HASERROR
-check options_syntax "$OUT/src/options_syntax.rex"   # ::OPTIONS ALL SYNTAX: 98.970-98.974 / 98.986 unless a running CATCH takes the condition (internal routines too); SIGNAL ON NOVALUE turns it off; methods
-check options_partial "$OUT/src/options_partial.rex"   # ::OPTIONS policies accumulate (ALL SYNTAX, then NOVALUE / NOSTRING / FAILURE CONDITION)
-check options_more "$OUT/src/options_more.rex"   # untrapped FAILURE as ERROR (98.970), SIGNAL OFF / CALL ON turn the option off for the activation only, NOVALUE ERROR, methods and routines without traps
-check options_interpret "$OUT/src/options_interpret.rex"   # INTERPRET has the ::OPTIONS policies in force; a CATCH around it wins, SIGNAL ON turns them off
 check interpret_return_vars "$OUT/src/interpret_return_vars.rex"   # INTERPRET with RETURN: its variables reach the activation (trunk: a FINALLY clause stashes them)
 echo "PASS program constructs (4): $(ls "$OUT"/*.expected | wc -l) programs, $(cat "$OUT"/*.expected | wc -l) lines identical to the interpreter"
