@@ -255,6 +255,22 @@
     at = p + length(repl) + (q - nameStart) + 1     /* past the name's closing quote */
   end
 /* Generated scaffolding (trap loop, SIGL line markers): not a Rexx statement (EXPOSE / USE ARG may still follow). */
+/* The FINALLY clause of a block (RFE #31) is compiled after its body but must come before it in C++: the body's lines
+   are taken out (from a count of lines) and put back after it (RxCatchClauses~close). */
+::method instructionCount
+  expose instructions
+  return instructions~items
+::method takeInstructions
+  expose instructions
+  use arg from
+  taken = .array~new
+  do i = from + 1 to instructions~items
+    taken~append(instructions[i])
+  end
+  do while instructions~items > from
+    instructions~delete(instructions~items)
+  end
+  return taken
 ::method addRaw
   expose instructions
   use arg line

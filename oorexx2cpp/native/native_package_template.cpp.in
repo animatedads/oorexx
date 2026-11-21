@@ -73,6 +73,14 @@ static void raiseSyntaxIn(RexxThreadContext *t, const rx::SyntaxCondition &e) {
     // An interpreter error passing through compiled code: raised again with its own ADDITIONAL objects, unconverted.
     if (e.conditionObject) {
         if (auto *env = rx::envOf(e.conditionObject.get())) {
+            // a thrown one (THROW SYNTAX) goes on thrown, as itself (RaiseConditionObject keeps THROWN in r13550)
+#if THREAD_INTERFACE_VERSION >= 104
+            if (env->handle && t->IsDirectory((RexxObjectPtr)env->handle) &&
+                t->DirectoryAt((RexxDirectoryObject)env->handle, "THROWN") == t->True()) {
+                t->RaiseConditionObject((RexxDirectoryObject)env->handle);
+                return;
+            }
+#endif
             if (env->handle && t->IsDirectory((RexxObjectPtr)env->handle)) {
                 RexxObjectPtr add = t->DirectoryAt((RexxDirectoryObject)env->handle, "ADDITIONAL");
                 if (add != NULLOBJECT && t->IsArray(add)) {
@@ -515,7 +523,7 @@ std::optional<rx::Value> interpreterSend(const std::shared_ptr<InstanceState> &s
         rx::SyntaxCondition raised(code, text, false);
         for (const std::string &a : rxobj::lastAdditional()) raised.substitutions.push_back(rx::Value::string(a));
         raised.conditionObject = rx::takeKeptCondition();
-        throw raised;
+        rx::throwRaised(raised);
     }
     if (r.kind == 0) return std::nullopt;
     return rx::EnvObject::wrap(r);
@@ -1530,6 +1538,11 @@ static RexxObjectPtr call(RexxMethodContext *ctx, RexxArrayObject args, RexxObje
         rxobj::Scope raiseScope(ctx->threadContext);   // the entry's scope has ended: the raise needs the interpreter
         rx::raiseToCaller(r);
         return NULLOBJECT;
+    } catch (const rx::ThrownCondition &c) {
+        if (!failedInitToken.empty()) InstanceTable::instance().remove(failedInitToken);
+        rxobj::Scope raiseScope(ctx->threadContext);
+        rx::throwToCaller(c.object);
+        return NULLOBJECT;
 #endif
     } catch (const std::exception &e) {
         if (!failedInitToken.empty()) InstanceTable::instance().remove(failedInitToken);
@@ -1681,6 +1694,10 @@ static RexxObjectPtr rx2cpp_routine_entry(RexxCallContext *context, RexxArrayObj
     } catch (const rx::RaiseToCaller &r) {
         rxobj::Scope raiseScope(context->threadContext);   // the entry's scope has ended: the raise needs the interpreter
         rx::raiseToCaller(r);
+        return NULLOBJECT;
+    } catch (const rx::ThrownCondition &c) {
+        rxobj::Scope raiseScope(context->threadContext);
+        rx::throwToCaller(c.object);
         return NULLOBJECT;
 #endif
     } catch (const std::exception &e) {

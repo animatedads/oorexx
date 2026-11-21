@@ -7,6 +7,7 @@
   use arg ctx
   s = ctx~stream
   s~expect('RETURN')
+  if ctx~hasMethod('CHECKFINALLYEXIT') then ctx~checkFinallyExit('RETURN')
   bare = s~peek~kind == 'SEP' | s~peek~kind == 'EOF'
   if bare then value = 'rx::noResult()'   /* no result for the caller, as interpreted (RESULT dropped) */
   else value = .RxExprList~parse(ctx)

@@ -59,6 +59,7 @@
         s~expect(')')
       end
       when option == 'RETURN' | option == 'EXIT' then do
+        if ctx~hasMethod('CHECKFINALLYEXIT') then ctx~checkFinallyExit('RAISE')
         returnForm = option == 'RETURN'
         if s~peek~kind \= 'SEP' & s~peek~kind \= 'EOF' then do
           hasResult = .true

@@ -33,6 +33,7 @@
     ctx~line(0, '_rxTrap.clear("' || condition || '");')
   end
   else if s~accept('VALUE') | \s~labelNameAt(0) then do
+    if ctx~hasMethod('CHECKFINALLYEXIT') then ctx~checkFinallyExit('SIGNAL')
     /* SIGNAL VALUE expr (or SIGNAL (expr)): the label is found when the instruction runs; none is Error 16.1 */
     expr = ctx~logicalExpr~parse(ctx)
     code = '{ const rx::Value _rxTarget = ' || expr || '; const std::string _rxName = _rxTarget.isObject() ? std::string() : _rxTarget.bytes.str(); '
@@ -43,6 +44,7 @@
     ctx~line(0, code)
   end
   else do
+    if ctx~hasMethod('CHECKFINALLYEXIT') then ctx~checkFinallyExit('SIGNAL')
     label = s~next~text
     if \method~labels~hasIndex(label) then s~fail('SIGNAL: no label ' || label || ' in this method')
     ctx~line(0, self~jump(method~labels[label], line + ctx~lineOffset))

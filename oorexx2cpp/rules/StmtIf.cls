@@ -30,9 +30,13 @@
     if after == 'THEN' then s~fail('Error 10.9: CATCH must not immediately follow THEN')
     s~fail('Error 10.11: CATCH must not immediately follow ELSE')
   end
+  if s~atFinally then do
+    if after == 'THEN' then s~fail('Error 10.13: FINALLY must not immediately follow THEN')
+    s~fail('Error 10.14: FINALLY must not immediately follow ELSE')
+  end
   /* Only a bare DO followed by a clause boundary is an IF block.
      DO UNTIL and DO var=... are complete registered statement rules. */
-  if s~is('DO') & s~lookAheadText(1) == '<sep>' & s~catchClausesAhead~items = 0 then do
+  if s~is('DO') & s~lookAheadText(1) == '<sep>' & \s~blockClausesAhead then do
     s~expect('DO')
     s~separator
     ctx~block(depth, .true)

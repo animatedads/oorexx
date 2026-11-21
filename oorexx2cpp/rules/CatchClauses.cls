@@ -20,15 +20,30 @@
   use arg ctx, depth
   s = ctx~stream
   clauses = s~catchClausesAhead
-  if clauses~items = 0 then return .nil
+  finallyLine = s~finallyAhead
+  if clauses~items = 0 & finallyLine = 0 then return .nil
+  if \ctx~hasMethod('ENTERFINALLY') & finallyLine > 0 then s~fail('FINALLY clauses are not supported by this compiler lane yet')
   id = ctx~label
-  ctx~line(depth, '{ rx::CatchBlock _rxCatch' || id || '(_rxTrap, vars, ' || self~spec(s, clauses) || ');')
-  ctx~line(depth, 'std::shared_ptr<rx::ObjectDispatch> _rxCatchObj' || id || '; int _rxCaught' || id || ' = -1; (void)_rxCaught' || id || ';')
-  ctx~line(depth, 'try {')
   state = .directory~new
   state~id = id
   state~line = s~peek~line
-  if ctx~hasMethod('LINEOFFSET') then state~line = state~line + ctx~lineOffset
+  state~hasCatch = clauses~items > 0
+  state~finallyLine = finallyLine
+  state~blockAt = s~cursorIndex
+  offset = 0
+  if ctx~hasMethod('LINEOFFSET') then offset = ctx~lineOffset
+  state~line = state~line + offset
+  if finallyLine > 0 then do
+    state~finallyLine = finallyLine + offset
+    /* the block and its CATCH clauses go here, once its FINALLY clause is compiled before them (close) */
+    ctx~line(depth, '{')
+    state~mark = ctx~current~instructionCount
+  end
+  if state~hasCatch then do
+    ctx~line(depth, '{ rx::CatchBlock _rxCatch' || id || '(_rxTrap, vars, ' || self~spec(s, clauses) || ');')
+    ctx~line(depth, 'std::shared_ptr<rx::ObjectDispatch> _rxCatchObj' || id || '; int _rxCaught' || id || ' = -1; (void)_rxCaught' || id || ';')
+    ctx~line(depth, 'try {')
+  end
   return state
 /* The clause conditions as C++: {{rx::CatchCondition{name, code, codeVariable}, ...}, ...} */
 ::method spec class
@@ -66,6 +81,20 @@
   return out || '}'
 /* After the block's own code: the try closed, the clauses parsed and emitted, END [name]. */
 ::method close class
+  use arg ctx, depth, state, label, isLoop
+  s = ctx~stream
+  id = state~id
+  if state~hasCatch then self~catchClauses(ctx, depth, state, label, isLoop)
+  if state~finallyLine > 0 then self~finallyClause(ctx, depth, state)
+  s~expect('END')
+  if s~peek~kind == 'IDENT' then do
+    suffix = s~next~text
+    if label == '' | suffix \= label then s~fail('END control name mismatch: ' || suffix)
+  end
+  s~separator
+  if state~finallyLine > 0 then ctx~line(depth, '}')
+/* The CATCH clauses: the try closed, the condition taken, each clause run when it took it. */
+::method catchClauses class private
   use arg ctx, depth, state, label, isLoop
   s = ctx~stream
   id = state~id
@@ -111,7 +140,7 @@
     if variable \== '' then
       ctx~line(depth + 1, .RxCompoundSymbols~store(variable, 'rx::CatchBlock::copyOf(_rxCatchObj' || id || ')') .RxNative~invalidate(variable))
     s~skipSeparators
-    do while s~peek~kind \= 'EOF' & \s~atEnd & \s~atCatch & \s~is('::')
+    do while s~peek~kind \= 'EOF' & \s~atEnd & \s~atBlockClause & \s~is('::')
       ctx~statement(depth + 1)
       s~skipSeparators
     end
@@ -119,13 +148,37 @@
     clause = clause + 1
   end
   ctx~popLoop
-  s~expect('END')
-  if s~peek~kind == 'IDENT' then do
-    suffix = s~next~text
-    if label == '' | suffix \= label then s~fail('END control name mismatch: ' || suffix)
-  end
-  s~separator
   ctx~line(depth, '}')
+/* The FINALLY clause: its code compiled into a lambda that comes before the block (and its CATCH clauses), which run
+   inside a try with rx::FinallyClause declared before it. */
+::method finallyClause class private
+  use arg ctx, depth, state
+  s = ctx~stream
+  id = state~id
+  line = state~finallyLine
+  if \s~atFinally then s~fail('FINALLY expected')
+  /* a FORWARD without CONTINUE ends the method at once: not in a block with a FINALLY clause (99.952) */
+  forward = ctx~forwardSince(state~blockAt)
+  if forward \= 0 then s~fail('Error 99.952: FORWARD without CONTINUE on line' forward 'must not be in a block with a FINALLY clause.')
+  s~next
+  s~skipSeparators
+  block = ctx~current~takeInstructions(state~mark)
+  ctx~line(depth, 'auto _rxFinallyCode' || id || ' = [&]() -> std::optional<rx::Value> {')
+  ctx~enterFinally(line)
+  do while s~peek~kind \= 'EOF' & \s~atEnd & \s~is('::')
+    if s~atBlockClause then s~fail('Error 10.15: A CATCH or FINALLY clause must not follow the FINALLY clause on line' line || '.')
+    ctx~statement(depth + 1)
+    s~skipSeparators
+  end
+  ctx~leaveFinally
+  ctx~line(depth, 'return std::nullopt; };')
+  ctx~line(depth, 'rx::FinallyClause<decltype(_rxFinallyCode' || id || ')> _rxFinally' || id || '(_rxFinallyCode' || id || ', ' || line || ', &_rxTrap, _rxLine);')
+  ctx~line(depth, 'try {')
+  do l over block
+    ctx~current~addRaw(l)
+  end
+  ctx~line(depth, '} catch (...) { _rxFinally' || id || '.caught(std::current_exception()); }')
+  ctx~line(depth, '_rxFinally' || id || '.end();')
 ::requires 'core/RxQuote.cls'
 ::requires 'rules/CompoundSymbols.cls'
 ::requires 'rules/RxNative.cls'

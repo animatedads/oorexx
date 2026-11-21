@@ -14,5 +14,11 @@
   s~expect('INTERPRET')
   if s~peek~kind == 'SEP' | s~peek~kind == 'EOF' then s~fail('INTERPRET requires an expression')
   expr = ctx~logicalExpr~parse(ctx)
-  ctx~current~addInstruction('{ std::optional<rx::Value> _rxInterpreted = rx::interpretInActivation(vars, ' || expr || ', arguments); if (_rxInterpreted) return *_rxInterpreted; }')
+  /* in a FINALLY clause (RFE #31) a RETURN or EXIT of the code would leave the clause: 98.953 (RexxActivation::
+     checkFinallyExit; the two are not told apart here: RETURN) */
+  leave = 'return *_rxInterpreted;'
+  finallyLine = 0
+  if ctx~hasMethod('FINALLYLINE') then finallyLine = ctx~finallyLine
+  if finallyLine \= 0 then leave = 'throw rx::finallyExitError("RETURN", ' || finallyLine || ');'
+  ctx~current~addInstruction('{ std::optional<rx::Value> _rxInterpreted = rx::interpretInActivation(vars, ' || expr || ', arguments); if (_rxInterpreted)' leave '}')
   s~separator
