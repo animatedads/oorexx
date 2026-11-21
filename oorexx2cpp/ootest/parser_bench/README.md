@@ -68,5 +68,7 @@ The two dumps must be identical (class, category, from, to and value of every el
 | 2026-11-21, ea5e323, **Release interpreter** trunk r13550 | Claude | 3 passes 61.0 s | 3 passes 26.3 s (2.32x) | Release interpreter for both columns; the interpreted lane moved 51.3 -> 61.0 s with the interpreter unchanged: container spread |
 | 2026-11-21, 090559a (main, merge of ea5e323; oorexx2cpp/ identical to ea5e323, same library) | Claude | dump pass 42.8 s; 3 passes 119.1 s | dump pass 8.8 s; 3 passes 27.1 s (4.40x) | merge gate; Debug r13550; dumps identical over 162,260 elements |
 | 2026-11-21, 090559a, **Release interpreter** trunk r13550 | Claude | 3 passes 50.2 s | 3 passes 23.3 s (2.15x) | merge gate; Release interpreter for both columns |
+| 2026-11-21, e92d96a (wip; ::OPTIONS condition SYNTAX, Debug r13550) | Claude | dump pass 41.3 s; 3 passes 122.3 s | dump pass 8.8 s; 3 passes 26.8 s (4.57x) | dumps identical over 162,260 elements |
+| 2026-11-21, e92d96a, **Release interpreter** trunk r13550 | Claude | 3 passes 56.6 s | 3 passes 24.8 s (2.28x) | Release interpreter for both columns |
 
 Crossings are calls between compiled code and the interpreter (RX2CPP_BIF_STATS=1 reports them).
