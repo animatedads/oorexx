@@ -444,8 +444,7 @@ err.graph.oneInstruction = A THEN, ELSE or WHEN takes one instruction: wrap it i
 err.graph.nothing = Nothing to insert
 err.graph.lastWhen = A SELECT needs at least one WHEN: delete the SELECT instead
 err.graph.clause = A %1 belongs to its block (SELECT, DO or LOOP): move the block, or the instructions in it
-err.catch.runtime = This code uses CATCH, which needs ooRexx r%1 or later; this ooRexx is r%2 and would run it as a command. It cannot run here; the program it writes refuses to start on an older ooRexx.
-err.finally.runtime = This code uses FINALLY, which no ooRexx runs yet (ooRexx trunk has CATCH since r13514, not FINALLY). The Rexx Parser knows it, so the graph draws it, but it cannot run.
+err.catch.runtime = This code uses %1, which this ooRexx (r%2) does not know: it would run it as a command. It cannot run here; the program it writes refuses to start on such an ooRexx.
 graph.explain.catch = CATCH: when its condition (SYNTAX, ERROR, ANY ...) is raised in the block above, its instructions run instead of the rest; CATCH co = SYNTAX names the condition object.
 graph.explain.finally = FINALLY: runs when the block is left, however it is left; it cannot be left with LEAVE, ITERATE, RETURN or EXIT. Not in ooRexx yet: the parser knows it, no interpreter runs it.
 err.graph.itself = A block cannot go inside itself
@@ -978,8 +977,7 @@ err.graph.oneInstruction = Ein THEN, ELSE oder WHEN nimmt eine Anweisung: erst i
 err.graph.nothing = Nichts einzufügen
 err.graph.lastWhen = Ein SELECT braucht mindestens ein WHEN: stattdessen das SELECT löschen
 err.graph.clause = Ein %1 gehört zu seinem Block (SELECT, DO oder LOOP): den Block verschieben oder die Anweisungen darin
-err.catch.runtime = Dieser Code verwendet CATCH, das ooRexx r%1 oder neuer braucht; dieses ooRexx ist r%2 und würde es als Befehl ausführen. Er kann hier nicht laufen; das Programm, das er schreibt, startet auf einem älteren ooRexx nicht.
-err.finally.runtime = Dieser Code verwendet FINALLY, das noch kein ooRexx ausführt (ooRexx trunk hat CATCH seit r13514, FINALLY nicht). Der Rexx Parser kennt es, darum zeichnet der Graph es, aber es kann nicht laufen.
+err.catch.runtime = Dieser Code verwendet %1, das dieses ooRexx (r%2) nicht kennt: es würde es als Befehl ausführen. Er kann hier nicht laufen; das Programm, das er schreibt, startet auf einem solchen ooRexx nicht.
 graph.explain.catch = CATCH: wenn seine Bedingung (SYNTAX, ERROR, ANY ...) im Block darüber eintritt, laufen seine Anweisungen statt des Rests; CATCH co = SYNTAX benennt das Bedingungsobjekt.
 graph.explain.finally = FINALLY: läuft, wenn der Block verlassen wird, wie auch immer; es kann nicht mit LEAVE, ITERATE, RETURN oder EXIT verlassen werden. Noch nicht in ooRexx: der Parser kennt es, kein Interpreter führt es aus.
 err.graph.itself = Ein Block kann nicht in sich selbst

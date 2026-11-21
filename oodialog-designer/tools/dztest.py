@@ -718,8 +718,9 @@ def sc_labgraph(pg):
 def sc_catch(pg):
     """CATCH and FINALLY (ooRexx r13514+, Rexx Parser 20261115): a "do … finally"
     block dragged from the palette is drawn with its CATCH and FINALLY lanes;
-    a block goes into the FINALLY body; the program guards against an older
-    ooRexx, and Run refuses: FINALLY is in no ooRexx yet (CATCH alone would
+    a block goes into the FINALLY body; the program asks its ooRexx (v0.18: by
+    compiling a lone clause, not by revision), and Run refuses on the page's
+    ooRexx/WASM r13268, which knows neither (CATCH alone would
     be refused too: ooRexx/WASM 0.2.4 is r13268)."""
     ready(pg); open_example(pg, 'examples/Calculator.rex')
     pick_event(pg, 'bClear', 'CLICKED'); wait_graph(pg)
@@ -734,9 +735,11 @@ def sc_catch(pg):
     expect_in('  CATCH explains itself', 'CATCH', pg.inner_text('#gExplain'))
     pg.screenshot(path=str(SHOTS / 'catch_graph.png'))
     src = program_text(pg)
-    expect_in('the program refuses an older ooRexx', 'if .RexxInfo~revision < 13514 then do', src)
+    expect_in('the program asks its ooRexx about CATCH', 'oodProbe = .Routine~new("oodProbe", "catch syntax")', src)
+    expect_in('  and about FINALLY', 'oodProbe = .Routine~new("oodProbe", "finally")', src)
+    expect('  not by revision', 'RexxInfo~revision' in src, False)
     pg.click('#btnRun'); settle(pg, 800)
-    expect_in('Run refused (FINALLY: no ooRexx runs it yet), saying why', 'FINALLY', status(pg))
+    expect_in('Run refused on this ooRexx, which does not know CATCH, saying why', 'does not know', status(pg))
     expect('  and nothing ran', pg.locator('.ood-dlg').count(), 0)
 
 

@@ -2,14 +2,16 @@
    r13514 or later) as the ooDialog Designer's graph and guard expect?
    Architecture: Tom Dyer.  Code: Claude (Opus 5.5).
 
-   usage:  rexx catchcheck.rex [FINALLY]
-   CATCH is in ooRexx trunk since r13514; FINALLY is not yet (2026-11-15),
-   so its checks run only when asked for (the word FINALLY), on a build that
-   has it.  No ooDialog needed.  The code under test is compiled from strings
-   (.Routine~new), so this file itself loads on any ooRexx 5.  On an
-   ooRexx before r13514 it says so and checks only that the revision is
-   known; the designer refuses to run CATCH there, and the programs it
-   writes refuse to start.
+   usage:  rexx catchcheck.rex
+   (v0.18: which checks run is asked of the ooRexx, by compiling a lone CATCH
+   or FINALLY clause, not read from its revision: a build from git answers
+   r0.  The old FINALLY argument is ignored.)
+   CATCH is in ooRexx trunk since r13514, FINALLY by 2026-11-21 (git trunk
+   5f066c9 runs both).  No ooDialog needed.  The code under test is compiled
+   from strings (.Routine~new), so this file itself loads on any ooRexx 5.
+   On an ooRexx that does not know them it says so and skips their checks;
+   the designer refuses to run such code there, and the programs it writes
+   refuse to start.
    Output: one line per check, then "catchcheck: N of M checks passed".
    Exit 0 when all pass, 1 otherwise.                                        */
 parse upper arg wantFinally .
@@ -18,9 +20,13 @@ say "catchcheck: ooRexx" v "r" || .RexxInfo~revision "on" .RexxInfo~platform
 fails = 0
 checks = 0
 nl = "0a"x
-call check "the revision is known", datatype(.RexxInfo~revision, "W")
-if .RexxInfo~revision < 13514 then do
-  say "catchcheck: SKIP the CATCH checks: this ooRexx is before r13514"
+call check "the revision is a number (a build from git answers 0)", datatype(.RexxInfo~revision, "W")
+-- asked of this ooRexx by compiling a lone clause, as the designer's guard
+-- does: one that knows CATCH (FINALLY) refuses it outside a block
+knowsCatch = knows("catch syntax"); knowsFinally = knows("finally")
+say "catchcheck: this ooRexx knows CATCH:" knowsCatch", FINALLY:" knowsFinally
+if \knowsCatch then do
+  say "catchcheck: SKIP the CATCH checks: this ooRexx does not know CATCH"
   signal done
 end
 
@@ -45,8 +51,8 @@ r = run('s = ""' || nl || 'loop i = 1 to 3' || nl || '  if i = 2 then x = 1 + "a
         'catch syntax' || nl || '  s = s "c"i' || nl || 'end' || nl || 'return s~strip')
 say "catchcheck: NOTE a LOOP i = 1 to 3 whose turn 2 raises SYNTAX, with CATCH SYNTAX, gives:" r
 
-if wantFinally \== "FINALLY" then do
-  say "catchcheck: SKIP the FINALLY checks: FINALLY is not in ooRexx trunk yet (run with FINALLY on a build that has it)"
+if \knowsFinally then do
+  say "catchcheck: SKIP the FINALLY checks: this ooRexx does not know FINALLY"
   signal done
 end
 
@@ -91,3 +97,12 @@ check: procedure expose fails checks
     fails = fails + 1
   end
   return
+
+-- does this ooRexx know the clause?  It refuses it alone, outside a block
+knows: procedure
+  use arg clause
+  signal on syntax name refused
+  probe = .Routine~new("probe", .array~of(clause))
+  return .false
+refused:
+  return .true

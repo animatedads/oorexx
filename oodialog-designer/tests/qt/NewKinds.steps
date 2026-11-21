@@ -1,0 +1,17 @@
+# Qt player dialect (oodialog-qt6 tools/oodqt_test.rex).  Written by hand, from what the events must say.
+wait .ood-dlg >> text=OK
+sleep 300
+expect value .ood-dlg input ==> 3
+click .ood-dlg .ood-ud button:first-child
+sleep 400
+expect value .ood-dlg input ==> 4
+drag .ood-dlg .ood-track => 30
+sleep 400
+mcpick .ood-mc => 15
+sleep 500
+mouse move .ood-dlg input @ 10 8
+sleep 900
+expect tipShown ==> True
+expect tipText ==> How many, 1 to 9
+shot newkinds_qt
+click .ood-dlg >> text=OK

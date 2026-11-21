@@ -21,13 +21,13 @@
 
 ::class OodModule public mixinclass Object
 ::method module_version class
-  return "0.17.0"
+  return "0.18.0"
 ::method module_lastChanged class
-  return "2026-11-20"
+  return "2026-11-21"
 ::method module_version
-  return "0.17.0"
+  return "0.18.0"
 ::method module_lastChanged
-  return "2026-11-20"
+  return "2026-11-21"
 
 
 /* One kind of control in the catalogue (a "kind" line of ::RESOURCE oodCatalog). */
@@ -917,6 +917,19 @@
 ::method catchRevision class
   return 13514
 
+-- Does this ooRexx know the clause (CATCH, FINALLY)?  Asked by compiling the
+-- clause alone: an ooRexx that knows it refuses it outside a block (10.8,
+-- 10.12); one that does not compiles it as a command.  Nothing is run.  The
+-- revision is no guide: a build from git answers r0 (2026-11-21, trunk
+-- 5f066c9, which knows both).
+::method knowsClause class
+  use strict arg clause
+  signal on syntax name refused
+  probe = .Routine~new("oodProbe", .array~of(clause))
+  return .false
+refused:
+  return .true
+
 -- Does any code here use CATCH or FINALLY?
 ::method usesCatch
   return self~catchWords \== ""
@@ -952,17 +965,21 @@
   end
   return found
 
--- "" when the code may run here; otherwise why not.  CATCH needs ooRexx
--- r13514 or later (an older one reads it as a command and runs every
--- clause).  FINALLY is in no ooRexx yet (2026-11-15: trunk has CATCH since
--- r13514, not FINALLY): the Rexx Parser knows it, so the graph draws it,
--- but nothing can run it.
+-- "" when the code may run here; otherwise why not.  An ooRexx that does
+-- not know CATCH or FINALLY reads it as a command and runs every clause, so
+-- such code is refused.  Asked of this ooRexx (knowsClause), not read from
+-- its revision.  (CATCH: trunk r13514; FINALLY: trunk by 2026-11-21.)
 ::method catchRefusal
-  w = self~catchWords
-  if wordpos("FINALLY", w) > 0 then return oodT("err.finally.runtime")
-  if w == "" then return ""
-  if .RexxInfo~revision >= .OodDesign~catchRevision then return ""
-  return oodT("err.catch.runtime", .OodDesign~catchRevision, .RexxInfo~revision)
+  do kw over self~catchWords~makeArray(" ")
+    if \.OodDesign~knowsClause(self~probeClause(kw)) then return oodT("err.catch.runtime", kw, .RexxInfo~revision)
+  end
+  return ""
+
+-- the lone clause that asks an ooRexx whether it knows kw
+::method probeClause
+  use strict arg kw
+  if kw == "CATCH" then return "catch syntax"
+  return "finally"
 
 ::method getEventCode
   expose events
@@ -1593,12 +1610,18 @@
   out~append("   Design: the ::RESOURCE oodDesign at the end.  The designer writes this")
   out~append("   whole file; what you type is the body of each event method.")
   out~append("   ooDialog Designer -- architecture: Tom Dyer; code: Claude (Opus 5.5). */")
-  if self~usesCatch then do
-    out~append("-- CATCH needs ooRexx r" || .OodDesign~catchRevision "or later: an older one reads it as a command")
-    out~append("if .RexxInfo~revision <" .OodDesign~catchRevision "then do")
-    out~append('  call errorDialog "This program uses CATCH or FINALLY: it needs ooRexx r' || .OodDesign~catchRevision 'or later (this is r" || .RexxInfo~revision || ")."')
-    out~append("  return 1")
-    out~append("end")
+  -- CATCH and FINALLY: asked of the ooRexx that runs the program, by
+  -- compiling the lone clause (one that knows it refuses it); an ooRexx that
+  -- does not know it would run it as a command.  A revision is no guide: a
+  -- build from git answers r0.
+  do kw over self~catchWords~makeArray(" ")
+    out~append("-- does this ooRexx know" kw"?  One that does refuses a lone" kw "clause; one that")
+    out~append("-- does not would run it as a command")
+    out~append("signal on syntax name oodKnows" || kw)
+    out~append("oodProbe = .Routine~new(""oodProbe"", """ || self~probeClause(kw) || """)")
+    out~append('call errorDialog "This program uses' kw || ', which this ooRexx does not know: it would run it as a command."')
+    out~append("return 1")
+    out~append("oodKnows" || kw || ":")
   end
   bound = self~isBound
   if bound then do
@@ -2705,7 +2728,7 @@ kind type=TREEVIEW label="Tree view" prefix=tv create=createTreeView access=newT
 kind type=TRACKBAR label="Track bar" prefix=trk create=createTrackBar access=newTrackBar args="" w=100 h=16 events="DRAG ENDTRACK" connect=connectTrackBarEvent opts="HORIZONTAL VERTICAL AUTOTICKS NOTICKS BOTH TOP BOTTOM GROUP NOTAB DISABLED HIDDEN" defopts="HORIZONTAL AUTOTICKS" props="min max pos opts tip anchor"
 kind type=DATETIME label="Date picker" prefix=dtp create=createDateTimePicker access=newDateTimePicker args="" w=80 h=12 events=DATETIMECHANGE connect=connectDateTimePickerEvent opts="SHORT LONG TIME SHOWNONE UPDOWN GROUP NOTAB DISABLED HIDDEN" defopts=SHORT props="opts tip anchor"
 kind type=UPDOWN label="Up-down" prefix=ud create=createUpDown access=newUpDown args="" w=10 h=12 events=DELTAPOS connect=connectUpDownEvent opts="SETBUDDYINT ARROWKEYS WRAP NOTHOUSANDS AUTOBUDDY RIGHT LEFT DISABLED HIDDEN" defopts="SETBUDDYINT ARROWKEYS" props="min max pos buddy opts tip anchor"
-kind type=MONTHCALENDAR label="Month calendar" prefix=cal create=createMonthCalendar access=newMonthCalendar args="" w=120 h=96 events="SELECT SELCHANGE" connect=connectMonthCalendarEvent opts="NOTODAY GROUP NOTAB DISABLED HIDDEN" props="opts tip anchor"
+kind type=MONTHCALENDAR label="Month calendar" prefix=cal create=createMonthCalendar access=newMonthCalendar args="" w=150 h=110 events="SELECT SELCHANGE" connect=connectMonthCalendarEvent opts="NOTODAY GROUP NOTAB DISABLED HIDDEN" props="opts tip anchor"
 kind type=MENUITEM label="Menu item" prefix=mnu nonvisual=1 events=CLICKED props="popup text checked grayed"
 kind type=TIMER label="Timer thread" prefix=tmr nonvisual=1 events=TICK props="interval enabled"
 form events="INIT OK CANCEL SAVED"

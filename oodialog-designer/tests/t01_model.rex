@@ -82,27 +82,35 @@ call check "actions name the control", acts~pos("self~lcd~setText(") > 0
 call check "list actions for a list only", acts~pos("~add(") == 0
 
 -- 8. versions
-call check "module_version", .OodDesign~module_version == "0.17.0" & d~module_version == "0.17.0"
+call check "module_version", .OodDesign~module_version == "0.18.0" & d~module_version == "0.18.0"
 
 -- CATCH and FINALLY: found in the code, guarded in the program, refused on an older ooRexx
 k = .calcDesign~build
-call check "no CATCH: no guard, may run", \k~usesCatch & k~generate~pos("RexxInfo~revision") = 0 & k~catchRefusal == ""
+call check "no CATCH: no guard, may run", \k~usesCatch & k~generate~pos("oodProbe") = 0 & k~catchRefusal == ""
 k~setEventCode("bEnter", "CLICKED", "catch = 1" || "0a"x || "finally: nop")
 call check "  catch = 1 and a label are not CATCH clauses", \k~usesCatch
 k~setEventCode("bEnter", "CLICKED", "do" || "0a"x || "  self~enter" || "0a"x || "catch co = syntax" || "0a"x || "  say co~message" || "0a"x || "end")
 kp = k~generate
 call check "a CATCH clause found", k~usesCatch
-call check "  the program refuses to start before r13514", kp~pos("if .RexxInfo~revision < 13514 then do") > 0 & -
-  kp~pos('call errorDialog "This program uses CATCH or FINALLY: it needs ooRexx r13514 or later (this is r" || .RexxInfo~revision || ")."') > 0
-call check "  the guard comes before the dialog is made", kp~pos("RexxInfo~revision") < kp~pos("dlg = .Calculator~new")
+call check "  the program asks its ooRexx: a lone CATCH clause compiled", kp~pos("signal on syntax name oodKnowsCATCH") > 0 & -
+  kp~pos('oodProbe = .Routine~new("oodProbe", "catch syntax")') > 0 & kp~pos("oodKnowsCATCH:") > 0
+call check "  and refuses to start where it compiles (a command there)", -
+  kp~pos('call errorDialog "This program uses CATCH, which this ooRexx does not know: it would run it as a command."') > 0
+call check "  not by revision (a build from git answers r0)", kp~pos("RexxInfo~revision") = 0
+call check "  the guard comes before the dialog is made", kp~pos("oodProbe") < kp~pos("dlg = .Calculator~new")
 call check "  and the round trip keeps the code", .OodDesign~fromSource(kp)~generate == kp
-if .RexxInfo~revision < 13514 then
-  call check "  refused to run on this ooRexx (r" || .RexxInfo~revision || ")", k~catchRefusal~pos("r13514") > 0
+if \.OodDesign~knowsClause("catch syntax") then
+  call check "  refused to run on this ooRexx, which does not know CATCH (r" || .RexxInfo~revision || ")", k~catchRefusal~pos("CATCH") > 0
 else
-  call check "  allowed on this ooRexx (r" || .RexxInfo~revision || ")", k~catchRefusal == ""
+  call check "  allowed on this ooRexx, which knows CATCH (r" || .RexxInfo~revision || ")", k~catchRefusal == ""
+call check "knowsClause: a plain command clause is not a keyword", \.OodDesign~knowsClause("'ls'")
 k~setEventCode("bEnter", "CLICKED", "self~enter" || "0a"x || "  FINALLY")
 call check "  FINALLY alone too, any case", k~catchWords == "FINALLY"
-call check "  FINALLY refused on every ooRexx (none runs it yet)", k~catchRefusal~pos("FINALLY") > 0 & k~catchRefusal~pos("r13514") > 0
+if \.OodDesign~knowsClause("finally") then
+  call check "  FINALLY refused on this ooRexx, which does not know it", k~catchRefusal~pos("FINALLY") > 0
+else
+  call check "  FINALLY allowed on this ooRexx, which knows it", k~catchRefusal == ""
+call check "  its guard asks for FINALLY", k~generate~pos('oodProbe = .Routine~new("oodProbe", "finally")') > 0
 call check "module_lastChanged", .OodCatalog~module_lastChanged \== ""
 
 -- 9. v0.2: tab pages, list view, menu bar

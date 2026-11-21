@@ -1,0 +1,13 @@
+# Qt player dialect.  The program measures its own controls; the steps only resize.
+# +N in resize is from marklayout (mark is for pictures).
+wait .ood-dlg >> text=Measure
+sleep 300
+click .ood-dlg >> text=Measure
+sleep 300
+marklayout .ood-dlg
+resize .ood-dlg => +120 +80
+sleep 700
+click .ood-dlg >> text=Measure
+sleep 300
+shot resizer_qt
+click .ood-dlg >> text=OK

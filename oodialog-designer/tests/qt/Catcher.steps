@@ -1,0 +1,5 @@
+# Qt player dialect.  Needs an ooRexx that knows CATCH and FINALLY (the program refuses to start on one that does not).
+wait .ood-dlg >> text=Go
+click .ood-dlg >> text=Go
+sleep 300
+click .ood-dlg >> text=OK
