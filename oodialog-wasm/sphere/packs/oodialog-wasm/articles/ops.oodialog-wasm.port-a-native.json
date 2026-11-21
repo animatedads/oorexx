@@ -1,7 +1,7 @@
 {
   "kind": "article",
   "id": "ops.oodialog-wasm.port-a-native",
-  "version": "0.12",
+  "version": "0.13",
   "sphere": "oodialog-wasm",
   "title": "How to port one native function",
   "summary": "A native is ported in four moves: read what the C++ does, write the Rexx method in oodWeb.cls, add what the page must do in oodialog-web.js, and prove it with an upstream example run unchanged.",
@@ -31,13 +31,13 @@
   ],
   "provenance": [
     {
-      "artifact": "oodialog-wasm-be87c50.zip",
-      "sha256": "32ea244818fc78fbe72737a4a4cc8fbfe5f7ebf48b3c629f859592c3ab53abb8",
+      "artifact": "oodialog-wasm-8fb845d.zip",
+      "sha256": "12c3835c81b70398c5146e723fdabec5017075d7c0531bcda07418c24e83221b",
       "member": "oodialog-wasm/README.md",
       "line_start": 7,
       "line_end": 20,
       "claim": "The generator redirects every external native to .oodn.",
-      "note": "git archive of animatedads/oorexx commit be87c50 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 8fb845d (branch oodialog-wasm)"
     }
   ]
 }
