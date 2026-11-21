@@ -539,6 +539,19 @@ struct ActivationScope {
     ClauseClock clockState;
     Kind kind;
     MethodTraps *traps = nullptr;   // the SIGNAL ON state of the running activation (method body or internal routine)
+    // ::OPTIONS condition SYNTAX of the package of the running code (PackageSetting): the conditions raised as a SYNTAX
+    // error instead (98.970-98.974, 98.986) unless a running CATCH clause takes them; a trap the activation sets for
+    // one turns it off there (MethodTraps::syntaxOff). Set by packageSyntax, just after the scope is made.
+    enum SyntaxOption : unsigned char { ERROR_SYNTAX = 1, FAILURE_SYNTAX = 2, LOSTDIGITS_SYNTAX = 4, NOSTRING_SYNTAX = 8,
+                                        NOTREADY_SYNTAX = 16, NOVALUE_SYNTAX = 32 };
+    unsigned char conditionSyntax = 0;
+    static const bool &alwaysArmed() { static const bool on = true; return on; }
+    // (NOVALUE and LOSTDIGITS are detected only while armed: the option arms them, MethodTraps::syncNovalue keeps them so)
+    void packageSyntax(unsigned char bits) {
+        conditionSyntax = bits;
+        if (bits & NOVALUE_SYNTAX) ts.novalueArmed = &alwaysArmed();
+        if (bits & LOSTDIGITS_SYNTAX) ts.lostDigitsArmed = &alwaysArmed();
+    }
     std::optional<int> returnStatus;   // .RS: 0 / 1 (ERROR) / -1 (FAILURE) after a command, none before
     std::string callType;           // a routine's: SUBROUTINE / FUNCTION, '' when the interpreter called it
     std::unique_ptr<std::unordered_map<std::string, Value>> table;
@@ -1125,10 +1138,17 @@ struct NoValueCondition : std::runtime_error {
     std::string variable;
     explicit NoValueCondition(std::string name) : std::runtime_error("NOVALUE: " + name), variable(std::move(name)) {}
 };
+// An unset variable read while NOVALUE is armed: the hook (the object bridge) raises SYNTAX 98.986 for ::OPTIONS NOVALUE
+// SYNTAX (RexxActivation::handleNovalueEvent); otherwise the NOVALUE condition.
+inline void (*&noValueHook())(const std::string &) { static void (*hook)(const std::string &) = nullptr; return hook; }
+[[noreturn]] inline void raiseNoValue(const std::string &name) {
+    if (void (*h)(const std::string &) = noValueHook()) h(name);
+    throw NoValueCondition(name);
+}
 inline Value get(const Variables &vars, const std::string &name) {
     const Value *v = lookup(vars, name);
     if (v) return *v;
-    if (const bool *armed = threadState().novalueArmed; armed && *armed) throw NoValueCondition(name);
+    if (const bool *armed = threadState().novalueArmed; armed && *armed) raiseNoValue(name);
     return Value::string(name);
 }
 inline void set(Variables &vars, const std::string &name, Value value) {
@@ -1194,12 +1214,12 @@ struct VarSlot {
         const Variables &owner = variableOwner(vars, key);
         if (std::optional<Value> *f = frameEntry(owner, key)) {
             if (*f) return **f;
-            if (const bool *armed = threadState().novalueArmed; armed && *armed) throw NoValueCondition(name);
+            if (const bool *armed = threadState().novalueArmed; armed && *armed) raiseNoValue(name);
             return Value::string(name);
         }
         auto found = owner.find(key);
         if (found == owner.end()) {
-            if (const bool *armed = threadState().novalueArmed; armed && *armed) throw NoValueCondition(name);
+            if (const bool *armed = threadState().novalueArmed; armed && *armed) raiseNoValue(name);
             return Value::string(name);
         }
         remember(vars, owner, g, const_cast<Value *>(&found->second));
@@ -1248,7 +1268,7 @@ struct VarSlot {
 // (1; 2: and its characters are exactly that number's digits, NumCache canonical).
 // An unset variable's value: its name, or the NOVALUE condition when it is trapped (get()).
 __attribute__((noinline)) inline Value unsetVariable(const char *name) {
-    if (const bool *armed = threadState().novalueArmed; armed && *armed) throw NoValueCondition(name);
+    if (const bool *armed = threadState().novalueArmed; armed && *armed) raiseNoValue(name);
     return Value::string(name);
 }
 template <std::size_t K> struct LocalSlots {

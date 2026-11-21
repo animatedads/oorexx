@@ -88,7 +88,7 @@
       condition = 'USER' label
     end
     if how == 'OFF' then do
-      ctx~line(depth, '_rxTrap.clear(' || .RxQuote~cpp(condition) || ');')
+      ctx~line(depth, '_rxTrap.clear(' || .RxQuote~cpp(condition) || ', false);')
       s~separator
       return
     end
