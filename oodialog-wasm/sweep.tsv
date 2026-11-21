@@ -34,7 +34,7 @@ examples/simpleFolderBrowse.rex	shows
 examples/stopWatch.rex	outside:winSystm.cls
 examples/useTools.rex	shows
 ftyperex.rex	outside:winsystm.cls
-menus/BinaryMenuBar.rex	error:Error 98.900 ooDialog/WASM: a BinaryMenuBar needs a reader of binary Windows resources; set .oodn~resourceProv
+menus/BinaryMenuBar.rex	shows +error
 menus/ContextMenu.rex	shows
 menus/ScriptMenuBar.rex	shows
 menus/UserMenuBar.rex	shows

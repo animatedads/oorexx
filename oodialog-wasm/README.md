@@ -1,4 +1,4 @@
-# ooDialog for ooRexx/WASM — v0.25.0
+# ooDialog for ooRexx/WASM — v0.26.0
 
 Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: Josep Maria Blasco's
 ooRexx/WASM (`oorexxwasm` 0.2.4, ooRexx 5.3.0) and its `js.cls`.
@@ -55,9 +55,11 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
     python3 tools/oodtest.py --poke upstream/examples 0 24
     python3 tools/oodtest.py --tree upstream/examples tests/t*.rex tests/up/calculator.rex tests/up/oodpbar.rex tests/up/oodStandardRoutines.rex
 
-## State on 2026-11-21 (v0.25.0)
+## State on 2026-11-21 (v0.26.0)
 
-- Natives ported: 1,118 of 1,182 (94.6%; 1,098 at v0.24.0). v0.25.0 added 20: user
+- Natives ported: 1,118 of 1,182 (94.6%; 1,118 at v0.25.0). v0.26.0 added none: it is
+  the release that makes KDE Breeze icons stand for the system images of Windows
+  (see "System images"). v0.25.0 added 20: user
   messages, the notifications every control has, the up-down reply, buttons from a
   stem, bars made after the dialog is shown, `.Window`, the public routines (see
   "Natives added in v0.25.0", which also lists the 64 still missing). v0.24.0 added 65: the scroll bar
@@ -71,7 +73,7 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
   tips"). (The total was given as 1,181
   in v0.16.0 and v0.17.0; `dist/natives.txt` has 1,182 lines. It fell from 1,196 because 12
   natives are now plain Rexx in `src/patches.txt`.)
-- Tests: 62 of 62 pass in headless Chromium (`tests/t01`..`t30` with expected
+- Tests: 63 of 63 pass in headless Chromium (`tests/t01`..`t31` with expected
   output, the binary resource hand-off test `tests/res/t07_resdialog_binary`,
   four unmodified upstream samples: `calculator.rex`,
   `oodpbar.rex`, `oodStandardRoutines.rex`, and the tutorial
@@ -92,8 +94,8 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
   tutorial's `drawing3.rex` and `drawing5.rex`; and the three
   programs written by ooDialog Designer v0.3.0, in `tests/designer`).
 - Sweep of all 140 upstream example programs (`oodtest.py --sweep`, results in
-  `sweep.tsv`), each run from its own directory (last run at v0.25.0, on its final build): 82 show their dialog, 7 run to
-  the end, 8 show only a message box, 2 stop at a native not ported yet (`RI_INIT`, `CDI_INIT`), 10
+  `sweep.tsv`), each run from its own directory (last run at v0.26.0, on its final build): 83 show their dialog, 7 run to
+  the end, 8 show only a message box, 2 stop at a native not ported yet (`RI_INIT`, `CDI_INIT`), 9
   stop on an error (`BinaryMenuBar.rex` is counted as showing in some runs and as an error in others: it shows
   its dialog and then reports the missing reader; 8 need a reader of binary resources, which is another
   task's work; `oovideo.rex` is broken upstream), 24 are components: parts of
@@ -110,7 +112,7 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
 - Depth probe (`oodtest.py --poke`, results in `poke.tsv`): the 70 examples
   that show a dialog or a message box are used automatically (tabs, rows,
   check boxes, lists, edits, menus, every button, then closed; last full run
-  at v0.25.0, on its final build). Of 90, 74 come through with no error, no unhandled Windows
+  at v0.25.0; not run again at v0.26.0). Of 90, 74 come through with no error, no unhandled Windows
   message and a clean end (`oograph.rex` did not end in one run of four at
   v0.22.0 and ended in the run at v0.23.0; its own test passes). 12 more have no fault except connecting an event
   this layer does not produce. 4 have a problem, each named in `poke.tsv`, and
@@ -278,6 +280,37 @@ The user cannot drag a band. The RBN_ events are accepted and not produced.
 minimizeBand, pushChevron, setPalette, setWindowTheme and sizeToRect do
 nothing.
 
+## System images: KDE Breeze icons (v0.26.0)
+
+The page has none of the images of Windows. KDE Breeze icons stand for them.
+Test: `tests/t31_kdeimages`.
+
+- `.Image~getImage(id, type)` and `.Image~fromIDs(ids, type)` answer a KDE
+  icon for the `IDI_` and `OIC_` icons (application, hand, question,
+  exclamation, asterisk, winlogo) and for the 26 `OBM_` bitmaps (close, the
+  arrows, reduce, zoom, restore, check ...). The ID may be the number or the
+  symbol. The same number means another image for another type, as on
+  Windows: 32512 is IDI_APPLICATION as an icon and nothing as a bitmap.
+- A message box shows the KDE icon for its ERROR, WARNING, QUESTION or
+  INFORMATION icon. Before, it showed an emoji.
+- The pressed (`...D`) and inactive (`...I`) bitmaps are the same picture as
+  the normal one.
+- Cursors (`OCR_`, `IDC_`) are not images here: the page asks the browser for
+  a cursor by name, and the browser draws the cursor of the desktop it runs
+  on.
+- `src/kde-icons.map` says which icon stands for which image. To change one,
+  edit that file, then, from this directory:
+
+rexx tools/oodkde.rex PATH_TO_A_CLONE_OF_KDE_BREEZE_ICONS COMMIT
+
+rexx tools/oodbuild.rex
+
+- Licence. The 20 SVG files in `src/kde/` are unchanged copies from
+  https://github.com/KDE/breeze-icons (commit 7e5fae79, 2026-11-17), GNU LGPL
+  version 3 or later; `src/kde/COPYING-ICONS` is their licence text and
+  `src/kde/SOURCE.txt` their origin. The build puts them, base64 encoded, into
+  `dist/oodWeb.cls`.
+
 ## Natives added in v0.25.0
 
 20 natives; 1,118 of 1,182 are ported. Test: `tests/t30_usermsg`.
@@ -307,8 +340,8 @@ nothing.
   its title; `simpleFolderBrowse`; `locate` (it was ported before under a
   name the count did not see).
 - **.Image**: `toID` (upstream's table of 83 symbols); `userIcon` answers the
-  file given to `addIconResource`; `fromIDs` answers null images, as the page
-  has none of the images of Windows.
+  file given to `addIconResource`; `fromIDs` (since v0.26.0 it answers the KDE
+  icons, see "System images").
 - A method connected to an event may now answer nothing where an answer is
   optional. Before, that was reported as an error of the method.
 

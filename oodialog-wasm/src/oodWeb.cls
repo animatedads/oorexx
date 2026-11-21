@@ -24,7 +24,7 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.25.0"
+  return "0.26.0"
 ::method module_lastChanged class
   return "2026-11-21"
 ::attribute key unguarded
@@ -102,7 +102,7 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.25.0"
+  return "0.26.0"
 ::method module_lastChanged class
   return "2026-11-21"
 ::attribute rexxSelf unguarded
@@ -131,7 +131,7 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.25.0"
+  return "0.26.0"
 ::method module_lastChanged class
   return "2026-11-21"
 ::attribute dlg unguarded             -- its dialog's OodDlg
@@ -149,7 +149,7 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.25.0"
+  return "0.26.0"
 ::method module_lastChanged class
   return "2026-11-21"
 ::method module_version unguarded
@@ -240,6 +240,7 @@
   end
   web = page["__ood"]
   web~setHandler(.js~handler(self, "PAGEEVENT"))
+  self~kdeTable                      -- the system images, which the message box also uses
   return web
 
 ::method newKey
@@ -3959,8 +3960,10 @@ noPackage:
   return 0
 
 /* .Image: an image file; the object's state is the file's key in the page. */
-::method image_getImage_cls unguarded           -- .Image~getImage(file, type, size, flags)
+::method image_getImage_cls unguarded           -- .Image~getImage(file or system image, type, size, flags)
   use arg self_, msg, a
+  key = self~systemImage(a[1], self~imageType(a, 2, 0))
+  if key \== "" then return self_~new(key)
   return self_~new(self~imageKey(a[1]))
 ::method image_init unguarded
   use arg self_, msg, a
@@ -9082,16 +9085,74 @@ noPackage:
   file = a[1]~oodPeer~store["ICON" id]
   if file == .nil then return self_~new("")
   return self_~new(self~imageKey(file))
-/* .Image~fromIDs(ids, type, size, flags): the images of Windows itself.  The page has none
-   of them, so each is a null image, as getImage answers for one. */
+/* .Image~fromIDs(ids, type, size, flags): the images of the system.  KDE Breeze icons stand
+   for those of Windows (src/kde-icons.map); a null image for an ID with none. */
 ::method image_fromIDs_cls unguarded
   use arg self_, msg, a
   if \a[1]~isA(.Array) then raise syntax 93.948 array(1, "Array")
   images = .array~new
+  type = self~imageType(a, 2, 1)
   do id over a[1]
-    images~append(self_~new(self~imageKey(id)))
+    key = self~systemImage(id, type)
+    if key == "" then key = self~imageKey(id)
+    images~append(self_~new(key))
   end
   return images
+
+/*==== The images of the system: KDE Breeze icons stand for those of Windows ============*/
+/* The table of the resource kdeicons: a directory "type id" and SYMBOL -> the page's image
+   name "kde:<file>".  Type 1 icon (IDI_, OIC_), 0 bitmap (OBM_).  Each icon is given to the
+   page the first time the table is asked for. */
+::method kdeTable unguarded
+  expose kdeTable
+  if var("KDETABLE") then return kdeTable
+  kdeTable = .directory~new
+  sent = .set~new
+  do row over .resources~kdeicons
+    parse var row type id symbol name data
+    if name == "" then iterate
+    key = "kde:"name
+    if \sent~hasIndex(key) then do
+      self~web~image(key, "data:image/svg+xml;base64,"data)
+      sent~put(key)
+    end
+    kdeTable[type id] = key
+    kdeTable[symbol] = key
+    if symbol~left(4) == "IDI_" then kdeTable["OIC_"symbol~substr(5)] = key
+  end
+  kdeTable["OIC_SAMPLE"] = kdeTable["IDI_APPLICATION"]
+  kdeTable["OIC_ERROR"] = kdeTable["IDI_HAND"]
+  kdeTable["OIC_QUES"] = kdeTable["IDI_QUESTION"]
+  kdeTable["OIC_WARNING"] = kdeTable["IDI_EXCLAMATION"]
+  kdeTable["OIC_BANG"] = kdeTable["IDI_EXCLAMATION"]
+  kdeTable["OIC_INFORMATION"] = kdeTable["IDI_ASTERISK"]
+  kdeTable["OIC_NOTE"] = kdeTable["IDI_ASTERISK"]
+  return kdeTable
+::method imageType unguarded       -- the type argument of the Image class: a number or a keyword; the default if omitted
+  use arg a, i, default
+  if \a~hasIndex(i) then return default
+  v = a[i]
+  if \v~isA(.String) then return default
+  if v~datatype("W") then return v
+  v = v~upper
+  if v~pos("ICON") > 0 then return 1
+  if v~pos("CURSOR") > 0 then return 2
+  if v~pos("BITMAP") > 0 then return 0
+  return default
+::method systemImage unguarded     -- a system image by number or symbol and type: the page's image name; "" if there is none
+  use arg id, type
+  if \id~isA(.String) then return ""
+  table = self~kdeTable
+  key = table[id~upper]
+  if key \== .nil then return key
+  if \id~datatype("W") then return ""
+  key = table[type id]
+  if key == .nil then return ""
+  return key
+
+::resource kdeicons
+@@KDEICONS@@
+::END
 
 ::resource oodjs
 @@OODJS@@

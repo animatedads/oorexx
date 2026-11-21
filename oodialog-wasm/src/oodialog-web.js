@@ -2013,7 +2013,10 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
     const t = D.createElement('div'); t.className = 'ood-title'; const cap = D.createElement('span'); cap.textContent = title || ''; t.appendChild(cap);
     const body = D.createElement('div'); body.style.cssText = 'padding:1.4em 1.6em;background:#fff;white-space:pre-wrap;display:flex;gap:1em;align-items:flex-start;max-width:34em;user-select:text';
     const glyph = { ERROR: '⛔', HAND: '⛔', STOP: '⛔', WARNING: '⚠️', EXCLAMATION: '⚠️', QUESTION: '❓', INFORMATION: 'ℹ️', ASTERISK: 'ℹ️' }[String(icon || '').toUpperCase()];
-    if (glyph) { const g = D.createElement('div'); g.textContent = glyph; g.style.fontSize = '2em'; g.style.lineHeight = '1'; body.appendChild(g); }
+    const kde = { '⛔': 'dialog-error', '⚠️': 'dialog-warning', '❓': 'dialog-question', 'ℹ️': 'dialog-information' }[glyph];
+    const kdeUrl = kde ? ood.images.get('kde:' + kde + '.svg') : null;       // the KDE Breeze icon, given by the native layer
+    if (kdeUrl) { const g = D.createElement('img'); g.className = 'ood-msgicon'; g.src = kdeUrl; g.alt = kde.slice(7); g.style.cssText = 'width:2.6em;height:2.6em;flex:none'; body.appendChild(g); }
+    else if (glyph) { const g = D.createElement('div'); g.textContent = glyph; g.style.fontSize = '2em'; g.style.lineHeight = '1'; body.appendChild(g); }
     const msg = D.createElement('div'); msg.className = 'ood-msgtext'; msg.textContent = text; body.appendChild(msg);
     const row = D.createElement('div'); row.style.cssText = 'padding:.8em 1em;display:flex;gap:.6em;justify-content:flex-end';
     const prevFocus = D.activeElement;

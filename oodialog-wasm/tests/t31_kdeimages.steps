@@ -1,0 +1,10 @@
+wait .ood-dlg >> text=set
+expect (() => { const all = [...document.querySelectorAll('.ood-dlg *')].filter(e => getComputedStyle(e).backgroundImage.includes('image/svg') || (e.tagName === 'IMG' && e.src.includes('image/svg'))); return all.length; })() ==> 2
+expect (() => { const e = [...document.querySelectorAll('.ood-dlg *')].find(e => getComputedStyle(e).backgroundImage.includes('image/svg') || (e.tagName === 'IMG' && e.src.includes('image/svg'))); const u = e.tagName === 'IMG' ? e.src : getComputedStyle(e).backgroundImage; return atob(u.split('base64,')[1].replace(/"\)$/, '')).includes('<svg'); })() ==> True
+click .ood-dlg >> text=Ask
+wait .ood-msgbox >> text=Is this a KDE icon?
+expect (() => { const i = document.querySelector('.ood-msgbox img.ood-msgicon'); return i.alt + ' ' + i.src.startsWith('data:image/svg+xml;base64,') + ' ' + (i.naturalWidth > 0) + ' ' + (i.getBoundingClientRect().width > 20); })() ==> question true true true
+shot kdeimages
+click .ood-msgbox >> text=Yes
+wait .ood-dlg >> text=answer 6
+click .ood-dlg >> text=Close

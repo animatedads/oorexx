@@ -1,0 +1,6 @@
+The SVG files in this directory are from the KDE Breeze icon theme.
+Repository: https://github.com/KDE/breeze-icons
+Commit: 7e5fae7934ff14d73702c074da2926b9b4c08dbc
+Licence: GNU LGPL version 3 or later, with the clarification in COPYING-ICONS.
+They are unchanged copies. src/kde-icons.map says which Windows system image each stands for.
+Taken by tools/oodkde.rex on 20261121.

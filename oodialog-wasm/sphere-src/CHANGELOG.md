@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12
+- State article brought to port v0.26.0: KDE Breeze icons stand for the system images of Windows.
+- Renderer contract: the kde: image names and the message box icons.
+- Written by Claude (Fable 5.2).
+
 ## 0.11
 - State article brought to port v0.25.0: 1,118 of 1,182 natives (1,098 at v0.24.0).
 - Renderer contract: the six NM_ notifications of every control, the *.* subscription, bars added after the dialog is shown.
