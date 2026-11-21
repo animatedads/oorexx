@@ -64,5 +64,7 @@ The two dumps must be identical (class, category, from, to and value of every el
 | 2026-11-20, b446fae, **Release interpreter** trunk r13550 | Claude | 3 passes 51.3 s | 3 passes 25.4 s (2.02x) | Release interpreter for both columns; trunk has #2106 fixed (r13267), so the interpreter's API calls are cheaper than de1db87's: the ratio is not comparable with 2.65x |
 | 2026-11-20, 677177a (main, merge of b446fae; oorexx2cpp/ identical to b446fae, same library) | Claude | dump pass 41.9 s; 3 passes 122.3 s | dump pass 8.7 s; 3 passes 26.0 s (4.70x) | merge gate; Debug r13550; dumps identical over 162,260 elements |
 | 2026-11-20, 677177a, **Release interpreter** trunk r13550 | Claude | 3 passes 55.4 s | 3 passes 24.1 s (2.29x) | merge gate; Release interpreter for both columns |
+| 2026-11-21, ea5e323 (wip; FINALLY and THROW, Debug r13550) | Claude | dump pass 41.3 s; 3 passes 122.4 s | dump pass 9.4 s; 3 passes 28.0 s (4.37x) | dumps identical over 162,260 elements |
+| 2026-11-21, ea5e323, **Release interpreter** trunk r13550 | Claude | 3 passes 61.0 s | 3 passes 26.3 s (2.32x) | Release interpreter for both columns; the interpreted lane moved 51.3 -> 61.0 s with the interpreter unchanged: container spread |
 
 Crossings are calls between compiled code and the interpreter (RX2CPP_BIF_STATS=1 reports them).
