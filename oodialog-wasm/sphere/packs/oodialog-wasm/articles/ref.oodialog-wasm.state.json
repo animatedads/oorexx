@@ -1,9 +1,9 @@
 {
   "kind": "article",
   "id": "ref.oodialog-wasm.state",
-  "version": "0.13",
+  "version": "0.14",
   "sphere": "oodialog-wasm",
-  "title": "State at v0.27.0 and where the current state is recorded",
+  "title": "State at v0.28.0 and where the current state is recorded",
   "summary": "This article is a snapshot. The current figures are always in README.md of the project, with the version they were measured on; sweep.tsv and poke.tsv hold the per-example results.",
   "authority": "implementation-record",
   "section": "reference",
@@ -13,10 +13,10 @@
     "not-done"
   ],
   "snapshot": [
-    "Version 0.27.0, 21 November 2026.",
-    "Natives ported: 1,129 of 1,182 (1,118 at v0.26.0; 11 added in v0.27.0: the tab owner dialog; v0.26.0 added none, it is the release of the KDE system images; 1,098 at v0.24.0; 20 added in v0.25.0: user messages, generic notifications, up-down reply, buttons from a stem, bars made later, .Window, public routines; 65 added in v0.24.0: scroll bar, property sheet pages, date-time picker, 30 scattered; 78 added in v0.23.0: the re-bar; 74 added in v0.22.0: tool bar and custom draw; 192 added in v0.21.0; 26 of those accept their call and do nothing, 18 system metrics are fixed values). 12 of the 43 added in v0.18.0 accept their call and do nothing.",
-    "Tests: 64 of 64 pass in headless Chromium. 35 of them are upstream examples or the designer's programs, run unchanged.",
-    "Sweep of the 140 upstream examples: 82 show their dialog, 7 run to the end, 8 show only a message box, 1 stops at a native not ported, 11 stop on an error (8 of them wait for a reader of binary resources), 24 are components, 7 are outside ooDialog.",
+    "Version 0.28.0, 21 November 2026.",
+    "Natives ported: 1,157 of 1,182 (1,129 at v0.27.0; 28 added in v0.28.0: the program's own controls in a file dialog; 11 added in v0.27.0: the tab owner dialog; v0.26.0 added none, it is the release of the KDE system images; 1,098 at v0.24.0; 20 added in v0.25.0: user messages, generic notifications, up-down reply, buttons from a stem, bars made later, .Window, public routines; 65 added in v0.24.0: scroll bar, property sheet pages, date-time picker, 30 scattered; 78 added in v0.23.0: the re-bar; 74 added in v0.22.0: tool bar and custom draw; 192 added in v0.21.0; 26 of those accept their call and do nothing, 18 system metrics are fixed values). 12 of the 43 added in v0.18.0 accept their call and do nothing.",
+    "Tests: 65 of 65 pass in headless Chromium. 35 of them are upstream examples or the designer's programs, run unchanged.",
+    "Sweep of the 140 upstream examples: 84 show their dialog, 7 run to the end, 8 show only a message box, 1 stops at a native not ported, 9 stop on an error (8 of them wait for a reader of binary resources), 24 are components, 7 are outside ooDialog.",
     "Probe at v0.19.0, 88 examples: 73 clean, 11 connect an event that is not produced, 4 with a problem, none of them in the port's own code. This run found four faults of the port in examples the sweep called shows; all four are fixed in v0.19.0.",
     "\"shows\" in the sweep means a dialog appeared. It does not mean every feature of the example works. Only an example that is a test (with steps and assertions) is known to work."
   ],
@@ -35,10 +35,11 @@
     "Since v0.25.0: addUserMsg (WM_COMMAND, WM_SIZE, WM_MOVE, and any message the program sends itself), addUserSubclass, connectNotifyEvent (CLICK DBLCLK ENTER RCLICK GOTFOCUS LOSTFOCUS), deltaPosReply, createPushButtonStem, createToolBarWindow and its two sisters, .Window~new(handle), findWindow, simpleFolderBrowse, .Image~toID. Probe at v0.25.0, 90 examples: 74 clean, 12 connect an event that is not produced, 4 with a problem outside the port's own code.",
     "Since v0.26.0: KDE Breeze icons stand for the system images of Windows. .Image~getImage and .Image~fromIDs answer them for the IDI_, OIC_ and OBM_ numbers and symbols, and a message box shows them. The map is src/kde-icons.map; the files are in src/kde with their LGPL licence text; tools/oodkde.rex takes them from a clone of KDE/breeze-icons.",
     "Since v0.27.0: the tab owner dialog: TabOwnerDialog, ManagedTab, TabOwnerDlgInfo, ControlDlgInfo. A UserDialog owner with UserControlDialog pages is tested. An owner started from a resource does not start its tabs yet. The upstream example TabOwnerDemo.rex shows its owner and stops at its pages: they come from a TabOwnerDemo.dll that is not in the source tree.",
+    "Since v0.28.0: CommonDialogCustomizations: check buttons, combo boxes, edit boxes, menus, push buttons, radio button lists, separators, texts and the Open button's own list inside an Open or Save dialog, with their values and notices. The file dialog is an ooDialog dialog written in Rexx (OodFileDialog in src/oodExtras.cls), so a renderer needs nothing new for it. Probe at v0.28.0, 92 examples: 74 clean, 12 connect an event that is not produced, 6 with a problem outside the port's own code.",
     "File dialogs and shell dialogs over the WASM machine's file system."
   ],
   "not_done": [
-    "53 natives: CommonDialogCustomizations (28: the program's own controls inside an Open or Save dialog), CategoryDialog (4, deprecated upstream), ResourceImage (7), and 14 others listed in README.md under Tab owner dialog.",
+    "25 natives: ResourceImage (7, needs the reader of binary resources), CategoryDialog (4, deprecated upstream), upstream's debugging hooks (11), and lv_zTest, dimBitmap, MonthCalendar getGridInfo.",
     "Tracking tool tips. Images in list-views, tool bars and status bars. Dragging a re-bar band.",
     "ControlDlgInfo and the tab owner dialogs.",
     "connectActivate, connectHelp, connectPosChanged, connectResizing (accepted, not produced).",
@@ -54,22 +55,22 @@
   ],
   "provenance": [
     {
-      "artifact": "oodialog-wasm-8fb845d.zip",
-      "sha256": "12c3835c81b70398c5146e723fdabec5017075d7c0531bcda07418c24e83221b",
+      "artifact": "oodialog-wasm-131ec2d.zip",
+      "sha256": "96ea159205757481a948df441da8ee9099345560bbc14928b433376f996dd953",
       "member": "oodialog-wasm/README.md",
-      "line_start": 486,
-      "line_end": 505,
+      "line_start": 523,
+      "line_end": 542,
       "claim": "What printing is here and what it needs.",
-      "note": "git archive of animatedads/oorexx commit 8fb845d (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 131ec2d (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-8fb845d.zip",
-      "sha256": "12c3835c81b70398c5146e723fdabec5017075d7c0531bcda07418c24e83221b",
+      "artifact": "oodialog-wasm-131ec2d.zip",
+      "sha256": "96ea159205757481a948df441da8ee9099345560bbc14928b433376f996dd953",
       "member": "oodialog-wasm/README.md",
       "line_start": 58,
       "line_end": 107,
       "claim": "The state section with counts.",
-      "note": "git archive of animatedads/oorexx commit 8fb845d (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 131ec2d (branch oodialog-wasm)"
     }
   ]
 }

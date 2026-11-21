@@ -1,7 +1,7 @@
 {
   "kind": "article",
   "id": "ops.oodialog-wasm.lessons",
-  "version": "0.13",
+  "version": "0.14",
   "sphere": "oodialog-wasm",
   "title": "Lessons from the port: faults made and how each is now prevented",
   "summary": "Each lesson is a fault that happened in this work, its cause, and the rule that prevents it. They are here so that the next task does not repeat them.",
@@ -13,6 +13,8 @@
     "method"
   ],
   "lessons": [
+    "A field of a directory was named items, and before that index and start. Each is a method of every Directory, so entry~items answered a count, not the field. Rule: read a field whose name could be a method with entry[NAME], or choose another name.",
+    "The fix for that was one sed over the whole file. It also changed three lines where entry was an array and items was right; three key tests failed. The full suite caught it before the commit. Rule: after a rename over a whole file, list every changed line and read it.",
     "A build was pushed with a failing test. Cause: the last run's result was not read. Rule: read every summary line on the final build before the commit.",
     "A test passed once and was taken as done; on the final build it failed two runs in three. The page drew a 1,000-row list again for every row added, and the time depended on the machine's load. Rule: a new test with waits in it is run three times before it counts; a fill of 1,000 rows is a case every list control gets.",
     "Native coverage went 643, 686, 688, 688, 689 over four releases while samples, printing and the sphere took the time. The architect named it. Whole families were cheap: plain data classes and one-line calls on operations the page already had. Rule: every release states the native count next to the last one, and a release that adds none says why.",
@@ -37,22 +39,22 @@
   ],
   "provenance": [
     {
-      "artifact": "oodialog-wasm-8fb845d.zip",
-      "sha256": "12c3835c81b70398c5146e723fdabec5017075d7c0531bcda07418c24e83221b",
+      "artifact": "oodialog-wasm-131ec2d.zip",
+      "sha256": "96ea159205757481a948df441da8ee9099345560bbc14928b433376f996dd953",
       "member": "oodialog-wasm/src/oodWeb.cls",
       "line_start": 618,
       "line_end": 623,
       "claim": "onPumpThread: the rule that came from the msSleep race.",
-      "note": "git archive of animatedads/oorexx commit 8fb845d (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 131ec2d (branch oodialog-wasm)"
     },
     {
-      "artifact": "oodialog-wasm-8fb845d.zip",
-      "sha256": "12c3835c81b70398c5146e723fdabec5017075d7c0531bcda07418c24e83221b",
+      "artifact": "oodialog-wasm-131ec2d.zip",
+      "sha256": "96ea159205757481a948df441da8ee9099345560bbc14928b433376f996dd953",
       "member": "oodialog-wasm/README.md",
-      "line_start": 189,
-      "line_end": 204,
+      "line_start": 193,
+      "line_end": 208,
       "claim": "ResizingAdmin was not ported until v0.17.0.",
-      "note": "git archive of animatedads/oorexx commit 8fb845d (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit 131ec2d (branch oodialog-wasm)"
     }
   ]
 }
