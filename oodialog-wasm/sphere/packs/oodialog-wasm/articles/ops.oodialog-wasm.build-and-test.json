@@ -1,7 +1,7 @@
 {
   "kind": "article",
   "id": "ops.oodialog-wasm.build-and-test",
-  "version": "0.11",
+  "version": "0.12",
   "sphere": "oodialog-wasm",
   "title": "Build the three class files and run the tests",
   "summary": "One Rexx tool builds dist/. One Python tool runs programs in headless Chromium against the built files. A change is finished only when the whole suite passes on the final build, checked before the commit.",
@@ -29,13 +29,13 @@
   ],
   "provenance": [
     {
-      "artifact": "oodialog-wasm-7d42f9c.zip",
-      "sha256": "4828731e696521bd6a133815d77cd0210814d1a87b49bf186772b5df7fee89f8",
+      "artifact": "oodialog-wasm-be87c50.zip",
+      "sha256": "32ea244818fc78fbe72737a4a4cc8fbfe5f7ebf48b3c629f859592c3ab53abb8",
       "member": "oodialog-wasm/README.md",
       "line_start": 58,
       "line_end": 77,
       "claim": "The test count and the version it was measured on.",
-      "note": "git archive of animatedads/oorexx commit 7d42f9c (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit be87c50 (branch oodialog-wasm)"
     }
   ]
 }
