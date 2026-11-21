@@ -1,4 +1,4 @@
-# ooDialog/WASM sphere v0.10
+# ooDialog/WASM sphere v0.11
 
 Architecture: Tom Dyer. Written by Claude (Fable 5.2). 15 November 2026.
 
@@ -9,7 +9,7 @@ who tests or extends the port.
 ooDialog/WASM runs unchanged ooDialog programs in a web browser on Josep Maria
 Blasco's ooRexx/WASM runtime. The code is in `animatedads/oorexx`, branch
 `oodialog-wasm`, directory `oodialog-wasm/`. Its `README.md` holds the current
-figures. This sphere was checked against commit `f2b3e89` (v0.24.0).
+figures. This sphere was checked against commit `7d42f9c` (v0.25.0).
 
 ## Articles
 

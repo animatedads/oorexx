@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11
+- State article brought to port v0.25.0: 1,118 of 1,182 natives (1,098 at v0.24.0).
+- Renderer contract: the six NM_ notifications of every control, the *.* subscription, bars added after the dialog is shown.
+- Correction: v0.10 named 14 of the missing natives "category and task dialogs". 11 of them are the tab owner dialog; there is no task dialog in ooDialog.
+- Written by Claude (Fable 5.2).
+
 ## 0.10
 - State article brought to port v0.24.0: 1,098 of 1,182 natives (1,033 at v0.23.0).
 - Renderer contract: the SCROLLBAR kind, the SB event, and the ops added in v0.24.0.
