@@ -1,0 +1,16 @@
+wait .ood-dlg >> text=Cancel
+expect [...document.querySelectorAll('.ood-tabbtn')].map(b => b.textContent + (b.classList.contains('ood-cur') ? '*' : '')).join(' ') ==> Alpha* Beta Gamma One Two*
+expect [...document.querySelectorAll('.ood-child')].filter(e => e.offsetParent !== null && getComputedStyle(e).visibility !== 'hidden').map(e => e.querySelector('.ood-static').textContent).sort().join('|') ==> Page Alpha|Page Two
+click .ood-tabbtn >> text=Beta
+sleep 600
+expect [...document.querySelectorAll('.ood-child')].filter(e => e.offsetParent !== null && getComputedStyle(e).visibility !== 'hidden').map(e => e.querySelector('.ood-static').textContent).sort().join('|') ==> Page Beta|Page Two
+expect (() => { const t = document.querySelectorAll('.ood-tab')[0].getBoundingClientRect(), p = [...document.querySelectorAll('.ood-child')].find(e => e.textContent.includes('Page Beta')).getBoundingClientRect(); return p.left >= t.left && p.right <= t.right + 1 && p.top > t.top + 10 && p.bottom <= t.bottom + 1 && p.width > t.width - 20; })() ==> True
+fill .ood-child:has-text("Page Beta") input => changed beta
+click .ood-dlg >> text=Report
+wait .ood-dlg >> text=reported
+click .ood-dlg >> text=Next
+sleep 600
+expect [...document.querySelectorAll('.ood-tabbtn')].map(b => b.textContent + (b.classList.contains('ood-cur') ? '*' : '')).join(' ') ==> Alpha Beta Gamma* One Two*
+expect [...document.querySelectorAll('.ood-child')].filter(e => e.offsetParent !== null && getComputedStyle(e).visibility !== 'hidden').map(e => e.querySelector('.ood-static').textContent).sort().join('|') ==> Page Gamma|Page Two
+shot tabowner
+click .ood-dlg >> button:text-is("Ok")

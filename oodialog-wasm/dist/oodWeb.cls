@@ -24,7 +24,7 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.26.0"
+  return "0.27.0"
 ::method module_lastChanged class
   return "2026-11-21"
 ::attribute key unguarded
@@ -102,7 +102,7 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.26.0"
+  return "0.27.0"
 ::method module_lastChanged class
   return "2026-11-21"
 ::attribute rexxSelf unguarded
@@ -131,7 +131,7 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.26.0"
+  return "0.27.0"
 ::method module_lastChanged class
   return "2026-11-21"
 ::attribute dlg unguarded             -- its dialog's OodDlg
@@ -149,7 +149,7 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.26.0"
+  return "0.27.0"
 ::method module_lastChanged class
   return "2026-11-21"
 ::method module_version unguarded
@@ -500,6 +500,17 @@
   dlg = d~rexxSelf
   if d~sheet \== .nil then if code == 0 then if self~sheetButton(d, id) then return
   if self~userMessage(d, 0, 273, code * 65536 + id, key * 65536 + id) \== .nil then return
+  if code == 0 then if id == 1 | id == 2 then if d~store["TOD"] \== .nil then do     -- a tab owner's Ok and Cancel
+    connected = .false
+    do entry over d~cmdTable
+      if entry[1] == id then if entry[3] \== "" then connected = .true
+    end
+    if \connected then do
+      if id == 1 then self~invoke(dlg, "TABOWNEROK", .array~new)
+      else self~invoke(dlg, "TABOWNERCANCEL", .array~new)
+      return
+    end
+  end
   method = ""
   do entry over d~cmdTable
     if entry[1] \== id then iterate
@@ -2042,10 +2053,14 @@ noPackage:
   if ownerData == .nil then return
   if dlg~isA(self~classOf("ControlDialog")) then do
     if ownerData~isA(self~classOf("PlainBaseDialog")) then dlg~oodPeer~ownerDialog = ownerData
-    else if ownerData~isA(self~classOf("ControlDlgInfo")) then dlg~oodPeer~store["ownerData"] = ownerData
+    else if ownerData~isA(self~classOf("ControlDlgInfo")) then do
+      dlg~oodPeer~store["ownerData"] = ownerData
+      self~cdiApply(dlg, ownerData)
+    end
     else raise syntax 93.900 array("argument 5 must be a PlainBaseDialog or a ControlDialogInfo object; found" ownerData)
   end
   else dlg~oodPeer~store["ownerData"] = ownerData
+  if dlg~isA(self~classOf("TabOwnerDialog")) then self~tod_tabOwnerDlgInit(dlg)
 ::method dialogInit                -- from PlainBaseDialog~init (patches.txt)
   expose defFontName defFontSize
   use arg dlg, library, resource
@@ -2468,6 +2483,7 @@ noPackage:
     self~web~op(d~key, entry[1], entry[2], entry[3], entry[4], entry[5])
   end
   d~deferred~empty
+  if d~store["TOD"] \== .nil then self~todStart(self_)      -- a tab owner: its tabs and start pages
   return .true
 
 ::method dyndlg_stop unguarded
@@ -2940,7 +2956,8 @@ noPackage:
   self~ctlInfoOf(self_)~initializing = (a[1] == .true)
   return
 ::method cd_get_isManaged unguarded
-  return .false
+  use arg self_
+  return self~ctlInfoOf(self_)~managed == .true
 ::method cd_get_pageTitle unguarded
   use arg self_
   return self~ctlInfoOf(self_)~pageTitle
@@ -3575,6 +3592,10 @@ noPackage:
     if entry[2] \== event then iterate
     if entry[3] == "@SHEETTAB" then do
       self~sheetTab(dlg)
+      iterate
+    end
+    if entry[3] == "@MANAGEDTAB" then do
+      self~mtEvent(dlg, id, event)
       iterate
     end
     if event~left(3) == "NM_" then do    -- connectNotifyEvent: (id, the control's handle)
@@ -9099,6 +9120,249 @@ noPackage:
   end
   return images
 
+/*==== v0.27.0: the tab owner dialog (TabOwnerDialog, ManagedTab, ControlDlgInfo) ========*/
+/* A tab owner dialog has tab controls whose pages are control dialogs.  The owner makes
+   each page the first time its tab is chosen, puts it over the tab's display area, and
+   shows one page of each tab at a time.  (Upstream: oodPropertySheetDialog.cpp; the classes
+   are not documented upstream.) */
+::method cdiSize unguarded         -- the size argument of a ControlDlgInfo: (cx, cy), 200 x 150 if omitted
+  use arg size
+  if size == .nil then return .array~of(200, 150)
+  if \size~isA(self~classOf("Size")) then raise syntax 93.948 array(4, "Size")
+  return .array~of(size~width, size~height)
+::method cdi_init unguarded        -- .ControlDlgInfo~new(owner, managed, title, size, tabIcon, resources)
+  use arg self_, msg, a
+  info = .directory~new
+  info~owner = .nil
+  info~managed = .false
+  info~title = .nil
+  if a~hasIndex(1) then do
+    if \a[1]~isA(self~classOf("PlainBaseDialog")) then raise syntax 93.948 array(1, "PlainBaseDialog")
+    info~owner = a[1]
+  end
+  if a~hasIndex(2) then info~managed = (a[2] == .true)
+  if a~hasIndex(3) then info~title = a[3]
+  size = .nil
+  if a~hasIndex(4) then size = a[4]
+  info~size = self~cdiSize(size)
+  self_~oodPeer = info
+  return 0
+::method cdi_set_managed unguarded
+  use arg self_, msg, a
+  self_~oodPeer~managed = (a[1] == .true)
+  return
+::method cdi_set_title unguarded
+  use arg self_, msg, a
+  self_~oodPeer~title = a[1]
+  return
+::method cdi_set_size unguarded
+  use arg self_, msg, a
+  size = .nil
+  if a~hasIndex(1) then size = a[1]
+  self_~oodPeer~size = self~cdiSize(size)
+  return
+::method cdiApply unguarded        -- a control dialog made with a ControlDlgInfo takes its values (cd_controlDlgInit)
+  use arg dlg, cdi
+  info = cdi~oodPeer
+  c = self~ctlInfoOf(dlg)
+  c~managed = info~managed
+  if info~title \== .nil then c~pageTitle = info~title
+  c~size = info~size
+  if info~owner \== .nil then dlg~oodPeer~ownerDialog = info~owner
+  return
+/* .ManagedTab~new(tabID, pages, opts, startPage, wantNotifications)
+   opts: SELCHANGE SELCHANGING SETACTIVE KILLACTIVE, the notices the owner wants. */
+::method mt_init unguarded
+  use arg self_, msg, a
+  mt = .directory~new
+  mt~tabID = self~resolveId(.nil, a[1])
+  if mt~tabID < 1 then raise syntax 93.900 array("argument 1 must be a numeric ID or a symbolic ID of the global .constDir; found" a[1])
+  mt~pages = .array~new
+  if a~hasIndex(2) then do
+    if \a[2]~isA(.Array) then raise syntax 93.948 array(2, "Array")
+    do i = 1 to a[2]~size
+      page = a[2][i]
+      if page == .nil then raise syntax 93.900 array("argument 2 must be a non-sparse array; index" i "is missing")
+      if \page~isA(self~classOf("ControlDialog")) then raise syntax 93.900 array("index" i "of the array, argument 2, must be a ControlDialog; found" page)
+      c = self~ctlInfoOf(page)
+      c~managed = .true
+      c~pageNumber = i
+      mt~pages~append(page)
+    end
+  end
+  opts = self~opt(a, 3)~upper
+  mt~selChange = (opts~pos("SELCHANGE") > 0)
+  mt~selChanging = (opts~pos("SELCHANGING") > 0)
+  mt~setActive = (opts~pos("SETACTIVE") > 0)
+  mt~killActive = (opts~pos("KILLACTIVE") > 0)
+  mt~startPage = 1
+  if a~hasIndex(4) then do
+    if \a[4]~datatype("W") | a[4] < 1 | a[4] > mt~pages~items then raise syntax 93.907 array(4, 1, mt~pages~items, a[4])
+    mt~startPage = a[4]
+  end
+  mt~showing = 0
+  mt~owner = .nil
+  mt~rexxSelf = self_
+  self_~oodPeer = mt
+  return 0
+::method todiAdd unguarded
+  use arg info, tabs
+  if tabs~isA(.Array) then list = tabs
+  else list = .array~of(tabs)
+  do tab over list
+    if \tab~isA(self~classOf("ManagedTab")) then raise syntax 93.900 array("argument 1 must be a ManagedTab or an array of ManagedTab objects; found" tab)
+    info~tabs~append(tab)
+  end
+  return .true
+::method todi_init unguarded       -- .TabOwnerDlgInfo~new(managedTab | array of them)
+  use arg self_, msg, a
+  info = .directory~new
+  info~tabs = .array~new
+  self_~oodPeer = info
+  if a~hasIndex(1) then self~todiAdd(info, a[1])
+  return 0
+::method todi_add unguarded
+  use arg self_, msg, a
+  return self~todiAdd(self_~oodPeer, a[1])
+::method tod_tabOwnerDlgInit unguarded     -- the dialog takes its managed tabs from its TabOwnerDlgInfo; 0
+  use arg self_
+  d = self_~oodPeer
+  tabs = .array~new
+  info = d~store["ownerData"]
+  if info \== .nil then if info~isA(self~classOf("TabOwnerDlgInfo")) then do tab over info~oodPeer~tabs
+    mt = tab~oodPeer
+    mt~owner = self_
+    do page over mt~pages
+      page~oodPeer~ownerDialog = self_
+    end
+    tabs~append(mt)
+  end
+  d~store["TOD"] = tabs
+  return 0
+::method tod_getTabPage unguarded  -- getTabPage(tabID, pageIndex): the page dialog
+  use arg self_, msg, a
+  id = self~resolveId(.nil, a[1])
+  do mt over self~todTabs(self_)
+    if mt~tabID \== id then iterate
+    if \a[2]~datatype("W") | a[2] < 1 | a[2] > mt~pages~items then leave
+    return mt~pages[a[2]]
+  end
+  raise syntax 93.900 array("there is no page" a[2] "for the tab control with ID" a[1])
+::method todTabs unguarded
+  use arg dlg
+  tabs = dlg~oodPeer~store["TOD"]
+  if tabs == .nil then return .array~new
+  return tabs
+/* The owner has just been made (WM_INITDIALOG): label the tabs, make each start page. */
+::method todStart unguarded
+  use arg dlg
+  d = dlg~oodPeer
+  do mt over self~todTabs(dlg)
+    tab = dlg~newTab(mt~tabID)
+    if tab == 0 | tab == .nil then iterate
+    mt~rexxTab = tab
+    do page over mt~pages
+      tab~insert( , self~ctlInfoOf(page)~pageTitle)
+    end
+    self~addNotify(dlg, mt~tabID, "SELCHANGE", "@MANAGEDTAB", "")
+    self~addNotify(dlg, mt~tabID, "SELCHANGING", "@MANAGEDTAB", "")
+    if mt~pages~items == 0 then iterate
+    self~mtMakePage(dlg, mt, mt~startPage, .true)
+    mt~showing = mt~startPage
+    if mt~startPage > 1 then self~winMsg(d, mt~tabID, 4876, mt~startPage - 1, 0)      -- TCM_SETCURSEL: no notice
+  end
+  return
+/* Make a page dialog inside the owner, over the tab's display area. */
+::method mtMakePage unguarded
+  use arg dlg, mt, index, show
+  page = mt~pages[index]
+  d = dlg~oodPeer
+  pd = page~oodPeer
+  c = self~ctlInfoOf(page)
+  if c~wasActivated then return .true
+  size = c~size
+  if size == .nil then size = .array~of(200, 150)
+  pd~ownerDialog = dlg
+  if \pd~templateActive then do          -- the template: as upstream's initUserTemplate, initRcTemplate, initResTemplate
+    select
+      when page~isA(self~classOf("RcControlDialog")) then do
+        if page~loadFrameRCCD(200) \== 0 then return .false
+        page~loadItemsRCCD(c~extraOptions)
+      end
+      when page~isA(self~classOf("UserControlDialog")) then self~dyndlg_create(page, "CREATE", .array~of(0, 0, size[1], size[2], "", ""))
+      otherwise if \self~resTemplate(page, page~library, page~resourceID) then return .false
+    end
+  end
+  if \pd~templateActive then return .false
+  parse value self~ctlOp(d, mt~tabID, "tab.rect") with left top right bottom .
+  if left == "" then return .false
+  pd~embed = .array~of(d~key, left, top)
+  if \self~dyndlg_startParentDialog(page, "", .array~new) then return .false
+  c~wasActivated = .true
+  self~ctlOp(pd, 0, "size", right - left, bottom - top)
+  self~raPage(page)
+  self~web~show(pd~key, "NORMAL")
+  if \show then self~ctlOp(pd, 0, "hide")
+  page~initDialog
+  c~initializing = .false
+  page~execute
+  return .true
+/* A tab's selection is about to change, or has changed (doTCNSelChange). */
+::method mtEvent unguarded
+  use arg dlg, id, event
+  do mt over self~todTabs(dlg)
+    if mt~tabID \== id then iterate
+    tab = mt~rexxTab
+    if event == "SELCHANGING" then do
+      if mt~showing < 1 then return
+      if mt~killActive then self~invokeResult(dlg, "TABOWNERKILLACTIVE", .array~of(mt~pages[mt~showing], tab))
+      else self~invokeResult(mt~pages[mt~showing], "TABPAGEKILLACTIVE", .array~of(dlg, tab))
+      if mt~selChanging then self~invoke(dlg, "TABOWNERSELCHANGING", .array~of(mt~pages[mt~showing], mt~showing))
+      return
+    end
+    do tries = 1 to mt~pages~items + 1   -- a page may send the selection on to another page
+      current = self~winMsg(dlg~oodPeer, id, 4875, 0, 0) + 1
+      if current < 1 | current > mt~pages~items then return
+      page = mt~pages[current]
+      if \self~mtMakePage(dlg, mt, current, .false) then return
+      if mt~setActive then answer = self~invokeResult(dlg, "TABOWNERSETACTIVE", .array~of(page, tab))
+      else answer = self~invokeResult(page, "TABPAGESETACTIVE", .array~of(dlg, tab))
+      if answer == .nil then answer = 0
+      if \answer~datatype("W") | answer < 0 | answer > mt~pages~items then do
+        say "ooDialog/WASM: the answer of the set active method must be 0 to" mt~pages~items"; found" answer
+        return
+      end
+      if answer == 0 | answer == current then do
+        if mt~showing > 0 & mt~showing \== current then self~ctlOp(mt~pages[mt~showing]~oodPeer, 0, "hide")
+        self~ctlOp(page~oodPeer, 0, "show")
+        mt~showing = current
+        if mt~selChange then self~invoke(dlg, "TABOWNERSELCHANGE", .array~of(page, current))
+        return
+      end
+      self~winMsg(dlg~oodPeer, id, 4876, answer - 1, 0)
+    end
+    return
+  end
+  return
+/* Ok and Cancel of a tab owner: every page ends first, as in a property sheet. */
+::method todEnd unguarded
+  use arg dlg, isOk
+  do mt over self~todTabs(dlg)
+    do page over mt~pages
+      page~endExecution(isOk)
+    end
+  end
+  if isOk then dlg~initCode = 1
+  else dlg~initCode = 2
+  dlg~ensureFinished(.false)
+  return .true
+::method tod_tabOwnerOk unguarded
+  use arg self_
+  return self~todEnd(self_, .true)
+::method tod_tabOwnerCancel unguarded
+  use arg self_
+  return self~todEnd(self_, .false)
+
 /*==== The images of the system: KDE Breeze icons stand for those of Windows ============*/
 /* The table of the resource kdeicons: a directory "type id" and SYMBOL -> the page's image
    name "kde:<file>".  Type 1 icon (IDI_, OIC_), 0 bitmap (OBM_).  Each icon is given to the
@@ -10338,7 +10602,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       case 0x1308: if (w < 0 || w >= c.tabs.length) return '0'; c.tabs.splice(w, 1); if (c.cur >= c.tabs.length) c.cur = c.tabs.length - 1; tabRender(c); return '1'; // TCM_DELETEITEM
       case 0x1309: c.tabs = []; c.cur = -1; tabRender(c); return '1';                  // TCM_DELETEALLITEMS
       case 0x132F: return String(c.cur);                                               // TCM_GETCURFOCUS
-      case 0x1330: if (w >= 0 && w < c.tabs.length) { c.cur = w; tabRender(c); } return '0'; // TCM_SETCURFOCUS
+      case 0x1330: if (w >= 0 && w < c.tabs.length && w !== c.cur) { note(dlg, c, 'SELCHANGING', ''); c.cur = w; tabRender(c); note(dlg, c, 'SELCHANGE', ''); } return '0'; // TCM_SETCURFOCUS: with the two notices, as Windows
       case 0x132C: return '1';                                                         // TCM_GETROWCOUNT
       case 0x1331: { const old = c.minTab == null ? -1 : c.minTab; c.minTab = l < 0 ? null : l; tabRender(c); return String(old); }   // TCM_SETMINTABWIDTH: the width before
     }

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.13
+- State article brought to port v0.27.0: 1,129 of 1,182 natives (1,118 at v0.26.0); the tab owner dialog.
+- Renderer contract: TCM_SETCURFOCUS sends the two selection notices.
+- Written by Claude (Fable 5.2).
+
 ## 0.12
 - State article brought to port v0.26.0: KDE Breeze icons stand for the system images of Windows.
 - Renderer contract: the kde: image names and the message box icons.

@@ -1,4 +1,4 @@
-# ooDialog for ooRexx/WASM — v0.26.0
+# ooDialog for ooRexx/WASM — v0.27.0
 
 Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: Josep Maria Blasco's
 ooRexx/WASM (`oorexxwasm` 0.2.4, ooRexx 5.3.0) and its `js.cls`.
@@ -55,9 +55,10 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
     python3 tools/oodtest.py --poke upstream/examples 0 24
     python3 tools/oodtest.py --tree upstream/examples tests/t*.rex tests/up/calculator.rex tests/up/oodpbar.rex tests/up/oodStandardRoutines.rex
 
-## State on 2026-11-21 (v0.26.0)
+## State on 2026-11-21 (v0.27.0)
 
-- Natives ported: 1,118 of 1,182 (94.6%; 1,118 at v0.25.0). v0.26.0 added none: it is
+- Natives ported: 1,129 of 1,182 (95.5%; 1,118 at v0.26.0). v0.27.0 added 11: the
+  tab owner dialog (see "Tab owner dialog"). v0.26.0 added none: it is
   the release that makes KDE Breeze icons stand for the system images of Windows
   (see "System images"). v0.25.0 added 20: user
   messages, the notifications every control has, the up-down reply, buttons from a
@@ -73,7 +74,7 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
   tips"). (The total was given as 1,181
   in v0.16.0 and v0.17.0; `dist/natives.txt` has 1,182 lines. It fell from 1,196 because 12
   natives are now plain Rexx in `src/patches.txt`.)
-- Tests: 63 of 63 pass in headless Chromium (`tests/t01`..`t31` with expected
+- Tests: 64 of 64 pass in headless Chromium (`tests/t01`..`t32` with expected
   output, the binary resource hand-off test `tests/res/t07_resdialog_binary`,
   four unmodified upstream samples: `calculator.rex`,
   `oodpbar.rex`, `oodStandardRoutines.rex`, and the tutorial
@@ -94,9 +95,10 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
   tutorial's `drawing3.rex` and `drawing5.rex`; and the three
   programs written by ooDialog Designer v0.3.0, in `tests/designer`).
 - Sweep of all 140 upstream example programs (`oodtest.py --sweep`, results in
-  `sweep.tsv`), each run from its own directory (last run at v0.26.0, on its final build): 83 show their dialog, 7 run to
-  the end, 8 show only a message box, 2 stop at a native not ported yet (`RI_INIT`, `CDI_INIT`), 9
-  stop on an error (`BinaryMenuBar.rex` is counted as showing in some runs and as an error in others: it shows
+  `sweep.tsv`), each run from its own directory (last run at v0.27.0, on its final build): 82 show their dialog, 7 run to
+  the end, 8 show only a message box, 1 stops at a native not ported yet (`RI_INIT`), 11
+  stop on an error (`TabOwnerDemo.rex` now shows its owner dialog and stops at its pages, which come from a
+  `TabOwnerDemo.dll` that is not in the source tree) (`BinaryMenuBar.rex` is counted as showing in some runs and as an error in others: it shows
   its dialog and then reports the missing reader; 8 need a reader of binary resources, which is another
   task's work; `oovideo.rex` is broken upstream), 24 are components: parts of
   the user guide's Order Manager, which name their files from the program's
@@ -112,7 +114,7 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
 - Depth probe (`oodtest.py --poke`, results in `poke.tsv`): the 70 examples
   that show a dialog or a message box are used automatically (tabs, rows,
   check boxes, lists, edits, menus, every button, then closed; last full run
-  at v0.25.0; not run again at v0.26.0). Of 90, 74 come through with no error, no unhandled Windows
+  at v0.25.0; not run again at v0.26.0 or v0.27.0). Of 90, 74 come through with no error, no unhandled Windows
   message and a clean end (`oograph.rex` did not end in one run of four at
   v0.22.0 and ended in the run at v0.23.0; its own test passes). 12 more have no fault except connecting an event
   this layer does not produce. 4 have a problem, each named in `poke.tsv`, and
@@ -280,6 +282,49 @@ The user cannot drag a band. The RBN_ events are accepted and not produced.
 minimizeBand, pushChevron, setPalette, setWindowTheme and sizeToRect do
 nothing.
 
+## Tab owner dialog (v0.27.0)
+
+11 natives; 1,129 of 1,182 are ported. Test: `tests/t32_tabowner`.
+
+A dialog that inherits `TabOwnerDialog` has tab controls whose pages are
+control dialogs. Upstream does not document these classes and its DLL still
+prints debugging lines for them; this port follows the DLL's source.
+
+- `.ControlDlgInfo~new(owner, managed, title, size)` and its `managed=`,
+  `title=`, `size=`: given as owner data to a control dialog, it makes the
+  dialog a managed page with that title and size.
+- `.ManagedTab~new(tabID, pages, opts, startPage)`: the tab ID is a number or
+  a symbol of the global `.constDir`. opts names the notices the owner wants:
+  SELCHANGE, SELCHANGING, SETACTIVE, KILLACTIVE.
+- `.TabOwnerDlgInfo~new(tabs)` and `add`: given as owner data to the owner.
+- The owner labels each tab with its pages' titles and makes the start page.
+  A page is made the first time its tab is chosen, over the tab's display
+  area. Choosing a tab asks the page (`tabPageKillActive`,
+  `tabPageSetActive`) or, if asked for, the owner (`tabOwnerKillActive`,
+  `tabOwnerSetActive`); the set-active answer 0 accepts and another page's
+  number sends the selection there. `tabOwnerSelChange` and
+  `tabOwnerSelChanging` are sent if asked for.
+- `getTabPage(tabID, pageIndex)`.
+- Ok and Cancel of the owner go to `tabOwnerOk` and `tabOwnerCancel`: every
+  page gets `endExecution`, then the owner ends with initCode 1 or 2.
+- `Tab~focus(index)` now sends SELCHANGING and SELCHANGE, as Windows does.
+- As upstream, a page's `execute` runs after its `initDialog` and sets the
+  controls from the page's data attributes. Text put into a data-connected
+  control in `initDialog` is therefore replaced.
+- Pages may be UserControlDialog (tested), RcControlDialog (not tested) or
+  ResControlDialog (needs the reader of binary resources; not tested).
+- Not done: the owner started from a resource (ResDialog, RcDialog) does not
+  start its tabs; only a UserDialog owner does. `wantNotifications` is
+  ignored.
+
+Still missing (53):
+- `cid_*` (28): CommonDialogCustomizations, the program's own controls inside
+  an Open or Save dialog.
+- `catdlg_*` (4): CategoryDialog, deprecated upstream.
+- `ri_*` (7): ResourceImage, needs the reader of binary resources.
+- 14 others: the `*_test` debugging hooks and `routineTest` (11), `lv_zTest`,
+  `dimBitmap`, `MonthCalendar~getGridInfo`.
+
 ## System images: KDE Breeze icons (v0.26.0)
 
 The page has none of the images of Windows. KDE Breeze icons stand for them.
@@ -344,17 +389,6 @@ rexx tools/oodbuild.rex
   icons, see "System images").
 - A method connected to an event may now answer nothing where an answer is
   optional. Before, that was reported as an error of the method.
-
-Still missing (64):
-- `cid_*` (28): CommonDialogCustomizations, the program's own controls inside
-  an Open or Save dialog.
-- The tab owner dialog (11): `tod_*`, `todi_*`, `cdi_*`, `mt_init`. Needed by
-  `TabOwnerDemo.rex`. Earlier releases of this file called these "task
-  dialogs"; that was wrong.
-- `catdlg_*` (4): CategoryDialog, deprecated upstream.
-- `ri_*` (7): ResourceImage, needs the reader of binary resources.
-- 14 others: the `*_test` debugging hooks and `routineTest` (11), `lv_zTest`,
-  `dimBitmap`, `MonthCalendar~getGridInfo`.
 
 ## Natives added in v0.24.0
 
@@ -629,8 +663,8 @@ connectActivate,
 connectHelp, connectPosChanged and connectResizing (accepted, not produced);
 drawing the icons of image lists; wizard header and
 watermark images; the remaining list-view and tree-view events; the
-CommonDialogCustomizations controls; the 64 natives listed under "Natives
-added in v0.25.0".
+CommonDialogCustomizations controls; the 53 natives listed under "Tab owner
+dialog".
 
 ## Known
 

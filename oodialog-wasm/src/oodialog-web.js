@@ -1150,7 +1150,7 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
       case 0x1308: if (w < 0 || w >= c.tabs.length) return '0'; c.tabs.splice(w, 1); if (c.cur >= c.tabs.length) c.cur = c.tabs.length - 1; tabRender(c); return '1'; // TCM_DELETEITEM
       case 0x1309: c.tabs = []; c.cur = -1; tabRender(c); return '1';                  // TCM_DELETEALLITEMS
       case 0x132F: return String(c.cur);                                               // TCM_GETCURFOCUS
-      case 0x1330: if (w >= 0 && w < c.tabs.length) { c.cur = w; tabRender(c); } return '0'; // TCM_SETCURFOCUS
+      case 0x1330: if (w >= 0 && w < c.tabs.length && w !== c.cur) { note(dlg, c, 'SELCHANGING', ''); c.cur = w; tabRender(c); note(dlg, c, 'SELCHANGE', ''); } return '0'; // TCM_SETCURFOCUS: with the two notices, as Windows
       case 0x132C: return '1';                                                         // TCM_GETROWCOUNT
       case 0x1331: { const old = c.minTab == null ? -1 : c.minTab; c.minTab = l < 0 ? null : l; tabRender(c); return String(old); }   // TCM_SETMINTABWIDTH: the width before
     }

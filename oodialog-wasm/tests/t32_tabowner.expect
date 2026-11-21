@@ -1,0 +1,4 @@
+managed 1 Beta
+execute 1 initCode 1
+log:  sel:Beta:2 page2:Beta:1 page3:0 sel:Gamma:3
+values: [] [changed beta] [never shown]
