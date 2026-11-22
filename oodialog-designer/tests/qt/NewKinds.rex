@@ -1,4 +1,4 @@
-/* NewKinds.rex -- an ooDialog program made with the ooDialog Designer 0.20.0
+/* NewKinds.rex -- an ooDialog program made with the ooDialog Designer 0.21.0
    Design: the ::RESOURCE oodDesign at the end.  The designer writes this
    whole file; what you type is the body of each event method.
    ooDialog Designer -- architecture: Tom Dyer; code: Claude (Opus 5.5). */
@@ -63,7 +63,7 @@ return dlg~execute("SHOWTOP")
   say "select" startDate~day
 
 ::resource oodDesign
-designer version=0.20.0
+designer version=0.21.0
 form name=NewKinds title="My Dialog" w=240 h=170 style=CENTER
 control type=EDIT name=txtCount id=100 x=10 y=10 w=80 h=12 text="" opts="" tip="How many, 1 to 9" anchor="LEFT TOP"
 control type=UPDOWN name=ud1 id=101 x=92 y=10 w=10 h=12 min=1 max=9 pos=3 buddy=txtCount opts="SETBUDDYINT ARROWKEYS" tip="" anchor="LEFT TOP"

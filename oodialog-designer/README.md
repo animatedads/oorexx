@@ -1,4 +1,4 @@
-# ooDialog Designer — v0.20.0
+# ooDialog Designer — v0.21.0
 
 Architecture: Tom Dyer. Code: Claude (Opus 5.5). README written by Claude (Opus 5.5).
 It runs on ooDialog/WASM v0.23.0 (code: Claude (Fable 5.2); v0.21.0 for
@@ -32,8 +32,10 @@ node site/serve.mjs
 
 then open http://localhost:8000/designer.html (a plain file:// page cannot
 work: ooRexx in the browser needs the isolation headers the server sends).
-Pick an example under *Start from*, press **Run**, work the dialog; drag
-controls from the palette, double-click one to write its event code.
+Pick an example under *Start from*, press **Run**, work the dialog. Drag
+controls from the palette onto the form; to write a control's event code,
+open the control in the tree beside the code pane, click one of its events
+and type the code there.
 
 The tests, with your ooRexx:
 
@@ -498,7 +500,10 @@ a built `site/plugins`, or skips them and says so. t07–t09 start their own
 stand-in servers with node; under native ooRexx (no ADDRESS FETCH) their
 network checks say SKIP, and t08's git-command checks still run.
 
-## State (2026-11-22, v0.20.0)
+## State (2026-11-22, v0.21.0)
+
+v0.21: the "Try it" text said to double-click a control for its event code;
+the designer has no such action. Corrected.
 
 v0.20: `tools/selftest.rex`; `tests/run_all.rex` sets REXX_PATH and the
 directory from Rexx (no `cd ... && VAR=... rexx`), so it runs under Windows
