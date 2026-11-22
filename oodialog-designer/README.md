@@ -1,4 +1,4 @@
-# ooDialog Designer — v0.21.0
+# ooDialog Designer — v0.22.0
 
 Architecture: Tom Dyer. Code: Claude (Opus 5.5). README written by Claude (Opus 5.5).
 It runs on ooDialog/WASM v0.23.0 (code: Claude (Fable 5.2); v0.21.0 for
@@ -154,7 +154,7 @@ ooDialog/WASM:
   (`self~menuBar~check(self~mnuGrid)`);
 - **libraries**: the Libraries panel (shared with the Object Editor)
   connects to the Alchemy estate, a GitHub repository or local files. It
-  installs a library with what its `::requires` reach and shows what it
+  installs the files ticked (v0.22: any number) with what their `::requires` reach and shows what it
   offers, found by reflection. "Use it here" adds a `::requires` to the
   program, and **▶ Run** carries the installed files with it;
 - **a shared scope**: entries (a name and a Rexx expression) made once in
@@ -290,8 +290,8 @@ one `kind` line; a new code-insertion action is one `action` line.
   compiles it as a command. Nothing is run. The revision is no guide: a
   build from git answers r0 (v0.13 to v0.17 compared it with 13514, and so
   would refuse a trunk built from GitHub). The designer refuses to run such
-  code where the ooRexx does not know it (ooRexx/WASM 0.2.4, r13268, knows
-  neither), and a program that uses them begins with the same question for
+  code where the ooRexx does not know it (ooRexx/WASM 0.2.4 knows neither;
+  0.2.5, trunk r13564, knows both, and there the code runs), and a program that uses them begins with the same question for
   each word, and refuses to start where the answer is no.
   Found from the text (`OodDesign~catchWords`); the graph shows the parse.
   Inserting a block now keeps its shape: its END, CATCH and FINALLY lines
@@ -500,7 +500,28 @@ a built `site/plugins`, or skips them and says so. t07–t09 start their own
 stand-in servers with node; under native ooRexx (no ADDRESS FETCH) their
 network checks say SKIP, and t08's git-command checks still run.
 
-## State (2026-11-22, v0.21.0)
+## State (2026-11-22, v0.22.0)
+
+v0.22: **Libraries…** lists a library's files as checkboxes, not a radio
+group, so several class files are imported at once: the main file is
+ticked at first; Install installs each ticked file with what it requires and
+shows what each offers under its name; "Use it here" adds a ::requires for
+each (the panel is the Object Editor's, v0.5.0). Test: `dztest.py libmulti`.
+`tools/make.sh` took two inputs from stale default paths: ooDialog/WASM from
+an old copy on this branch (the newkinds and resize scenarios failed) and the
+Rexx Parser 20261105, which knows neither CATCH nor FINALLY (graph, trace,
+assist and catch failed). Its defaults are now the ooDialog/WASM v0.27
+checkout and the parser 20261115 the package vendors.
+
+v0.22: the browser test's catch scenario assumed the page's ooRexx refuses
+CATCH. On ooRexx/WASM 0.2.5 (trunk r13564), which knows CATCH and FINALLY,
+Run goes ahead, and the scenario failed (21 of 22, reported by the
+ooRexx/WASM maintainer). It now takes either answer: a refusal that says
+why, or a run in which pressing C runs the FINALLY body. The second path
+waits for 0.2.5 to be published here. The text no longer gives 0.2.4 a
+revision: its README says SVN trunk r13268 and `.RexxInfo~revision`
+answers 13268 in both its npm package and the web zip used here (files
+dated 2026-10-14); the maintainer gives r13344.
 
 v0.21: the "Try it" text said to double-click a control for its event code;
 the designer has no such action. Corrected.
@@ -628,8 +649,12 @@ Autobuild but was not published: its publish path still named v0.14).
     button naming no bound list, no SINGLESEL, Add without row fields);
   - an unbound design written as before;
   - German.
-- `tools/dztest.py`: 22 of 22 scenarios pass in headless Chromium, on
-  ooDialog/WASM v0.23.0 (22. **resize**, v0.17: no anchor while the form
+- `tools/dztest.py`: 23 of 23 scenarios pass in headless Chromium, on
+  ooDialog/WASM v0.27.0 and ooRexx/WASM 0.2.4 (v0.22; 23. **libmulti**: a
+  library's files are checkboxes, the main one ticked; none ticked turns
+  Install off; two ticked are installed and shown under their names, and
+  Use adds a ::requires for each. 19. **catch** takes either answer from
+  the page's ooRexx. 22. **resize**, v0.17: no anchor while the form
   is fixed; resizable ticked, the grip shown; a list anchored to all four
   edges and an OK button to RIGHT BOTTOM, their edges marked; in the run,
   the dialog made 120 px wider and 80 px taller: the list grows by exactly
@@ -767,7 +792,7 @@ Autobuild but was not published: its publish path still named v0.14).
   now raises USER from a called routine with RETURN, and a new one THROWs
   in the block; both are caught. The same behaviour of RAISE was seen on
   trunk at the commit that created `releases/5.1.0` (41385194, which
-  answers 5.2.0) and on ooRexx/WASM r13268. That 5.1.0-point build does
+  answers 5.2.0) and on ooRexx/WASM 0.2.4. That 5.1.0-point build does
   not know CATCH, and run in a CATCH block it ran CATCH as a shell command
   (`/bin/sh: CATCH: not found`): the guard's reason, seen.
 - `tests/wincheck.rex` is the Windows ooDialog check: it loads the

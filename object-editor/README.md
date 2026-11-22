@@ -1,4 +1,4 @@
-# ooRexx Object Editor — v0.4.0
+# ooRexx Object Editor — v0.5.0
 
 The shared **Database Lab…** panel is also available here (described under
 the ooDialog Designer's Database Lab section). It runs the canonical Alchemy
@@ -163,7 +163,16 @@ Then open `http://localhost:8080/objed.html`.
     cd ..
     python3 tools/oxtest.py
 
-## State (2026-11-17, v0.4.0)
+## State (2026-11-22, v0.5.0)
+
+v0.5: the Libraries panel lists a library's files as checkboxes, not a radio
+group, so more than one class file can be imported at once. The main file is
+ticked at first; Install installs each ticked file with what it requires,
+and shows what each offers under its name; "Use it here" adds a ::requires
+for each. Changing a tick after an install turns Use off until the next
+install. The panel is shared with the ooDialog Designer, which takes it at
+its next build. Test: `tools/oxtest.py libmulti`.
+
 
 - `t01_object.rex`: 73 of 73 checks pass under ooRexx/WASM in Node. They
   cover the reflection results, lookup order, both sides, the edits and

@@ -6,7 +6,7 @@ export REXX_PATH="$PWD/src:$PWD/tests:${ESTATE:-/home/claude/estate-pkgs}/nosqls
 PATH="${RT:-/home/claude/rt}/node_modules/.bin:$PATH"
 exec rexx tools/build.rex \
   "${RUNTIME:-/home/claude/dl/web/oorexxwasm-web-0.2.4}" \
-  "${OOD_DIST:-/home/claude/src/oorexx/oodialog-wasm/dist}" \
+  "${OOD_DIST:-/home/claude/src/oodwasm/oodialog-wasm/dist}" \
   "${OBJED:-/home/claude/oxe}" \
-  "${PARSER:-/home/claude/josepmariablasco/oorexxwasm/playground/rexx-parser}" \
+  "${PARSER:-/home/claude/dl/rexx-parser-20261115}" \
   "${ESTATE:-/home/claude/estate-pkgs}"

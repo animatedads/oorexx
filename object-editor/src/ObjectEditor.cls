@@ -23,11 +23,11 @@
 
 ::class OxModule public mixinclass Object
 ::method module_version class
-  return "0.4.0"
+  return "0.5.0"
 ::method module_lastChanged class
   return "2026-11-17"
 ::method module_version
-  return "0.4.0"
+  return "0.5.0"
 ::method module_lastChanged
   return "2026-11-17"
 

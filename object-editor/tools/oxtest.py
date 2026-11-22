@@ -305,7 +305,24 @@ def sc_docs(pg):
     expect('an undocumented member has no tooltip', row(pg, 'addNote').locator('td.nm').get_attribute('title'), None)
     pg.screenshot(path=str(SHOTS / 'docs.png'))
 
-SCENARIOS = {'reflect': sc_reflect, 'edit': sc_edit, 'requires': sc_requires, 'complete': sc_complete, 'oodialog': sc_oodialog, 'libraries': sc_libraries, 'ui_de': sc_ui_de, 'plugins': sc_plugins, 'assist': sc_assist, 'ssc': sc_ssc, 'docs': sc_docs, 'libdocs': sc_libdocs}
+def sc_libmulti(pg):
+    """Libraries, several files (v0.5: checkboxes, not a radio group): tick a
+    second file; Install installs both; Use adds a ::requires for each."""
+    ready(pg); pick_class(pg, 'Person')
+    pg.click('#btnLibraries'); pg.wait_for_selector('#libPanel .lp-lib', timeout=60000)
+    pg.fill('#lpFilter', 'oorexx_logging'); pg.wait_for_timeout(1500)
+    pg.click('#lpList .lp-lib[data-lib="alchemy:oorexx_logging"]'); pg.wait_for_selector('#lpDetail h3', timeout=60000)
+    expect('the files are checkboxes', set(pg.locator('#lpDetail input[name=lpFile]').evaluate_all('xs => xs.map(x => x.type)')), {'checkbox'})
+    pg.check('#lpDetail input[value$="LoggingControl.cls"]')
+    pg.click('#lpInstall'); pg.wait_for_selector('#lpGoodies .lp-file', timeout=90000)
+    pg.wait_for_function("!document.getElementById('lpUse').disabled", timeout=90000)
+    expect('what each file offers, under its name', pg.locator('#lpGoodies .lp-file').all_inner_texts(), ['LoggingControl.cls', 'LoggingCore.cls'])
+    pg.click('#lpUse'); pg.wait_for_function("document.getElementById('libPanel').hidden", timeout=30000); settle(pg, 900)
+    src = source(pg)
+    expect_in('a ::requires for the first', '::requires "lib/alchemy/LoggingControl.cls"', src)
+    expect_in('  and the second', '::requires "lib/alchemy/LoggingCore.cls"', src)
+
+SCENARIOS = {'reflect': sc_reflect, 'edit': sc_edit, 'requires': sc_requires, 'complete': sc_complete, 'oodialog': sc_oodialog, 'libraries': sc_libraries, 'ui_de': sc_ui_de, 'plugins': sc_plugins, 'assist': sc_assist, 'ssc': sc_ssc, 'docs': sc_docs, 'libdocs': sc_libdocs, 'libmulti': sc_libmulti}
 def main():
     names = sys.argv[1:] or list(SCENARIOS)
     SHOTS.mkdir(exist_ok=True)

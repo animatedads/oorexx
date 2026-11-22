@@ -4,7 +4,8 @@
    The panel shows the shelf (.oxShelf, an OxLibraryShelf in the page's
    ooRexx/WASM session): its providers, their catalogues, a library's details,
    and what an installed file offers (found by loading and examining it).
-   "Use" hands the installed path and its ::requires name to the page.
+   "Use" hands each installed path and its ::requires name to the page
+   (one call of onUse per file ticked: v0.5).
    No catalogue, install or discovery is done here.
 
    OxLibraries.setup(sess) -> creates the shelf with the Alchemy and Local providers
@@ -108,51 +109,69 @@
     for (const l of lines(await call('use arg i; return .oxShelf~details(i)', id))) { const [k, v] = tabs(l); if (k === 'file') files.push(v); else info[k] = v; }
     box.textContent = '';
     box.append(el('h3', { textContent: info.name + (info.version ? '  v' + info.version : '') }), el('p', { textContent: info.description || '' }));
+    // a library's files as checkboxes (v0.5; a radio group before): tick any
+    // number, its main file ticked at first; Install installs each ticked
+    // file, with what it requires, and Use adds a ::requires for each
     const fl = el('div', { className: 'lp-files' });
     for (const f of files) {
-      const r = el('label', {}, el('input', { type: 'radio', name: 'lpFile', value: f, checked: f === info.main }), ' ' + f.replace(info.dir + '/', ''));
+      const r = el('label', {}, el('input', { type: 'checkbox', name: 'lpFile', value: f, checked: f === info.main }), ' ' + f.replace(info.dir + '/', ''));
       fl.appendChild(r);
     }
     const go = el('button', { textContent: T('libs.install'), id: 'lpInstall' });
     const use = el('button', { textContent: T('libs.use'), id: 'lpUse', disabled: true });
     const goodies = el('div', { className: 'lp-goodies', id: 'lpGoodies' });
-    let installed = null;
+    const ticked = () => [...fl.querySelectorAll('input[name=lpFile]:checked')].map((x) => x.value);
+    let installed = [];
+    // a tick changed after an install: what Use would add is no longer what is ticked
+    fl.onchange = () => { go.disabled = !ticked().length; use.disabled = true; installed = []; };
+    go.disabled = !ticked().length;
     go.onclick = async () => {
-      const f = (panel.querySelector('input[name=lpFile]:checked') || {}).value || '';
-      say(T('libs.installing', f.replace(/.*\//, '')));
-      const path = await call('use arg i, f; return .oxShelf~install(i, f)', id, f).catch(() => null);
-      panel.querySelector('#lpNotes').textContent = String(await call('return .oxShelf~notesText').catch(() => ''));
-      if (!path) return;
-      installed = String(path);
-      say(T('libs.installed', installed));
-      const g = await call('use arg p; return .oxShelf~goodies(p)', installed).catch(() => '');
-      goodies.textContent = '';
-      let cls = null;
-      for (const l of lines(g)) {
-        const t = tabs(l);
-        // ooRexxDoc: the first sentence on hover, the whole comment on click
-        if (t[0] === 'class') {
-          const sm = el('summary', { textContent: '.' + t[1] + (t[2] ? '  ' + T('libs.subclassOf', t[2]) : '') });
-          cls = el('details', {}, sm); goodies.appendChild(cls);
-          if (t[3] || t[4]) { sm.title = t[3] || T('libs.doc.noSummary'); sm.classList.add('lp-hasdoc'); cls.appendChild(docBlock(t[4] || t[3], true)); }
-        } else if (cls) {
-          const m = el('div', { className: 'lp-m', textContent: (t[4] === 'class' ? '.' + t[1] + '~' : '~') + t[2] + '   ' + t[3] });
-          cls.appendChild(m);
-          if (t[5] || t[6]) {
-            const full = docBlock(t[6] || t[5], false);
-            m.title = t[5] || T('libs.doc.noSummary'); m.classList.add('lp-hasdoc');
-            m.onclick = () => { full.hidden = !full.hidden; };
-            cls.appendChild(full);
+      const want = ticked();
+      if (!want.length) return;
+      use.disabled = true; installed = []; goodies.textContent = '';
+      say(T('libs.installing', want.map((f) => f.replace(/.*\//, '')).join(', ')));
+      const notes = [];
+      for (const f of want) {
+        const path = await call('use arg i, f; return .oxShelf~install(i, f)', id, f).catch(() => null);
+        notes.push(String(await call('return .oxShelf~notesText').catch(() => '')));
+        if (path) installed.push(String(path));
+      }
+      panel.querySelector('#lpNotes').textContent = notes.filter((n) => n).join('\n');
+      if (!installed.length) return;
+      say(T('libs.installed', installed.join(', ')));
+      let classes = 0;
+      for (const path of installed) {
+        const g = await call('use arg p; return .oxShelf~goodies(p)', path).catch(() => '');
+        if (installed.length > 1) goodies.appendChild(el('div', { className: 'lp-file', textContent: path.replace(/.*\//, '') }));
+        let cls = null;
+        for (const l of lines(g)) {
+          const t = tabs(l);
+          // ooRexxDoc: the first sentence on hover, the whole comment on click
+          if (t[0] === 'class') {
+            const sm = el('summary', { textContent: '.' + t[1] + (t[2] ? '  ' + T('libs.subclassOf', t[2]) : '') });
+            cls = el('details', {}, sm); goodies.appendChild(cls); classes++;
+            if (t[3] || t[4]) { sm.title = t[3] || T('libs.doc.noSummary'); sm.classList.add('lp-hasdoc'); cls.appendChild(docBlock(t[4] || t[3], true)); }
+          } else if (cls) {
+            const m = el('div', { className: 'lp-m', textContent: (t[4] === 'class' ? '.' + t[1] + '~' : '~') + t[2] + '   ' + t[3] });
+            cls.appendChild(m);
+            if (t[5] || t[6]) {
+              const full = docBlock(t[6] || t[5], false);
+              m.title = t[5] || T('libs.doc.noSummary'); m.classList.add('lp-hasdoc');
+              m.onclick = () => { full.hidden = !full.hidden; };
+              cls.appendChild(full);
+            }
           }
         }
       }
       use.disabled = false;
-      say(T('libs.ready', goodies.children.length));
+      say(T('libs.ready', classes));
     };
     use.onclick = async () => {
-      if (!installed) return;
-      const req = String(await call('use arg p; return .oxShelf~requiresName(p, "/home/rexx")', installed));
-      await cfg.onUse(req, installed);
+      // one ::requires for each installed file, in the order they were ticked
+      for (const path of installed) {
+        const req = String(await call('use arg p; return .oxShelf~requiresName(p, "/home/rexx")', path));
+        await cfg.onUse(req, path);
+      }
     };
     box.append(fl, el('div', { className: 'lp-actions' }, go, use), goodies);
   }

@@ -17,7 +17,7 @@ The programs it writes:
 
 The page (site/) and its browser tests (tools/dztest.py), not run by Autobuild:
 - ooRexx/WASM 0.2.4 web release, ooDialog/WASM dist/, the Object Editor
-  (object-editor/ of animatedads/oorexx, branch oodialog-designer: the
+  (object-editor/ of animatedads/oorexx, branch oodialog-designer, v0.5.0+: the
   Libraries panel), Python Playwright with Chromium; tools/build.rex
   assembles site/.
 

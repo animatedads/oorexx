@@ -719,9 +719,10 @@ def sc_catch(pg):
     """CATCH and FINALLY (ooRexx r13514+, Rexx Parser 20261115): a "do … finally"
     block dragged from the palette is drawn with its CATCH and FINALLY lanes;
     a block goes into the FINALLY body; the program asks its ooRexx (v0.18: by
-    compiling a lone clause, not by revision), and Run refuses on the page's
-    ooRexx/WASM r13268, which knows neither (CATCH alone would
-    be refused too: ooRexx/WASM 0.2.4 is r13268)."""
+    compiling a lone clause, not by revision).  v0.22: Run asks the page's own
+    ooRexx too.  One that knows neither word (ooRexx/WASM 0.2.4) refuses, saying
+    why; one that knows both (ooRexx/WASM 0.2.5, trunk r13564) runs it, and
+    pressing C runs the FINALLY body."""
     ready(pg); open_example(pg, 'examples/Calculator.rex')
     pick_event(pg, 'bClear', 'CLICKED'); wait_graph(pg)
     pg.drag_and_drop('#gPalette .gpal:text-is("do … finally")', '#graph .gdrop[data-parent="0"][data-index="1"]'); wait_graph(pg)
@@ -738,9 +739,20 @@ def sc_catch(pg):
     expect_in('the program asks its ooRexx about CATCH', 'oodProbe = .Routine~new("oodProbe", "catch syntax")', src)
     expect_in('  and about FINALLY', 'oodProbe = .Routine~new("oodProbe", "finally")', src)
     expect('  not by revision', 'RexxInfo~revision' in src, False)
-    pg.click('#btnRun'); settle(pg, 800)
-    expect_in('Run refused on this ooRexx, which does not know CATCH, saying why', 'does not know', status(pg))
-    expect('  and nothing ran', pg.locator('.ood-dlg').count(), 0)
+    pg.click('#btnRun')
+    pg.wait_for_function("document.querySelector('.ood-dlg') || document.getElementById('status').textContent.includes('CATCH')", timeout=60000); settle(pg, 500)
+    if not pg.locator('.ood-dlg').count():
+        log('  this ooRexx does not know CATCH:', status(pg))
+        expect_in('Run refused on this ooRexx, which does not know CATCH, saying why', 'does not know', status(pg))
+        expect('  and nothing ran', pg.locator('.ood-dlg').count(), 0)
+        return
+    log('  this ooRexx knows CATCH and FINALLY: Run goes ahead')
+    for k in ['4', '2']: press(pg, k)
+    press(pg, 'C'); settle(pg, 800)
+    expect('C still clears', pg.input_value('.ood-dlg input'), '0')
+    expect_in('  and the FINALLY body ran', 'text', pg.inner_text('#out'))
+    pg.screenshot(path=str(SHOTS / 'catch_run.png'))
+    press(pg, 'Close'); expect('closed with Cancel', wait_end(pg)['rc'], 2)
 
 
 def sc_labdrag(pg):
@@ -856,7 +868,31 @@ def sc_resize(pg):
     pg.screenshot(path=str(SHOTS / 'resize_run.png'))
     press(pg, 'OK'); expect('ended with OK', wait_end(pg)['rc'], 1)
 
-SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views, 'gadgets': sc_gadgets, 'libraries': sc_libraries, 'graph': sc_graph, 'trace': sc_trace, 'languages': sc_languages, 'ui_de': sc_ui_de, 'plugins': sc_plugins, 'assist': sc_assist, 'source': sc_source, 'bound': sc_bound, 'overview': sc_overview, 'labgraph': sc_labgraph, 'catch': sc_catch, 'labdrag': sc_labdrag, 'newkinds': sc_newkinds, 'resize': sc_resize}
+def sc_libmulti(pg):
+    """Libraries, several files (v0.22: checkboxes, not a radio group): the
+    main file is ticked at first; tick a second; Install installs both and
+    shows what each offers; Use adds a ::requires for each."""
+    ready(pg); open_example(pg, 'examples/Calculator.rex')
+    pg.click('#btnLibraries'); pg.wait_for_selector('#libPanel .lp-lib', timeout=60000)
+    pg.fill('#lpFilter', 'oorexx_logging'); pg.wait_for_timeout(1500)
+    pg.click('#lpList .lp-lib[data-lib="alchemy:oorexx_logging"]'); pg.wait_for_selector('#lpDetail h3', timeout=60000)
+    boxes = pg.locator('#lpDetail input[name=lpFile]')
+    expect('the files are checkboxes', set(boxes.evaluate_all('xs => xs.map(x => x.type)')), {'checkbox'})
+    expect('  the main file ticked at first', pg.locator('#lpDetail input[name=lpFile]:checked').evaluate_all('xs => xs.map(x => x.value.split("/").pop())'), ['LoggingCore.cls'])
+    pg.uncheck('#lpDetail input[value$="LoggingCore.cls"]')
+    expect('nothing ticked: Install is off', pg.is_disabled('#lpInstall'), True)
+    pg.check('#lpDetail input[value$="LoggingCore.cls"]'); pg.check('#lpDetail input[value$="LoggingControl.cls"]')
+    pg.click('#lpInstall'); pg.wait_for_selector('#lpGoodies .lp-file', timeout=90000)
+    pg.wait_for_function("!document.getElementById('lpUse').disabled", timeout=90000)
+    expect('what each file offers, under its name', pg.locator('#lpGoodies .lp-file').all_inner_texts(), ['LoggingControl.cls', 'LoggingCore.cls'])
+    pg.screenshot(path=str(SHOTS / 'libmulti.png'))
+    pg.click('#lpUse'); pg.wait_for_function("document.getElementById('libPanel').hidden", timeout=30000); settle(pg, 900)
+    expect('a ::requires for each', snap(pg)['requires'], ['lib/alchemy/LoggingControl.cls', 'lib/alchemy/LoggingCore.cls'])
+    src = program_text(pg)
+    expect_in('  in the program', '::requires "lib/alchemy/LoggingControl.cls"', src)
+    expect_in('  both', '::requires "lib/alchemy/LoggingCore.cls"', src)
+
+SCENARIOS = {'hand': sc_hand, 'calculator': sc_calculator, 'threads': sc_threads, 'refuse': sc_refuse, 'saveopen': sc_saveopen, 'views': sc_views, 'gadgets': sc_gadgets, 'libraries': sc_libraries, 'graph': sc_graph, 'trace': sc_trace, 'languages': sc_languages, 'ui_de': sc_ui_de, 'plugins': sc_plugins, 'assist': sc_assist, 'source': sc_source, 'bound': sc_bound, 'overview': sc_overview, 'labgraph': sc_labgraph, 'catch': sc_catch, 'labdrag': sc_labdrag, 'newkinds': sc_newkinds, 'resize': sc_resize, 'libmulti': sc_libmulti}
 def main():
     names = sys.argv[1:] or list(SCENARIOS)
     srv = subprocess.Popen(['node', str(SITE / 'serve.mjs'), str(SITE), '--port', str(PORT)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

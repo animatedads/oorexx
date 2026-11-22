@@ -21,6 +21,7 @@
 #libPanel .lp-files label{display:block;font:12px ui-monospace,Menlo,Consolas,monospace}
 #libPanel .lp-actions{display:flex;gap:8px;margin:10px 0}
 #libPanel .lp-goodies details{margin:2px 0}
+#libPanel .lp-goodies .lp-file{margin:6px 0 2px;font:11px system-ui,sans-serif;color:#666;border-bottom:1px solid #ddd}
 #libPanel .lp-goodies summary{cursor:pointer;font:12px ui-monospace,Menlo,Consolas,monospace;font-weight:600}
 #libPanel .lp-m{font:12px ui-monospace,Menlo,Consolas,monospace;padding-left:18px;color:#3b4550}
 #libPanel #lpNotes{margin:0;padding:6px 10px;background:#111;color:#ddd;font:11px ui-monospace,Menlo,Consolas,monospace;overflow:auto}

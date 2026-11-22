@@ -141,7 +141,7 @@ libs.installing = Installing %1 and what it requires…
 libs.installed = Installed %1.  Loading it to see what it offers…
 libs.subclassOf = (subclass of %1)
 libs.doc.noSummary = ooRexxDoc: click for it
-libs.ready = Ready: %1 public classes.  "Use it here" adds the ::requires.
+libs.ready = Ready: %1 public classes.  "Use it here" adds a ::requires for each file ticked.
 libs.provider.local = Files from this computer
 -- the editor and the library providers refuse
 ox.err.noClassHere = No class %1 in this file
@@ -278,7 +278,7 @@ libs.installing = %1 und was es benötigt wird installiert…
 libs.installed = %1 installiert.  Wird geladen, um zu sehen, was es bietet…
 libs.subclassOf = (Unterklasse von %1)
 libs.doc.noSummary = ooRexxDoc: zum Lesen klicken
-libs.ready = Bereit: %1 öffentliche Klassen.  „Hier verwenden“ fügt das ::requires hinzu.
+libs.ready = Bereit: %1 öffentliche Klassen.  „Hier verwenden“ fügt für jede angekreuzte Datei ein ::requires hinzu.
 libs.provider.local = Dateien von diesem Computer
 -- Editor und Bibliotheksanbieter lehnen ab
 ox.err.noClassHere = Keine Klasse %1 in dieser Datei

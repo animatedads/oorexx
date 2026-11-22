@@ -117,7 +117,7 @@ call check "setDoc: an ordinary /* */ before a member is not taken for a doc", d
 call refuses "setDoc: a /* */ comment is not ooRexxDoc", "w~setDoc('Person', 'init', 'INSTANCE', '/* not a doc */')"
 call refuses "setDoc: two comments in one", "w~setDoc('Person', 'init', 'INSTANCE', '/** one */' || '0a'x || '/** two */')"
 call refuses "setDoc: a member that is not there", "w~setDoc('Person', 'nosuch', 'INSTANCE', '/** x */')"
-call check "module_version", .OxWorkspace~module_version == "0.4.0" & w~module_version == "0.4.0"
+call check "module_version", .OxWorkspace~module_version == "0.5.0" & w~module_version == "0.5.0"
 say "t01_object:" checks - fails "of" checks "checks passed"
 if fails > 0 then return 1
 return 0
