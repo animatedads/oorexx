@@ -49,6 +49,8 @@ try:
             tip = pg.evaluate("(() => { const t = document.querySelector('.ood-tip'); return t && !t.hidden ? t.textContent : ''; })()")
             pg.screenshot(path=str(ROOT / 'shots' / f'demo_tip_{name}.png'))
             pg.click('.ood-dlg >> text=Cancel'); pg.wait_for_function(ended, timeout=20000)
+            left = pg.evaluate("document.querySelectorAll('body > [class^=\"ood-\"]').length")
+            if left: log(name, 'FAIL: the tool tips run left', left, 'elements on the page'); ok = False
             # the resizable dialog: grow it by its corner, the OK button follows
             pg.select_option('#sample', label='Resizable dialog (upstream sample, ResizingAdmin; drag the corner)')
             pg.click('#run'); pg.wait_for_selector('.ood-dlg button.ood-def', timeout=40000); time.sleep(0.5)
@@ -64,6 +66,34 @@ try:
             log(name, 'display', got, '| first run', state1, '| second run', pg.inner_text('#state'), '| dialog within the window:', fits, '->', 'PASS' if good else 'FAIL')
             ok = ok and good
             pg.close()
+        # Every sample of the page: it shows a dialog, Stop can be pressed while the dialog is
+        # open (a real click: Playwright refuses a covered button), and nothing is left behind.
+        for engine in (p.chromium, p.firefox, p.webkit):
+            try: eb = engine.launch()
+            except Exception as e: log(engine.name, 'not installed, skipped'); continue
+            pg = eb.new_page(viewport={'width': 1100, 'height': 800})
+            errors = []
+            pg.on('pageerror', lambda e: errors.append(str(e)))
+            pg.goto('http://localhost:8019/oodialog.html')
+            labels = pg.evaluate("[...document.getElementById('sample').options].map(o => o.textContent)")
+            bad = []
+            for label in labels:
+                pg.select_option('#sample', label=label)
+                pg.click('#run')
+                try:
+                    pg.wait_for_selector('.ood-dlg', timeout=40000); time.sleep(0.4)
+                    if pg.locator('.ood-msgbox').count() and 'nable to find' in pg.inner_text('.ood-msgbox'): raise Exception('message box: ' + pg.inner_text('.ood-msgbox')[:60])
+                    pg.click('#stop', timeout=5000)
+                    pg.wait_for_function("!document.getElementById('run').disabled", timeout=20000)
+                    left = pg.evaluate("document.querySelectorAll('body > [class^=\"ood-\"]').length")
+                    if left: raise Exception(f'{left} elements left on the page')
+                except Exception as e:
+                    bad.append(label + ': ' + str(e).splitlines()[0][:110])
+                    pg.reload()
+            log(engine.name, len(labels), 'samples:', len(labels) - len(bad), 'show a dialog, stop and leave nothing;', 'page errors:', len(errors), '->', 'PASS' if not bad and not errors else 'FAIL')
+            for line in bad + errors: log('  ', line)
+            ok = ok and not bad and not errors
+            eb.close()
         b.close()
 finally:
     srv.terminate()

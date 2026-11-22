@@ -24,9 +24,9 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.28.0"
+  return "0.28.1"
 ::method module_lastChanged class
-  return "2026-11-21"
+  return "2026-11-22"
 ::attribute key unguarded
 ::attribute rexxSelf unguarded
 ::attribute library unguarded
@@ -102,9 +102,9 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.28.0"
+  return "0.28.1"
 ::method module_lastChanged class
-  return "2026-11-21"
+  return "2026-11-22"
 ::attribute rexxSelf unguarded
 ::attribute isBar unguarded
 ::attribute wID unguarded
@@ -131,9 +131,9 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.28.0"
+  return "0.28.1"
 ::method module_lastChanged class
-  return "2026-11-21"
+  return "2026-11-22"
 ::attribute dlg unguarded             -- its dialog's OodDlg
 ::attribute id unguarded
 ::attribute kind unguarded
@@ -149,9 +149,9 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.28.0"
+  return "0.28.1"
 ::method module_lastChanged class
-  return "2026-11-21"
+  return "2026-11-22"
 ::method module_version unguarded
   return self~class~module_version
 ::method module_lastChanged unguarded
@@ -11661,6 +11661,15 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
   ood.topDialog = function () {                               // the key of the top-level dialog in front, '' for none
     let best = null, z = -1; for (const d2 of ood.dialogs.values()) { const v = Number(d2.el.style.zIndex) || 0; if (d2.el.parentNode === D.body && v >= z) { z = v; best = d2; } }
     return best ? String(best.key) : ''; };
+  /* cleanup(): take away everything this runtime put on the page: dialogs, backdrops, menus,
+     tool tips, message boxes, panels.  A host page calls it when a run has ended or was
+     stopped; a program that ends in the usual way has closed its dialogs itself, but its
+     tool tips and a stopped program's dialogs stay otherwise. */
+  ood.cleanup = function () {
+    D.querySelectorAll('body > [class^="ood-"], body > [class*=" ood-"]').forEach((el) => el.remove());
+    ood.dialogs.clear(); ood.keysDown.clear();
+    return '1';
+  };
   ood.delivered = [];
   ood.deliver = function (name, mime, hex, title) {
     boot();

@@ -1,4 +1,4 @@
-# ooDialog for ooRexx/WASM — v0.28.0
+# ooDialog for ooRexx/WASM — v0.28.1
 
 Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: Josep Maria Blasco's
 ooRexx/WASM (`oorexxwasm` 0.2.4, ooRexx 5.3.0) and its `js.cls`.
@@ -28,7 +28,7 @@ so event methods run on it; nested modal dialogs nest the loop.
 
 ## Demo page
 
-`site/oodialog.html` runs seventeen samples (five of them upstream's unchanged; six are the tests of v0.24 to v0.28)
+`site/oodialog.html` runs eleven samples (five of them upstream's unchanged)
 in the browser. "Calculator with keys" is upstream's calculator plus one block
 of connectKeyPress calls: upstream's own has no keyboard code and a read-only
 display, so typing into it does nothing. Enter presses the default button "=",
@@ -41,7 +41,17 @@ headers the runtime needs) and open the page:
 
     node site/serve.mjs site --port 8080
 
-`tools/ooddemo.py` checks the page in headless Chromium at desktop and phone
+v0.28.1 corrects three faults of the page that Josep Maria Blasco found with a
+real pointer and keyboard in Chromium, Firefox and WebKit: the standard
+routines sample lacked its three files; Stop could not be pressed while a
+modal dialog was open (the dialog's backdrop covered it); a tool tip stayed on
+the page after its run. The runtime now has `cleanup()`, which a host page
+calls when a run has ended or was stopped.
+
+`tools/ooddemo.py` now also runs every sample of the page, presses Stop while
+the dialog is open and checks that nothing is left on the page, in each of
+Chromium, Firefox and WebKit that is installed (here: Chromium only). It also
+checks the page in headless Chromium at desktop and phone
 widths: it runs five of the samples, types into one, rests the pointer on a
 tool, and drags a dialog's corner. A dialog larger than the window is scaled down to fit it.
 
@@ -55,7 +65,7 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
     python3 tools/oodtest.py --poke upstream/examples 0 24
     python3 tools/oodtest.py --tree upstream/examples tests/t*.rex tests/up/calculator.rex tests/up/oodpbar.rex tests/up/oodStandardRoutines.rex
 
-## State on 2026-11-21 (v0.28.0)
+## State on 2026-11-22 (v0.28.1)
 
 - Natives ported: 1,157 of 1,182 (97.9%; 1,129 at v0.27.0). v0.28.0 added 28: the
   program's own controls in a file dialog (see "File dialog customizations", which

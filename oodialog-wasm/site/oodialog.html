@@ -10,15 +10,17 @@ main{padding:12px 14px;max-width:760px}
 select,button{font:inherit;padding:6px 10px}
 #out{background:#111;color:#ddd;font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;padding:8px;min-height:6em;max-height:40vh;overflow:auto;margin-top:10px}
 #state{font-size:12px;opacity:.85;margin-left:8px}
+/* Run and Stop stay in reach while a modal dialog's backdrop covers the page. */
+#bar{position:relative;z-index:2147483000;display:inline-block}
 </style></head>
 <body>
 <header><h1>ooDialog for ooRexx/WASM</h1>
 <p>Upstream ooDialog (r13513) over a Rexx + JavaScript native layer, on Josep Maria Blasco's ooRexx/WASM.
 Architecture: Tom Dyer. Code: Claude (Fable 5.2).</p></header>
 <main>
-<label for="sample">Sample </label>
+<div id="bar"><label for="sample">Sample </label>
 <select id="sample"></select>
-<button id="run">Run</button><button id="stop" disabled>Stop</button><span id="state"></span>
+<button id="run">Run</button><button id="stop" disabled>Stop</button><span id="state"></span></div>
 <pre id="out"></pre>
 </main>
 <script src="ooRexx.js"></script>
@@ -29,7 +31,7 @@ const SAMPLES = [
   { name: 'Simple dialog (UserDialog, data attribute, event)', prog: 'simple.rex' },
   { name: 'Calculator (upstream sample, RcDialog)', prog: 'calculator.rex', files: ['rc/calculator.rc'] },
   { name: 'Calculator with keys (upstream sample + connectKeyPress)', prog: 'calckeys.rex', files: ['rc/calculator.rc'] },
-  { name: 'Standard dialogs and routines (upstream sample)', prog: 'oodStandardRoutines.rex' },
+  { name: 'Standard dialogs and routines (upstream sample)', prog: 'oodStandardRoutines.rex', files: ['rc/oodStandardDialogs.h', 'rc/oodStandardDialogs.rc', 'bmp/oodStandardRoutines.ico'] },
   { name: 'Progress bars (upstream sample)', prog: 'oodpbar.rex', files: ['rc/oodpbar.rc'] },
   { name: 'List-view, tree-view, tab', prog: 'views.rex' },
   { name: 'Menu bar', prog: 'menu.rex' },
@@ -65,7 +67,8 @@ $('run').onclick = async () => {
     const r = await current.done;
     $('state').textContent = 'ended, rc ' + r.rc;
   } catch (e) { $('state').textContent = 'failed: ' + e.message; }
-  document.querySelectorAll('.ood-dlg,.ood-back,.ood-menu').forEach((el) => el.remove());
+  if (window.__ood && window.__ood.cleanup) window.__ood.cleanup();   // everything the run left on the page: dialogs, backdrops, menus, tool tips
+  document.querySelectorAll('body > [class^="ood-"]').forEach((el) => el.remove());   // and the same for a runtime older than v0.28.1
   $('run').disabled = false; $('stop').disabled = true; current = null;
 };
 $('stop').onclick = () => { if (current && current.stop) current.stop(); };

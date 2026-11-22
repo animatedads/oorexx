@@ -24,9 +24,9 @@
 /*============================================================================*/
 ::class OodDlg
 ::method module_version class
-  return "0.28.0"
+  return "0.28.1"
 ::method module_lastChanged class
-  return "2026-11-21"
+  return "2026-11-22"
 ::attribute key unguarded
 ::attribute rexxSelf unguarded
 ::attribute library unguarded
@@ -102,9 +102,9 @@
 /* State of a menu object: a menu bar, a popup menu, or a popup of a template. */
 ::class OodMenu
 ::method module_version class
-  return "0.28.0"
+  return "0.28.1"
 ::method module_lastChanged class
-  return "2026-11-21"
+  return "2026-11-22"
 ::attribute rexxSelf unguarded
 ::attribute isBar unguarded
 ::attribute wID unguarded
@@ -131,9 +131,9 @@
 /* State of a control object. */
 ::class OodCtl
 ::method module_version class
-  return "0.28.0"
+  return "0.28.1"
 ::method module_lastChanged class
-  return "2026-11-21"
+  return "2026-11-22"
 ::attribute dlg unguarded             -- its dialog's OodDlg
 ::attribute id unguarded
 ::attribute kind unguarded
@@ -149,9 +149,9 @@
 /*============================================================================*/
 ::class OodNative public
 ::method module_version class
-  return "0.28.0"
+  return "0.28.1"
 ::method module_lastChanged class
-  return "2026-11-21"
+  return "2026-11-22"
 ::method module_version unguarded
   return self~class~module_version
 ::method module_lastChanged unguarded

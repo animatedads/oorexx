@@ -1979,6 +1979,15 @@ button.ood-c.ood-bmp:hover{background-color:transparent}
   ood.topDialog = function () {                               // the key of the top-level dialog in front, '' for none
     let best = null, z = -1; for (const d2 of ood.dialogs.values()) { const v = Number(d2.el.style.zIndex) || 0; if (d2.el.parentNode === D.body && v >= z) { z = v; best = d2; } }
     return best ? String(best.key) : ''; };
+  /* cleanup(): take away everything this runtime put on the page: dialogs, backdrops, menus,
+     tool tips, message boxes, panels.  A host page calls it when a run has ended or was
+     stopped; a program that ends in the usual way has closed its dialogs itself, but its
+     tool tips and a stopped program's dialogs stay otherwise. */
+  ood.cleanup = function () {
+    D.querySelectorAll('body > [class^="ood-"], body > [class*=" ood-"]').forEach((el) => el.remove());
+    ood.dialogs.clear(); ood.keysDown.clear();
+    return '1';
+  };
   ood.delivered = [];
   ood.deliver = function (name, mime, hex, title) {
     boot();
