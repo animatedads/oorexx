@@ -2,7 +2,7 @@ ooDialog Designer v0.21 -- dependencies
 Architecture: Tom Dyer.  Code: Claude (Opus 5.5).
 
 Model, generator, graph and language support (src/, the Autobuild tests):
-- ooRexx 5.3.0 (native, or ooRexx/WASM 0.2.4 by Josep Maria Blasco)
+- ooRexx 5.3.0 (native, or ooRexx/WASM 0.2.4 or 0.2.5 by Josep Maria Blasco)
 - vendor/rexx-parser: Josep Maria Blasco's Rexx Parser, beta 0.7 (refresh
   20261115: CATCH and FINALLY), Apache License 2.0 (ANSI.ErrorText.cls: CPL
   1.0, its LICENSE-CPL beside it), unchanged; its LICENSE, NOTICE and VERSION
@@ -16,7 +16,7 @@ The programs it writes:
 - nothing else: the language support (OodNls) is copied into each program
 
 The page (site/) and its browser tests (tools/dztest.py), not run by Autobuild:
-- ooRexx/WASM 0.2.4 web release, ooDialog/WASM dist/, the Object Editor
+- ooRexx/WASM 0.2.5 web release (0.2.4 also qualified), ooDialog/WASM dist/, the Object Editor
   (object-editor/ of animatedads/oorexx, branch oodialog-designer, v0.5.0+: the
   Libraries panel), Python Playwright with Chromium; tools/build.rex
   assembles site/.

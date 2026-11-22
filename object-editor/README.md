@@ -172,6 +172,9 @@ and shows what each offers under its name; "Use it here" adds a ::requires
 for each. Changing a tick after an install turns Use off until the next
 install. The panel is shared with the ooDialog Designer, which takes it at
 its next build. Test: `tools/oxtest.py libmulti`.
+Qualified on ooRexx/WASM 0.2.5 (trunk r13591) as well as 0.2.4: t01 73/73,
+t02 29/29, oxtest 13/13 (2026-11-22). Build with RUNTIME_DIR the 0.2.5 web
+release; its optional debugger is not copied.
 
 
 - `t01_object.rex`: 73 of 73 checks pass under ooRexx/WASM in Node. They

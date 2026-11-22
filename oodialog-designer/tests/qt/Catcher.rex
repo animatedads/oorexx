@@ -1,4 +1,4 @@
-/* Catcher.rex -- an ooDialog program made with the ooDialog Designer 0.22.0
+/* Catcher.rex -- an ooDialog program made with the ooDialog Designer 0.23.0
    Design: the ::RESOURCE oodDesign at the end.  The designer writes this
    whole file; what you type is the body of each event method.
    ooDialog Designer -- architecture: Tom Dyer; code: Claude (Opus 5.5). */
@@ -52,7 +52,7 @@ return dlg~execute("SHOWTOP")
   end
 
 ::resource oodDesign
-designer version=0.22.0
+designer version=0.23.0
 form name=Catcher title="My Dialog" w=200 h=120 style=CENTER
 control type=PUSHBUTTON name=btnGo id=100 x=10 y=10 w=50 h=14 text=Go role="" opts="" tip="" anchor="LEFT TOP"
 control type=PUSHBUTTON name=btn1 id=101 x=60 y=10 w=50 h=14 text=OK role=OK opts="" tip="" anchor="LEFT TOP"

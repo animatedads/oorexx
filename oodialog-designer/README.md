@@ -1,10 +1,11 @@
-# ooDialog Designer — v0.22.0
+# ooDialog Designer — v0.23.0
 
 Architecture: Tom Dyer. Code: Claude (Opus 5.5). README written by Claude (Opus 5.5).
 It runs on ooDialog/WASM v0.23.0 (code: Claude (Fable 5.2); v0.21.0 for
 designer v0.16, v0.7.0 up to v0.15; designer v0.19 also qualified on
 v0.27.0) and on Josep Maria
-Blasco's ooRexx/WASM 0.2.4 runtime. The graph view parses event code with Josep
+Blasco's ooRexx/WASM runtime: 0.2.5 (trunk r13591, with CATCH, FINALLY and
+THROW) since designer v0.23, and 0.2.4 before it; both are qualified. The graph view parses event code with Josep
 Maria Blasco's Rexx Parser (beta 0.7, refresh 20261115, with CATCH and
 FINALLY; Apache License 2.0), shipped unchanged in
 `site/rexx-parser/` with its `LICENSE`, `NOTICE` and `VERSION`.
@@ -500,7 +501,24 @@ a built `site/plugins`, or skips them and says so. t07–t09 start their own
 stand-in servers with node; under native ooRexx (no ADDRESS FETCH) their
 network checks say SKIP, and t08's git-command checks still run.
 
-## State (2026-11-22, v0.22.0)
+## State (2026-11-22, v0.23.0)
+
+v0.23: qualified on ooRexx/WASM 0.2.5 (trunk r13591), now the build's default
+runtime (`tools/make.sh`, `tools/test.sh`); only the seven runtime files
+change (ooRexx.js, ooRexx-worker.js, rexx.js, rexx.wasm, rexx.data,
+js-realm.js, polygon-clipping.umd.min.js; 0.2.5's optional debugger is not
+copied). On it: dztest 23/23, its catch scenario taking the path where Run goes
+ahead (C still clears, the FINALLY body runs); run_all 10/10; selftest PASS
+with catchcheck 9/9 in the runtime (its NOTE, a LOOP left after its CATCH,
+"1 c2", is the same on native trunk). The Object Editor on 0.2.5: t01 73/73,
+t02 29/29, oxtest 13/13. On 0.2.4 the designer still refuses CATCH code and
+says why (v0.22 results). The designer keeps its own Rexx Parser
+(20261115, `vendor/`, `site/rexx-parser/`) rather than 0.2.5's `parser.cls`.
+Changing would end support for 0.2.4 and for native ooRexx builds without
+`parser.cls`, which include the trunk build here. It would also change how
+a parse error arrives: as USER REXX.PARSER.ERROR raised by THROW, where the
+graph now traps SYNTAX.
+
 
 v0.22: **Libraries…** lists a library's files as checkboxes, not a radio
 group, so several class files are imported at once: the main file is
