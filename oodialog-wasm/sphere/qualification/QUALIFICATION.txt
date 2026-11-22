@@ -1,4 +1,4 @@
-ooDialog/WASM Gopher sphere v0.14 qualification
+ooDialog/WASM Gopher sphere v0.15 qualification
 ================================================
 Architecture: Tom Dyer. Sphere written and qualified by Claude (Fable 5.2).
 Required engine: LLM Gopher v0.21-dev1+
@@ -12,14 +12,14 @@ Authoring toolchain:
 - tools/oodsphere.py and sphere-src/articles.py of the project
 
 Primary project provenance:
-- oodialog-wasm-131ec2d.zip
-  git archive of animatedads/oorexx commit 131ec2d (branch oodialog-wasm, port v0.28.0):
+- oodialog-wasm-3155393.zip
+  git archive of animatedads/oorexx commit 3155393 (branch oodialog-wasm, port v0.28.1):
   oodialog-wasm/README.md, src/, tools/, site/oodfiles.js, sphere-src/
-  SHA-256 96ea159205757481a948df441da8ee9099345560bbc14928b433376f996dd953
+  SHA-256 9a92ceb7cfd39eb3492ce352d2e87b4f79c6c2fe85a21be50ceeeec6dda985d1
 
 Steps passed:
 - Sphere Editor: create, put of 9 articles, evidence (each cited line found in the archive),
-  put of the corpus (183 records), validate VALID, lint CLEAN, package PACKAGED.
+  put of the corpus (186 records), validate VALID, lint CLEAN, package PACKAGED.
 - tests/check_sphere.rex with ooRexx 5.3.0: every JSON document parses, 9 articles
   with evidence, the start_here article exists.
 - tests/run.sh through LLM Gopher: sphere resolve, sphere load into a fresh environment,
@@ -28,4 +28,4 @@ Steps passed:
 
 Not qualified:
 - Not run with a native Linux ooRexx; the structural check ran with the WASM build of ooRexx 5.3.0.
-- The snapshot article ref.oodialog-wasm.state is true for port v0.28.0 only.
+- The snapshot article ref.oodialog-wasm.state is true for port v0.28.1 only.

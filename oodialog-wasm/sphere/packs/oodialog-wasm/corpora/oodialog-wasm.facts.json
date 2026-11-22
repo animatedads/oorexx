@@ -1,7 +1,7 @@
 {
   "kind": "corpus",
   "id": "oodialog-wasm.facts",
-  "version": "0.14",
+  "version": "0.15",
   "sphere": "oodialog-wasm",
   "title": "ooDialog/WASM: every statement of the articles, one a record, for search",
   "records": [
@@ -337,6 +337,12 @@
       "article": "ref.oodialog-wasm.renderer-contract",
       "field": "op_families",
       "rule": "New in v0.26.0. System images. When the page object is first used the native layer calls image(name, dataUrl) once for each of 20 KDE Breeze icons; the names begin with kde: and end with .svg, for example kde:dialog-error.svg. They stand for the system images of Windows. A message box must show kde:dialog-error.svg, kde:dialog-warning.svg, kde:dialog-question.svg or kde:dialog-information.svg for its icon. A renderer on a KDE desktop may show its own theme's icon of the same name instead."
+    },
+    {
+      "topic": "renderer-contract",
+      "article": "ref.oodialog-wasm.renderer-contract",
+      "field": "op_families",
+      "rule": "New in v0.28.1. cleanup(): the host calls it when a run has ended or was stopped. It removes everything the renderer put on the page or screen: dialogs, backdrops, menus, tool tips, message boxes, panels. A renderer must also leave the host's own Run and Stop controls usable while a modal dialog is open."
     },
     {
       "topic": "renderer-contract",
@@ -763,13 +769,13 @@
     {
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
-      "rule": "State at v0.28.0 and where the current state is recorded. This article is a snapshot. The current figures are always in README.md of the project, with the version they were measured on; sweep.tsv and poke.tsv hold the per-example results."
+      "rule": "State at v0.28.1 and where the current state is recorded. This article is a snapshot. The current figures are always in README.md of the project, with the version they were measured on; sweep.tsv and poke.tsv hold the per-example results."
     },
     {
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
       "field": "snapshot",
-      "rule": "Version 0.28.0, 21 November 2026."
+      "rule": "Version 0.28.1, 22 November 2026."
     },
     {
       "topic": "state",
@@ -895,6 +901,12 @@
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
       "field": "done",
+      "rule": "v0.28.1: the demo page was tested by Josep Maria Blasco with real pointer and keyboard events in Chromium, Firefox and WebKit, and at phone width with touch: the seventeen samples open with no console errors, and with ooRexx/WASM runtime trunk r13564 they give the same output as with 0.2.4. He reported three faults of the page, corrected in v0.28.1."
+    },
+    {
+      "topic": "state",
+      "article": "ref.oodialog-wasm.state",
+      "field": "done",
       "rule": "File dialogs and shell dialogs over the WASM machine's file system."
     },
     {
@@ -967,6 +979,12 @@
       "topic": "lessons",
       "article": "ops.oodialog-wasm.lessons",
       "rule": "Lessons from the port: faults made and how each is now prevented. Each lesson is a fault that happened in this work, its cause, and the rule that prevents it. They are here so that the next task does not repeat them."
+    },
+    {
+      "topic": "lessons",
+      "article": "ops.oodialog-wasm.lessons",
+      "field": "lessons",
+      "rule": "The demo page had seventeen samples and the checker ran five. One of the other twelve had never worked on the page: its entry did not list its files. Two more faults needed a second run or a press of Stop to show. Josep Maria Blasco found all three in his first session with a real browser. Rule: the checker runs every sample of the page, presses Stop while the dialog is open, and counts what is left on the page."
     },
     {
       "topic": "lessons",
