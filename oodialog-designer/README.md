@@ -1,4 +1,4 @@
-# ooDialog Designer — v0.19.0
+# ooDialog Designer — v0.20.0
 
 Architecture: Tom Dyer. Code: Claude (Opus 5.5). README written by Claude (Opus 5.5).
 It runs on ooDialog/WASM v0.23.0 (code: Claude (Fable 5.2); v0.21.0 for
@@ -19,6 +19,42 @@ such as ResEdit, which produces `.rc` and `.h` files (*ooDialog User Guide*,
 chapters 4–5). Those files then depended on that editor's version and its
 quirks. This designer needs no resource editor and no resource files.
 
+
+## Try it and test it (v0.20)
+
+You need Node.js 18 or later and a current Chrome, Edge or Firefox; for the
+tests, ooRexx 5 as well. From this folder, with the built site in `site/`
+(the zip sent out has it; from source, `tools/make.sh` builds it):
+
+```
+node site/serve.mjs
+```
+
+then open http://localhost:8000/designer.html (a plain file:// page cannot
+work: ooRexx in the browser needs the isolation headers the server sends).
+Pick an example under *Start from*, press **Run**, work the dialog; drag
+controls from the palette, double-click one to write its event code.
+
+The tests, with your ooRexx:
+
+```
+rexx tools/selftest.rex
+```
+
+It runs `tests/run_all.rex` (t01 to t10) and `tests/catchcheck.rex`. On
+2026-11-22, from a folder whose path holds a blank: 10 of 10 and 9 of 9 on
+ooRexx 5.3.0 (trunk 5f066c9, Linux); 9 of 10 on trunk at the 5.1.0 release
+point (t09 needs `.JsonString~new`). On Windows, t07 to t09 are skipped (their
+stand-in servers need a POSIX shell); run the examples under real ooDialog:
+
+```
+rexx tests\wincheck.rex site\examples
+```
+
+The browser scenarios (`python3 tools/dztest.py`, needing Python Playwright
+and its Chromium) passed 22 of 22 against the same folder. v0.20 made
+`tests/run_all.rex` run without a POSIX shell, and made it and t04, t06 to
+t09 take a folder whose path holds blanks (both broke before).
 ## Database Lab (Alchemy test component)
 
 Architecture: Tom Dyer. Code: ChatGPT (GPT-6) (package
@@ -462,7 +498,12 @@ a built `site/plugins`, or skips them and says so. t07–t09 start their own
 stand-in servers with node; under native ooRexx (no ADDRESS FETCH) their
 network checks say SKIP, and t08's git-command checks still run.
 
-## State (2026-11-21, v0.19.0)
+## State (2026-11-22, v0.20.0)
+
+v0.20: `tools/selftest.rex`; `tests/run_all.rex` sets REXX_PATH and the
+directory from Rexx (no `cd ... && VAR=... rexx`), so it runs under Windows
+cmd too, and skips t07-t09 there with the reason; run_all, t04 and t06-t09
+take folders whose paths hold blanks.
 
 v0.19: `tests/catchcheck.rex` corrected (above); qualified on ooDialog/WASM
 v0.27.0 (fafd2c2) and on the Qt6 renderer v0.15.0 (5cc1c57, its pinned

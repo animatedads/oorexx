@@ -5,6 +5,7 @@
    usage: rexx t04_ui.rex SITE_DIR      (OodUi.cls, OodNls.cls, OodDesigner.cls on REXX_PATH) */
 parse arg site
 site = site~strip
+if site~left(1) == '"' & site~right(1) == '"' & site~length > 1 then site = site~substr(2, site~length - 2)   -- quotes a Windows shell leaves
 if site == "" then site = "site"
 fails = 0
 checks = 0

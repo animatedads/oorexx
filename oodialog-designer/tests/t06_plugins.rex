@@ -6,6 +6,7 @@
      (REXX_PATH: src, and Boston Crab's tests/ for PitfallChecker.cls)      */
 parse arg dir
 dir = dir~strip
+if dir~left(1) == '"' & dir~right(1) == '"' & dir~length > 1 then dir = dir~substr(2, dir~length - 2)   -- quotes a Windows shell leaves
 if dir == "" then dir = "plugins"
 fails = 0
 checks = 0

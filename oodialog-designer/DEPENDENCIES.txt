@@ -1,4 +1,4 @@
-ooDialog Designer v0.19 -- dependencies
+ooDialog Designer v0.20 -- dependencies
 Architecture: Tom Dyer.  Code: Claude (Opus 5.5).
 
 Model, generator, graph and language support (src/, the Autobuild tests):

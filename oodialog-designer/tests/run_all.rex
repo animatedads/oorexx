@@ -18,8 +18,21 @@
    are memory and queue targets, which hold events for later; none writes a
    line as it happens, and a run log that appears only at the end is the black
    box this log exists to avoid. */
-parse arg root names
-root = root~strip
+-- PACKAGE_ROOT may hold blanks (C:\Users\A B\Downloads\...): a shell removes
+-- the quotes and ooRexx joins the words, so the test names (tNN_name) are
+-- taken from the end and the rest is the root; quotes left by a Windows
+-- shell are removed.  (v0.19: before, the first word was the root.)
+parse arg all
+all = all~strip
+names = ""
+do while all~words > 1
+  w = all~word(all~words)
+  if \(w~left(1)~caselessEquals("t") & w~substr(2, 2)~datatype("W") & w~substr(4, 1) == "_") then leave
+  names = w names
+  all = all~subWord(1, all~words - 1)
+end
+root = all~strip
+if root~left(1) == '"' & root~right(1) == '"' & root~length > 1 then root = root~substr(2, root~length - 2)
 if root == "" then do
   say "usage: rexx run_all.rex PACKAGE_ROOT [test ...]"
   return 99
@@ -65,6 +78,10 @@ if plugins \== "" & plugins \== "FAILED" then do
 end
 skipped = .array~new
 failed = .array~new
+-- t07 to t09 start their stand-in servers with a POSIX shell (node in the
+-- background, kill): on Windows they are skipped, and say so
+posixOnly = "T07_ASSIST T08_GIT T09_SSC"
+onWindows = .RexxInfo~platform~caselessPos("WINDOWS") > 0
 do t over tests
   file = root"/tests/"t".rex"
   if \SysFileExists(file) then do
@@ -82,14 +99,26 @@ do t over tests
     skipped~append(t)
     iterate
   end
+  if onWindows, wordpos(t~upper, posixOnly) > 0 then do
+    say "run_all: SKIP" t "(its stand-in servers need a POSIX shell; run it on Linux or macOS)"
+    skipped~append(t)
+    iterate
+  end
   say "run_all: RUN" t
   started = time("E")
   args = ""
   if needs~hasIndex(t~upper) then args = '"'needs[t~upper]'"'
-  env = ""
-  if paths~hasIndex(t~upper) then env = 'REXX_PATH="'paths[t~upper]':$REXX_PATH"'
-  address system 'cd "'scratch'" &&' env 'rexx "'file'"' args
+  -- the test runs in the scratch directory, with its REXX_PATH entries
+  -- first; both set from Rexx, so that no shell syntax is needed (v0.19:
+  -- "cd ... && REXX_PATH=... rexx" ran only in a POSIX shell)
+  oldPath = value("REXX_PATH", , "ENVIRONMENT")
+  if paths~hasIndex(t~upper) then call value "REXX_PATH", paths[t~upper] || .File~pathSeparator || oldPath, "ENVIRONMENT"
+  here = directory()
+  call directory scratch
+  address system 'rexx "'file'"' args
   code = rc
+  call directory here
+  call value "REXX_PATH", oldPath, "ENVIRONMENT"
   took = format(time("E") - started, , 2)
   if code = 0 then say "run_all: PASS" t "("took"s)"
   else do
@@ -116,7 +145,7 @@ pluginPaths: procedure
     parse var ppS ppKey "=" ppValue
     if ppKey~strip \== "paths" then iterate
     do ppP over ppValue~space~makeArray(" ")
-      if ppOut \== "" then ppOut = ppOut":"
+      if ppOut \== "" then ppOut = ppOut || .File~pathSeparator
       ppOut = ppOut || ppPlugins"/"ppP
     end
   end

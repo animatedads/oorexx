@@ -11,7 +11,15 @@
      entry's paths = > (tests/run_all.rex sets them from plugins/index.txt).
    Needs ooRexx/WASM (ADDRESS FETCH) and node: under native ooRexx it says
    SKIP and passes. */
-parse arg dir port .
+-- the plugins' folder may hold blanks; a port, if given, is the last word
+parse arg dir
+dir = dir~strip
+port = ""
+if dir~words > 1, dir~word(dir~words)~datatype("W") then do
+  port = dir~word(dir~words)
+  dir = dir~subWord(1, dir~words - 1)~strip
+end
+if dir~left(1) == '"' & dir~right(1) == '"' & dir~length > 1 then dir = dir~substr(2, dir~length - 2)
 dir = dir~strip
 if dir == "" then dir = "site/plugins"
 if port == "" then port = 8973

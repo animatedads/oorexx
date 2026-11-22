@@ -1,4 +1,4 @@
-/* Resizer.rex -- an ooDialog program made with the ooDialog Designer 0.19.0
+/* Resizer.rex -- an ooDialog program made with the ooDialog Designer 0.20.0
    Design: the ::RESOURCE oodDesign at the end.  The designer writes this
    whole file; what you type is the body of each event method.
    ooDialog Designer -- architecture: Tom Dyer; code: Claude (Opus 5.5). */
@@ -53,7 +53,7 @@ return dlg~execute("SHOWTOP")
   say "OK moved" (now~word(3) - f~word(3)) (now~word(4) - f~word(4))
 
 ::resource oodDesign
-designer version=0.19.0
+designer version=0.20.0
 form name=Resizer title="My Dialog" w=200 h=120 style=CENTER resizable=1
 var name=first value=.nil
 control type=LISTBOX name=lstItems id=100 x=6 y=6 w=120 h=80 items="" opts="" tip="" anchor="LEFT TOP RIGHT BOTTOM"
