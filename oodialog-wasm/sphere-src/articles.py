@@ -1,8 +1,8 @@
 # Articles of the oodialog-wasm sphere. Architecture: Tom Dyer. Written by Claude (Fable 5.2).
 # Each article: id, title, summary, section, topics, and lists of plain sentences.
 S = "oodialog-wasm"
-VERSION = "0.15"           # the sphere's version; raise it for a material change
-PORT = "0.28.1"             # the version of the port the articles were checked against
+VERSION = "0.16"           # the sphere's version; raise it for a material change
+PORT = "0.28.2"             # the version of the port the articles were checked against
 REPO = "animatedads/oorexx, branch oodialog-wasm, directory oodialog-wasm/"
 
 def art(id, title, summary, section, topics, **lists):
@@ -20,7 +20,7 @@ art("ops.oodialog-wasm.start",
     "The code is in " + REPO + ". The README.md there is the current state; this sphere explains how the parts fit and what other tasks may rely on.",
     "getting-started", ["overview", "layout", "ownership"],
     facts=[
-        "Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: oorexxwasm 0.2.4 (ooRexx 5.3.0) and its js.cls, by Josep Maria Blasco.",
+        "Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: oorexxwasm 0.2.5 (ooRexx 5.3.0 trunk r13591, with CATCH, FINALLY and THROW) and its js.cls, by Josep Maria Blasco. The port also runs unchanged on 0.2.4.",
         "Upstream: ooDialog trunk, SourceForge oorexx code-0 r13513. About 11,700 lines of Rexx classes over 104,000 lines of C++, joined by about 1,180 native entry points.",
         "Programs keep ::requires \"ooDialog.cls\". Three files go into the interpreter's file system: ooDialog.cls, oodWeb.cls, ooShapes.cls. They are in dist/.",
         "tools/oodgen.rex reads upstream's *.cls and writes dist/ooDialog.cls. Every external \"LIBRARY oodialog fn\" becomes a forward to .oodn~fn(self, MESSAGENAME, argumentArray).",
@@ -50,7 +50,7 @@ art("ops.oodialog-wasm.build-and-test",
     "A change is finished only when the whole suite passes on the final build, checked before the commit.",
     "getting-started", ["build", "test", "procedure"],
     procedure=[
-        "Kit: Node with the npm package oorexxwasm 0.2.4 (it provides the command rexx); the browser runtime oorexxwasm-web-0.2.4 unpacked into site/; Python 3 with Playwright and Chromium; upstream ooDialog r13513 unpacked as upstream/ (examples in upstream/examples).",
+        "Kit: Node with the npm package oorexxwasm 0.2.5 (it provides the command rexx); the browser runtime oorexxwasm-web-0.2.5 unpacked into site/; Python 3 with Playwright and Chromium; upstream ooDialog r13513 unpacked as upstream/ (examples in upstream/examples).",
         "Build, from the project directory: rexx tools/oodbuild.rex",
         "Run the core tests: python3 tools/oodtest.py --tree upstream/examples tests/t*.rex tests/up/*.rex tests/designer/*.rex",
         "Run the other groups, each with its own tree: tests/up2 with upstream/examples/tutorial; tests/up3 with upstream/examples/propertySheet.tabControls; tests/up4 with upstream/examples/mouse; tests/up5 with upstream/examples/controls/ListView/subitem.editing; tests/up6/SimpleMonthCalendar.rex with upstream/examples/simple; tests/up6/PaidHolidays.rex with upstream/examples/controls; tests/up7 with upstream/examples/resizableDialogs/ResizingAdmin; tests/res/t07_resdialog_binary.rex with no tree.",
@@ -222,7 +222,7 @@ art("ref.oodialog-wasm.state",
     "This article is a snapshot. The current figures are always in README.md of the project, with the version they were measured on; sweep.tsv and poke.tsv hold the per-example results.",
     "reference", ["state", "coverage", "not-done"],
     snapshot=[
-        "Version 0.28.1, 22 November 2026.",
+        "Version 0.28.2, 22 November 2026.",
         "Natives ported: 1,157 of 1,182 (1,129 at v0.27.0; 28 added in v0.28.0: the program's own controls in a file dialog; 11 added in v0.27.0: the tab owner dialog; v0.26.0 added none, it is the release of the KDE system images; 1,098 at v0.24.0; 20 added in v0.25.0: user messages, generic notifications, up-down reply, buttons from a stem, bars made later, .Window, public routines; 65 added in v0.24.0: scroll bar, property sheet pages, date-time picker, 30 scattered; 78 added in v0.23.0: the re-bar; 74 added in v0.22.0: tool bar and custom draw; 192 added in v0.21.0; 26 of those accept their call and do nothing, 18 system metrics are fixed values). 12 of the 43 added in v0.18.0 accept their call and do nothing.",
         "Tests: 65 of 65 pass in headless Chromium. 35 of them are upstream examples or the designer's programs, run unchanged.",
         "Sweep of the 140 upstream examples: 84 show their dialog, 7 run to the end, 8 show only a message box, 1 stops at a native not ported, 9 stop on an error (8 of them wait for a reader of binary resources), 24 are components, 7 are outside ooDialog.",
@@ -246,6 +246,7 @@ art("ref.oodialog-wasm.state",
         "Since v0.27.0: the tab owner dialog: TabOwnerDialog, ManagedTab, TabOwnerDlgInfo, ControlDlgInfo. A UserDialog owner with UserControlDialog pages is tested. An owner started from a resource does not start its tabs yet. The upstream example TabOwnerDemo.rex shows its owner and stops at its pages: they come from a TabOwnerDemo.dll that is not in the source tree.",
         "Since v0.28.0: CommonDialogCustomizations: check buttons, combo boxes, edit boxes, menus, push buttons, radio button lists, separators, texts and the Open button's own list inside an Open or Save dialog, with their values and notices. The file dialog is an ooDialog dialog written in Rexx (OodFileDialog in src/oodExtras.cls), so a renderer needs nothing new for it. Probe at v0.28.0, 92 examples: 74 clean, 12 connect an event that is not produced, 6 with a problem outside the port's own code.",
         "v0.28.1: the demo page was tested by Josep Maria Blasco with real pointer and keyboard events in Chromium, Firefox and WebKit, and at phone width with touch: the seventeen samples open with no console errors, and with ooRexx/WASM runtime trunk r13564 they give the same output as with 0.2.4. He reported three faults of the page, corrected in v0.28.1.",
+        "v0.28.2: the port on ooRexx/WASM 0.2.5. No code of the port changed. To move a copy from 0.2.4 to 0.2.5, replace seven files with those of oorexxwasm-web-0.2.5.zip: ooRexx.js, ooRexx-worker.js, rexx.js, rexx.wasm, rexx.data, js-realm.js, polygon-clipping.umd.min.js. rexx.data grows from 1.8 MB to 5.6 MB: it now carries the Rexx Parser (parser.cls). The 65 tests, the demo check of 17 samples and the sweep of 140 examples give the same results on both runtimes.",
         "File dialogs and shell dialogs over the WASM machine's file system.",
     ],
     not_done=[

@@ -1,7 +1,8 @@
-# ooDialog for ooRexx/WASM — v0.28.1
+# ooDialog for ooRexx/WASM — v0.28.2
 
 Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: Josep Maria Blasco's
-ooRexx/WASM (`oorexxwasm` 0.2.4, ooRexx 5.3.0) and its `js.cls`.
+ooRexx/WASM (`oorexxwasm` 0.2.5, ooRexx 5.3.0 trunk r13591, which has CATCH,
+FINALLY and THROW) and its `js.cls`. It also runs unchanged on 0.2.4.
 Upstream: ooDialog trunk, SourceForge oorexx code-0 r13513 (CPL 1.0).
 
 ## What it is
@@ -35,7 +36,7 @@ display, so typing into it does nothing. Enter presses the default button "=",
 or the button that has the focus (after a click, the button clicked). The
 digits of the number pad are connected but not tested: the harness's keyboard
 has no number lock. The tool tip and resizable samples are there to be tried
-with a real pointer. Unpack Josep Maria Blasco's `oorexxwasm-web-0.2.4.zip` release into
+with a real pointer. Unpack Josep Maria Blasco's `oorexxwasm-web-0.2.5.zip` release into
 `site/`, build, then serve `site/` with the release's own server (it sends the
 headers the runtime needs) and open the page:
 
@@ -65,7 +66,13 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
     python3 tools/oodtest.py --poke upstream/examples 0 24
     python3 tools/oodtest.py --tree upstream/examples tests/t*.rex tests/up/calculator.rex tests/up/oodpbar.rex tests/up/oodStandardRoutines.rex
 
-## State on 2026-11-22 (v0.28.1)
+## State on 2026-11-22 (v0.28.2)
+
+v0.28.2 changes no code of the port: it is v0.28.1 measured on ooRexx/WASM
+0.2.5. `dist/oodWeb.cls` built by the 0.2.5 interpreter is byte for byte the
+file built by 0.2.4. The 65 tests, the demo check and the sweep give the same
+results on both runtimes. The probe was not run again.
+
 
 - Natives ported: 1,157 of 1,182 (97.9%; 1,129 at v0.27.0). v0.28.0 added 28: the
   program's own controls in a file dialog (see "File dialog customizations", which
@@ -107,7 +114,7 @@ Needs Node 22, `npm i oorexxwasm`, the `oorexxwasm-web` release files in
   tutorial's `drawing3.rex` and `drawing5.rex`; and the three
   programs written by ooDialog Designer v0.3.0, in `tests/designer`).
 - Sweep of all 140 upstream example programs (`oodtest.py --sweep`, results in
-  `sweep.tsv`), each run from its own directory (last run at v0.28.0, on its final build): 84 show their dialog
+  `sweep.tsv`), each run from its own directory (last run at v0.28.2, on ooRexx/WASM 0.2.5): 84 show their dialog
   (two of them, `BinaryMenuBar.rex` and `TabOwnerDemo.rex`, then report the missing reader of binary
   resources; a run counts them as showing or as an error by timing), 7 run to
   the end, 8 show only a message box, 1 stops at a native not ported yet (`RI_INIT`), 9

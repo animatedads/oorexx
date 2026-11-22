@@ -55,7 +55,7 @@ oowalk2.rex	error:Error 98.900 ooDialog/WASM: a dialog from a resource file need
 oowalker.rex	shows
 propertySheet.tabControls/PropertySheetDemo.rex	shows
 propertySheet.tabControls/TabDemo.rex	error:Error 98.900 ooDialog/WASM: a dialog from a resource file needs a reader of binary Windows resources; set .ood
-propertySheet.tabControls/TabOwnerDemo.rex	shows +error
+propertySheet.tabControls/TabOwnerDemo.rex	error:Error 98.900 ooDialog/WASM: a dialog from a resource file needs a reader of binary Windows resources; set .ood
 propertySheet.tabControls/UserTabDemo.rex	shows
 propertySheet.tabControls/oodListViews.rex	shows
 propertySheet.tabControls/ticketWizard.rex	shows
