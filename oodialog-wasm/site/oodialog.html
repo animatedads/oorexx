@@ -37,6 +37,12 @@ const SAMPLES = [
   { name: 'Resizable dialog (upstream sample, ResizingAdmin; drag the corner)', prog: 'augmentedResize.rex', files: ['rc/basicResize.rc', 'rc/basicResize.h'] },
   { name: 'Up-down, track bar, date picker, font', prog: 'controls.rex' },
   { name: 'File dialog on the WASM file system', prog: 'filedialog.rex' },
+  { name: 'File dialog with the program\'s own controls (v0.28)', prog: 'customize.rex' },
+  { name: 'Tab owner dialog: tabs whose pages are dialogs (v0.27)', prog: 'tabowner.rex' },
+  { name: 'System images from KDE Breeze, message box icon (v0.26)', prog: 'kdeimages.rex' },
+  { name: 'User messages, notifications, up-down reply, status bar made later (v0.25)', prog: 'usermsg.rex' },
+  { name: 'Scroll bars and date picker range (v0.24)', prog: 'scrollbar.rex' },
+  { name: 'Property sheet: pages added and removed (v0.24)', prog: 'sheetpages.rex' },
 ];
 const $ = (id) => document.getElementById(id);
 SAMPLES.forEach((s, i) => $('sample').add(new Option(s.name, i)));

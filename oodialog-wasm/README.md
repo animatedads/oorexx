@@ -28,7 +28,7 @@ so event methods run on it; nested modal dialogs nest the loop.
 
 ## Demo page
 
-`site/oodialog.html` runs eleven samples (five of them upstream's unchanged)
+`site/oodialog.html` runs seventeen samples (five of them upstream's unchanged; six are the tests of v0.24 to v0.28)
 in the browser. "Calculator with keys" is upstream's calculator plus one block
 of connectKeyPress calls: upstream's own has no keyboard code and a read-only
 display, so typing into it does nothing. Enter presses the default button "=",
