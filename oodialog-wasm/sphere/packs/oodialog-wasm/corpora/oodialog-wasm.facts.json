@@ -1,7 +1,7 @@
 {
   "kind": "corpus",
   "id": "oodialog-wasm.facts",
-  "version": "0.15",
+  "version": "0.16",
   "sphere": "oodialog-wasm",
   "title": "ooDialog/WASM: every statement of the articles, one a record, for search",
   "records": [
@@ -14,7 +14,7 @@
       "topic": "start",
       "article": "ops.oodialog-wasm.start",
       "field": "facts",
-      "rule": "Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: oorexxwasm 0.2.4 (ooRexx 5.3.0) and its js.cls, by Josep Maria Blasco."
+      "rule": "Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: oorexxwasm 0.2.5 (ooRexx 5.3.0 trunk r13591, with CATCH, FINALLY and THROW) and its js.cls, by Josep Maria Blasco. The port also runs unchanged on 0.2.4."
     },
     {
       "topic": "start",
@@ -127,7 +127,7 @@
       "topic": "build-and-test",
       "article": "ops.oodialog-wasm.build-and-test",
       "field": "procedure",
-      "rule": "Kit: Node with the npm package oorexxwasm 0.2.4 (it provides the command rexx); the browser runtime oorexxwasm-web-0.2.4 unpacked into site/; Python 3 with Playwright and Chromium; upstream ooDialog r13513 unpacked as upstream/ (examples in upstream/examples)."
+      "rule": "Kit: Node with the npm package oorexxwasm 0.2.5 (it provides the command rexx); the browser runtime oorexxwasm-web-0.2.5 unpacked into site/; Python 3 with Playwright and Chromium; upstream ooDialog r13513 unpacked as upstream/ (examples in upstream/examples)."
     },
     {
       "topic": "build-and-test",
@@ -769,13 +769,13 @@
     {
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
-      "rule": "State at v0.28.1 and where the current state is recorded. This article is a snapshot. The current figures are always in README.md of the project, with the version they were measured on; sweep.tsv and poke.tsv hold the per-example results."
+      "rule": "State at v0.28.2 and where the current state is recorded. This article is a snapshot. The current figures are always in README.md of the project, with the version they were measured on; sweep.tsv and poke.tsv hold the per-example results."
     },
     {
       "topic": "state",
       "article": "ref.oodialog-wasm.state",
       "field": "snapshot",
-      "rule": "Version 0.28.1, 22 November 2026."
+      "rule": "Version 0.28.2, 22 November 2026."
     },
     {
       "topic": "state",
@@ -902,6 +902,12 @@
       "article": "ref.oodialog-wasm.state",
       "field": "done",
       "rule": "v0.28.1: the demo page was tested by Josep Maria Blasco with real pointer and keyboard events in Chromium, Firefox and WebKit, and at phone width with touch: the seventeen samples open with no console errors, and with ooRexx/WASM runtime trunk r13564 they give the same output as with 0.2.4. He reported three faults of the page, corrected in v0.28.1."
+    },
+    {
+      "topic": "state",
+      "article": "ref.oodialog-wasm.state",
+      "field": "done",
+      "rule": "v0.28.2: the port on ooRexx/WASM 0.2.5. No code of the port changed. To move a copy from 0.2.4 to 0.2.5, replace seven files with those of oorexxwasm-web-0.2.5.zip: ooRexx.js, ooRexx-worker.js, rexx.js, rexx.wasm, rexx.data, js-realm.js, polygon-clipping.umd.min.js. rexx.data grows from 1.8 MB to 5.6 MB: it now carries the Rexx Parser (parser.cls). The 65 tests, the demo check of 17 samples and the sweep of 140 examples give the same results on both runtimes."
     },
     {
       "topic": "state",

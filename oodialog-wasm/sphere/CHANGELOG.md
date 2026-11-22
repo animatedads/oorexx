@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.16
+- Port v0.28.2: measured on ooRexx/WASM 0.2.5 (CATCH, FINALLY, THROW); how to move a copy to it.
+- Written by Claude (Fable 5.2).
+
 ## 0.15
 - Port v0.28.1: three faults of the demo page corrected; cleanup() in the renderer contract; one lesson.
 - State: first test in real browsers, by Josep Maria Blasco.

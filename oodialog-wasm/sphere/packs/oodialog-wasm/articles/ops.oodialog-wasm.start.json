@@ -1,7 +1,7 @@
 {
   "kind": "article",
   "id": "ops.oodialog-wasm.start",
-  "version": "0.15",
+  "version": "0.16",
   "sphere": "oodialog-wasm",
   "title": "Start here: what ooDialog/WASM is and where it lives",
   "summary": "ooDialog/WASM runs unchanged ooDialog programs in a web browser on Josep Maria Blasco's ooRexx/WASM runtime. Upstream's Rexx classes are kept. Only the Windows DLL is replaced: by a native layer in Rexx (oodWeb.cls) and a page runtime in JavaScript (oodialog-web.js). The code is in animatedads/oorexx, branch oodialog-wasm, directory oodialog-wasm/. The README.md there is the current state; this sphere explains how the parts fit and what other tasks may rely on.",
@@ -13,7 +13,7 @@
     "ownership"
   ],
   "facts": [
-    "Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: oorexxwasm 0.2.4 (ooRexx 5.3.0) and its js.cls, by Josep Maria Blasco.",
+    "Architecture: Tom Dyer. Code: Claude (Fable 5.2). Runtime: oorexxwasm 0.2.5 (ooRexx 5.3.0 trunk r13591, with CATCH, FINALLY and THROW) and its js.cls, by Josep Maria Blasco. The port also runs unchanged on 0.2.4.",
     "Upstream: ooDialog trunk, SourceForge oorexx code-0 r13513. About 11,700 lines of Rexx classes over 104,000 lines of C++, joined by about 1,180 native entry points.",
     "Programs keep ::requires \"ooDialog.cls\". Three files go into the interpreter's file system: ooDialog.cls, oodWeb.cls, ooShapes.cls. They are in dist/.",
     "tools/oodgen.rex reads upstream's *.cls and writes dist/ooDialog.cls. Every external \"LIBRARY oodialog fn\" becomes a forward to .oodn~fn(self, MESSAGENAME, argumentArray).",
@@ -38,13 +38,13 @@
   ],
   "provenance": [
     {
-      "artifact": "oodialog-wasm-3155393.zip",
-      "sha256": "9a92ceb7cfd39eb3492ce352d2e87b4f79c6c2fe85a21be50ceeeec6dda985d1",
+      "artifact": "oodialog-wasm-aa4cd70.zip",
+      "sha256": "66700affd37ff5a0dd5e5301c76ca6100418d7fea568efde9cd66ad093551500",
       "member": "oodialog-wasm/README.md",
-      "line_start": 7,
-      "line_end": 30,
+      "line_start": 8,
+      "line_end": 31,
       "claim": "The parts of the port and their roles.",
-      "note": "git archive of animatedads/oorexx commit 3155393 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit aa4cd70 (branch oodialog-wasm)"
     }
   ]
 }

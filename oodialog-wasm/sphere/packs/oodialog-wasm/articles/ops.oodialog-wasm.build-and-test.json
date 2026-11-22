@@ -1,7 +1,7 @@
 {
   "kind": "article",
   "id": "ops.oodialog-wasm.build-and-test",
-  "version": "0.15",
+  "version": "0.16",
   "sphere": "oodialog-wasm",
   "title": "Build the three class files and run the tests",
   "summary": "One Rexx tool builds dist/. One Python tool runs programs in headless Chromium against the built files. A change is finished only when the whole suite passes on the final build, checked before the commit.",
@@ -13,7 +13,7 @@
     "procedure"
   ],
   "procedure": [
-    "Kit: Node with the npm package oorexxwasm 0.2.4 (it provides the command rexx); the browser runtime oorexxwasm-web-0.2.4 unpacked into site/; Python 3 with Playwright and Chromium; upstream ooDialog r13513 unpacked as upstream/ (examples in upstream/examples).",
+    "Kit: Node with the npm package oorexxwasm 0.2.5 (it provides the command rexx); the browser runtime oorexxwasm-web-0.2.5 unpacked into site/; Python 3 with Playwright and Chromium; upstream ooDialog r13513 unpacked as upstream/ (examples in upstream/examples).",
     "Build, from the project directory: rexx tools/oodbuild.rex",
     "Run the core tests: python3 tools/oodtest.py --tree upstream/examples tests/t*.rex tests/up/*.rex tests/designer/*.rex",
     "Run the other groups, each with its own tree: tests/up2 with upstream/examples/tutorial; tests/up3 with upstream/examples/propertySheet.tabControls; tests/up4 with upstream/examples/mouse; tests/up5 with upstream/examples/controls/ListView/subitem.editing; tests/up6/SimpleMonthCalendar.rex with upstream/examples/simple; tests/up6/PaidHolidays.rex with upstream/examples/controls; tests/up7 with upstream/examples/resizableDialogs/ResizingAdmin; tests/res/t07_resdialog_binary.rex with no tree.",
@@ -29,13 +29,13 @@
   ],
   "provenance": [
     {
-      "artifact": "oodialog-wasm-3155393.zip",
-      "sha256": "9a92ceb7cfd39eb3492ce352d2e87b4f79c6c2fe85a21be50ceeeec6dda985d1",
+      "artifact": "oodialog-wasm-aa4cd70.zip",
+      "sha256": "66700affd37ff5a0dd5e5301c76ca6100418d7fea568efde9cd66ad093551500",
       "member": "oodialog-wasm/README.md",
-      "line_start": 68,
-      "line_end": 87,
+      "line_start": 69,
+      "line_end": 88,
       "claim": "The test count and the version it was measured on.",
-      "note": "git archive of animatedads/oorexx commit 3155393 (branch oodialog-wasm)"
+      "note": "git archive of animatedads/oorexx commit aa4cd70 (branch oodialog-wasm)"
     }
   ]
 }
