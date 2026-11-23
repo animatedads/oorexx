@@ -1,0 +1,3 @@
+wait .ood-dlg >> text=Hello from the kit
+sleep 200
+click .ood-dlg >> text=OK

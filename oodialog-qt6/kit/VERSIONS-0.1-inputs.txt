@@ -1,0 +1,8 @@
+native classes: oodialog-wasm e2e7899 (v0.25.0) dist: ooDialog.cls, oodWeb.cls, ooShapes.cls (the pair the renderer v0.15.0 is qualified with)
+designer: alchemy packages/oorexx_oodialog_designer_v0.23 at 49b23d5c, site built with its tools/make.sh from:
+  ooRexx/WASM web 0.2.5 (github.com/JosepMariaBlasco/oorexxwasm release v0.2.5)
+  ooDialog/WASM v0.23.0 dist (191da5a), the one the Designer v0.23 is qualified on, for Run in the page
+  Object Editor: animatedads/oorexx branch oodialog-designer d21b148 (object-editor/)
+  Rexx Parser: the Designer's vendor/rexx-parser (beta 0.7, refresh 20261115)
+  estate packages: alchemy main 49b23d5c (nosqlserver_v0.92-dev1, alchemy_objects_v0.8, oorexx_crypto_v0.1, oorexx_mapped_objects_v0.1, plugins' packages, oorexx_oodialog_database_lab_v0.1.3)
+prebuilt lib/liboodqt.so: Ubuntu 24.04, Qt 6.4.2, g++ 13; needs glibc 2.34+, libstdc++ of GCC 12+ (GLIBCXX_3.4.30), Qt 6.4+ Widgets and PrintSupport
